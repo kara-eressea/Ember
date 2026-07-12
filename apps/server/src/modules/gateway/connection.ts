@@ -1,0 +1,553 @@
+// One GatewayConnection per browser WebSocket. Owns the connection-level
+// protocol: hello handshake (token auth, protocol version), sub → snapshot →
+// catchup → live, cmd dispatch with acks, read-cursor acks, ping/pong.
+//
+// Inbound frames are processed strictly in order through a serial queue —
+// except msg.send, whose flood-gate wait must not stall the connection; its
+// ack fires when the gate resolves. Outbound frames go through send(), which
+// disconnects slow consumers instead of buffering without bound.
+
+import type WebSocket from "ws";
+import { and, eq } from "drizzle-orm";
+import {
+  clientFrameSchema,
+  GATEWAY_CLOSE,
+  PROTOCOL_VERSION,
+  type ClientFrame,
+  type ConversationDto,
+  type GatewayCmd,
+  type GatewayEvent,
+  type ResumeCursors,
+  type ServerFrame,
+} from "@emberline/protocol";
+import type { Db } from "../../db/index.js";
+import { conversations, flistAccounts, identities } from "../../db/schema.js";
+import type { ConversationRow, HistorySink } from "../history/sink.js";
+import type {
+  FchatSession,
+  SessionLogger,
+} from "../session-engine/fchat-session.js";
+import type { SessionRegistry } from "../session-engine/registry.js";
+import type { GatewayHub } from "./gateway.js";
+import {
+  buildSnapshot,
+  fetchMessagesAfter,
+  messageDto,
+  ownedConversationIds,
+} from "./snapshot.js";
+
+/** Close the socket if no hello arrived within this window. */
+export const HELLO_TIMEOUT_MS = 10_000;
+/** Outbound backlog beyond this is a slow consumer — disconnect, don't buffer. */
+export const MAX_BUFFERED_BYTES = 1024 * 1024;
+/** Messages per catchup frame. */
+export const CATCHUP_BATCH_SIZE = 200;
+
+export interface GatewayConnectionContext {
+  readonly db: Db;
+  readonly sessions: SessionRegistry;
+  readonly history: HistorySink;
+  readonly hub: GatewayHub;
+  readonly verifyToken: (
+    token: string,
+  ) => Promise<{ userId: string } | undefined>;
+  readonly log: SessionLogger;
+}
+
+interface OwnedIdentity {
+  readonly id: string;
+  readonly character: string;
+  readonly accountId: string;
+  readonly accountName: string;
+}
+
+interface Subscription {
+  /** Live events buffered while snapshot + catchup are streaming; undefined
+   * once the subscription is live and events flow straight through. */
+  pending:
+    { t: "event"; d: { identityId: string } & GatewayEvent }[] | undefined;
+  /** Highest messages.id already delivered per conversation (resume cursor,
+   * advanced by catchup) — used to drop duplicates when pending is flushed. */
+  readonly delivered: Map<string, number>;
+}
+
+export class GatewayConnection {
+  readonly #socket: WebSocket;
+  readonly #ctx: GatewayConnectionContext;
+  readonly #log: SessionLogger;
+
+  #userId: string | undefined;
+  #resume: ResumeCursors = {};
+  /** Ownership cache: identityId → identity row (or null = checked, foreign). */
+  readonly #owned = new Map<string, OwnedIdentity | null>();
+  readonly #subscriptions = new Map<string, Subscription>();
+  /** Serial inbound queue — frames are handled in arrival order. */
+  #inbound: Promise<void> = Promise.resolve();
+  #helloTimer: NodeJS.Timeout | undefined;
+
+  constructor(socket: WebSocket, ctx: GatewayConnectionContext) {
+    this.#socket = socket;
+    this.#ctx = ctx;
+    this.#log = ctx.log;
+
+    this.#helloTimer = setTimeout(() => {
+      this.#close(GATEWAY_CLOSE.helloTimeout, "no hello");
+    }, HELLO_TIMEOUT_MS);
+
+    socket.on("message", (data: WebSocket.RawData) => {
+      this.#enqueue(() => this.#handleRaw(data));
+    });
+    socket.on("error", (error) => {
+      this.#log.warn({ err: error }, "gateway socket error");
+    });
+    socket.on("close", () => {
+      this.#teardown();
+    });
+  }
+
+  /** True while this connection wants events for the identity. */
+  isSubscribed(identityId: string): boolean {
+    return this.#subscriptions.has(identityId);
+  }
+
+  /** Hub fan-out entry point: buffers during snapshot/catchup, dedupes
+   * against the delivered cursor, then streams. */
+  deliver(identityId: string, event: GatewayEvent): void {
+    const sub = this.#subscriptions.get(identityId);
+    if (!sub) {
+      return;
+    }
+    const frame = { t: "event" as const, d: { identityId, ...event } };
+    if (sub.pending) {
+      sub.pending.push(frame);
+      return;
+    }
+    if (this.#isDuplicate(sub, event)) {
+      return;
+    }
+    this.#send(frame);
+  }
+
+  #isDuplicate(sub: Subscription, event: GatewayEvent): boolean {
+    if (event.kind !== "message.new") {
+      return false;
+    }
+    const seen = sub.delivered.get(event.d.convId);
+    if (seen !== undefined && event.d.message.id <= seen) {
+      return true;
+    }
+    sub.delivered.set(event.d.convId, event.d.message.id);
+    return false;
+  }
+
+  #enqueue(task: () => Promise<void>): void {
+    this.#inbound = this.#inbound.then(task).catch((error: unknown) => {
+      this.#log.error({ err: error }, "gateway frame handling failed");
+    });
+  }
+
+  async #handleRaw(data: WebSocket.RawData): Promise<void> {
+    let json: unknown;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- ws RawData is Buffer/ArrayBuffer, toString is the decode
+      json = JSON.parse(data.toString()) as unknown;
+    } catch {
+      this.#protocolError("frame is not valid JSON");
+      return;
+    }
+    const parsed = clientFrameSchema.safeParse(json);
+    if (!parsed.success) {
+      this.#protocolError("malformed frame");
+      return;
+    }
+    await this.#handleFrame(parsed.data);
+  }
+
+  #protocolError(message: string): void {
+    if (this.#userId === undefined) {
+      // Before hello there is no session to preserve — just drop it.
+      this.#close(GATEWAY_CLOSE.badRequest, message);
+      return;
+    }
+    this.#send({ t: "error", d: { message } });
+  }
+
+  async #handleFrame(frame: ClientFrame): Promise<void> {
+    if (frame.t === "hello") {
+      await this.#handleHello(frame.d);
+      return;
+    }
+    if (frame.t === "ping") {
+      this.#send({ t: "pong" });
+      return;
+    }
+    if (this.#userId === undefined) {
+      this.#close(GATEWAY_CLOSE.unauthorized, "hello first");
+      return;
+    }
+    switch (frame.t) {
+      case "sub":
+        await this.#handleSub(frame.d.identityId);
+        return;
+      case "unsub":
+        this.#subscriptions.delete(frame.d.identityId);
+        this.#ctx.hub.unsubscribe(frame.d.identityId, this);
+        return;
+      case "cmd":
+        try {
+          await this.#handleCmd(frame.d, frame.id);
+        } catch (error) {
+          this.#log.error({ err: error }, "gateway cmd failed");
+          this.#ack(frame.id, { ok: false, error: "internal error" });
+        }
+        return;
+      case "ack":
+        await this.#handleReadAck(frame.d);
+        return;
+    }
+  }
+
+  async #handleHello(d: {
+    token: string;
+    protocolVersion: number;
+    resume?: ResumeCursors;
+  }): Promise<void> {
+    if (this.#userId !== undefined) {
+      this.#send({ t: "error", d: { message: "already identified" } });
+      return;
+    }
+    if (d.protocolVersion !== PROTOCOL_VERSION) {
+      this.#close(
+        GATEWAY_CLOSE.versionMismatch,
+        `server speaks protocol ${String(PROTOCOL_VERSION)}`,
+      );
+      return;
+    }
+    const auth = await this.#ctx.verifyToken(d.token);
+    if (!auth) {
+      this.#close(GATEWAY_CLOSE.unauthorized, "invalid token");
+      return;
+    }
+    if (this.#helloTimer) {
+      clearTimeout(this.#helloTimer);
+      this.#helloTimer = undefined;
+    }
+    this.#userId = auth.userId;
+    this.#resume = d.resume ?? {};
+
+    const rows = await this.#ctx.db
+      .select({
+        id: identities.id,
+        character: identities.characterName,
+        accountId: flistAccounts.id,
+        accountName: flistAccounts.accountName,
+      })
+      .from(identities)
+      .innerJoin(flistAccounts, eq(identities.flistAccountId, flistAccounts.id))
+      .where(eq(flistAccounts.userId, auth.userId))
+      .orderBy(identities.sortOrder, identities.createdAt);
+    for (const row of rows) {
+      this.#owned.set(row.id, row);
+    }
+    this.#send({
+      t: "ready",
+      d: {
+        userId: auth.userId,
+        identities: rows.map((row) => ({
+          id: row.id,
+          name: row.character,
+          sessionStatus:
+            this.#ctx.sessions.get(row.id)?.status ?? ("offline" as const),
+        })),
+      },
+    });
+  }
+
+  /** The identity row, only if it belongs to this connection's user. */
+  async #ownedIdentity(identityId: string): Promise<OwnedIdentity | undefined> {
+    const cached = this.#owned.get(identityId);
+    if (cached !== undefined) {
+      return cached ?? undefined;
+    }
+    const [row] = await this.#ctx.db
+      .select({
+        id: identities.id,
+        character: identities.characterName,
+        accountId: flistAccounts.id,
+        accountName: flistAccounts.accountName,
+      })
+      .from(identities)
+      .innerJoin(flistAccounts, eq(identities.flistAccountId, flistAccounts.id))
+      .where(
+        and(
+          eq(identities.id, identityId),
+          eq(flistAccounts.userId, this.#userId ?? ""),
+        ),
+      )
+      .limit(1);
+    this.#owned.set(identityId, row ?? null);
+    return row;
+  }
+
+  // ── sub: snapshot → catchup → live ─────────────────────────────────────────
+
+  async #handleSub(identityId: string): Promise<void> {
+    const identity = await this.#ownedIdentity(identityId);
+    if (!identity) {
+      this.#send({ t: "error", d: { message: "identity not found" } });
+      return;
+    }
+    // Re-sub is a resync: start buffering again from a clean slate.
+    const sub: Subscription = { pending: [], delivered: new Map() };
+    this.#subscriptions.set(identityId, sub);
+    this.#ctx.hub.subscribe(identityId, this);
+
+    const session = this.#ctx.sessions.get(identityId);
+    const snapshot = await buildSnapshot(this.#ctx.db, identityId, session);
+    this.#send({
+      t: "snapshot",
+      d: {
+        identityId,
+        self: {
+          character: identity.character,
+          sessionStatus: session?.status ?? "offline",
+        },
+        channels: snapshot.channels,
+        dms: snapshot.dms,
+      },
+    });
+
+    await this.#sendCatchup(identityId, sub);
+
+    // Flush events that arrived during the sync, minus catchup duplicates.
+    const pending = sub.pending ?? [];
+    sub.pending = undefined;
+    for (const frame of pending) {
+      if (
+        this.#subscriptions.get(identityId) === sub &&
+        !this.#isDuplicate(sub, frame.d)
+      ) {
+        this.#send(frame);
+      }
+    }
+  }
+
+  async #sendCatchup(identityId: string, sub: Subscription): Promise<void> {
+    const cursors = this.#resume[identityId]?.convCursors ?? {};
+    const convIds = await ownedConversationIds(
+      this.#ctx.db,
+      identityId,
+      Object.keys(cursors),
+    );
+    for (const convId of convIds) {
+      let afterId = cursors[convId] ?? 0;
+      sub.delivered.set(convId, afterId);
+      for (;;) {
+        if (this.#subscriptions.get(identityId) !== sub) {
+          return; // unsubscribed (or resynced) mid-catchup
+        }
+        const rows = await fetchMessagesAfter(
+          this.#ctx.db,
+          convId,
+          afterId,
+          CATCHUP_BATCH_SIZE,
+        );
+        const done = rows.length < CATCHUP_BATCH_SIZE;
+        this.#send({
+          t: "catchup",
+          d: {
+            identityId,
+            convId,
+            messages: rows.map(messageDto),
+            done,
+          },
+        });
+        const last = rows.at(-1);
+        if (last) {
+          afterId = last.id;
+          sub.delivered.set(convId, last.id);
+        }
+        if (done) {
+          break;
+        }
+      }
+    }
+  }
+
+  // ── cmd dispatch ───────────────────────────────────────────────────────────
+
+  async #handleCmd(cmd: GatewayCmd, id: number | undefined): Promise<void> {
+    const identity = await this.#ownedIdentity(cmd.identityId);
+    if (!identity) {
+      this.#ack(id, { ok: false, error: "identity not found" });
+      return;
+    }
+    switch (cmd.action) {
+      case "session.connect":
+        this.#ctx.sessions.start({
+          identityId: identity.id,
+          character: identity.character,
+          accountId: identity.accountId,
+          accountName: identity.accountName,
+        });
+        this.#ack(id, { ok: true });
+        return;
+      case "session.disconnect":
+        this.#ctx.sessions.stop(identity.id, "disconnected by user");
+        this.#ack(id, { ok: true });
+        return;
+      case "channel.join": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          session.joinChannel(cmd.d.key);
+          this.#ack(id, { ok: true });
+        }
+        return;
+      }
+      case "channel.leave": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          session.leaveChannel(cmd.d.key);
+          this.#ack(id, { ok: true });
+        }
+        return;
+      }
+      case "pm.open": {
+        const row = await this.#ctx.history.ensurePmConversation(
+          identity.id,
+          cmd.d.character,
+        );
+        this.#ack(id, { ok: true, conversation: conversationDto(row) });
+        return;
+      }
+      case "msg.send":
+        await this.#handleMsgSend(identity.id, cmd.d, id);
+        return;
+    }
+  }
+
+  async #handleMsgSend(
+    identityId: string,
+    d: { convId: string; bbcode: string },
+    id: number | undefined,
+  ): Promise<void> {
+    const session = this.#requireSession(identityId, id);
+    if (!session) {
+      return;
+    }
+    const [conversation] = await this.#ctx.db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.id, d.convId),
+          eq(conversations.identityId, identityId),
+        ),
+      )
+      .limit(1);
+    if (!conversation) {
+      this.#ack(id, { ok: false, error: "conversation not found" });
+      return;
+    }
+    const send =
+      conversation.kind === "channel"
+        ? session.sendChannelMessage(conversation.channelKey ?? "", d.bbcode)
+        : session.sendPrivateMessage(
+            conversation.partnerCharacter ?? "",
+            d.bbcode,
+          );
+    // Deliberately not awaited: the flood gate can hold a frame for seconds
+    // and must not stall the inbound queue. The promise is always handled —
+    // its outcome becomes the ack.
+    send.then(
+      () => {
+        this.#ack(id, { ok: true });
+      },
+      (error: unknown) => {
+        this.#ack(id, {
+          ok: false,
+          error: error instanceof Error ? error.message : "send failed",
+        });
+      },
+    );
+  }
+
+  #requireSession(
+    identityId: string,
+    ackId: number | undefined,
+  ): FchatSession | undefined {
+    const session = this.#ctx.sessions.get(identityId);
+    if (!session || session.status === "stopped") {
+      this.#ack(ackId, { ok: false, error: "session not connected" });
+      return undefined;
+    }
+    return session;
+  }
+
+  async #handleReadAck(d: {
+    identityId: string;
+    convId: string;
+    messageId: number;
+  }): Promise<void> {
+    const identity = await this.#ownedIdentity(d.identityId);
+    if (!identity) {
+      return;
+    }
+    // markRead emits conversation.updated through the history bus, which the
+    // hub fans out — every tab's unread counters converge.
+    await this.#ctx.history.markRead(identity.id, d.convId, d.messageId);
+  }
+
+  // ── plumbing ───────────────────────────────────────────────────────────────
+
+  #ack(
+    id: number | undefined,
+    d: { ok: boolean; error?: string; conversation?: ConversationDto },
+  ): void {
+    if (id !== undefined) {
+      this.#send({ t: "ack", id, d });
+    }
+  }
+
+  #send(frame: ServerFrame): void {
+    if (this.#socket.readyState !== this.#socket.OPEN) {
+      return;
+    }
+    if (this.#socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+      this.#close(GATEWAY_CLOSE.slowConsumer, "send buffer overflow");
+      return;
+    }
+    this.#socket.send(JSON.stringify(frame));
+  }
+
+  #close(code: number, reason: string): void {
+    this.#teardown();
+    try {
+      this.#socket.close(code, reason);
+    } catch {
+      this.#socket.terminate();
+    }
+  }
+
+  #teardown(): void {
+    if (this.#helloTimer) {
+      clearTimeout(this.#helloTimer);
+      this.#helloTimer = undefined;
+    }
+    this.#subscriptions.clear();
+    this.#ctx.hub.dropConnection(this);
+  }
+}
+
+export function conversationDto(row: ConversationRow): ConversationDto {
+  return {
+    id: row.id,
+    kind: row.kind,
+    channelKey: row.channelKey,
+    partnerCharacter: row.partnerCharacter,
+    title: row.title,
+    pinned: row.pinned,
+    joined: row.joined,
+    lastReadMessageId: row.lastReadMessageId,
+  };
+}

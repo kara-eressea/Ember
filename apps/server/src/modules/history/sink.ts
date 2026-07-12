@@ -2,18 +2,35 @@
 // (inbound and our own sends) into conversations/messages. The messages table
 // is the gateway resume log (architecture.md §Resume semantics): bigserial
 // ids in arrival order are the cursor, so writes go through a serial queue.
+//
+// After every write it emits on its own bus. The gateway fans those out —
+// `message.new` events must carry the persisted messages.id, so live fan-out
+// happens after (and in the same order as) persistence, never before.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
 import { conversations, messages } from "../../db/schema.js";
-import type { OutboundMessage } from "../session-engine/event-bus.js";
+import {
+  TypedEventBus,
+  type OutboundMessage,
+} from "../session-engine/event-bus.js";
 import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
 
 type ConversationKind = "channel" | "pm";
+
+export type ConversationRow = typeof conversations.$inferSelect;
+export type MessageRow = typeof messages.$inferSelect;
+
+export interface HistoryEvents {
+  /** A message was persisted (inbound or our own send). */
+  message: { identityId: string; message: MessageRow };
+  /** A conversation was created or updated (joined flag, read cursor). */
+  conversation: { identityId: string; conversation: ConversationRow };
+}
 
 interface ConversationTarget {
   readonly kind: ConversationKind;
@@ -30,6 +47,8 @@ const NOOP_LOGGER: SessionLogger = {
 };
 
 export class HistorySink {
+  readonly events: TypedEventBus<HistoryEvents>;
+
   readonly #db: Db;
   readonly #log: SessionLogger;
   /** Serial write queue: message ids must reflect arrival order. */
@@ -40,6 +59,7 @@ export class HistorySink {
   constructor(db: Db, logger?: SessionLogger) {
     this.#db = db;
     this.#log = logger ?? NOOP_LOGGER;
+    this.events = new TypedEventBus<HistoryEvents>(this.#log);
   }
 
   /** Subscribes to the session's bus; detaches itself when the session stops. */
@@ -68,7 +88,7 @@ export class HistorySink {
           const channel = command.payload.channel;
           if (channel === undefined) {
             // Global server notices have no conversation to live in; the
-            // gateway will surface them transiently (step 8).
+            // gateway surfaces them transiently straight off the session bus.
             return;
           }
           this.#enqueueMessage(identityId, {
@@ -134,6 +154,51 @@ export class HistorySink {
     return this.#queue;
   }
 
+  /** Find-or-create a PM conversation (gateway `pm.open`). */
+  async ensurePmConversation(
+    identityId: string,
+    partner: string,
+  ): Promise<ConversationRow> {
+    const id = await this.#conversationId(identityId, pmTarget(partner));
+    const [row] = await this.#db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, id))
+      .limit(1);
+    if (!row) {
+      throw new Error("conversation vanished after find-or-create");
+    }
+    return row;
+  }
+
+  /**
+   * Advances the read cursor (gateway `ack`), monotonically — a stale ack
+   * from a lagging tab never moves it backwards. Emits the updated row so
+   * unread counters sync across every attached client.
+   */
+  async markRead(
+    identityId: string,
+    conversationId: string,
+    messageId: number,
+  ): Promise<ConversationRow | undefined> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({
+        lastReadMessageId: sql`greatest(coalesce(${conversations.lastReadMessageId}, 0), ${messageId})`,
+      })
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.identityId, identityId),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
+    }
+    return row;
+  }
+
   #channelTarget(session: FchatSession, key: string): ConversationTarget {
     return {
       kind: "channel",
@@ -157,13 +222,19 @@ export class HistorySink {
         identityId,
         entry.target,
       );
-      await this.#db.insert(messages).values({
-        conversationId,
-        senderCharacter: entry.senderCharacter,
-        kind: entry.kind,
-        bbcode: entry.bbcode,
-        sentByUs: entry.sentByUs,
-      });
+      const [row] = await this.#db
+        .insert(messages)
+        .values({
+          conversationId,
+          senderCharacter: entry.senderCharacter,
+          kind: entry.kind,
+          bbcode: entry.bbcode,
+          sentByUs: entry.sentByUs,
+        })
+        .returning();
+      if (row) {
+        this.events.emit("message", { identityId, message: row });
+      }
     });
   }
 
@@ -174,10 +245,14 @@ export class HistorySink {
   ): void {
     this.#enqueue(async () => {
       const conversationId = await this.#conversationId(identityId, target);
-      await this.#db
+      const [row] = await this.#db
         .update(conversations)
         .set({ joined, ...(joined ? { title: target.title } : {}) })
-        .where(eq(conversations.id, conversationId));
+        .where(eq(conversations.id, conversationId))
+        .returning();
+      if (row) {
+        this.events.emit("conversation", { identityId, conversation: row });
+      }
     });
   }
 
@@ -213,11 +288,12 @@ export class HistorySink {
           partnerCharacter: target.kind === "pm" ? target.key : null,
           title: target.title,
         })
-        .returning({ id: conversations.id });
+        .returning();
       if (!created) {
         throw new Error("conversation insert returned no row");
       }
       this.#conversationIds.set(cacheKey, created.id);
+      this.events.emit("conversation", { identityId, conversation: created });
       return created.id;
     } catch (error) {
       // Lost a create race (e.g. another process in a future sharded world).

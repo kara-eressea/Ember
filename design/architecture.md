@@ -193,11 +193,17 @@ Server→client:
 ready    { userId, identities: [{id, name, sessionStatus}] }
 snapshot { identityId, self, channels: [{convId, key, title, topic, desc, pinned, members, mode, unread, mention}],
            dms, friends, bookmarks, ignored, presenceVersion }
-event    { identityId, kind, d, msgId? }     # 'message.new' (persisted, carries messages.id), 'member.join/leave',
-                                             #   'presence', 'status', 'typing', 'channel.topic/desc/mode',
-                                             #   'session.status', 'error', 'sys'
+event    { identityId, kind, d }             # 'message.new' (persisted, carries messages.id),
+                                             #   'conversation.updated' (created/joined flag/read cursor — unread
+                                             #   counters converge across tabs), 'member.join/leave',
+                                             #   'channel.members' (ICH full list), 'channel.info' (desc/mode/oplist),
+                                             #   'presence', 'typing', 'session.status', 'error', 'sys'
 catchup  { identityId, convId, messages: [...], done }
-ack      { id, ok, error? }
+ack      { id, ok, error?, ...result }       # result e.g. pm.open → { conversation }
+pong     {}
 ```
+
+The exact contract (zod schemas for client→server, types for server→client,
+close codes) lives in `packages/protocol/src/gateway.ts`.
 
 **Resume semantics — snapshot + durable replay.** Volatile state (member lists, presence, session status) is never replayed; the client gets a fresh `snapshot` on every `sub`. Durable state (messages) resumes via per-conversation `messages.id` cursors: the server sends `catchup` batches for everything after the cursor, then live `event`s. The messages table *is* the resume log — no separate event-log bookkeeping. Multiple tabs/devices each `sub`; fan-out is per-connection with slow-consumer disconnect (bounded send buffer).
