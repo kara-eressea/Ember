@@ -19,6 +19,9 @@ export default defineConfig({
   webServer: {
     command: `pnpm exec vite --port ${String(WEB_PORT)} --strictPort`,
     url: `http://127.0.0.1:${String(WEB_PORT)}`,
+    // Generous: on a cold CI runner this window also covers global-setup's
+    // first-time postgres image pull.
+    timeout: 300_000,
     reuseExistingServer: !process.env.CI,
     env: {
       EMBERLINE_API_PROXY: `http://127.0.0.1:${String(API_PORT)}`,
