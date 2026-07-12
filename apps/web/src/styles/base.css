@@ -1,0 +1,57 @@
+/* Global base — everything styles against the --eb-* custom properties
+   written by applyTheme(); no hard-coded hex outside theme/tokens.ts. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+kbd,
+samp {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+a {
+  color: var(--eb-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+input {
+  font: inherit;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: none;
+  border-color: var(--eb-accent);
+  box-shadow: 0 0 0 3px var(--eb-accent-soft);
+}

@@ -1,0 +1,325 @@
+/* Auth cards (COMPONENTS.md §13/§14): centered card on a darkened backdrop. */
+
+.backdrop {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: color-mix(in srgb, var(--eb-bg) 65%, black);
+}
+
+.card {
+  width: 400px;
+  max-width: 100%;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: 14px;
+  padding: 28px;
+}
+
+.cardWide {
+  composes: card;
+  width: 440px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--eb-dim);
+}
+
+.brandChip {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.sub {
+  margin: 0 0 20px;
+  color: var(--eb-dim);
+  font-size: 13px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--eb-faint);
+  margin-bottom: 6px;
+}
+
+.fieldRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  color: var(--eb-text);
+  font-size: 13.5px;
+}
+
+.inputSuffix {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--eb-faint);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  padding: 4px;
+}
+
+.strength {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.strengthSegment {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--eb-border);
+}
+
+.strengthOn {
+  composes: strengthSegment;
+  background: var(--eb-accent);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 16px;
+  font-size: 12.5px;
+  color: var(--eb-dim);
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--eb-accent);
+}
+
+.primaryButton {
+  width: 100%;
+  height: 44px;
+  border: none;
+  border-radius: var(--eb-radius);
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: var(--eb-radius);
+  border: 1px solid var(--eb-danger);
+  color: var(--eb-danger);
+  font-size: 12.5px;
+}
+
+.footNote {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--eb-faint);
+  text-align: center;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.forgot {
+  font-size: 12px;
+}
+
+/* IdentityPicker (§14) */
+
+.accountBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.accountChip {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 700;
+}
+
+.accountMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.accountName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.accountSub {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signOut {
+  background: none;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  color: var(--eb-dim);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.identityRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.identityName {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.identityMeta {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.identityInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.connectButton {
+  border: none;
+  border-radius: var(--eb-radius);
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+.addRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: none;
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+  color: var(--eb-dim);
+  font-size: 13px;
+}
+
+.addChip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px dashed var(--eb-faint);
+  color: var(--eb-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sectionLabel {
+  margin: 18px 0 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--eb-faint);
+}
+
+.characterGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.characterButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  color: var(--eb-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.characterButton:hover {
+  border-color: var(--eb-accent-med);
+  background: var(--eb-accent-soft);
+}

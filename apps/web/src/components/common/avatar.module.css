@@ -1,0 +1,19 @@
+.avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  color: var(--eb-bg);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 700;
+  user-select: none;
+}
+
+.image {
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+  transition: opacity 0.15s ease;
+}

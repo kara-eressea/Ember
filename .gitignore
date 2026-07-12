@@ -7,6 +7,10 @@ build/
 .turbo/
 coverage/
 
+# Playwright artifacts
+test-results/
+playwright-report/
+
 # Environment — never commit secrets; ship .env.example instead
 .env
 .env.*

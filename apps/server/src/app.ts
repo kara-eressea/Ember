@@ -18,6 +18,7 @@ import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { historyRoutes } from "./modules/history/routes.js";
+import { identitiesRoutes } from "./modules/identities/routes.js";
 import { HistorySink } from "./modules/history/sink.js";
 import { SessionRegistry } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
@@ -95,6 +96,12 @@ export async function buildApp({
     tickets,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(identitiesRoutes, {
+    prefix: "/api/identities",
+    db,
+    sessions,
+    tickets,
+  });
   await app.register(fastifyWebsocket);
   await app.register(gatewayRoutes, { db, sessions, history, hub });
 
