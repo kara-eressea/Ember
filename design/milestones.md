@@ -23,7 +23,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [x] 2. `fchat-protocol` codec + core command schemas
 - [x] 3. `fchat-sim` mock server
 - [x] 4. Postgres + Drizzle schema + Fastify auth
-- [ ] 5. flist-accounts + TicketManager + in-memory credential vault
+- [x] 5. flist-accounts + TicketManager + in-memory credential vault
 - [ ] 6. Session engine v1 against sim
 - [ ] 7. History sink + REST pagination
 - [ ] 8. Gateway (hello/sub/snapshot/event/cmd/ack)
@@ -49,5 +49,6 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 | 2026-07-12 | Deployment context settled: VPS + docker-compose, friends-first scale (~tens), Brevo SMTP for M7 email. See `decisions.md` §5. |
 | 2026-07-12 | M1 started. Step 1 (repo scaffold) done: pnpm workspaces + Turborepo, 6 packages, ESLint flat config + Prettier, Vitest, GitHub Actions CI, `main` branch protection. TS note: packages build with native TS 7; root pins TS 6.0 for typescript-eslint until TS 7.1 ships the JS API. |
 | 2026-07-12 | M1 step 2 (`fchat-protocol`) done (PR #2): frame codec, zod schemas for the 20 core server commands + client counterparts, ServerVars/applyVar, error codes. Lenient parsing — anything unknown/malformed returns `{ cmd, raw }`. `parseClientCommand` is ready for fchat-sim (step 3). |
+| 2026-07-12 | M1 step 5 (flist-accounts) done (PR #9): FlistApiClient (1 req/s throttle), per-account TicketManager (25-min cache, coalesced fetches, invalidate hook), in-memory CredentialVault with serialization redaction, add/unlock/characters/delete routes. Integration tests incl. restart→423→unlock flow and log-capture proof that passwords never hit logs. |
 | 2026-07-12 | M1 step 4 (DB + auth) done (PR #7): docker-compose.dev.yml (Postgres 18), Drizzle schema (all step-4 tables + outbox_messages, uuidv7 ids, committed migration, migrate-on-boot), Fastify register/login/refresh/logout + /me (argon2id, hashed refresh tokens with single-UPDATE rotation, per-route rate limits). 11 testcontainers integration tests; CI runs them via docker on the runner. |
 | 2026-07-12 | M1 step 3 (`fchat-sim`) done (PR #4): ws + fake getApiTicket.php on one server; scripted handshake, fake world with NPCs, MSG/PRI relay (no sender echo), PIN discipline, account-wide ticket invalidation, misbehavior controls for step 6. Manual wscat-style walkthrough verified. Protocol gained CON, serializeServerCommand, flist-api ticket types. |
