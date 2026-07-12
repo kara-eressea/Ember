@@ -1,3 +1,4 @@
-// Local F-Chat mock server for dev/test (M1 step 3): scripted handshake,
-// fake channels/users, PIN cycle, fake ticket endpoint, configurable misbehavior.
-export {};
+// Local F-Chat mock server for dev and tests. Never points at real F-List.
+export { FchatSim, type FchatSimOptions } from "./sim-server.js";
+export { TicketService } from "./ticket-service.js";
+export * from "./world.js";

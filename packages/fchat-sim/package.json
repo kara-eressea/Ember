@@ -14,10 +14,17 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "node dist/cli.js"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/ws": "^8.18.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@emberline/fchat-protocol": "workspace:*",
+    "ws": "^8.21.0"
   }
 }

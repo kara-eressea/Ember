@@ -8,6 +8,7 @@ const DOC_SAMPLES: readonly string[] = [
   'CDS {"description": "[color=red]No actual roleplay in here.[/color] This is the channel for RP offers and announcements.", "channel": "Looking for RP"}',
   'CHA {"channels": [{"name":"Hermaphrodites","mode":"both","characters":144},{"name":"Avians","mode":"chat","characters":20}]}',
   'COL { "oplist": ["","Robert Grayson","Natsudra"], "channel": "Frontpage"}',
+  'CON {"count": 254}',
   'ERR {"message": "You have already joined this channel.", "number": 28}',
   'FLN {"character":"Hexxy"}',
   'HLO {"message":"Welcome. Running F-Chat 0.8.6-Lua by Kira. Enjoy your stay."}',

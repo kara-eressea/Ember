@@ -7,7 +7,7 @@
 // strings here; see src/enums.ts.
 
 import { z } from "zod";
-import { parseFrame, type RawCommand } from "./codec.js";
+import { parseFrame, serializeFrame, type RawCommand } from "./codec.js";
 
 export const serverCommandSchemas = {
   /** Channel description changed. Sent after every JCH. */
@@ -20,6 +20,8 @@ export const serverCommandSchemas = {
   }),
   /** List of channel ops. First entry is the owner (may be ""). */
   COL: z.object({ channel: z.string(), oplist: z.array(z.string()) }),
+  /** Connected-user count, sent after identification and before the LIS batches. */
+  CON: z.object({ count: z.int() }),
   /** An error occurred. See src/error-codes.ts. */
   ERR: z.object({ number: z.int(), message: z.string() }),
   /** A character went offline. Treat as a global LCH for that character. */
@@ -130,4 +132,8 @@ export function isKnownServerCommand(
   command: ServerCommand | RawCommand,
 ): command is ServerCommand {
   return !("raw" in command);
+}
+
+export function serializeServerCommand(command: ServerCommand): string {
+  return serializeFrame(command);
 }
