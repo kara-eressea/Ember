@@ -44,6 +44,10 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 
 ## Log
 
+> PR references up to #13 predate this repository — the project history was
+> rewritten and re-homed on 2026-07-12; those numbers refer to the retired
+> original repo and do not correspond to PRs here.
+
 | Date | Change |
 |---|---|
 | 2026-07-12 | Plan finalized; all milestones defined, none started. |
