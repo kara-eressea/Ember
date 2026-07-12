@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { serializeFrame } from "./codec.js";
-import { isKnownServerCommand, parseServerCommand } from "./server-commands.js";
+import {
+  isKnownServerCommand,
+  parseServerCommand,
+  serializeServerCommand,
+} from "./server-commands.js";
 
 // Sample frames from design/server-commands.md (trimmed where the doc
 // abbreviates with "...", and with the doc's JSON typos fixed).
@@ -38,7 +41,10 @@ describe("parseServerCommand", () => {
       const command = parseServerCommand(raw);
       expect(isKnownServerCommand(command)).toBe(true);
       // Round-trip: re-serialize the typed command and parse it again.
-      const rewired = serializeFrame(command);
+      if (!isKnownServerCommand(command)) {
+        throw new Error(`sample did not parse: ${raw}`);
+      }
+      const rewired = serializeServerCommand(command);
       expect(parseServerCommand(rewired)).toEqual(command);
     },
   );

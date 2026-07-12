@@ -20,6 +20,7 @@ import {
   isClientCommandName,
   isKnownClientCommand,
   parseClientCommand,
+  parseFrame,
   serializeServerCommand,
   type ApiTicketResponse,
   type ClientCommand,
@@ -50,7 +51,10 @@ interface Connection {
   pingTimer?: NodeJS.Timeout;
   awaitingPong: boolean;
   missedPongs: number;
-  lastUnsolicitedPinAt: number;
+  /** Timestamp of the last client PIN of any kind (solicited reply or not). */
+  lastClientPinAt: number;
+  lastMsgAt: number;
+  lastPriAt: number;
 }
 
 interface ChannelState {
@@ -72,6 +76,19 @@ interface CharacterState {
 
 const MAX_PING_MISSES = 3;
 const UNSOLICITED_PIN_WINDOW_MS = 10_000;
+
+/** Best-effort extraction of the "method" field from a schema-invalid IDN. */
+function extractIdnMethod(raw: string): unknown {
+  const result = parseFrame(raw);
+  if (
+    !result.ok ||
+    typeof result.frame.payload !== "object" ||
+    result.frame.payload === null
+  ) {
+    return undefined;
+  }
+  return (result.frame.payload as Record<string, unknown>)["method"];
+}
 
 export function rawDataToString(data: RawData): string {
   if (Array.isArray(data)) {
@@ -267,7 +284,9 @@ export class FchatSim {
       socket,
       awaitingPong: false,
       missedPongs: 0,
-      lastUnsolicitedPinAt: 0,
+      lastClientPinAt: 0,
+      lastMsgAt: 0,
+      lastPriAt: 0,
     };
     this.#connections.add(connection);
     socket.on("message", (data: RawData) => {
@@ -292,7 +311,20 @@ export class FchatSim {
     const command = parseClientCommand(raw);
     if (connection.character === undefined) {
       // "If you send any commands before identifying, you will be disconnected."
-      if (command.cmd !== "IDN" || !isKnownClientCommand(command)) {
+      if (command.cmd !== "IDN") {
+        connection.socket.close();
+        return;
+      }
+      if (!isKnownClientCommand(command)) {
+        // An IDN that fails the schema still gets a diagnostic before the
+        // close: ERR 33 for a non-ticket method, ERR 4 for anything else.
+        const method = extractIdnMethod(raw);
+        this.#sendError(
+          connection,
+          method !== undefined && method !== "ticket"
+            ? FchatErrorCode.UnknownAuthMethod
+            : FchatErrorCode.IdentificationFailed,
+        );
         connection.socket.close();
         return;
       }
@@ -486,18 +518,21 @@ export class FchatSim {
   }
 
   #handleClientPin(connection: Connection): void {
+    const now = Date.now();
     if (connection.awaitingPong) {
       connection.awaitingPong = false;
       connection.missedPongs = 0;
+      connection.lastClientPinAt = now;
       return;
     }
     // "Sending multiple pings within ten seconds will get you disconnected."
-    const now = Date.now();
-    if (now - connection.lastUnsolicitedPinAt < UNSOLICITED_PIN_WINDOW_MS) {
+    // Any extra PIN within the window of a previous one — including a
+    // legitimate solicited reply — counts, matching the documented rule.
+    if (now - connection.lastClientPinAt < UNSOLICITED_PIN_WINDOW_MS) {
       connection.socket.close();
       return;
     }
-    connection.lastUnsolicitedPinAt = now;
+    connection.lastClientPinAt = now;
   }
 
   #handleJoin(
@@ -568,14 +603,24 @@ export class FchatSim {
     payload: { channel: string; message: string },
   ): void {
     const channel = this.#channels.get(payload.channel);
-    if (!channel || !channel.members.has(character)) {
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.members.has(character)) {
       this.#sendError(connection, FchatErrorCode.NotInChannel);
+      return;
+    }
+    const now = Date.now();
+    if (now - connection.lastMsgAt < this.#vars.msg_flood * 1000) {
+      this.#sendError(connection, FchatErrorCode.MessageFlood);
       return;
     }
     if (Buffer.byteLength(payload.message, "utf8") > this.#vars.chat_max) {
       this.#sendError(connection, FchatErrorCode.MessageTooLong);
       return;
     }
+    connection.lastMsgAt = now;
     // The real server does not echo your own MSG back to you.
     this.#broadcastToChannel(
       channel,
@@ -597,10 +642,17 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.CharacterNotFound);
       return;
     }
+    // "There is flood control; the same as the MSG command."
+    const now = Date.now();
+    if (now - connection.lastPriAt < this.#vars.msg_flood * 1000) {
+      this.#sendError(connection, FchatErrorCode.MessageFlood);
+      return;
+    }
     if (Buffer.byteLength(payload.message, "utf8") > this.#vars.priv_max) {
       this.#sendError(connection, FchatErrorCode.MessageTooLong);
       return;
     }
+    connection.lastPriAt = now;
     this.#send(target.connection, {
       cmd: "PRI",
       payload: { character, message: payload.message },

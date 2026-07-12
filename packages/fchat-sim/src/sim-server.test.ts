@@ -308,6 +308,90 @@ describe("login handshake", () => {
     await first.closed;
     second.close();
   });
+
+  it("broadcasts FLN then NLN to third parties when a character is displaced", async () => {
+    const sim = await startSim();
+    await login(sim, "amber@example.test", "Amber Vale");
+    const observer = await login(sim, "birch@example.test", "Birch Rowan");
+    await login(sim, "amber@example.test", "Amber Vale");
+    expect(parseServerCommand(await observer.waitFor("FLN"))).toEqual({
+      cmd: "FLN",
+      payload: { character: "Amber Vale" },
+    });
+    expect(parseServerCommand(await observer.waitFor("NLN"))).toMatchObject({
+      payload: { identity: "Amber Vale" },
+    });
+  });
+
+  it("answers a second IDN after login with ERR 11", async () => {
+    const sim = await startSim();
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    client.send(
+      idn(
+        "amber@example.test",
+        sim.issueTicketFor("amber@example.test"),
+        "Amber Vale",
+      ),
+    );
+    expect(parseServerCommand(await client.waitFor("ERR"))).toMatchObject({
+      payload: { number: 11 },
+    });
+  });
+
+  it("answers a pre-login IDN with an unknown auth method with ERR 33 and closes", async () => {
+    const sim = await startSim();
+    const client = await TestClient.connect(sim);
+    client.sendRaw(
+      'IDN {"method":"apiKey","account":"amber@example.test","ticket":"x","character":"Amber Vale","cname":"Emberline","cversion":"0.0.0"}',
+    );
+    expect(parseServerCommand(await client.next())).toMatchObject({
+      cmd: "ERR",
+      payload: { number: 33 },
+    });
+    await client.closed;
+  });
+
+  it("answers a structurally invalid IDN with ERR 4 and closes", async () => {
+    const sim = await startSim();
+    const client = await TestClient.connect(sim);
+    client.sendRaw('IDN {"method":"ticket"}');
+    expect(parseServerCommand(await client.next())).toMatchObject({
+      cmd: "ERR",
+      payload: { number: 4 },
+    });
+    await client.closed;
+  });
+
+  it("invalidates previous tickets when a new one is issued over HTTP", async () => {
+    const sim = await startSim();
+    const fetchTicket = async (): Promise<string> => {
+      const response = await fetch(sim.ticketUrl, {
+        method: "POST",
+        body: new URLSearchParams({
+          account: "amber@example.test",
+          password: "hunter2",
+        }),
+      });
+      const body = (await response.json()) as { ticket: string };
+      return body.ticket;
+    };
+    const oldTicket = await fetchTicket();
+    const newTicket = await fetchTicket();
+
+    const stale = await TestClient.connect(sim);
+    stale.send(idn("amber@example.test", oldTicket, "Amber Vale"));
+    expect(parseServerCommand(await stale.next())).toMatchObject({
+      cmd: "ERR",
+      payload: { number: 4 },
+    });
+    await stale.closed;
+
+    const fresh = await TestClient.connect(sim);
+    fresh.send(idn("amber@example.test", newTicket, "Amber Vale"));
+    expect(parseServerCommand(await fresh.next())).toMatchObject({
+      cmd: "IDN",
+    });
+  });
 });
 
 describe("channels", () => {
@@ -410,6 +494,19 @@ describe("channels", () => {
       payload: { number: 28 },
     });
   });
+
+  it("rejects LCH for unknown channels and channels not joined", async () => {
+    const sim = await startSim();
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    client.send({ cmd: "LCH", payload: { channel: "Nowhere" } });
+    expect(parseServerCommand(await client.waitFor("ERR"))).toMatchObject({
+      payload: { number: 26 },
+    });
+    client.send({ cmd: "LCH", payload: { channel: "Frontpage" } });
+    expect(parseServerCommand(await client.waitFor("ERR"))).toMatchObject({
+      payload: { number: 49 },
+    });
+  });
 });
 
 describe("messages", () => {
@@ -435,8 +532,20 @@ describe("messages", () => {
         channel: "Frontpage",
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(amber.pendingCount()).toBe(0);
+    // Deterministic no-echo check: an echo of Amber's own MSG would have been
+    // sent before Birch's reply, so Amber's next frame must be the reply.
+    birch.send({
+      cmd: "MSG",
+      payload: { channel: "Frontpage", message: "hi back" },
+    });
+    expect(parseServerCommand(await amber.next())).toEqual({
+      cmd: "MSG",
+      payload: {
+        character: "Birch Rowan",
+        message: "hi back",
+        channel: "Frontpage",
+      },
+    });
   });
 
   it("rejects MSG to a channel the sender has not joined", async () => {
@@ -448,6 +557,80 @@ describe("messages", () => {
     });
     expect(parseServerCommand(await client.waitFor("ERR"))).toMatchObject({
       payload: { number: 45 },
+    });
+  });
+
+  it("rejects MSG to a nonexistent channel with ERR 26", async () => {
+    const sim = await startSim();
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    client.send({ cmd: "MSG", payload: { channel: "Nowhere", message: "hi" } });
+    expect(parseServerCommand(await client.waitFor("ERR"))).toMatchObject({
+      payload: { number: 26 },
+    });
+  });
+
+  it("enforces msg_flood with ERR 5 and recovers after the window", async () => {
+    const sim = await startSim({ serverVars: { msg_flood: 0.05 } });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    for (const client of [amber, birch]) {
+      client.send({ cmd: "JCH", payload: { channel: "Frontpage" } });
+      await client.waitFor("CDS");
+    }
+    amber.send({
+      cmd: "MSG",
+      payload: { channel: "Frontpage", message: "one" },
+    });
+    amber.send({
+      cmd: "MSG",
+      payload: { channel: "Frontpage", message: "two" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 5 },
+    });
+    expect(parseServerCommand(await birch.waitFor("MSG"))).toMatchObject({
+      payload: { message: "one" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    amber.send({
+      cmd: "MSG",
+      payload: { channel: "Frontpage", message: "three" },
+    });
+    expect(parseServerCommand(await birch.waitFor("MSG"))).toMatchObject({
+      payload: { message: "three" },
+    });
+  });
+
+  it("applies the same flood control to PRI", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    amber.send({
+      cmd: "PRI",
+      payload: { recipient: "Birch Rowan", message: "one" },
+    });
+    amber.send({
+      cmd: "PRI",
+      payload: { recipient: "Birch Rowan", message: "two" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 5 },
+    });
+    expect(parseServerCommand(await birch.waitFor("PRI"))).toMatchObject({
+      payload: { message: "one" },
+    });
+  });
+
+  it("enforces priv_max with ERR 15", async () => {
+    const sim = await startSim({ serverVars: { priv_max: 8 } });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    await login(sim, "birch@example.test", "Birch Rowan");
+    amber.send({
+      cmd: "PRI",
+      payload: { recipient: "Birch Rowan", message: "way too long" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 15 },
     });
   });
 
@@ -550,12 +733,30 @@ describe("protocol discipline", () => {
   });
 
   it("keeps responsive clients alive through several ping cycles", async () => {
-    const sim = await startSim({ pingIntervalMs: 30 });
+    // 100ms interval → a 300ms liveness budget per reply, so a slow CI runner
+    // does not get the client dropped for missing three consecutive pings.
+    const sim = await startSim({ pingIntervalMs: 100 });
     const client = await login(sim, "amber@example.test", "Amber Vale");
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 4; i += 1) {
       await client.waitFor("PIN");
       client.send({ cmd: "PIN" });
     }
+  });
+
+  it("disconnects a client that sends an extra PIN alongside its reply", async () => {
+    const sim = await startSim({ pingIntervalMs: 100 });
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    await client.waitFor("PIN");
+    client.send({ cmd: "PIN" }); // legitimate solicited reply
+    client.send({ cmd: "PIN" }); // duplicate within the 10s window
+    await client.closed;
+  });
+
+  it("stops pinging when dropPings is set", async () => {
+    const sim = await startSim({ pingIntervalMs: 30 });
+    sim.dropPings = true;
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    await expect(client.next(300)).rejects.toThrow("timed out");
   });
 });
 

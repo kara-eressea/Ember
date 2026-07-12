@@ -64,6 +64,10 @@ export function applyVar(
     if (Array.isArray(value)) {
       return vars;
     }
+    // Number("") and Number("  ") are 0 and would zero out a limit.
+    if (typeof value === "string" && value.trim() === "") {
+      return vars;
+    }
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
       return vars;

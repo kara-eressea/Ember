@@ -65,6 +65,13 @@ describe("applyVar", () => {
         value: "not a number",
       }),
     ).toEqual(DEFAULT_SERVER_VARS);
+    // Number("") === 0 — must not zero out a limit.
+    expect(
+      applyVar(DEFAULT_SERVER_VARS, { variable: "chat_max", value: "" }),
+    ).toEqual(DEFAULT_SERVER_VARS);
+    expect(
+      applyVar(DEFAULT_SERVER_VARS, { variable: "msg_flood", value: "  " }),
+    ).toEqual(DEFAULT_SERVER_VARS);
     expect(
       applyVar(DEFAULT_SERVER_VARS, { variable: "icon_blacklist", value: 3 }),
     ).toEqual(DEFAULT_SERVER_VARS);
