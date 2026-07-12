@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.mi-hero{padding:56px 56px 8px}
+.mi-htitle{font:700 28px/1.15 'IBM Plex Sans',sans-serif;color:#f0e6d6;margin:0 0 14px;letter-spacing:-.01em}
+.mi-hbody{font:400 15px/1.7 'IBM Plex Sans',sans-serif;color:#a1907b;max-width:800px;margin:0 0 8px}
+.mi-hbody b{color:#e9dcc9;font-weight:600}
+.mi-turn{padding:20px 56px 48px}
+.mi-opts{display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start}
+.mi-opt{display:flex;flex-direction:column;gap:13px}
+.mi-olabel{display:flex;align-items:center;gap:10px}
+.mi-oid{font:600 11px 'IBM Plex Mono',monospace;padding:3px 8px;background:#2c2318;color:#c9b89e;border-radius:5px;text-decoration:none;border:1px solid #3a2f20}
+.mi-opt:target .mi-oid{background:#a892c6;color:#1b1917;border-color:#a892c6}
+.mi-oname{font:600 15px 'IBM Plex Sans',sans-serif;color:#e9dcc9}
+.mi-tag{font:500 10.5px 'IBM Plex Mono',monospace;color:#a892c6;background:rgba(168,146,198,.13);border:1px solid rgba(168,146,198,.28);border-radius:20px;padding:2px 9px}
+.mi-odesc{font:400 13px/1.6 'IBM Plex Sans',sans-serif;color:#8a7a66;max-width:560px}
+.mi-odesc b{color:#c9b89e;font-weight:600}
+.mi-rec{display:inline-block;font:600 10px 'IBM Plex Mono',monospace;color:#8bb173;border:1px solid rgba(139,177,115,.4);border-radius:20px;padding:2px 9px;margin-left:2px}
+</style>
+</helmet>
+
+<div class="mi-hero">
+  <h1 class="mi-htitle">Connecting with multiple identities</h1>
+  <p class="mi-hbody">Each connected identity is its own live session — separate presence, DMs, pinned channels and roles — so switching between them is a top-level context switch, not a filter. Here are the two ways to expose that switch in the client. Both are shown on your <b>2b Dusk Purple</b> base with three identities connected: <b>Dorn Vael</b> (active), <b>nightjar</b> (3 unread), <b>ember_ops</b> (a mention).</p>
+</div>
+
+<section class="mi-turn" id="t3">
+  <div class="mi-opts">
+
+    <div class="mi-opt" id="3a">
+      <div class="mi-olabel"><a class="mi-oid" href="#3a">3a</a><span class="mi-oname">Identity rail</span><span class="mi-tag">far-left column</span><span class="mi-rec">recommended</span></div>
+      <div class="mi-odesc">A slim vertical rail on the far left — active identity squares off, others stay circular with presence dots and unread/mention badges. <b>Scales past 2–3 identities</b>, keeps the channel header clean, and reads as a persistent “who am I right now.” Familiar from Discord’s guild rail, repurposed for characters.</div>
+      <dc-import name="ClientMock" config="{{ rail }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="mi-opt" id="3b">
+      <div class="mi-olabel"><a class="mi-oid" href="#3b">3b</a><span class="mi-oname">Identity tabs</span><span class="mi-tag">top bar</span></div>
+      <div class="mi-odesc">A tab strip above the channel header — active tab is lifted with an accent underline and a close (disconnect) affordance. <b>Very legible for 2–3 identities</b> since names are always visible, but it eats vertical space and crowds once you pass a handful.</div>
+      <dc-import name="ClientMock" config="{{ tabs }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+  </div>
+  <p class="mi-hbody" style="margin-top:36px">Pick a direction — <a href="#3a" style="color:#a892c6;text-decoration:none">3a</a> or <a href="#3b" style="color:#a892c6;text-decoration:none">3b</a> — and I’ll fold it into the main client and wire the identity switch into the per-identity sidebar (pins, DMs, presence all swap with the active identity).</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  base(mode){
+    return {label:'Slate Cozy',bg:'#1b1917',side:'#232120',side2:'#2a2725',head:'#201e1c',
+      text:'#ece7e0',dim:'#a89e92',faint:'#726a5f',border:'#332f2b',accent:'#a892c6',ok:'#8bb173',
+      mono:false,ui:'IBM Plex Sans',radius:9,overlay:'none',descExpanded:false,identityMode:mode,
+      nick:['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']};
+  }
+  renderVals(){ return {rail:this.base('rail'),tabs:this.base('tabs')}; }
+}
+</script>
+</body>
+</html>

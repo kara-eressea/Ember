@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0f0d0a;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.dv-turn{padding:52px 56px 40px}
+.dv-thd{display:flex;align-items:baseline;gap:11px;margin:0 0 6px}
+.dv-tid{font:600 10px 'IBM Plex Mono',monospace;padding:3px 8px;background:#e0a458;color:#17130f;border-radius:5px;text-decoration:none}
+.dv-tname{font:600 15px 'IBM Plex Sans',sans-serif;color:#e9dcc9}
+.dv-tsub{font:400 13px/1.6 'IBM Plex Sans',sans-serif;color:#8a7a66;max-width:760px;margin:0 0 30px}
+.dv-opts{display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:13px;scroll-margin-top:20px}
+.dv-olabel{display:flex;align-items:center;gap:10px}
+.dv-oid{font:600 11px 'IBM Plex Mono',monospace;padding:3px 8px;background:#2c2318;color:#c9b89e;border-radius:5px;text-decoration:none;border:1px solid #3a2f20}
+.dv-oname{font:600 14px 'IBM Plex Sans',sans-serif;color:#e9dcc9}
+.dv-odesc{font:400 12.5px 'IBM Plex Sans',sans-serif;color:#8a7a66}
+.dv-opt:target .dv-oid{background:#e0a458;color:#17130f;border-color:#e0a458}
+.dv-tag{font:500 10.5px 'IBM Plex Mono',monospace;color:#e0a458;background:rgba(224,164,88,.12);border:1px solid rgba(224,164,88,.25);border-radius:20px;padding:2px 9px}
+.dv-next{margin:36px 0 0;font:13px/1.7 'IBM Plex Sans',sans-serif;color:#8a7a66;max-width:820px}
+.dv-next a{color:#e0a458;text-decoration:none;font-family:'IBM Plex Mono',monospace;font-size:12px}
+.dv-hero{padding:56px 56px 8px}
+.dv-htitle{font:700 30px/1.15 'IBM Plex Sans',sans-serif;color:#f0e6d6;margin:0 0 14px;letter-spacing:-.01em}
+.dv-hbody{font:400 15px/1.7 'IBM Plex Sans',sans-serif;color:#a1907b;max-width:760px;margin:0 0 10px}
+.dv-hbody b{color:#e9dcc9;font-weight:600}
+.dv-hlist{font:400 14px/1.9 'IBM Plex Sans',sans-serif;color:#a1907b;max-width:760px;margin:8px 0 0;padding-left:18px}
+.dv-hlist b{color:#e0a458;font-weight:600}
+</style>
+</helmet>
+
+<div class="dv-hero">
+  <h1 class="dv-htitle">Emberline — an IRC-flavored chat client</h1>
+  <p class="dv-hbody">Three visual directions for the same client, all sharing your locked brief: <b>dark-first, warm amber/sepia, sans UI + mono message log, ultra-compact IRC lines, a single unified sidebar</b> (pinned channels + DMs mixed), roles-based member list, and live Markdown preview. Every requested feature is wired in — pinning/auto-rejoin, DMs, two friend tiers (Friends ☆ / Bookmarks ⚑), channel topic + expandable server description, and member right-click actions.</p>
+  <p class="dv-hbody">The three cards differ in <b>warmth, contrast, type treatment and spacing</b>, and each one showcases a different interaction state so you can see all the pieces at once:</p>
+  <ul class="dv-hlist">
+    <li><b>1a Ember</b> — mono-forward log, tightest density, the <b>member right-click menu</b> open.</li>
+    <li><b>1b Slate Cozy</b> — sans message body + mono timestamps, cozier spacing, the <b>Markdown compose preview</b> open.</li>
+    <li><b>1c Espresso</b> — deep, high-contrast, larger type, with the <b>expanded server description</b>.</li>
+  </ul>
+</div>
+
+<section class="dv-turn" id="t2">
+  <div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Slate Cozy — accent variants</span></div>
+  <p class="dv-tsub">Your pick (1b) in four muted accents. Same base, warmth and spacing — only the accent hue and per-nick palette shift. None are fully saturated; each sits in the desaturated/earthy range so the dark UI stays cozy. Each card shows a different state so you can still see all the pieces.</p>
+  <div class="dv-opts">
+
+    <div class="dv-opt" id="2a">
+      <div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a><span class="dv-oname">Clay Red</span><span class="dv-tag">markdown preview</span></div>
+      <div class="dv-odesc">Muted terracotta · warm brick accent</div>
+      <dc-import name="ClientMock" config="{{ vRed }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="dv-opt" id="2b">
+      <div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a><span class="dv-oname">Dusk Purple</span><span class="dv-tag">right-click menu</span></div>
+      <div class="dv-odesc">Dusty mauve · soft violet accent</div>
+      <dc-import name="ClientMock" config="{{ vPurple }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="dv-opt" id="2c">
+      <div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a><span class="dv-oname">Amber Orange</span><span class="dv-tag">right-click menu</span></div>
+      <div class="dv-odesc">Warm burnt orange · a touch punchier than 1b</div>
+      <dc-import name="ClientMock" config="{{ vOrange }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="dv-opt" id="2d">
+      <div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a><span class="dv-oname">Moss Green</span><span class="dv-tag">markdown preview</span></div>
+      <div class="dv-odesc">Sage / moss · earthy green accent</div>
+      <dc-import name="ClientMock" config="{{ vGreen }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+  </div>
+  <p class="dv-next">Pick an accent (or ask for a different hue / more/less muted), then I’ll carry it into the DM view, friends manager and responsive layout. Turn 1 originals are below: <a href="#1a">1a</a> · <a href="#1b">1b</a> · <a href="#1c">1c</a></p>
+</section>
+
+<section class="dv-turn" id="t1">
+  <div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Three directions</span></div>
+  <p class="dv-tsub">Pick a base to develop, or mix attributes across them — e.g. “1b’s spacing with 1a’s mono log.” Pan and zoom freely; each card is the full 1280-wide client.</p>
+  <div class="dv-opts">
+
+    <div class="dv-opt" id="1a">
+      <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a><span class="dv-oname">Ember</span><span class="dv-tag">right-click menu</span></div>
+      <div class="dv-odesc">Warm charcoal · mono-forward log · tightest IRC density</div>
+      <dc-import name="ClientMock" config="{{ ember }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="dv-opt" id="1b">
+      <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a><span class="dv-oname">Slate Cozy</span><span class="dv-tag">markdown preview</span></div>
+      <div class="dv-odesc">Warm taupe · sans body + mono timestamps · cozier spacing</div>
+      <dc-import name="ClientMock" config="{{ slate }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="dv-opt" id="1c">
+      <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a><span class="dv-oname">Espresso</span><span class="dv-tag">expanded desc</span></div>
+      <div class="dv-odesc">Deep espresso · high-contrast amber · larger, roomier type</div>
+      <dc-import name="ClientMock" config="{{ espresso }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+  </div>
+  <p class="dv-next">Try next: “develop <a href="#1a">1a</a> and add the DM view + friends manager” · “give <a href="#1b">1b</a> a mobile/responsive layout” · “<a href="#1c">1c</a>’s colors but <a href="#1a">1a</a>’s density” · “make it a clickable prototype”</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  slateBase(accent,ok,nick,overlay,descExpanded){
+    return {label:'Slate Cozy',bg:'#1b1917',side:'#232120',side2:'#2a2725',head:'#201e1c',
+      text:'#ece7e0',dim:'#a89e92',faint:'#726a5f',border:'#332f2b',accent,ok,
+      mono:false,ui:'IBM Plex Sans',radius:9,overlay,descExpanded:!!descExpanded,nick};
+  }
+  renderVals(){
+    const g='#8bb173';
+    return {
+      vRed:this.slateBase('#c87d6a', g,
+        ['#c87d6a','#d69a7f','#c795a2','#a6bd94','#88b0b8','#c0a4ce','#d1a888','#98bda8'],'markdown'),
+      vPurple:this.slateBase('#a892c6', g,
+        ['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8'],'context'),
+      vOrange:this.slateBase('#dd955a', g,
+        ['#dd955a','#dd9a7f','#cf95a6','#a6bd94','#88b0b8','#c4a9d4','#d6ab8a','#98bda8'],'context',true),
+      vGreen:this.slateBase('#88ac72', '#c9a25e',
+        ['#88ac72','#a9bd84','#7fb6a0','#c0bd8a','#88b0b8','#b9c49a','#9dbf7e','#a6bd94'],'markdown'),
+      ember:{label:'Ember',bg:'#17130f',side:'#1b1611',side2:'#221b14',head:'#1b1611',
+        text:'#e9dcc9',dim:'#a1907b',faint:'#6b5d4c',border:'#2c2318',accent:'#e0a458',ok:'#88b06a',
+        mono:true,ui:'IBM Plex Sans',radius:6,overlay:'context',descExpanded:false,
+        nick:['#e0a458','#d98c6a','#c98a9b','#9fb488','#7fa8b0','#c0a0d0','#d1a37a','#8fb3a0']},
+      slate:{label:'Slate Cozy',bg:'#1b1917',side:'#232120',side2:'#2a2725',head:'#201e1c',
+        text:'#ece7e0',dim:'#a89e92',faint:'#726a5f',border:'#332f2b',accent:'#e6a75a',ok:'#8bb173',
+        mono:false,ui:'IBM Plex Sans',radius:9,overlay:'markdown',descExpanded:false,
+        nick:['#e6a75a','#dd9a7f','#cf95a6','#a6bd94','#88b0b8','#c4a9d4','#d6ab8a','#98bda8']},
+      espresso:{label:'Espresso',bg:'#20140d',side:'#2a1c12',side2:'#331f13',head:'#2a1c12',
+        text:'#f2e5d3',dim:'#b79c82',faint:'#7c6146',border:'#3d2919',accent:'#f0a94e',ok:'#95bd6e',
+        mono:true,ui:'IBM Plex Sans',radius:7,overlay:'context',descExpanded:true,
+        nick:['#f0a94e','#ef9a72','#e295aa','#aac47f','#7fb6c4','#cfa2e0','#e6ab7a','#94c9a4']}
+    };
+  }
+}
+</script>
+</body>
+</html>

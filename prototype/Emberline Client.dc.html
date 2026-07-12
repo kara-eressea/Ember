@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.ec-hero{padding:56px 56px 4px}
+.ec-htitle{font:700 28px/1.15 'IBM Plex Sans',sans-serif;color:#f0e6d6;margin:0 0 14px;letter-spacing:-.01em}
+.ec-hbody{font:400 15px/1.7 'IBM Plex Sans',sans-serif;color:#a1907b;max-width:820px;margin:0}
+.ec-hbody b{color:#e9dcc9;font-weight:600}
+.ec-turn{padding:22px 56px 52px}
+.ec-opts{display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start}
+.ec-opt{display:flex;flex-direction:column;gap:12px}
+.ec-olabel{display:flex;align-items:center;gap:10px}
+.ec-oid{font:600 11px 'IBM Plex Mono',monospace;padding:3px 8px;background:#2c2318;color:#c9b89e;border-radius:5px;text-decoration:none;border:1px solid #3a2f20}
+.ec-opt:target .ec-oid{background:#a892c6;color:#1b1917;border-color:#a892c6}
+.ec-oname{font:600 15px 'IBM Plex Sans',sans-serif;color:#e9dcc9}
+.ec-tag{font:500 10.5px 'IBM Plex Mono',monospace;color:#a892c6;background:rgba(168,146,198,.13);border:1px solid rgba(168,146,198,.28);border-radius:20px;padding:2px 9px}
+.ec-odesc{font:400 13px/1.6 'IBM Plex Sans',sans-serif;color:#8a7a66;max-width:560px}
+.ec-odesc b{color:#c9b89e;font-weight:600}
+</style>
+</helmet>
+
+<div class="ec-hero">
+  <h1 class="ec-htitle">Emberline — main client with identity rail</h1>
+  <p class="ec-hbody">The far-left rail (3a) folded into the client. The rail is the top-level identity switch: clicking an identity swaps the <b>entire session context</b> — nick, pinned channels, DMs, friends/bookmarks, the open channel, its members and the log all follow the active identity. Same client, two identities below so you can see the swap.</p>
+</div>
+
+<section class="ec-turn" id="t4">
+  <div class="ec-opts">
+
+    <div class="ec-opt" id="4a">
+      <div class="ec-olabel"><a class="ec-oid" href="#4a">4a</a><span class="ec-oname">Dorn Vael active</span><span class="ec-tag">work identity</span></div>
+      <div class="ec-odesc">Admin on the gateway team — #dev-general pinned, dev DMs, IRC work chatter. Other identities (N, E) sit in the rail with unread/mention badges.</div>
+      <dc-import name="ClientMock" config="{{ dorn }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+    <div class="ec-opt" id="4b">
+      <div class="ec-olabel"><a class="ec-oid" href="#4b">4b</a><span class="ec-oname">nightjar active</span><span class="ec-tag">social identity</span></div>
+      <div class="ec-odesc">Same person, different identity — #the-tavern pinned, a whole different sidebar, member list and conversation. The rail now squares off N; Dorn drops back with its own badge.</div>
+      <dc-import name="ClientMock" config="{{ nightjar }}" hint-size="1280px,820px"></dc-import>
+    </div>
+
+  </div>
+  <p class="ec-hbody" style="margin-top:34px">This is the working direction. Next I can wire the <a href="#4a" style="color:#a892c6;text-decoration:none">rail</a> hover/switch states, a right-click on a rail identity (set status / disconnect / reorder), and connect it to the channel browser + preferences you already have.</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  base(persona){
+    return {label:'Slate Cozy',bg:'#1b1917',side:'#232120',side2:'#2a2725',head:'#201e1c',
+      text:'#ece7e0',dim:'#a89e92',faint:'#726a5f',border:'#332f2b',accent:'#a892c6',ok:'#8bb173',
+      mono:false,ui:'IBM Plex Sans',radius:9,overlay:'none',descExpanded:false,identityMode:'rail',persona,
+      nick:['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']};
+  }
+  renderVals(){ return {dorn:this.base('dorn'),nightjar:this.base('nightjar')}; }
+}
+</script>
+</body>
+</html>

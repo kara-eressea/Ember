@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.pf *{box-sizing:border-box}
+.pfscroll::-webkit-scrollbar{width:8px}
+.pfscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.pfcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px}
+.pfcap b{color:#a892c6;font-weight:600}
+</style>
+</helmet>
+<div class="pf" style="display:flex;flex-wrap:wrap;gap:52px;padding:56px">
+
+  <sc-for list="{{ cards }}" as="c" hint-placeholder-count="3">
+  <div style="display:flex;flex-direction:column">
+    <div class="pfcap" id="{{ c.id }}"><b>{{ c.id }}</b> · {{ c.cap }}</div>
+    <div style="{{ s.win }}">
+      <!-- rail -->
+      <div style="{{ s.rail }}">
+        <div style="{{ s.railTitle }}">Preferences</div>
+        <sc-for list="{{ c.nav }}" as="n" hint-placeholder-count="7">
+          <div style="{{ n.style }}"><span style="{{ n.glyphStyle }}">{{ n.glyph }}</span>{{ n.label }}</div>
+        </sc-for>
+        <div style="{{ s.railNote }}">Account &amp; profile live on the server website ↗</div>
+      </div>
+      <!-- pane -->
+      <div style="{{ s.pane }}">
+        <div style="{{ s.paneHead }}">{{ c.paneTitle }}</div>
+        <div class="pfscroll" style="{{ s.paneBody }}">{{ c.body }}</div>
+      </div>
+    </div>
+  </div>
+  </sc-for>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',text='#ece7e0',dim='#a89e92',faint='#726a5f',
+      border='#332f2b',accent='#a892c6',ok='#8bb173',radius=9;
+    return {bg,side,side2,text,dim,faint,border,accent,ok,radius,
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  // ---- control builders (return React elements) ----
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  toggle(on){const t=this.T();return this.h('span',{width:'38px',height:'22px',borderRadius:'22px',flexShrink:0,
+    background:on?t.accent:this.mix(t.text,t.bg,.82),position:'relative',display:'inline-block',cursor:'pointer',transition:'.15s'},
+    this.h('span',{position:'absolute',top:'3px',left:on?'19px':'3px',width:'16px',height:'16px',borderRadius:'50%',background:on?t.bg:t.dim}));}
+  seg(opts,sel){const t=this.T();return this.h('div',{display:'inline-flex',gap:'3px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',padding:'3px'},
+    ...opts.map((o,i)=>this.h('span',{padding:'5px 12px',borderRadius:t.radius-2+'px',fontSize:'12px',fontWeight:600,cursor:'pointer',
+      fontFamily:o.mono?t.mono:t.ui,color:i===sel?t.bg:t.dim,background:i===sel?t.accent:'transparent'},o.label||o)));}
+  field(label,help,control){const t=this.T();return this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'20px',padding:'13px 0',borderBottom:`1px solid ${this.mix(t.border,t.side,.35)}`},
+    this.h('div',{minWidth:0},this.h('div',{fontSize:'13.5px',fontWeight:600,color:t.text},label),
+      help?this.h('div',{fontSize:'11.5px',color:t.faint,marginTop:'2px',lineHeight:1.45,maxWidth:'330px'},help):null),
+    this.h('div',{flexShrink:0,display:'flex',alignItems:'center'},control));}
+  groupLabel(txt){const t=this.T();return this.h('div',{fontSize:'10.5px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:t.faint,margin:'20px 0 2px'},txt);}
+  input(val,mono){const t=this.T();return this.h('div',{minWidth:'150px',height:'34px',borderRadius:t.radius+'px',background:t.bg,border:`1px solid ${t.border}`,
+    display:'flex',alignItems:'center',padding:'0 11px',fontSize:'12.5px',color:t.text,fontFamily:mono?t.mono:t.ui},val);}
+  btn(txt,primary){const t=this.T();return this.h('span',{padding:'8px 15px',borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:700,cursor:'pointer',
+    color:primary?t.bg:t.text,background:primary?t.accent:t.bg,border:primary?'none':`1px solid ${t.border}`},txt);}
+
+  appearancePane(){
+    const t=this.T();
+    const accents=[['#e6a75a','Amber'],['#c87d6a','Clay'],['#a892c6','Dusk'],['#dd955a','Orange'],['#88ac72','Moss']];
+    const swatches=this.h('div',{display:'flex',gap:'9px'},...accents.map(([c,name])=>{
+      const sel=c==='#a892c6';
+      return this.h('div',{display:'flex',flexDirection:'column',alignItems:'center',gap:'5px',cursor:'pointer'},
+        this.h('span',{width:'26px',height:'26px',borderRadius:'50%',background:c,
+          boxShadow:sel?`0 0 0 2px ${t.side}, 0 0 0 4px ${c}`:'none'}),
+        this.h('span',{fontSize:'10px',color:sel?t.text:t.faint,fontWeight:sel?600:400},name));}));
+    return this.h('div',{},
+      this.groupLabel('Theme'),
+      this.field('Accent color','Swap the app accent anytime — every variant stays available.',swatches),
+      this.field('Base theme',null,this.seg(['Slate Cozy','Ember','Espresso'],0)),
+      this.field('Message density','Compact packs more lines; Cozy adds breathing room.',this.seg(['Compact','Cozy'],1)),
+      this.groupLabel('Chat log'),
+      this.field('Timestamp format',null,this.seg([{label:'[12:04]',mono:true},{label:'[12:04:33]',mono:true},{label:'off',mono:true}],0)),
+      this.field('Use 24-hour clock',null,this.toggle(true)),
+      this.field('Group consecutive messages','Collapse repeated nicks from the same author.',this.toggle(false)),
+      this.field('Show join / part / quit','IRC presence noise — hide it on busy channels.',this.toggle(true)),
+      this.field('Message font size',null,this.seg(['S','M','L'],1)));
+  }
+  highlightPane(){
+    const t=this.T();
+    const rule=(txt,type)=>this.h('div',{display:'flex',alignItems:'center',gap:'10px',padding:'9px 11px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',marginBottom:'7px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'12.5px',color:t.text,flex:1},txt),
+      this.h('span',{fontFamily:t.mono,fontSize:'9.5px',color:t.faint,textTransform:'uppercase',letterSpacing:'.06em',border:`1px solid ${t.border}`,borderRadius:'4px',padding:'1px 6px'},type),
+      this.h('span',{color:t.faint,cursor:'pointer',fontSize:'13px'},'✕'));
+    const addRow=this.h('div',{display:'flex',gap:'8px',marginTop:'4px'},
+      this.h('div',{flex:1,height:'36px',borderRadius:t.radius+'px',background:t.bg,border:`1px dashed ${t.accentMed}`,display:'flex',alignItems:'center',padding:'0 11px',fontFamily:t.mono,fontSize:'12.5px',color:t.faint},'add word, @nick or /regex/…'),
+      this.btn('Add rule',true));
+    return this.h('div',{},
+      this.field('Highlight on my nick','Always light up when someone types “dorn”.',this.toggle(true)),
+      this.groupLabel('Rules'),
+      this.h('div',{marginTop:'8px'},rule('gateway','word'),rule('release','word'),rule('@dorn','nick'),rule('/deploy\\s+prod/','regex'),addRow),
+      this.groupLabel('When highlighted'),
+      this.field('Play a sound',null,this.toggle(true)),
+      this.field('Flash the tray icon',null,this.toggle(true)),
+      this.field('Bump channel to top of sidebar',null,this.toggle(false)),
+      this.field('Highlight tint',null,this.h('span',{width:'26px',height:'26px',borderRadius:'6px',background:this.mix(t.accent,t.bg,.5),border:`1px solid ${t.accentMed}`,cursor:'pointer'})));
+  }
+  awayPane(){
+    const t=this.T();
+    return this.h('div',{},
+      this.groupLabel('Auto-away'),
+      this.field('Set away automatically when idle',null,this.toggle(true)),
+      this.field('Idle threshold',null,this.h('div',{display:'flex',alignItems:'center',gap:'8px'},this.seg(['5','10','20','30'],1),this.h('span',{fontSize:'12px',color:t.faint},'minutes'))),
+      this.field('Away message',null,this.input('afk — back soon')),
+      this.field('Clear away when I return','Send back-from-away as soon as you type or move.',this.toggle(true)),
+      this.groupLabel('Chat logs'),
+      this.field('Log conversations to disk','Stored locally, per channel and DM.',this.toggle(true)),
+      this.field('Storage location',null,this.input('~/emberline/logs',true)),
+      this.field('Export logs','Save a copy of your history.',this.h('div',{display:'flex',alignItems:'center',gap:'8px'},this.seg([{label:'.txt',mono:true},{label:'.html',mono:true},{label:'.json',mono:true}],0),this.btn('Export…',false))),
+      this.field('Retention',null,this.seg(['30d','90d','1yr','Forever'],2)));
+  }
+
+  navItems(active){
+    const t=this.T();
+    const items=[['General','◇'],['Appearance','◑'],['Highlights','✦'],['Away & logs','◔'],['Notifications','◈'],['Network','⇄']];
+    return items.map(([label,glyph])=>{
+      const on=label===active;
+      return {label,glyph,
+        style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 12px',margin:'1px 8px',borderRadius:t.radius+'px',
+          fontSize:'13px',fontWeight:on?600:500,cursor:'pointer',color:on?t.text:t.dim,
+          background:on?t.accentSoft:'transparent',boxShadow:on?`inset 2px 0 0 ${t.accent}`:'none'},
+        glyphStyle:{width:'16px',textAlign:'center',fontSize:'13px',color:on?t.accent:t.faint}};
+    });
+  }
+  styles(){
+    const t=this.T();
+    return {
+      win:{width:'748px',height:'560px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+5+'px',
+        boxShadow:'0 40px 100px -20px rgba(0,0,0,.7)',display:'flex',overflow:'hidden',fontFamily:t.ui,color:t.text},
+      rail:{width:'204px',flexShrink:0,background:t.side2,borderRight:`1px solid ${t.border}`,display:'flex',flexDirection:'column',padding:'8px 0'},
+      railTitle:{fontSize:'15px',fontWeight:700,color:t.text,padding:'12px 16px 12px'},
+      railNote:{marginTop:'auto',padding:'14px 16px 8px',fontSize:'11px',lineHeight:1.5,color:t.faint,borderTop:`1px solid ${t.border}`},
+      pane:{flex:1,display:'flex',flexDirection:'column',minWidth:0},
+      paneHead:{padding:'16px 24px 14px',fontSize:'16px',fontWeight:700,color:t.text,borderBottom:`1px solid ${t.border}`},
+      paneBody:{flex:1,overflowY:'auto',padding:'6px 24px 24px',minHeight:0},
+    };
+  }
+  renderVals(){
+    const s=this.styles();
+    const cards=[
+      {id:'A',cap:'Appearance — accent switcher keeps every theme available',paneTitle:'Appearance',nav:this.navItems('Appearance'),body:this.appearancePane()},
+      {id:'B',cap:'Highlights — IRC keyword & nick highlight rules',paneTitle:'Highlights',nav:this.navItems('Highlights'),body:this.highlightPane()},
+      {id:'C',cap:'Away & logs — auto-away + chat log export',paneTitle:'Away & logs',nav:this.navItems('Away & logs'),body:this.awayPane()},
+    ];
+    return {s,cards};
+  }
+}
+</script>
+</body>
+</html>

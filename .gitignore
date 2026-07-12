@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+.turbo/
+coverage/
+
+# Environment — never commit secrets; ship .env.example instead
+.env
+.env.*
+!.env.example
+
+# Logs & OS noise
+*.log
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

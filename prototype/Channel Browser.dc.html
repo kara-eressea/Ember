@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.cb *{box-sizing:border-box}
+.cbscroll::-webkit-scrollbar{width:8px}
+.cbscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.cbcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px}
+.cbcap b{color:#a892c6;font-weight:600}
+</style>
+</helmet>
+<div class="cb" style="display:flex;flex-wrap:wrap;gap:52px;padding:56px">
+
+  <sc-for list="{{ cards }}" as="c" hint-placeholder-count="2">
+  <div style="display:flex;flex-direction:column">
+    <div class="cbcap" id="{{ c.id }}"><b>{{ c.id }}</b> · {{ c.cap }}</div>
+    <div style="{{ s.modal }}">
+      <div style="{{ s.head }}">
+        <div style="min-width:0">
+          <div style="{{ s.title }}">Browse channels</div>
+          <div style="{{ s.sub }}">emberline · irc.emberline.chat · <span style="color:#8bb173">142 rooms</span></div>
+        </div>
+        <span style="{{ s.close }}">✕</span>
+      </div>
+
+      <div style="{{ s.searchRow }}">
+        <span style="opacity:.5;font-size:14px">⌕</span>
+        <span style="{{ s.searchText }}">Filter by name or topic…</span>
+      </div>
+
+      <div style="{{ s.tabs }}">
+        <span style="{{ c.officialTab }}">Official <span style="{{ c.officialCount }}">5</span></span>
+        <span style="{{ c.openTab }}">Open rooms <span style="{{ c.openCount }}">137</span></span>
+      </div>
+
+      <div class="cbscroll" style="{{ s.list }}">
+        <sc-for list="{{ c.rows }}" as="r" hint-placeholder-count="5">
+          <div style="{{ r.rowStyle }}">
+            <span style="{{ s.hash }}">#</span>
+            <span style="{{ s.name }}">{{ r.name }}</span>
+            <sc-if value="{{ r.official }}" hint-placeholder-val="{{ true }}"><span style="{{ s.chipOfficial }}">official</span></sc-if>
+            <sc-if value="{{ r.open }}" hint-placeholder-val="{{ true }}"><span style="{{ s.chipOpen }}">open</span></sc-if>
+            <span style="{{ s.spacer }}"></span>
+            <span style="{{ s.members }}"><span style="{{ s.memberDot }}"></span>{{ r.members }}</span>
+            <span style="{{ r.btnStyle }}">{{ r.btn }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="{{ s.footer }}">
+        <div style="{{ s.footLabel }}">Not listed? Join a hidden channel by name</div>
+        <div style="{{ s.footRow }}">
+          <div style="{{ s.footInput }}"><span style="{{ s.hashSm }}">#</span>{{ c.hiddenText }}<span style="{{ s.caret }}"></span></div>
+          <span style="{{ s.joinBtn }}">Join</span>
+        </div>
+        <div style="{{ s.footNote }}">Hidden &amp; invite-only rooms won’t appear in the lists above. Enter the exact name to join.</div>
+      </div>
+    </div>
+  </div>
+  </sc-for>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  renderVals(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',text='#ece7e0',dim='#a89e92',faint='#726a5f',
+      border='#332f2b',accent='#a892c6',ok='#8bb173',radius=9;
+    const accentSoft=this.mix(accent,bg,.84),accentMed=this.mix(accent,bg,.55),hover=this.mix(text,side,.94),
+      inputBg=this.mix(text,bg,.955);
+    const ui=`'IBM Plex Sans',system-ui,sans-serif`,mono=`'IBM Plex Mono',ui-monospace,monospace`;
+    const s={
+      modal:{width:'620px',height:'588px',background:side,border:`1px solid ${border}`,borderRadius:radius+5+'px',
+        boxShadow:'0 40px 100px -20px rgba(0,0,0,.7)',display:'flex',flexDirection:'column',overflow:'hidden',fontFamily:ui,color:text},
+      head:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'18px 20px 16px',borderBottom:`1px solid ${border}`,gap:'12px'},
+      title:{fontSize:'17px',fontWeight:700,color:text},
+      sub:{fontSize:'11.5px',color:faint,fontFamily:mono,marginTop:'3px'},
+      close:{fontSize:'13px',color:faint,cursor:'pointer',lineHeight:1,padding:'2px'},
+      searchRow:{margin:'14px 20px 0',height:'38px',borderRadius:radius+'px',background:bg,border:`1px solid ${border}`,
+        display:'flex',alignItems:'center',gap:'9px',padding:'0 12px',fontSize:'13px',color:faint},
+      searchText:{color:faint},
+      tabs:{display:'flex',gap:'4px',padding:'14px 20px 0'},
+      list:{flex:1,overflowY:'auto',padding:'8px 12px',minHeight:0},
+      hash:{fontFamily:mono,fontSize:'17px',fontWeight:600,color:faint,flexShrink:0,marginTop:'1px'},
+      nameRow:{display:'flex',alignItems:'center',gap:'8px'},
+      name:{fontFamily:mono,fontSize:'14px',fontWeight:600,color:text,whiteSpace:'nowrap'},
+      chipOfficial:{fontFamily:mono,fontSize:'9px',fontWeight:600,letterSpacing:'.06em',textTransform:'uppercase',
+        color:accent,background:accentSoft,border:`1px solid ${accentMed}`,borderRadius:'4px',padding:'1px 6px'},
+      chipOpen:{fontFamily:mono,fontSize:'9px',fontWeight:600,letterSpacing:'.06em',textTransform:'uppercase',
+        color:dim,background:bg,border:`1px solid ${border}`,borderRadius:'4px',padding:'1px 6px'},
+      members:{width:'62px',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'5px',fontFamily:mono,fontSize:'11.5px',color:dim,flexShrink:0},
+      memberDot:{width:'6px',height:'6px',borderRadius:'50%',background:ok,flexShrink:0},
+      spacer:{flex:1},
+      topic:{display:'none'},
+      footer:{borderTop:`1px solid ${border}`,padding:'14px 20px 16px',background:side2},
+      footLabel:{fontSize:'11px',fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:faint,marginBottom:'9px'},
+      footRow:{display:'flex',gap:'9px'},
+      footInput:{flex:1,height:'40px',borderRadius:radius+'px',background:bg,border:`1px solid ${accentMed}`,
+        display:'flex',alignItems:'center',gap:'2px',padding:'0 12px',fontFamily:mono,fontSize:'13.5px',color:text},
+      hashSm:{fontFamily:mono,fontSize:'14px',color:faint,marginRight:'4px'},
+      caret:{display:'inline-block',width:'2px',height:'16px',background:accent,marginLeft:'1px',animation:'none'},
+      joinBtn:{display:'flex',alignItems:'center',padding:'0 22px',borderRadius:radius+'px',background:accent,color:bg,fontWeight:700,fontSize:'13px',cursor:'pointer'},
+      footNote:{fontSize:'11px',color:faint,marginTop:'9px',lineHeight:1.5},
+    };
+    const tab=(on)=>({fontSize:'13px',fontWeight:600,color:on?text:dim,background:on?bg:'transparent',
+      border:`1px solid ${on?border:'transparent'}`,borderRadius:radius+'px',padding:'7px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:'7px'});
+    const tabCount=(on)=>({fontFamily:mono,fontSize:'10px',fontWeight:600,color:on?accent:faint,background:on?accentSoft:'transparent',borderRadius:'10px',padding:'0px 6px'});
+    const row=(o)=>{
+      const joined=o.state==='joined',pinned=o.state==='pinned';
+      const btnBase={display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,width:'86px',height:'30px',borderRadius:radius+'px',fontSize:'12px',fontWeight:600,cursor:'pointer'};
+      const btnStyle=pinned?{...btnBase,fontFamily:mono,color:faint,border:`1px solid ${border}`}
+        :joined?{...btnBase,color:ok,border:`1px solid ${this.mix(ok,bg,.6)}`,cursor:'default'}
+        :{...btnBase,fontWeight:700,fontSize:'12.5px',color:bg,background:accent};
+      return {name:o.name,official:!!o.official,open:!!o.open,members:o.members,topic:o.topic,
+        rowStyle:{display:'flex',gap:'9px',padding:'8px 10px',margin:'0 2px',borderRadius:radius+'px',alignItems:'center',borderBottom:`1px solid ${this.mix(border,side,.4)}`},
+        btn:pinned?'⚲ Pinned':joined?'✓ Joined':'Join',btnStyle};
+    };
+    const official=[
+      row({name:'dev-general',official:true,members:24,topic:'Ship the v2 gateway by Fri · no force-push to main',state:'pinned'}),
+      row({name:'announcements',official:true,members:312,topic:'Read-only · release notes and downtime notices',state:'pinned'}),
+      row({name:'support',official:true,members:88,topic:'Help desk — search before asking, logs help',state:'joined'}),
+      row({name:'releases',official:true,members:141,topic:'Automated build + release feed from CI',state:'none'}),
+      row({name:'dev-backend',official:true,members:19,topic:'Gateway internals, rate-limits, bridge ops',state:'none'}),
+    ];
+    const open=[
+      row({name:'offtopic',open:true,members:57,topic:'Anything goes, keep it kind',state:'joined'}),
+      row({name:'coffee',open:true,members:12,topic:'☕ what are you brewing',state:'none'}),
+      row({name:'music',open:true,members:34,topic:'now-playing scrobbles + recs',state:'none'}),
+      row({name:'gamedev',open:true,members:41,topic:'shaders, netcode, jams',state:'pinned'}),
+      row({name:'homelab',open:true,members:28,topic:'racks, k8s at home, cursed cabling',state:'none'}),
+      row({name:'random',open:true,members:73,topic:'the firehose',state:'none'}),
+    ];
+    const cards=[
+      {id:'A',cap:'Official tab — curated server channels',rows:official,hiddenText:'',
+        officialTab:tab(true),officialCount:tabCount(true),openTab:tab(false),openCount:tabCount(false)},
+      {id:'B',cap:'Open rooms tab + typing a hidden channel name',rows:open,hiddenText:'staff-room',
+        officialTab:tab(false),officialCount:tabCount(false),openTab:tab(true),openCount:tabCount(true)},
+    ];
+    return {s,cards};
+  }
+}
+</script>
+</body>
+</html>

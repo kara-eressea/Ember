@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.af *{box-sizing:border-box}
+.afcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px}
+.afcap b{color:#a892c6;font-weight:600}
+@keyframes afblink{0%,49%{opacity:1}50%,100%{opacity:0}}
+</style>
+</helmet>
+<div class="af" style="display:flex;flex-direction:column;gap:56px;padding:56px">
+
+  <!-- ===== LANDING ===== -->
+  <div style="display:flex;flex-direction:column">
+    <div class="afcap" id="A"><b>A</b> · Landing page</div>
+    <div style="{{ s.frame }}">
+      <div style="{{ s.chrome }}">
+        <div style="display:flex;gap:7px">
+          <span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span>
+        </div>
+        <div style="{{ s.urlbar }}">emberline.chat</div>
+        <div style="width:52px"></div>
+      </div>
+      <div style="{{ s.landing }}">
+        <div style="{{ s.nav }}">
+          <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberline</div>
+          <div style="{{ s.navLinks }}"><span>Channels</span><span>About</span><span>Status</span></div>
+          <div style="{{ s.navCtas }}"><span style="{{ s.ghostSm }}">Log in</span><span style="{{ s.primarySm }}">Create account</span></div>
+        </div>
+        <div style="{{ s.hero }}">
+          <div style="{{ s.heroLeft }}">
+            <div style="{{ s.eyebrow }}">IRC-NATIVE · BROWSER-FIRST</div>
+            <h1 style="{{ s.h1 }}">Your IRC, always connected.</h1>
+            <p style="{{ s.lede }}">Emberline keeps a live session to your server from any browser — pinned channels, DMs, and highlights waiting the moment you open the tab. Nothing to install.</p>
+            <div style="{{ s.heroCtas }}">
+              <span style="{{ s.primary }}">Create account</span>
+              <span style="{{ s.ghost }}">Log in ↗</span>
+            </div>
+            <div style="{{ s.trust }}">Free · connects to any Emberline / IRC server · open protocol</div>
+          </div>
+          <div style="{{ s.heroRight }}">
+            <div style="{{ s.previewCrop }}">
+              <div style="{{ s.previewScale }}">
+                <dc-import name="ClientMock" config="{{ preview }}" hint-size="1280px,820px"></dc-import>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="{{ s.features }}">
+          <sc-for list="{{ features }}" as="f" hint-placeholder-count="3">
+            <div style="{{ s.fCard }}">
+              <div style="{{ s.fGlyph }}">{{ f.glyph }}</div>
+              <div style="{{ s.fTitle }}">{{ f.title }}</div>
+              <div style="{{ s.fBody }}">{{ f.body }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CREATE + LOGIN ===== -->
+  <div style="display:flex;flex-wrap:wrap;gap:56px">
+
+    <div style="display:flex;flex-direction:column">
+      <div class="afcap" id="B"><b>B</b> · Create account</div>
+      <div style="{{ s.frame }}">
+        <div style="{{ s.chrome }}">
+          <div style="display:flex;gap:7px"><span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span></div>
+          <div style="{{ s.urlbar }}">emberline.chat/signup</div><div style="width:52px"></div>
+        </div>
+        <div style="{{ s.authWrap }}">
+          <div style="{{ s.authCard }}">
+            <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberline</div>
+            <div style="{{ s.authTitle }}">Create your account</div>
+            <div style="{{ s.authSub }}">This is your Emberline app login. You’ll connect server identities after you’re in.</div>
+
+            <div style="{{ s.fieldLabel }}">Username</div>
+            <div style="{{ s.field }}"><span style="{{ s.fieldVal }}">dorn</span><span style="{{ s.avail }}">available ✓</span></div>
+
+            <div style="{{ s.fieldLabel }}">Email</div>
+            <div style="{{ s.field }}"><span style="{{ s.fieldVal }}">dorn@fastmail.com</span></div>
+
+            <div style="{{ s.fieldLabel }}">Password</div>
+            <div style="{{ s.fieldFocus }}"><span style="{{ s.fieldDots }}">•••••••••••</span><span style="{{ s.caret }}"></span><span style="{{ s.eye }}">◡ show</span></div>
+            <div style="{{ s.strengthRow }}"><span style="{{ s.strOn }}"></span><span style="{{ s.strOn }}"></span><span style="{{ s.strOn }}"></span><span style="{{ s.strOff }}"></span><span style="{{ s.strLabel }}">strong</span></div>
+
+            <div style="{{ s.checkRow }}"><span style="{{ s.checkOn }}">✓</span><span style="{{ s.checkText }}">I agree to the <span style="{{ s.inlineLink }}">terms</span> &amp; <span style="{{ s.inlineLink }}">code of conduct</span>.</span></div>
+
+            <div style="{{ s.primaryFull }}">Create account</div>
+            <div style="{{ s.switchLine }}">Already have an account? <span style="{{ s.inlineLink }}">Log in</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column">
+      <div class="afcap" id="C"><b>C</b> · Log in</div>
+      <div style="{{ s.frame }}">
+        <div style="{{ s.chrome }}">
+          <div style="display:flex;gap:7px"><span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span></div>
+          <div style="{{ s.urlbar }}">emberline.chat/login</div><div style="width:52px"></div>
+        </div>
+        <div style="{{ s.authWrap }}">
+          <div style="{{ s.authCard }}">
+            <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberline</div>
+            <div style="{{ s.authTitle }}">Welcome back</div>
+            <div style="{{ s.authSub }}">Sign in to your app account, then pick a server identity.</div>
+
+            <div style="{{ s.fieldLabel }}">Username or email</div>
+            <div style="{{ s.field }}"><span style="{{ s.fieldVal }}">dorn</span></div>
+
+            <div style="{{ s.rowBetween }}"><div style="{{ s.fieldLabel }}">Password</div><span style="{{ s.forgot }}">Forgot?</span></div>
+            <div style="{{ s.fieldFocus }}"><span style="{{ s.fieldDots }}">•••••••••••</span><span style="{{ s.caret }}"></span><span style="{{ s.eye }}">◡ show</span></div>
+
+            <div style="{{ s.checkRow }}"><span style="{{ s.checkOn }}">✓</span><span style="{{ s.checkText }}">Keep me signed in on this device</span></div>
+
+            <div style="{{ s.primaryFull }}">Log in</div>
+            <div style="{{ s.sessionNote }}"><span style="{{ s.dotOk }}"></span>Next: choose which server identity to connect with.</div>
+            <div style="{{ s.divider }}"><span style="{{ s.divLine }}"></span>or<span style="{{ s.divLine }}"></span></div>
+            <div style="{{ s.switchLine }}">New to emberline? <span style="{{ s.inlineLink }}">Create an account</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column">
+      <div class="afcap" id="D"><b>D</b> · Connect a server identity <span style="color:#726a5f">(the second login, in-app)</span></div>
+      <div style="{{ s.frame }}">
+        <div style="{{ s.chrome }}">
+          <div style="display:flex;gap:7px"><span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span></div>
+          <div style="{{ s.urlbar }}">app.emberline.chat/connect</div><div style="width:52px"></div>
+        </div>
+        <div style="{{ s.authWrap }}">
+          <div style="{{ s.connectCard }}">
+            <div style="{{ s.acctBar }}"><span style="{{ s.acctAvatar }}">D</span><div style="min-width:0;flex:1"><div style="{{ s.acctName }}">dorn</div><div style="{{ s.acctMail }}">dorn@fastmail.com · app account</div></div><span style="{{ s.signOut }}">Sign out</span></div>
+            <div style="{{ s.connTitle }}">Choose an identity</div>
+            <div style="{{ s.connSub }}">Connect to the server as one of your identities. These live on the server — manage them on the <span style="{{ s.inlineLink }}">website ↗</span>.</div>
+            <sc-for list="{{ identities }}" as="id" hint-placeholder-count="3">
+              <div style="{{ id.rowStyle }}">
+                <span style="{{ id.avatarStyle }}">{{ id.initial }}</span>
+                <div style="min-width:0;flex:1">
+                  <div style="{{ id.nameStyle }}">{{ id.name }}<sc-if value="{{ id.isDefault }}" hint-placeholder-val="{{ true }}"><span style="{{ s.defaultTag }}">default</span></sc-if></div>
+                  <div style="{{ s.identMeta }}">{{ id.meta }}</div>
+                </div>
+                <span style="{{ id.btnStyle }}">{{ id.btn }}</span>
+              </div>
+            </sc-for>
+            <div style="{{ s.addIdentity }}"><span style="{{ s.addPlus }}">+</span>Add a server identity</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  renderVals(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',text='#ece7e0',dim='#a89e92',faint='#726a5f',
+      border='#332f2b',accent='#a892c6',ok='#8bb173',radius=9;
+    const accentSoft=this.mix(accent,bg,.84),accentMed=this.mix(accent,bg,.5),
+      inputBg=this.mix(text,bg,.955),dark=this.mix(bg,'#000000',.35);
+    const ui=`'IBM Plex Sans',system-ui,sans-serif`,mono=`'IBM Plex Mono',ui-monospace,monospace`;
+    const preview={label:'Slate Cozy',bg,side,side2,head:'#201e1c',text,dim,faint,border,accent,ok,
+      mono:false,ui:'IBM Plex Sans',radius,overlay:'none',descExpanded:false,
+      nick:['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']};
+    const features=[
+      {glyph:'⚲',title:'Pin & auto-rejoin',body:'Pin channels or DMs — Emberline reconnects and rejoins them the moment you return.'},
+      {glyph:'☆',title:'Friends & bookmarks',body:'Two tiers of people: close friends you track, and lightweight bookmarks for the rest.'},
+      {glyph:'✦',title:'Highlights & away',body:'IRC-native highlight rules, idle auto-away, and local chat logs you can export.'},
+    ];
+    const btn=(w)=>({display:'inline-flex',alignItems:'center',justifyContent:'center',height:'44px',padding:'0 22px',
+      borderRadius:radius+'px',background:accent,color:bg,fontWeight:700,fontSize:'14px',cursor:'pointer',width:w||'auto'});
+    const field=(focus)=>({display:'flex',alignItems:'center',gap:'8px',height:'44px',borderRadius:radius+'px',background:bg,
+      border:`1px solid ${focus?accent:border}`,padding:'0 13px',marginBottom:'12px',
+      boxShadow:focus?`0 0 0 3px ${accentSoft}`:'none'});
+    const s={
+      frame:{width:'1120px',background:side,border:`1px solid ${border}`,borderRadius:'13px',overflow:'hidden',
+        boxShadow:'0 40px 100px -25px rgba(0,0,0,.7)',fontFamily:ui,color:text},
+      chrome:{height:'40px',background:side2,borderBottom:`1px solid ${border}`,display:'flex',alignItems:'center',padding:'0 14px',gap:'14px'},
+      tl1:{width:'11px',height:'11px',borderRadius:'50%',background:'#e0685c'},
+      tl2:{width:'11px',height:'11px',borderRadius:'50%',background:'#e0b04c'},
+      tl3:{width:'11px',height:'11px',borderRadius:'50%',background:'#7fb069'},
+      urlbar:{flex:1,maxWidth:'420px',margin:'0 auto',height:'24px',borderRadius:'6px',background:bg,border:`1px solid ${border}`,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:mono,fontSize:'11.5px',color:dim},
+      // landing
+      landing:{background:bg},
+      nav:{display:'flex',alignItems:'center',gap:'24px',padding:'20px 40px',borderBottom:`1px solid ${border}`},
+      brand:{display:'flex',alignItems:'center',gap:'9px',fontFamily:mono,fontSize:'16px',fontWeight:600,color:text},
+      logo:{width:'16px',height:'16px',borderRadius:'5px',background:`linear-gradient(135deg,${accent},${this.mix(accent,'#e0955a',.6)})`,boxShadow:`0 0 12px ${accentSoft}`},
+      navLinks:{display:'flex',gap:'22px',marginLeft:'18px',fontSize:'13.5px',color:dim,flex:1},
+      navCtas:{display:'flex',alignItems:'center',gap:'12px'},
+      ghostSm:{fontSize:'13.5px',fontWeight:600,color:text,cursor:'pointer'},
+      primarySm:{display:'inline-flex',alignItems:'center',height:'36px',padding:'0 16px',borderRadius:radius+'px',background:accent,color:bg,fontWeight:700,fontSize:'13px',cursor:'pointer'},
+      hero:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'40px',alignItems:'center',padding:'52px 40px 44px'},
+      heroLeft:{minWidth:0},
+      eyebrow:{fontFamily:mono,fontSize:'11px',fontWeight:600,letterSpacing:'.14em',color:accent,marginBottom:'16px'},
+      h1:{fontSize:'46px',lineHeight:1.05,fontWeight:800,letterSpacing:'-.02em',color:'#f4ecde',margin:'0 0 18px'},
+      lede:{fontSize:'16px',lineHeight:1.6,color:dim,margin:'0 0 26px',maxWidth:'440px'},
+      heroCtas:{display:'flex',alignItems:'center',gap:'14px'},
+      primary:btn(),
+      ghost:{display:'inline-flex',alignItems:'center',height:'44px',padding:'0 18px',borderRadius:radius+'px',border:`1px solid ${border}`,color:text,fontWeight:600,fontSize:'14px',cursor:'pointer'},
+      trust:{fontFamily:mono,fontSize:'11.5px',color:faint,marginTop:'20px'},
+      heroRight:{minWidth:0},
+      previewCrop:{width:'520px',height:'392px',borderRadius:'11px',overflow:'hidden',border:`1px solid ${border}`,
+        boxShadow:`0 24px 60px -18px rgba(0,0,0,.6)`,position:'relative',marginLeft:'auto'},
+      previewScale:{width:'1280px',height:'820px',transform:'scale(.406)',transformOrigin:'top left'},
+      features:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',padding:'0 40px 48px'},
+      fCard:{background:side,border:`1px solid ${border}`,borderRadius:'11px',padding:'20px'},
+      fGlyph:{width:'34px',height:'34px',borderRadius:'8px',background:accentSoft,color:accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',marginBottom:'13px'},
+      fTitle:{fontSize:'15px',fontWeight:700,color:text,marginBottom:'6px'},
+      fBody:{fontSize:'13px',lineHeight:1.55,color:dim},
+      // auth
+      authWrap:{background:dark,padding:'44px 0',display:'flex',justifyContent:'center',minHeight:'620px'},
+      authCard:{width:'400px',background:side,border:`1px solid ${border}`,borderRadius:'14px',padding:'30px 30px 26px',
+        boxShadow:'0 30px 70px -20px rgba(0,0,0,.6)',alignSelf:'center'},
+      authTitle:{fontSize:'22px',fontWeight:800,letterSpacing:'-.01em',color:'#f4ecde',marginTop:'20px'},
+      authSub:{fontSize:'13px',color:dim,marginTop:'6px',marginBottom:'22px',lineHeight:1.5},
+      fieldLabel:{fontSize:'11.5px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:faint,marginBottom:'7px'},
+      rowBetween:{display:'flex',justifyContent:'space-between',alignItems:'baseline'},
+      forgot:{fontSize:'12px',color:accent,cursor:'pointer',fontWeight:600},
+      field:field(false),
+      fieldFocus:field(true),
+      at:{fontFamily:mono,fontSize:'14px',color:faint},
+      fieldVal:{fontSize:'14px',color:text,flex:1},
+      fieldValMono:{fontFamily:mono,fontSize:'13px',color:text,flex:1},
+      fieldDots:{fontSize:'14px',color:text,letterSpacing:'2px'},
+      caret:{display:'inline-block',width:'2px',height:'17px',background:accent,marginLeft:'-4px',animation:'afblink 1.1s step-end infinite'},
+      eye:{marginLeft:'auto',fontFamily:mono,fontSize:'11px',color:faint,cursor:'pointer'},
+      avail:{marginLeft:'auto',fontFamily:mono,fontSize:'11px',color:ok},
+      strengthRow:{display:'flex',alignItems:'center',gap:'5px',marginTop:'-4px',marginBottom:'14px'},
+      strOn:{width:'34px',height:'4px',borderRadius:'3px',background:accent},
+      strOff:{width:'34px',height:'4px',borderRadius:'3px',background:border},
+      strLabel:{marginLeft:'6px',fontFamily:mono,fontSize:'11px',color:dim},
+      fieldLocked:{display:'flex',alignItems:'center',gap:'8px',height:'44px',borderRadius:radius+'px',background:side2,
+        border:`1px solid ${border}`,padding:'0 13px',marginBottom:'12px'},
+      lock:{fontSize:'13px',color:faint},
+      tlsTag:{fontFamily:mono,fontSize:'10px',color:ok,border:`1px solid ${this.mix(ok,bg,.6)}`,borderRadius:'4px',padding:'1px 5px'},
+      checkRow:{display:'flex',alignItems:'flex-start',gap:'9px',margin:'6px 0 20px'},
+      checkOn:{width:'18px',height:'18px',borderRadius:'5px',background:accent,color:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,flexShrink:0,marginTop:'1px'},
+      checkText:{fontSize:'12.5px',color:dim,lineHeight:1.45},
+      inlineLink:{color:accent,fontWeight:600,cursor:'pointer'},
+      primaryFull:btn('100%'),
+      switchLine:{textAlign:'center',fontSize:'13px',color:dim,marginTop:'18px'},
+      sessionNote:{display:'flex',alignItems:'center',gap:'8px',fontSize:'11.5px',color:faint,marginTop:'14px',lineHeight:1.4},
+      dotOk:{width:'7px',height:'7px',borderRadius:'50%',background:ok,flexShrink:0,boxShadow:`0 0 5px ${ok}`},
+      divider:{display:'flex',alignItems:'center',gap:'12px',margin:'18px 0 4px',fontFamily:mono,fontSize:'11px',color:faint},
+      divLine:{flex:1,height:'1px',background:border},
+      // connect / identity picker
+      connectCard:{width:'440px',background:side,border:`1px solid ${border}`,borderRadius:'14px',padding:'22px 24px 24px',
+        boxShadow:'0 30px 70px -20px rgba(0,0,0,.6)',alignSelf:'center'},
+      acctBar:{display:'flex',alignItems:'center',gap:'11px',padding:'0 0 16px',borderBottom:`1px solid ${border}`,marginBottom:'18px'},
+      acctAvatar:{width:'34px',height:'34px',borderRadius:radius+'px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:mono,fontSize:'14px',fontWeight:700,color:bg,background:this.mix(accent,'#e0955a',.4)},
+      acctName:{fontSize:'14px',fontWeight:700,color:text},
+      acctMail:{fontSize:'11.5px',color:faint,fontFamily:mono},
+      signOut:{fontSize:'12px',color:dim,cursor:'pointer',flexShrink:0},
+      connTitle:{fontSize:'20px',fontWeight:800,letterSpacing:'-.01em',color:'#f4ecde'},
+      connSub:{fontSize:'12.5px',color:dim,lineHeight:1.5,margin:'6px 0 20px'},
+      defaultTag:{fontFamily:mono,fontSize:'9.5px',fontWeight:600,letterSpacing:'.05em',textTransform:'uppercase',color:accent,background:accentSoft,border:`1px solid ${accentMed}`,borderRadius:'4px',padding:'1px 6px'},
+      identMeta:{fontFamily:mono,fontSize:'11.5px',color:faint,marginTop:'3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},
+      addIdentity:{display:'flex',alignItems:'center',gap:'9px',padding:'12px 13px',borderRadius:radius+'px',border:`1px dashed ${border}`,
+        fontSize:'13px',fontWeight:600,color:dim,cursor:'pointer',marginTop:'2px'},
+      addPlus:{width:'22px',height:'22px',borderRadius:'6px',background:bg,border:`1px solid ${border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',color:accent},
+    };
+    const identConn={name:'Dorn Vael',initial:'D',meta:'irc.emberline.chat · admin · connected',state:'connected',isDefault:true};
+    const mkIdent=(o)=>{
+      const connected=o.state==='connected';
+      return {name:o.name,initial:o.initial,meta:o.meta,isDefault:!!o.isDefault,
+        rowStyle:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 13px',marginBottom:'9px',borderRadius:radius+'px',
+          background:connected?accentSoft:bg,border:`1px solid ${connected?accentMed:border}`,cursor:'pointer'},
+        avatarStyle:{width:'38px',height:'38px',borderRadius:radius+'px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+          fontFamily:mono,fontSize:'15px',fontWeight:700,color:bg,background:o.color},
+        nameStyle:{display:'flex',alignItems:'center',gap:'8px',fontSize:'14.5px',fontWeight:700,color:text},
+        btnStyle:connected?{flexShrink:0,display:'flex',alignItems:'center',gap:'6px',whiteSpace:'nowrap',padding:'0 14px',height:'34px',borderRadius:radius+'px',fontSize:'12.5px',fontWeight:700,color:ok,border:`1px solid ${this.mix(ok,bg,.6)}`}
+          :{flexShrink:0,display:'flex',alignItems:'center',padding:'0 18px',height:'34px',borderRadius:radius+'px',fontSize:'12.5px',fontWeight:700,color:bg,background:accent,cursor:'pointer'},
+        btn:connected?'● Connected':'Connect'};
+    };
+    const identities=[
+      mkIdent({name:'Dorn Vael',initial:'D',color:accent,meta:'irc.emberline.chat · admin · online',state:'connected',isDefault:true}),
+      mkIdent({name:'nightjar',initial:'N',color:'#8f9bc9',meta:'irc.emberline.chat · member',state:'idle'}),
+      mkIdent({name:'ember_ops',initial:'E',color:'#a6bd94',meta:'irc.internal.dev · owner',state:'idle'}),
+    ];
+    return {s,features,preview,identities};
+  }
+}
+</script>
+</body>
+</html>

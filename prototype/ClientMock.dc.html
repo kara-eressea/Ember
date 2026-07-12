@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+@keyframes ircblink{0%,49%{opacity:1}50%,100%{opacity:0}}
+.ircwin *{box-sizing:border-box}
+.ircscroll::-webkit-scrollbar{width:8px}
+.ircscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.ircscroll::-webkit-scrollbar-track{background:transparent}
+.ircwin a{text-decoration:none}
+</style>
+</helmet>
+<div class="ircwin" style="{{ styles.window }}">
+  <div style="{{ styles.chrome }}">
+    <div style="display:flex;gap:7px;align-items:center">
+      <span style="width:11px;height:11px;border-radius:50%;background:#e0685c"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#e0b04c"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#7fb069"></span>
+    </div>
+    <div style="{{ styles.urlbar }}">{{ header.host }}</div>
+    <div style="width:52px"></div>
+  </div>
+
+  <div style="{{ styles.app }}">
+    <!-- ============ IDENTITY RAIL ============ -->
+    <sc-if value="{{ showRail }}" hint-placeholder-val="{{ true }}">
+    <aside style="{{ styles.rail }}">
+      <sc-for list="{{ identities }}" as="id" hint-placeholder-count="3">
+        <div style="{{ id.railStyle }}" title="{{ id.name }}">
+          <span style="{{ id.railAvatar }}">{{ id.initial }}<span style="{{ id.railDot }}"></span></span>
+          <sc-if value="{{ id.hasBadge }}" hint-placeholder-val="{{ true }}"><span style="{{ styles.railBadge }}">{{ id.badge }}</span></sc-if>
+        </div>
+      </sc-for>
+      <div style="{{ styles.railAdd }}">+</div>
+    </aside>
+    </sc-if>
+
+    <!-- ============ SIDEBAR ============ -->
+    <aside style="{{ styles.sidebar }}">
+      <div style="{{ styles.serverHead }}">
+        <div style="display:flex;align-items:center;gap:9px;min-width:0">
+          <span style="{{ styles.serverDot }}"></span>
+          <div style="min-width:0">
+            <div style="{{ styles.serverName }}">{{ header.server }}</div>
+            <div style="{{ styles.serverSub }}">{{ header.serverSub }}</div>
+          </div>
+        </div>
+        <span style="{{ styles.gear }}">⚙</span>
+      </div>
+
+      <div style="{{ styles.search }}"><span style="opacity:.5">⌕</span> Jump to…</div>
+
+      <div class="ircscroll" style="{{ styles.navScroll }}">
+        <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="4">
+          <div style="{{ sec.headStyle }}">
+            <span>{{ sec.title }}</span>
+            <span style="{{ sec.countStyle }}">{{ sec.count }}</span>
+          </div>
+          <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+            <div style="{{ it.rowStyle }}">
+              <span style="{{ it.glyphStyle }}">{{ it.glyph }}</span>
+              <sc-if value="{{ it.hasDot }}" hint-placeholder-val="{{ true }}"><span style="{{ it.dotStyle }}"></span></sc-if>
+              <span style="{{ it.labelStyle }}">{{ it.label }}</span>
+              <sc-if value="{{ it.pinned }}" hint-placeholder-val="{{ true }}"><span style="{{ it.pinStyle }}">⚲</span></sc-if>
+              <sc-if value="{{ it.hasBadge }}" hint-placeholder-val="{{ true }}"><span style="{{ it.badgeStyle }}">{{ it.badge }}</span></sc-if>
+            </div>
+          </sc-for>
+        </sc-for>
+      </div>
+
+      <div style="{{ styles.meBar }}">
+        <span style="{{ styles.meAvatar }}">{{ me.initial }}</span>
+        <div style="min-width:0;flex:1">
+          <div style="{{ styles.meName }}">{{ me.nick }}</div>
+          <div style="{{ styles.meStatus }}"><span style="{{ styles.meStatusDot }}"></span>{{ me.status }}</div>
+        </div>
+        <span style="{{ styles.meIcon }}">⚙</span>
+      </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main style="{{ styles.main }}">
+      <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+      <div style="{{ styles.tabBar }}">
+        <sc-for list="{{ identities }}" as="id" hint-placeholder-count="3">
+          <div style="{{ id.tabStyle }}">
+            <span style="{{ id.tabAvatar }}">{{ id.initial }}<span style="{{ id.tabDot }}"></span></span>
+            <span style="{{ id.tabLabel }}">{{ id.name }}</span>
+            <sc-if value="{{ id.hasBadge }}" hint-placeholder-val="{{ true }}"><span style="{{ styles.tabBadge }}">{{ id.badge }}</span></sc-if>
+            <sc-if value="{{ id.active }}" hint-placeholder-val="{{ true }}"><span style="{{ styles.tabClose }}">✕</span></sc-if>
+          </div>
+        </sc-for>
+        <div style="{{ styles.tabAdd }}">+ connect</div>
+      </div>
+      </sc-if>
+      <div style="{{ styles.chanHead }}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="{{ styles.hash }}">#</span>
+          <span style="{{ styles.chanName }}">{{ header.channel }}</span>
+          <span style="{{ styles.chanPin }}">⚲ pinned</span>
+          <div style="flex:1"></div>
+          <span style="{{ styles.headBtn }}">☆</span>
+          <span style="{{ styles.headBtn }}">⌕</span>
+          <span style="{{ styles.headBtn }}">☰ {{ header.memberCount }}</span>
+        </div>
+        <div style="{{ styles.topicRow }}">
+          <span style="{{ styles.topicLabel }}">TOPIC</span>
+          <span style="{{ styles.topicText }}">{{ header.topic }}</span>
+        </div>
+        <div style="{{ styles.descBox }}">
+          <div style="{{ styles.descText }}">{{ header.desc }}</div>
+          <span style="{{ styles.descToggle }}">{{ header.descToggle }}</span>
+        </div>
+      </div>
+
+      <div class="ircscroll" style="{{ styles.log }}">
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="14">
+          <sc-if value="{{ r.isDate }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ styles.dateDiv }}"><span style="{{ styles.dateLine }}"></span><span>{{ r.text }}</span><span style="{{ styles.dateLine }}"></span></div>
+          </sc-if>
+          <sc-if value="{{ r.isSys }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ r.rowStyle }}">
+              <span style="{{ styles.time }}">{{ r.time }}</span>
+              <span style="{{ r.glyphStyle }}">{{ r.glyph }}</span>
+              <span style="{{ styles.sysText }}">{{ r.body }}</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r.isMsg }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ r.rowStyle }}">
+              <span style="{{ styles.time }}">{{ r.time }}</span>
+              <span style="{{ r.nickStyle }}">{{ r.nickText }}</span>
+              <span style="{{ styles.body }}">{{ r.body }}</span>
+            </div>
+            <sc-if value="{{ r.hasBlock }}" hint-placeholder-val="{{ true }}">
+              <pre style="{{ styles.codeblock }}">{{ r.block }}</pre>
+            </sc-if>
+          </sc-if>
+        </sc-for>
+      </div>
+
+      <div style="{{ styles.composerWrap }}">
+        <sc-if value="{{ showMd }}" hint-placeholder-val="{{ true }}">
+          <div style="{{ styles.mdPanel }}">
+            <div style="{{ styles.mdPanelHead }}"><span>PREVIEW</span><span style="opacity:.6">markdown</span></div>
+            <div style="{{ styles.mdPanelBody }}">{{ mdPreview }}</div>
+          </div>
+        </sc-if>
+        <div style="{{ styles.composer }}">
+          <span style="{{ styles.composerPlus }}">+</span>
+          <div style="{{ styles.composerInput }}">{{ composer.text }}<span style="{{ styles.caret }}"></span></div>
+          <span style="{{ styles.fmtHint }}">**B**</span>
+          <span style="{{ styles.fmtHint }}">`code`</span>
+          <span style="{{ styles.fmtHint }}">☺</span>
+        </div>
+        <div style="{{ styles.composerFoot }}"><span style="{{ styles.mdToggle }}">Ⓜ Markdown</span><span>{{ composer.hint }}</span></div>
+      </div>
+    </main>
+
+    <!-- ============ MEMBERS ============ -->
+    <aside style="{{ styles.members }}">
+      <div style="{{ styles.membersHead }}">Members <span style="{{ styles.membersCount }}">{{ header.memberCount }}</span></div>
+      <div class="ircscroll" style="{{ styles.membersScroll }}">
+        <sc-for list="{{ memberGroups }}" as="g" hint-placeholder-count="3">
+          <div style="{{ styles.mGroupHead }}">{{ g.title }} — {{ g.count }}</div>
+          <sc-for list="{{ g.list }}" as="m" hint-placeholder-count="3">
+            <div style="{{ m.rowStyle }}">
+              <span style="{{ m.avatarStyle }}">{{ m.initial }}<span style="{{ m.dotStyle }}"></span></span>
+              <span style="{{ m.glyphStyle }}">{{ m.glyph }}</span>
+              <span style="{{ m.nameStyle }}">{{ m.nick }}</span>
+              <sc-if value="{{ m.hasStatus }}" hint-placeholder-val="{{ true }}"><span style="{{ styles.mStatus }}">{{ m.statusText }}</span></sc-if>
+            </div>
+          </sc-for>
+        </sc-for>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============ OVERLAYS ============ -->
+  <sc-if value="{{ showCtx }}" hint-placeholder-val="{{ true }}">
+    <div style="{{ styles.ctxMenu }}">
+      <div style="{{ styles.ctxHead }}"><span style="{{ styles.ctxAvatar }}">V</span><span style="font-weight:600">vega</span><span style="{{ styles.ctxRole }}">member</span></div>
+      <div style="{{ styles.ctxItem }}">Message</div>
+      <div style="{{ styles.ctxItem }}">View profile <span style="{{ styles.ctxExt }}">↗ website</span></div>
+      <div style="{{ styles.ctxItem }}">Add bookmark</div>
+      <div style="{{ styles.ctxItem }}">Add friend</div>
+      <div style="{{ styles.ctxDiv }}"></div>
+      <div style="{{ styles.ctxItemDanger }}">Ignore</div>
+      <div style="{{ styles.ctxDiv }}"></div>
+      <div style="{{ styles.ctxItemAdmin }}">Give voice <span style="{{ styles.ctxTag }}">admin</span></div>
+      <div style="{{ styles.ctxItemAdmin }}">Kick <span style="{{ styles.ctxTag }}">admin</span></div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showProfile }}" hint-placeholder-val="{{ true }}">
+    <div style="{{ styles.profile }}">
+      <div style="{{ styles.profileBanner }}"></div>
+      <div style="{{ styles.profileBody }}">
+        <div style="{{ styles.profileAvatar }}">k<span style="{{ styles.profileDot }}"></span></div>
+        <div style="{{ styles.profileName }}">k0bra <span style="{{ styles.profileRole }}">@ admin</span></div>
+        <div style="{{ styles.profileHandle }}">k0bra@emberline.chat · idle</div>
+        <div style="{{ styles.profileStatus }}">“afk — back in 10”</div>
+        <div style="{{ styles.profileMetaLabel }}">MUTUAL CHANNELS</div>
+        <div style="{{ styles.profileChips }}">
+          <span style="{{ styles.profileChip }}"># dev-general</span>
+          <span style="{{ styles.profileChip }}"># dev-backend</span>
+          <span style="{{ styles.profileChip }}"># offtopic</span>
+        </div>
+        <div style="{{ styles.profileBtns }}">
+          <span style="{{ styles.profileBtnPrimary }}">Message</span>
+          <span style="{{ styles.profileBtn }}">☆ Friend</span>
+          <span style="{{ styles.profileBtn }}">⚑ Bookmark</span>
+        </div>
+        <div style="{{ styles.profileIgnore }}">Ignore user</div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:820},&quot;config&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;,&quot;default&quot;:{&quot;label&quot;:&quot;Ember&quot;}}}">
+class Component extends DCLogic {
+  cfg(){
+    const ember={label:'Ember',bg:'#17130f',side:'#1b1611',side2:'#221b14',head:'#1b1611',line:'#141009',
+      text:'#e9dcc9',dim:'#a1907b',faint:'#6b5d4c',border:'#2c2318',accent:'#e0a458',ok:'#88b06a',
+      mono:true,ui:'IBM Plex Sans',radius:6,overlay:'context',descExpanded:false,
+      nick:['#e0a458','#d98c6a','#c98a9b','#9fb488','#7fa8b0','#c0a0d0','#d1a37a','#8fb3a0']};
+    return Object.assign(ember, this.props.config||{});
+  }
+  theme(){
+    const c=this.cfg();
+    c.accentSoft=this.mix(c.accent,c.bg,0.82);
+    c.accentMed=this.mix(c.accent,c.bg,0.62);
+    c.hover=this.mix(c.text,c.side,0.93);
+    c.hoverMain=this.mix(c.text,c.bg,0.95);
+    c.codebg=this.mix(c.text,c.bg,0.90);
+    c.bodyFont=c.mono?`'IBM Plex Mono',ui-monospace,monospace`:`'${c.ui}',system-ui,sans-serif`;
+    c.uiFont=`'${c.ui}',system-ui,sans-serif`;
+    c.monoFont=`'IBM Plex Mono',ui-monospace,monospace`;
+    return c;
+  }
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    const m=A.map((v,i)=>Math.round(v*(1-t)+B[i]*t));
+    return '#'+m.map(v=>v.toString(16).padStart(2,'0')).join('');}
+  colorFor(t,n){return t.nick[[...n].reduce((a,c)=>a+c.charCodeAt(0),0)%t.nick.length];}
+
+  md(t,text){
+    const nodes=[];let k=0;const re=/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_-]+|https?:\/\/[^\s]+)/g;
+    let last=0,m;
+    while((m=re.exec(text))){
+      if(m.index>last)nodes.push(text.slice(last,m.index));
+      const tk=m[0];
+      if(tk.startsWith('**'))nodes.push(React.createElement('strong',{key:k++,style:{fontWeight:700,color:t.text}},tk.slice(2,-2)));
+      else if(tk.startsWith('`'))nodes.push(React.createElement('code',{key:k++,style:{fontFamily:t.monoFont,fontSize:'.9em',background:t.codebg,color:t.text,borderRadius:'3px',padding:'1px 4px'}},tk.slice(1,-1)));
+      else if(tk.startsWith('*'))nodes.push(React.createElement('em',{key:k++,style:{fontStyle:'italic',color:t.text}},tk.slice(1,-1)));
+      else if(tk.startsWith('@'))nodes.push(React.createElement('span',{key:k++,style:{color:t.accent,background:t.accentSoft,borderRadius:'3px',padding:'0 3px',fontWeight:600}},tk));
+      else if(tk.startsWith('#'))nodes.push(React.createElement('span',{key:k++,style:{color:t.accent,cursor:'pointer'}},tk));
+      else nodes.push(React.createElement('a',{key:k++,href:'#',style:{color:t.accent,textDecoration:'underline',textUnderlineOffset:'2px'}},tk));
+      last=re.lastIndex;
+    }
+    if(last<text.length)nodes.push(text.slice(last));
+    return nodes;
+  }
+
+  renderVals(){
+    const t=this.theme();
+    const S=this.styles(t);
+    const overlay=t.overlay;
+    // ---------- header ----------
+    const shortDesc='#dev-general is the primary coordination channel for the Emberline gateway team. Use it for build status, releases, and cross-team';
+    const fullDesc=shortDesc+' pings. Server rules: no force-pushes to main, keep secrets out of chat, and move long threads to #dev-backend. Office hours Tue/Thu 15:00 UTC. Bridged read-only to the legacy IRC network at irc.emberline.chat:6697 (+TLS).';
+    let header={host:'app.emberline.chat/#dev-general',server:'emberline',serverSub:'irc.emberline.chat · connected',
+      channel:'dev-general',memberCount:'24',
+      topic:'Ship the v2 gateway by Fri · no force-push to main · notes in #dev-backend',
+      desc:(t.descExpanded?fullDesc:shortDesc+'…'),descToggle:(t.descExpanded?'Show less':'Show more')};
+    // ---------- sidebar ----------
+    const mkItem=(o)=>{
+      const active=o.active;
+      const rowStyle={display:'flex',alignItems:'center',gap:'8px',padding:'5px 10px',margin:'1px 6px',borderRadius:t.radius+'px',cursor:'pointer',
+        background:active?t.accentSoft:'transparent',
+        boxShadow:active?`inset 2px 0 0 ${t.accent}`:'none',fontFamily:t.uiFont};
+      const labelStyle={flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
+        fontSize:'13px',fontWeight:active?600:o.muted?400:500,
+        color:active?t.text:o.muted?t.faint:o.unread||o.mention?t.text:t.dim};
+      const glyphStyle={width:'13px',textAlign:'center',fontFamily:t.monoFont,fontSize:'12px',color:active?t.accent:t.faint,flexShrink:0};
+      const dotColor=o.presence==='online'?t.ok:o.presence==='idle'?'#d0a24f':t.faint;
+      return {glyph:o.glyph,hasDot:!!o.presence,dotStyle:{width:'7px',height:'7px',borderRadius:'50%',background:dotColor,flexShrink:0,boxShadow:o.presence==='online'?`0 0 4px ${dotColor}`:'none'},
+        label:o.label,labelStyle,rowStyle,glyphStyle,
+        pinned:!!o.pin,pinStyle:{fontFamily:t.monoFont,fontSize:'10px',color:t.faint,transform:'rotate(45deg)'},
+        hasBadge:!!(o.unread||o.mention),badge:o.mention?'@'+ (o.mention>1?o.mention:''):String(o.unread||''),
+        badgeStyle:{fontSize:'10px',fontWeight:700,fontFamily:t.monoFont,minWidth:'17px',textAlign:'center',padding:'1px 5px',borderRadius:'9px',
+          background:o.mention?t.accent:t.accentMed,color:o.mention?t.bg:t.text}};
+    };
+    const secHead=(t2)=>({display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px 4px',
+      fontSize:'10.5px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:t.faint,fontFamily:t.uiFont});
+    const secCount={fontSize:'10px',fontWeight:600,color:t.faint,opacity:.7};
+    let sections=[
+      {title:'Pinned',count:'',headStyle:secHead(),countStyle:secCount,items:[
+        mkItem({glyph:'#',label:'dev-general',active:true,pin:true}),
+        mkItem({glyph:'#',label:'announcements',pin:true,muted:true}),
+        mkItem({glyph:'',label:'mara',presence:'online',pin:true}),
+      ]},
+      {title:'Channels',count:'8',headStyle:secHead(),countStyle:secCount,items:[
+        mkItem({glyph:'#',label:'general',unread:3}),
+        mkItem({glyph:'#',label:'offtopic'}),
+        mkItem({glyph:'#',label:'support',mention:1}),
+        mkItem({glyph:'#',label:'dev-backend'}),
+        mkItem({glyph:'#',label:'design',muted:true}),
+      ]},
+      {title:'Direct Messages',count:'',headStyle:secHead(),countStyle:secCount,items:[
+        mkItem({glyph:'',label:'k0bra',presence:'idle',unread:1}),
+        mkItem({glyph:'',label:'vega',presence:'online'}),
+        mkItem({glyph:'',label:'sable',presence:'online'}),
+      ]},
+      {title:'Friends',count:'',headStyle:secHead(),countStyle:secCount,items:[
+        mkItem({glyph:'☆',label:'quill',presence:'online'}),
+        mkItem({glyph:'☆',label:'nyx',presence:'offline',muted:true}),
+      ]},
+      {title:'Bookmarks',count:'',headStyle:secHead(),countStyle:secCount,items:[
+        mkItem({glyph:'⚑',label:'dredmor',presence:'idle'}),
+        mkItem({glyph:'⚑',label:'pax',presence:'offline',muted:true}),
+      ]},
+    ];
+    let me={nick:'dorn',initial:'D',status:'online'};
+    // ---------- log ----------
+    const time=(x)=>x;
+    const sys=(tm,glyph,gcolor,text)=>({isSys:true,time:tm,glyph,glyphStyle:{width:'12px',textAlign:'center',fontFamily:t.monoFont,color:gcolor,flexShrink:0},
+      body:text,rowStyle:{display:'flex',gap:'9px',alignItems:'baseline',padding:'2px 16px',fontFamily:t.bodyFont,fontSize:'12.5px',fontStyle:'italic'}});
+    const nick=(n)=>this.colorFor(t,n);
+    const msg=(tm,n,text,opt={})=>({isMsg:true,time:tm,nickText:'<'+n+'>',
+      nickStyle:{fontFamily:t.monoFont,fontSize:'12.5px',fontWeight:600,color:opt.color||nick(n),flexShrink:0,whiteSpace:'nowrap'},
+      body:this.md(t,text),
+      hasBlock:!!opt.block,block:opt.block||'',
+      rowStyle:{display:'flex',gap:'9px',alignItems:'baseline',padding:opt.mention?'4px 16px':'2px 16px',
+        background:opt.mention?t.accentSoft:'transparent',
+        boxShadow:opt.mention?`inset 3px 0 0 ${t.accent}`:'none',
+        fontFamily:t.bodyFont,fontSize:'13px',lineHeight:'1.5',color:t.text}});
+    let rows=[
+      {isDate:true,text:'Thursday, July 10'},
+      sys('09:58','→',t.ok,'mara (mara@emberline.chat) has joined #dev-general'),
+      msg('10:02','lio','morning all — pushed the **gateway rewrite** to `feat/gw-v2`, review when you can'),
+      msg('10:03','vega','nice. did you keep the `reconnect()` backoff?'),
+      msg('10:03','lio','yeah, capped at 30s now. jitter is in `backoff.go`'),
+      sys('10:05','⚑',t.accent,'k0bra set topic: no force-push to main'),
+      msg('10:07','quill','@vega the flaky test in `gateway_test.go` was a race — fixed, notes in #dev-backend'),
+      msg('10:08','mara','@dorn can you sanity-check the ratelimit numbers before we tag?',{mention:true}),
+      msg('10:09','vega','sure — here\'s what I\'m seeing on staging:',{block:'  GET  /gateway   120 req/min  (burst 20)\n  WS   /connect   30 conn/min  per-ip\n  → p99 handshake  842ms  ▲ needs work'}),
+      sys('10:11','→',t.ok,'sable (sable@emberline.chat) has joined #dev-general'),
+      msg('10:12','sable','o/ finally got TLS sorted on the bridge'),
+      msg('10:12','lio','welcome *back* sable'),
+      msg('10:14','k0bra','full spec is here if anyone needs it: https://emberline.chat/rfc/17'),
+    ];
+    // ---------- members ----------
+    const mk=(nk,role,presence,status)=>{
+      const dotColor=presence==='online'?t.ok:presence==='idle'?'#d0a24f':t.faint;
+      const off=presence==='offline';
+      const glyph=role==='owner'?'~':role==='admin'?'@':'';
+      return {nick:nk,initial:nk[0].toUpperCase(),
+        rowStyle:{display:'flex',alignItems:'center',gap:'8px',padding:'4px 12px',margin:'0 6px',borderRadius:t.radius+'px',cursor:'pointer',opacity:off?.5:1,fontFamily:t.uiFont},
+        avatarStyle:{position:'relative',width:'22px',height:'22px',borderRadius:t.radius+'px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+          fontFamily:t.monoFont,fontSize:'10px',fontWeight:600,color:t.bg,background:this.colorFor(t,nk)},
+        dotStyle:{position:'absolute',right:'-2px',bottom:'-2px',width:'8px',height:'8px',borderRadius:'50%',background:dotColor,border:`2px solid ${t.side2}`},
+        glyph,glyphStyle:{fontFamily:t.monoFont,fontSize:'12px',fontWeight:700,color:role==='owner'?t.accent:role==='admin'?this.mix(t.accent,t.text,.4):t.faint,width:'8px',flexShrink:0},
+        nick:nk,nameStyle:{fontSize:'13px',fontWeight:role==='member'?400:600,color:off?t.faint:t.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},
+        hasStatus:!!status,statusText:status};
+    };
+    let memberGroups=[
+      {title:'Owner',count:'1',list:[mk('lio','owner','online','wrangling the gateway')]},
+      {title:'Admins',count:'2',list:[mk('mara','admin','online','reviewing PRs'),mk('k0bra','admin','idle','afk — back in 10')]},
+      {title:'Online',count:'4',list:[mk('vega','member','online',''),mk('quill','member','online',''),mk('sable','member','online',''),mk('zephyr','member','online','')]},
+      {title:'Idle',count:'1',list:[mk('dredmor','member','idle','')]},
+      {title:'Offline',count:'3',list:[mk('nyx','member','offline',''),mk('pax','member','offline',''),mk('echo','member','offline','')]},
+    ];
+    // ---------- composer ----------
+    let composer={text:'shipping **v2** tonight — see `CHANGELOG.md`, ping @lio if the `gateway` flakes',hint:'Enter to send · Shift+Enter for newline'};
+
+    // ---------- per-identity swap ----------
+    if(t.persona==='nightjar'){
+      header={host:'app.emberline.chat/#the-tavern',server:'emberline',serverSub:'irc.emberline.chat · connected',
+        channel:'the-tavern',memberCount:'17',
+        topic:'cozy hours · be kind · music requests in #jukebox',
+        desc:(t.descExpanded
+          ?'#the-tavern is the after-hours social room. No work talk, no crossposting from #dev-*. Requests go to #jukebox, spoilers behind tags, and the couch is always open. Quiet hours 02:00–08:00 UTC.'
+          :'#the-tavern is the after-hours social room. No work talk, no crossposting from #dev-*. Requests go to #jukebox…'),
+        descToggle:(t.descExpanded?'Show less':'Show more')};
+      sections=[
+        {title:'Pinned',count:'',headStyle:secHead(),countStyle:secCount,items:[
+          mkItem({glyph:'#',label:'the-tavern',active:true,pin:true}),
+          mkItem({glyph:'#',label:'jukebox',pin:true}),
+          mkItem({glyph:'',label:'wisp',presence:'online',pin:true}),
+        ]},
+        {title:'Channels',count:'5',headStyle:secHead(),countStyle:secCount,items:[
+          mkItem({glyph:'#',label:'lounge',unread:6}),
+          mkItem({glyph:'#',label:'books'}),
+          mkItem({glyph:'#',label:'late-night',mention:2}),
+          mkItem({glyph:'#',label:'photos',muted:true}),
+        ]},
+        {title:'Direct Messages',count:'',headStyle:secHead(),countStyle:secCount,items:[
+          mkItem({glyph:'',label:'wisp',presence:'online'}),
+          mkItem({glyph:'',label:'juno',presence:'idle',unread:2}),
+        ]},
+        {title:'Friends',count:'',headStyle:secHead(),countStyle:secCount,items:[
+          mkItem({glyph:'☆',label:'wisp',presence:'online'}),
+          mkItem({glyph:'☆',label:'moth',presence:'offline',muted:true}),
+        ]},
+        {title:'Bookmarks',count:'',headStyle:secHead(),countStyle:secCount,items:[
+          mkItem({glyph:'⚑',label:'juno',presence:'idle'}),
+        ]},
+      ];
+      me={nick:'nightjar',initial:'N',status:'online'};
+      rows=[
+        {isDate:true,text:'Thursday, July 10'},
+        msg('21:40','wisp','evening ✨ what\'s everyone listening to'),
+        msg('21:41','juno','some *very* slow shoegaze, it\'s that kind of night'),
+        msg('21:42','nightjar','put a request in #jukebox — `radiohead - nude`',{color:'#8f9bc9'}),
+        sys('21:44','→',t.ok,'moth (moth@emberline.chat) has joined #the-tavern'),
+        msg('21:45','moth','o/ finally off work'),
+        msg('21:46','wisp','@nightjar did you finish that book you mentioned?',{mention:true}),
+        msg('21:47','nightjar','almost — last chapter tonight. no spoilers 🙏',{color:'#8f9bc9'}),
+        msg('21:49','juno','the couch is claimed, i\'m not moving till midnight'),
+      ];
+      memberGroups=[
+        {title:'Owner',count:'1',list:[mk('wisp','owner','online','keeping the fire lit')]},
+        {title:'Admins',count:'1',list:[mk('juno','admin','idle','on the couch')]},
+        {title:'Online',count:'3',list:[mk('nightjar','member','online',''),mk('moth','member','online',''),mk('pip','member','online','')]},
+        {title:'Offline',count:'2',list:[mk('sol','member','offline',''),mk('rue','member','offline','')]},
+      ];
+      composer={text:'calling it a night after this chapter — night all 🌙',hint:'Enter to send · Shift+Enter for newline'};
+    }
+    const mdPreview=this.md(t,composer.text);
+
+    const idMode=t.identityMode||'none';
+    const idColor=(n,c)=>c;
+    const mkId=(o)=>{
+      const active=o.active;
+      const dot=o.presence==='online'?t.ok:o.presence==='idle'?'#d0a24f':t.faint;
+      const railAvatar={position:'relative',width:'40px',height:'40px',borderRadius:active?t.radius+2+'px':'50%',flexShrink:0,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.monoFont,fontSize:'15px',fontWeight:700,color:t.bg,
+        background:o.color,transition:'border-radius .15s'};
+      return {name:o.name,initial:o.initial,active,
+        hasBadge:!!o.badge,badge:o.badge,
+        railStyle:{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',padding:'5px 0',cursor:'pointer',
+          boxShadow:active?`inset 3px 0 0 ${t.accent}`:'none'},
+        railAvatar,
+        railDot:{position:'absolute',right:'-1px',bottom:'-1px',width:'11px',height:'11px',borderRadius:'50%',background:dot,border:`2.5px solid ${t.bg}`},
+        tabStyle:{display:'flex',alignItems:'center',gap:'8px',padding:'0 12px',height:'34px',borderRadius:t.radius+'px',cursor:'pointer',
+          background:active?t.side:'transparent',boxShadow:active?`inset 0 -2px 0 ${t.accent}`:'none',border:`1px solid ${active?t.border:'transparent'}`},
+        tabAvatar:{position:'relative',width:'20px',height:'20px',borderRadius:t.radius-2+'px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+          fontFamily:t.monoFont,fontSize:'10px',fontWeight:700,color:t.bg,background:o.color},
+        tabDot:{position:'absolute',right:'-2px',bottom:'-2px',width:'8px',height:'8px',borderRadius:'50%',background:dot,border:`2px solid ${t.head}`},
+        tabLabel:{fontFamily:t.monoFont,fontSize:'12.5px',fontWeight:active?600:500,color:active?t.text:t.dim,whiteSpace:'nowrap'},
+      };
+    };
+    const railActive=t.persona==='nightjar'?1:0;
+    const identities=[
+      mkId({name:'Dorn Vael',initial:'D',color:t.accent,presence:'online',active:railActive===0,badge:railActive===0?null:'2'}),
+      mkId({name:'nightjar',initial:'N',color:'#8f9bc9',presence:railActive===1?'online':'idle',active:railActive===1,badge:railActive===1?null:'3'}),
+      mkId({name:'ember_ops',initial:'E',color:'#a6bd94',presence:'online',active:railActive===2,badge:'@'}),
+    ];
+
+    return {styles:S,header,sections,me,rows,memberGroups,composer,mdPreview,identities,
+      showRail:idMode==='rail',showTabs:idMode==='tabs',
+      showMd:overlay==='markdown',showCtx:overlay==='context',showProfile:overlay==='profile'};
+  }
+
+  styles(t){
+    return {
+      window:{width:'1280px',height:'820px',background:t.bg,borderRadius:'12px',overflow:'hidden',position:'relative',
+        border:`1px solid ${t.border}`,boxShadow:'0 30px 80px -20px rgba(0,0,0,.6)',fontFamily:t.uiFont,color:t.text,display:'flex',flexDirection:'column'},
+      chrome:{height:'38px',flexShrink:0,background:t.side2,borderBottom:`1px solid ${t.border}`,display:'flex',alignItems:'center',padding:'0 14px',gap:'14px'},
+      urlbar:{flex:1,maxWidth:'420px',margin:'0 auto',height:'22px',borderRadius:'6px',background:t.bg,border:`1px solid ${t.border}`,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.monoFont,fontSize:'11px',color:t.dim},
+      app:{flex:1,display:'grid',gridTemplateColumns:(t.identityMode==='rail'?'60px ':'')+'244px 1fr 232px',minHeight:0},
+      // identity rail
+      rail:{background:t.side2,borderRight:`1px solid ${t.border}`,display:'flex',flexDirection:'column',alignItems:'center',gap:'6px',padding:'12px 0',minHeight:0},
+      railBadge:{position:'absolute',top:'2px',right:'8px',minWidth:'16px',height:'16px',padding:'0 4px',borderRadius:'9px',background:t.accent,color:t.bg,
+        fontFamily:t.monoFont,fontSize:'9.5px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',border:`2px solid ${t.side2}`},
+      railAdd:{width:'40px',height:'40px',borderRadius:'50%',border:`1px dashed ${t.border}`,color:t.faint,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',cursor:'pointer',marginTop:'4px'},
+      // identity tabs
+      tabBar:{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px 0',background:t.head,borderBottom:`1px solid ${t.border}`,flexShrink:0},
+      tabBadge:{minWidth:'16px',height:'16px',padding:'0 4px',borderRadius:'9px',background:t.accent,color:t.bg,fontFamily:t.monoFont,fontSize:'9.5px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'},
+      tabClose:{color:t.faint,fontSize:'10px',marginLeft:'2px'},
+      tabAdd:{fontFamily:t.uiFont,fontSize:'12px',fontWeight:600,color:t.accent,padding:'0 10px',height:'34px',display:'flex',alignItems:'center',cursor:'pointer'},
+      // sidebar
+      sidebar:{background:t.side,borderRight:`1px solid ${t.border}`,display:'flex',flexDirection:'column',minHeight:0},
+      serverHead:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 14px',borderBottom:`1px solid ${t.border}`,gap:'8px'},
+      serverDot:{width:'9px',height:'9px',borderRadius:'50%',background:t.ok,boxShadow:`0 0 6px ${t.ok}`,flexShrink:0},
+      serverName:{fontSize:'14px',fontWeight:700,color:t.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},
+      serverSub:{fontSize:'10.5px',color:t.faint,fontFamily:t.monoFont,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},
+      gear:{color:t.faint,fontSize:'14px',cursor:'pointer'},
+      search:{margin:'10px 12px 4px',height:'30px',borderRadius:t.radius+'px',background:t.bg,border:`1px solid ${t.border}`,
+        display:'flex',alignItems:'center',gap:'7px',padding:'0 10px',fontSize:'12.5px',color:t.faint,fontFamily:t.uiFont},
+      navScroll:{flex:1,overflowY:'auto',paddingBottom:'8px',minHeight:0},
+      meBar:{display:'flex',alignItems:'center',gap:'9px',padding:'9px 12px',borderTop:`1px solid ${t.border}`,background:t.side2},
+      meAvatar:{width:'30px',height:'30px',borderRadius:t.radius+'px',background:t.accent,color:t.bg,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontFamily:t.monoFont,fontSize:'13px',flexShrink:0},
+      meName:{fontSize:'13px',fontWeight:600,color:t.text},
+      meStatus:{fontSize:'11px',color:t.dim,display:'flex',alignItems:'center',gap:'5px'},
+      meStatusDot:{width:'6px',height:'6px',borderRadius:'50%',background:t.ok},
+      meIcon:{color:t.faint,fontSize:'14px',cursor:'pointer'},
+      // main
+      main:{background:t.bg,display:'flex',flexDirection:'column',minWidth:0,minHeight:0},
+      chanHead:{borderBottom:`1px solid ${t.border}`,padding:'12px 20px 12px',flexShrink:0,background:t.head},
+      hash:{fontFamily:t.monoFont,fontSize:'20px',fontWeight:600,color:t.faint},
+      chanName:{fontSize:'18px',fontWeight:700,color:t.text},
+      chanPin:{fontFamily:t.monoFont,fontSize:'10.5px',color:t.faint,border:`1px solid ${t.border}`,borderRadius:'20px',padding:'2px 8px'},
+      headBtn:{color:t.dim,fontSize:'13px',cursor:'pointer',fontFamily:t.monoFont,padding:'0 4px'},
+      topicRow:{display:'flex',alignItems:'baseline',gap:'9px',marginTop:'9px'},
+      topicLabel:{fontFamily:t.monoFont,fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',color:t.accent,background:t.accentSoft,padding:'2px 6px',borderRadius:'4px',flexShrink:0},
+      topicText:{fontSize:'13px',color:t.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},
+      descBox:{marginTop:'8px',display:'flex',alignItems:'flex-end',gap:'8px'},
+      descText:{flex:1,fontSize:'12px',lineHeight:'1.5',color:t.faint,fontFamily:t.uiFont},
+      descToggle:{fontSize:'11.5px',fontWeight:600,color:t.accent,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
+      log:{flex:1,overflowY:'auto',padding:'12px 0',minHeight:0},
+      dateDiv:{display:'flex',alignItems:'center',gap:'12px',padding:'10px 20px',fontFamily:t.monoFont,fontSize:'11px',color:t.faint,letterSpacing:'.05em'},
+      dateLine:{flex:1,height:'1px',background:t.border},
+      time:{fontFamily:t.monoFont,fontSize:'11.5px',color:t.faint,flexShrink:0,fontVariantNumeric:'tabular-nums'},
+      sysText:{color:t.dim},
+      body:{flex:1,minWidth:0,wordBreak:'break-word'},
+      codeblock:{margin:'3px 16px 5px 76px',padding:'10px 14px',background:t.codebg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+        fontFamily:t.monoFont,fontSize:'12px',lineHeight:'1.5',color:t.text,whiteSpace:'pre',overflow:'auto'},
+      composerWrap:{padding:'0 20px 16px',flexShrink:0},
+      mdPanel:{border:`1px solid ${t.border}`,borderRadius:t.radius+'px',background:t.side,marginBottom:'8px',overflow:'hidden'},
+      mdPanelHead:{display:'flex',justifyContent:'space-between',padding:'6px 12px',fontFamily:t.monoFont,fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',color:t.faint,borderBottom:`1px solid ${t.border}`,background:t.side2},
+      mdPanelBody:{padding:'10px 14px',fontSize:'13px',lineHeight:'1.55',color:t.text,fontFamily:t.bodyFont},
+      composer:{display:'flex',alignItems:'center',gap:'10px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',padding:'0 12px',height:'46px'},
+      composerPlus:{fontSize:'20px',color:t.faint,cursor:'pointer',flexShrink:0},
+      composerInput:{flex:1,fontFamily:t.bodyFont,fontSize:'13.5px',color:t.text,display:'flex',alignItems:'center',whiteSpace:'nowrap',overflow:'hidden'},
+      caret:{display:'inline-block',width:'2px',height:'17px',background:t.accent,marginLeft:'1px',animation:'ircblink 1.1s step-end infinite'},
+      fmtHint:{fontFamily:t.monoFont,fontSize:'11px',color:t.faint,cursor:'pointer',flexShrink:0},
+      composerFoot:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'11px',color:t.faint,fontFamily:t.uiFont},
+      mdToggle:{color:t.accent,fontWeight:600},
+      // members
+      members:{background:t.side2,borderLeft:`1px solid ${t.border}`,display:'flex',flexDirection:'column',minHeight:0},
+      membersHead:{padding:'14px 16px 10px',fontSize:'13px',fontWeight:700,color:t.text,borderBottom:`1px solid ${t.border}`,display:'flex',gap:'7px',alignItems:'center'},
+      membersCount:{fontFamily:t.monoFont,fontSize:'11px',color:t.faint,fontWeight:500},
+      membersScroll:{flex:1,overflowY:'auto',padding:'8px 0',minHeight:0},
+      mGroupHead:{padding:'10px 18px 4px',fontSize:'10px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:t.faint,fontFamily:t.uiFont},
+      mStatus:{fontSize:'11px',color:t.faint,fontStyle:'italic',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginLeft:'auto'},
+      // context menu
+      ctxMenu:{position:'absolute',top:'150px',right:'150px',width:'204px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+2+'px',
+        boxShadow:'0 20px 50px -10px rgba(0,0,0,.7)',padding:'5px',zIndex:20,fontFamily:t.uiFont},
+      ctxHead:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 9px 9px',borderBottom:`1px solid ${t.border}`,marginBottom:'4px',fontSize:'13px',color:t.text},
+      ctxAvatar:{width:'22px',height:'22px',borderRadius:t.radius+'px',background:this.colorFor(t,'vega'),color:t.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.monoFont,fontSize:'10px',fontWeight:700},
+      ctxRole:{marginLeft:'auto',fontFamily:t.monoFont,fontSize:'10px',color:t.faint},
+      ctxExt:{marginLeft:'auto',fontFamily:t.monoFont,fontSize:'10px',color:t.accent},
+      ctxItem:{padding:'7px 10px',borderRadius:t.radius+'px',fontSize:'13px',color:t.text,cursor:'pointer'},
+      ctxItemDanger:{padding:'7px 10px',borderRadius:t.radius+'px',fontSize:'13px',color:'#e08a6a',cursor:'pointer'},
+      ctxItemAdmin:{padding:'7px 10px',borderRadius:t.radius+'px',fontSize:'13px',color:t.dim,cursor:'pointer',display:'flex',alignItems:'center'},
+      ctxTag:{marginLeft:'auto',fontFamily:t.monoFont,fontSize:'9px',color:t.accent,border:`1px solid ${t.border}`,borderRadius:'4px',padding:'1px 4px'},
+      ctxDiv:{height:'1px',background:t.border,margin:'4px 6px'},
+      // profile popout
+      profile:{position:'absolute',top:'120px',right:'250px',width:'278px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+4+'px',
+        boxShadow:'0 24px 60px -12px rgba(0,0,0,.7)',overflow:'hidden',zIndex:20,fontFamily:t.uiFont},
+      profileBanner:{height:'62px',background:`linear-gradient(135deg,${t.accentMed},${t.side2})`},
+      profileBody:{padding:'0 18px 18px',position:'relative'},
+      profileAvatar:{position:'relative',width:'64px',height:'64px',borderRadius:t.radius+4+'px',marginTop:'-30px',background:this.colorFor(t,'k0bra'),color:t.bg,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.monoFont,fontSize:'26px',fontWeight:700,border:`3px solid ${t.side}`},
+      profileDot:{position:'absolute',right:'2px',bottom:'2px',width:'14px',height:'14px',borderRadius:'50%',background:'#d0a24f',border:`3px solid ${t.side}`},
+      profileName:{fontSize:'18px',fontWeight:700,color:t.text,marginTop:'10px',display:'flex',alignItems:'center',gap:'8px'},
+      profileRole:{fontFamily:t.monoFont,fontSize:'11px',color:t.accent,fontWeight:600},
+      profileHandle:{fontSize:'11.5px',color:t.faint,fontFamily:t.monoFont,marginTop:'2px'},
+      profileStatus:{fontSize:'13px',color:t.dim,fontStyle:'italic',marginTop:'10px',padding:'8px 10px',background:t.bg,borderRadius:t.radius+'px',border:`1px solid ${t.border}`},
+      profileMetaLabel:{fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',color:t.faint,marginTop:'14px',fontFamily:t.uiFont},
+      profileChips:{display:'flex',flexWrap:'wrap',gap:'6px',marginTop:'7px'},
+      profileChip:{fontFamily:t.monoFont,fontSize:'11px',color:t.dim,background:t.bg,border:`1px solid ${t.border}`,borderRadius:'20px',padding:'3px 9px'},
+      profileBtns:{display:'flex',gap:'7px',marginTop:'16px'},
+      profileBtnPrimary:{flex:1,textAlign:'center',padding:'8px',borderRadius:t.radius+'px',background:t.accent,color:t.bg,fontSize:'12.5px',fontWeight:700,cursor:'pointer'},
+      profileBtn:{flex:1,textAlign:'center',padding:'8px',borderRadius:t.radius+'px',background:t.bg,border:`1px solid ${t.border}`,color:t.text,fontSize:'12.5px',fontWeight:600,cursor:'pointer'},
+      profileIgnore:{textAlign:'center',marginTop:'10px',fontSize:'12px',color:'#e08a6a',cursor:'pointer'},
+    };
+  }
+}
+</script>
+</body>
+</html>
