@@ -20,7 +20,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-thin-vertical-slice.md); tick as each step's verification passes.
 
 - [x] 1. Repo scaffold (`pnpm build` green)
-- [ ] 2. `fchat-protocol` codec + core command schemas
+- [x] 2. `fchat-protocol` codec + core command schemas
 - [ ] 3. `fchat-sim` mock server
 - [ ] 4. Postgres + Drizzle schema + Fastify auth
 - [ ] 5. flist-accounts + TicketManager + in-memory credential vault
@@ -47,3 +47,4 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 | 2026-07-12 | Credential model revised to **bouncer-lite**: session-only in-memory credentials, no at-rest storage; server restart requires password re-entry. See `decisions.md` §3. |
 | 2026-07-12 | Deployment context settled: VPS + docker-compose, friends-first scale (~tens), Brevo SMTP for M7 email. See `decisions.md` §5. |
 | 2026-07-12 | M1 started. Step 1 (repo scaffold) done: pnpm workspaces + Turborepo, 6 packages, ESLint flat config + Prettier, Vitest, GitHub Actions CI, `main` branch protection. TS note: packages build with native TS 7; root pins TS 6.0 for typescript-eslint until TS 7.1 ships the JS API. |
+| 2026-07-12 | M1 step 2 (`fchat-protocol`) done (PR #2): frame codec, zod schemas for the 20 core server commands + client counterparts, ServerVars/applyVar, error codes. Lenient parsing — anything unknown/malformed returns `{ cmd, raw }`. `parseClientCommand` is ready for fchat-sim (step 3). |
