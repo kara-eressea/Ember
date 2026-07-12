@@ -15,7 +15,14 @@ import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
+import { SessionRegistry } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
+
+declare module "fastify" {
+  interface FastifyInstance {
+    sessions: SessionRegistry;
+  }
+}
 
 export interface BuildAppOptions {
   config: AppConfig;
@@ -39,6 +46,17 @@ export async function buildApp({
   const flistApi =
     flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
   const tickets = new TicketManagerRegistry(flistApi, vault);
+  const sessions = new SessionRegistry({
+    tickets,
+    wsUrl: config.FCHAT_URL,
+    clientName: config.CLIENT_NAME,
+    clientVersion: config.CLIENT_VERSION,
+    logger: app.log,
+  });
+  app.decorate("sessions", sessions);
+  app.addHook("onClose", () => {
+    sessions.stopAll();
+  });
 
   await app.register(fastifyCors, {
     origin: config.CORS_ORIGIN ? config.CORS_ORIGIN.split(",") : false,

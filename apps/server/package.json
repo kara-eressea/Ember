@@ -12,6 +12,7 @@
     "@testcontainers/postgresql": "^12.0.4",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
@@ -27,6 +28,7 @@
     "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^7.0.0",
     "pg": "^8.22.0",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
   }
 }
