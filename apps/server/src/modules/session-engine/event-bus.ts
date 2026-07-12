@@ -1,7 +1,9 @@
-// Per-session typed event emitter. The gateway (fan-out to browsers) and the
-// history sink (message persistence) subscribe here; the session never knows
-// about either. A listener that throws is logged and skipped — a broken
-// consumer must not take the F-Chat connection down with it.
+// Typed event emitters. Each FchatSession carries a SessionEventBus: the
+// gateway (fan-out to browsers) and the history sink (message persistence)
+// subscribe there; the session never knows about either. The history sink
+// carries its own TypedEventBus for post-persistence events. A listener that
+// throws is logged and skipped — a broken consumer must not take the F-Chat
+// connection down with it.
 
 import type { ServerCommand } from "@emberline/fchat-protocol";
 import type { SessionStatus } from "./session-state.js";
@@ -23,46 +25,43 @@ export interface SessionEvents {
 
 type Listener<E> = (event: E) => void;
 
-export interface SessionEventLogger {
+export interface EventBusLogger {
   error: (obj: object, msg: string) => void;
 }
 
-export class SessionEventBus {
+export class TypedEventBus<Events extends object> {
   readonly #listeners = new Map<
-    keyof SessionEvents,
-    Set<Listener<SessionEvents[keyof SessionEvents]>>
+    keyof Events,
+    Set<Listener<Events[keyof Events]>>
   >();
-  readonly #logger: SessionEventLogger | undefined;
+  readonly #logger: EventBusLogger | undefined;
 
-  constructor(logger?: SessionEventLogger) {
+  constructor(logger?: EventBusLogger) {
     this.#logger = logger;
   }
 
-  on<K extends keyof SessionEvents>(
+  on<K extends keyof Events>(
     name: K,
-    listener: Listener<SessionEvents[K]>,
+    listener: Listener<Events[K]>,
   ): () => void {
     let set = this.#listeners.get(name);
     if (!set) {
       set = new Set();
       this.#listeners.set(name, set);
     }
-    set.add(listener as Listener<SessionEvents[keyof SessionEvents]>);
+    set.add(listener as Listener<Events[keyof Events]>);
     return () => {
       this.off(name, listener);
     };
   }
 
-  off<K extends keyof SessionEvents>(
-    name: K,
-    listener: Listener<SessionEvents[K]>,
-  ): void {
+  off<K extends keyof Events>(name: K, listener: Listener<Events[K]>): void {
     this.#listeners
       .get(name)
-      ?.delete(listener as Listener<SessionEvents[keyof SessionEvents]>);
+      ?.delete(listener as Listener<Events[keyof Events]>);
   }
 
-  emit<K extends keyof SessionEvents>(name: K, event: SessionEvents[K]): void {
+  emit<K extends keyof Events>(name: K, event: Events[K]): void {
     const set = this.#listeners.get(name);
     if (!set) {
       return;
@@ -71,7 +70,10 @@ export class SessionEventBus {
       try {
         listener(event);
       } catch (error) {
-        this.#logger?.error({ err: error, event: name }, "listener threw");
+        this.#logger?.error(
+          { err: error, event: name },
+          "event listener threw",
+        );
       }
     }
   }
@@ -80,3 +82,5 @@ export class SessionEventBus {
     this.#listeners.clear();
   }
 }
+
+export class SessionEventBus extends TypedEventBus<SessionEvents> {}

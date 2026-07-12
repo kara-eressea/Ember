@@ -1,5 +1,6 @@
 import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
+import fastifyWebsocket from "@fastify/websocket";
 import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
@@ -15,6 +16,7 @@ import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
+import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { historyRoutes } from "./modules/history/routes.js";
 import { HistorySink } from "./modules/history/sink.js";
 import { SessionRegistry } from "./modules/session-engine/registry.js";
@@ -55,6 +57,7 @@ export async function buildApp({
     flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const history = new HistorySink(db, app.log);
+  const hub = new GatewayHub({ history, logger: app.log });
   const sessions = new SessionRegistry({
     tickets,
     wsUrl: config.FCHAT_URL,
@@ -62,7 +65,10 @@ export async function buildApp({
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
     onSessionStarted: (identityId, session) => {
+      // History first: message.new fan-out happens post-persistence via the
+      // sink's bus, so the sink must see every command the hub translates.
       history.attach(identityId, session);
+      hub.attachSession(identityId, session);
     },
   });
   app.decorate("sessions", sessions);
@@ -89,6 +95,8 @@ export async function buildApp({
     tickets,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(fastifyWebsocket);
+  await app.register(gatewayRoutes, { db, sessions, history, hub });
 
   app.get("/healthz", () => ({ status: "ok" }));
 
