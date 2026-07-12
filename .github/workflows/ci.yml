@@ -22,3 +22,5 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: pnpm lint
+      - run: pnpm --filter @emberline/web exec playwright install --with-deps chromium
+      - run: pnpm turbo e2e
