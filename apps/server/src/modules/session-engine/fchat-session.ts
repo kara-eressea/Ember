@@ -215,6 +215,7 @@ export class FchatSession {
       if (!this.#send({ cmd: "MSG", payload: { channel, message } })) {
         throw new SessionNotOnlineError(this.#status);
       }
+      this.events.emit("sent", { kind: "channel", channel, message });
     });
   }
 
@@ -225,6 +226,7 @@ export class FchatSession {
       if (!this.#send({ cmd: "PRI", payload: { recipient, message } })) {
         throw new SessionNotOnlineError(this.#status);
       }
+      this.events.emit("sent", { kind: "pm", recipient, message });
     });
   }
 

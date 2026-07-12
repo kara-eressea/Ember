@@ -6,11 +6,19 @@
 import type { ServerCommand } from "@emberline/fchat-protocol";
 import type { SessionStatus } from "./session-state.js";
 
+/** An outbound message that actually went onto the wire. The server never
+ * echoes MSG/PRI back to the sender, so history and fan-out need this. */
+export type OutboundMessage =
+  | { kind: "channel"; channel: string; message: string }
+  | { kind: "pm"; recipient: string; message: string };
+
 export interface SessionEvents {
   /** Session lifecycle transition. */
   status: { status: SessionStatus; reason?: string };
   /** Every known inbound server command, after it was folded into state. */
   command: ServerCommand;
+  /** Own MSG/PRI, emitted after the frame passed the flood gate and sent. */
+  sent: OutboundMessage;
 }
 
 type Listener<E> = (event: E) => void;

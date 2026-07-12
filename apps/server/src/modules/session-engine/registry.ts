@@ -12,6 +12,14 @@ export interface SessionRegistryOptions {
   readonly clientName: string;
   readonly clientVersion: string;
   readonly logger?: SessionLogger;
+  /**
+   * Invoked for every newly created session BEFORE it starts connecting, so
+   * subscribers (history sink, gateway) never miss an event.
+   */
+  readonly onSessionStarted?: (
+    identityId: string,
+    session: FchatSession,
+  ) => void;
 }
 
 export interface StartSessionParams {
@@ -48,6 +56,7 @@ export class SessionRegistry {
       logger: this.#options.logger,
     });
     this.#sessions.set(params.identityId, session);
+    this.#options.onSessionStarted?.(params.identityId, session);
     session.start();
     return session;
   }

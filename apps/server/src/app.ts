@@ -15,12 +15,15 @@ import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
+import { historyRoutes } from "./modules/history/routes.js";
+import { HistorySink } from "./modules/history/sink.js";
 import { SessionRegistry } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
 
 declare module "fastify" {
   interface FastifyInstance {
     sessions: SessionRegistry;
+    history: HistorySink;
   }
 }
 
@@ -51,14 +54,19 @@ export async function buildApp({
   const flistApi =
     flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
   const tickets = new TicketManagerRegistry(flistApi, vault);
+  const history = new HistorySink(db, app.log);
   const sessions = new SessionRegistry({
     tickets,
     wsUrl: config.FCHAT_URL,
     clientName: config.CLIENT_NAME,
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
+    onSessionStarted: (identityId, session) => {
+      history.attach(identityId, session);
+    },
   });
   app.decorate("sessions", sessions);
+  app.decorate("history", history);
   app.addHook("onClose", () => {
     sessions.stopAll();
   });
@@ -80,6 +88,7 @@ export async function buildApp({
     vault,
     tickets,
   });
+  await app.register(historyRoutes, { prefix: "/api/identities", db });
 
   app.get("/healthz", () => ({ status: "ok" }));
 
