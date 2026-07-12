@@ -21,7 +21,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 
 - [x] 1. Repo scaffold (`pnpm build` green)
 - [x] 2. `fchat-protocol` codec + core command schemas
-- [ ] 3. `fchat-sim` mock server
+- [x] 3. `fchat-sim` mock server
 - [ ] 4. Postgres + Drizzle schema + Fastify auth
 - [ ] 5. flist-accounts + TicketManager + in-memory credential vault
 - [ ] 6. Session engine v1 against sim
@@ -48,3 +48,4 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 | 2026-07-12 | Deployment context settled: VPS + docker-compose, friends-first scale (~tens), Brevo SMTP for M7 email. See `decisions.md` §5. |
 | 2026-07-12 | M1 started. Step 1 (repo scaffold) done: pnpm workspaces + Turborepo, 6 packages, ESLint flat config + Prettier, Vitest, GitHub Actions CI, `main` branch protection. TS note: packages build with native TS 7; root pins TS 6.0 for typescript-eslint until TS 7.1 ships the JS API. |
 | 2026-07-12 | M1 step 2 (`fchat-protocol`) done (PR #2): frame codec, zod schemas for the 20 core server commands + client counterparts, ServerVars/applyVar, error codes. Lenient parsing — anything unknown/malformed returns `{ cmd, raw }`. `parseClientCommand` is ready for fchat-sim (step 3). |
+| 2026-07-12 | M1 step 3 (`fchat-sim`) done (PR #4): ws + fake getApiTicket.php on one server; scripted handshake, fake world with NPCs, MSG/PRI relay (no sender echo), PIN discipline, account-wide ticket invalidation, misbehavior controls for step 6. Manual wscat-style walkthrough verified. Protocol gained CON, serializeServerCommand, flist-api ticket types. |
