@@ -3,6 +3,7 @@
 // roster capture, rate-gated outbound, PIN discipline, watchdog, and the
 // jittered reconnect backoff (including the 10-second policy floor).
 
+import { createServer, type AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import {
@@ -255,16 +256,18 @@ describe("reconnect backoff", () => {
     }
   });
 
-  it("is exactly the floor on the first attempt and grows exponentially", () => {
-    const options = {
-      floorMs: 10_000,
-      capMs: 300_000,
-      random: () => 1,
-    };
-    expect(backoffDelayMs(0, options)).toBe(10_000);
-    expect(backoffDelayMs(1, options)).toBe(20_000);
-    expect(backoffDelayMs(2, options)).toBe(40_000);
+  it("jitters every attempt (including the first) and grows exponentially", () => {
+    const options = { floorMs: 10_000, capMs: 300_000, random: () => 1 };
+    // Ceiling doubles per attempt starting at 2× the floor, so even the
+    // first retry after a mass disconnect is spread out, not synchronized.
+    expect(backoffDelayMs(0, options)).toBe(20_000);
+    expect(backoffDelayMs(1, options)).toBe(40_000);
+    expect(backoffDelayMs(2, options)).toBe(80_000);
     expect(backoffDelayMs(10, options)).toBe(300_000);
+    // Zero jitter is always the floor.
+    const min = { ...options, random: () => 0 };
+    expect(backoffDelayMs(0, min)).toBe(10_000);
+    expect(backoffDelayMs(10, min)).toBe(10_000);
   });
 });
 
@@ -539,6 +542,101 @@ describe("FchatSession against fchat-sim", () => {
     expect(backoffAt).toBeDefined();
     expect(retryAt).toBeDefined();
     expect(retryAt!.at - backoffAt!.at).toBeGreaterThanOrEqual(195);
+  });
+
+  it("gives up on a connection whose handshake never completes", async () => {
+    // A TCP server that accepts the socket and then says nothing: no ws
+    // event ever fires without a handshake timeout, so the session would
+    // hang in `connecting` forever.
+    const sockets = new Set<import("node:net").Socket>();
+    const blackhole = createServer((socket) => {
+      sockets.add(socket);
+    });
+    await new Promise<void>((resolve) => {
+      blackhole.listen(0, "127.0.0.1", resolve);
+    });
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve) => {
+          for (const socket of sockets) {
+            socket.destroy();
+          }
+          blackhole.close(() => {
+            resolve();
+          });
+        }),
+    );
+    const port = (blackhole.address() as AddressInfo).port;
+
+    const session = new FchatSession({
+      character: CHARACTER,
+      accountName: ACCOUNT,
+      tickets: { getTicket: () => Promise.resolve("fct_x"), invalidate() {} },
+      wsUrl: `ws://127.0.0.1:${String(port)}/chat2`,
+      clientName: "Emberline-test",
+      clientVersion: "0.0.0",
+      watchdogMs: 150,
+      backoffFloorMs: 50,
+      backoffCapMs: 100,
+      random: () => 0,
+    });
+    cleanups.push(() => {
+      session.stop();
+    });
+    session.start();
+    await waitForStatus(session, "backoff");
+  });
+
+  it("stops after repeated identify rejections instead of looping", async () => {
+    const sim = await startSim();
+    const getTicket = vi.fn(() => Promise.resolve("fct_bogus"));
+    const invalidate = vi.fn();
+    const session = makeSession(sim, { tickets: { getTicket, invalidate } });
+    session.start();
+    await waitForStatus(session, "stopped");
+
+    // One rejection per fetched ticket, then it gives up — fresh tickets
+    // invalidate account-wide, so looping would degrade sibling sessions.
+    expect(getTicket).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not rejoin a channel it was kicked from", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+
+    const joined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Frontpage",
+    );
+    session.joinChannel("Frontpage");
+    await joined;
+
+    // Server-initiated LCH for our own character = kick.
+    sim.sendRawTo(
+      CHARACTER,
+      serializeServerCommand({
+        cmd: "LCH",
+        payload: { channel: "Frontpage", character: CHARACTER },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(session.state.channels.has("Frontpage")).toBe(false);
+    });
+
+    // Reconnect. Rejoin JCHs go out on IDN, before our Development join, so
+    // once Development's CDS arrives any Frontpage rejoin would be visible.
+    sim.disconnect(CHARACTER);
+    await waitForStatus(session, "online", { next: true });
+    const fence = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    session.joinChannel("Development");
+    await fence;
+    expect(session.state.channels.has("Frontpage")).toBe(false);
   });
 
   it("drops a rejected ticket and identifies with a fresh one", async () => {

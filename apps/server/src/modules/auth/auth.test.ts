@@ -231,6 +231,30 @@ describe("logout", () => {
     });
     expect(refresh.statusCode).toBe(401);
   });
+
+  it("revokes outstanding access tokens immediately, not after their TTL", async () => {
+    const { accessToken, refreshToken } = await registerUser();
+    const before = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(before.statusCode).toBe(200);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      payload: { refreshToken },
+    });
+
+    // The JWT is still within its 15-minute TTL, but its session is gone.
+    const after = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(after.statusCode).toBe(401);
+  });
 });
 
 describe("rate limiting", () => {

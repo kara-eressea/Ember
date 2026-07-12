@@ -105,7 +105,15 @@ export class RateGate {
     }
     state.queue.shift();
     state.lastSentAt = now;
-    head.send();
+    try {
+      head.send();
+    } catch (error) {
+      // #pump runs from timers too — surface the failure to the scheduling
+      // caller, never as an uncaught timer exception.
+      head.reject(error instanceof Error ? error : new Error(String(error)));
+      this.#pump(cls, state);
+      return;
+    }
     head.resolve();
     this.#pump(cls, state);
   }

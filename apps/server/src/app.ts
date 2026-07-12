@@ -8,7 +8,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from "fastify-type-provider-zod";
-import type { AppConfig } from "./config.js";
+import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
@@ -38,7 +38,12 @@ export async function buildApp({
   logger = true,
   flistApiClient,
 }: BuildAppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger });
+  // Without the right trustProxy, every client behind a reverse proxy shares
+  // the proxy's IP and the per-IP rate limits become one global bucket.
+  const app = Fastify({
+    logger,
+    trustProxy: trustProxyValue(config.TRUST_PROXY),
+  });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
@@ -63,7 +68,7 @@ export async function buildApp({
   });
   // Global backstop; the auth endpoints set stricter per-route limits.
   await app.register(fastifyRateLimit, { max: 300, timeWindow: "1 minute" });
-  await app.register(authPlugin, { secret: config.AUTH_SECRET });
+  await app.register(authPlugin, { secret: config.AUTH_SECRET, db });
   await app.register(authRoutes, {
     prefix: "/api/auth",
     db,

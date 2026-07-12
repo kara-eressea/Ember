@@ -36,6 +36,13 @@ export const RECONNECT_CAP_MS = 5 * 60 * 1000;
 export const PIN_MIN_INTERVAL_MS = 10_000;
 /** Inbound silence after which the connection is considered dead (~3 PINs). */
 export const WATCHDOG_MS = 90_000;
+/**
+ * Consecutive IDN rejections (each with a freshly fetched ticket) before the
+ * session stops instead of looping. A persistent rejection means the
+ * character no longer exists on the account — retrying forever would churn
+ * tickets, which invalidate account-wide and degrade sibling sessions.
+ */
+export const MAX_IDENTIFY_REJECTIONS = 3;
 
 export interface BackoffOptions {
   readonly floorMs: number;
@@ -44,15 +51,16 @@ export interface BackoffOptions {
 }
 
 /**
- * Jittered exponential backoff: full jitter between the floor and the
- * exponential ceiling for this attempt. Attempt 0 is exactly the floor;
- * the result never leaves [floorMs, capMs].
+ * Jittered exponential backoff: full jitter between the floor and an
+ * exponential ceiling of floor·2^(attempt+1). Even the first retry is
+ * jittered so a mass disconnect does not reconnect in lockstep. The result
+ * never leaves [floorMs, capMs].
  */
 export function backoffDelayMs(
   attempt: number,
   { floorMs, capMs, random }: BackoffOptions,
 ): number {
-  const ceiling = Math.min(capMs, floorMs * 2 ** attempt);
+  const ceiling = Math.min(capMs, floorMs * 2 ** (attempt + 1));
   return floorMs + random() * (ceiling - floorMs);
 }
 
@@ -135,6 +143,7 @@ export class FchatSession {
   #reconnectTimer: NodeJS.Timeout | undefined;
   #watchdogTimer: NodeJS.Timeout | undefined;
   #lastPinSentAt = 0;
+  #identifyRejections = 0;
   /** Channels the user wants to be in; rejoined after every reconnect. */
   readonly #desiredChannels = new Set<string>();
 
@@ -166,7 +175,7 @@ export class FchatSession {
     if (this.#status !== "idle") {
       return;
     }
-    void this.#connect();
+    this.#connectSafely();
   }
 
   /** Terminal: closes the connection and cancels any reconnect. */
@@ -195,12 +204,17 @@ export class FchatSession {
     }
   }
 
-  /** Resolves when the frame passed the flood gate onto the wire. */
+  /**
+   * Resolves when the frame passed the flood gate onto the wire; rejects if
+   * the connection went away first (never a false "sent").
+   */
   async sendChannelMessage(channel: string, message: string): Promise<void> {
     this.#assertOnline();
     this.#assertLength(message, this.state.vars.chat_max);
     await this.#rateGate.schedule("MSG", () => {
-      this.#send({ cmd: "MSG", payload: { channel, message } });
+      if (!this.#send({ cmd: "MSG", payload: { channel, message } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
     });
   }
 
@@ -208,7 +222,9 @@ export class FchatSession {
     this.#assertOnline();
     this.#assertLength(message, this.state.vars.priv_max);
     await this.#rateGate.schedule("PRI", () => {
-      this.#send({ cmd: "PRI", payload: { recipient, message } });
+      if (!this.#send({ cmd: "PRI", payload: { recipient, message } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
     });
   }
 
@@ -225,6 +241,19 @@ export class FchatSession {
   }
 
   // ── Connection lifecycle ───────────────────────────────────────────────────
+
+  /**
+   * #connect handles its expected failures itself; this backstop exists so
+   * an unexpected throw (e.g. a misconfigured URL scheme rejected by the ws
+   * constructor) becomes a logged reconnect cycle instead of an unhandled
+   * rejection taking down the whole multi-tenant process.
+   */
+  #connectSafely(): void {
+    this.#connect().catch((error: unknown) => {
+      this.#log.error({ err: error }, "unexpected connect failure");
+      this.#scheduleReconnect();
+    });
+  }
 
   async #connect(): Promise<void> {
     this.#setStatus("acquiring_ticket");
@@ -250,7 +279,12 @@ export class FchatSession {
     }
 
     this.#setStatus("connecting");
-    const socket = new WebSocket(this.#wsUrl);
+    // Without handshakeTimeout a host that accepts TCP but never completes
+    // the upgrade would leave the session in `connecting` forever — no event
+    // fires, so no watchdog or close handler can save it.
+    const socket = new WebSocket(this.#wsUrl, {
+      handshakeTimeout: this.#watchdogMs,
+    });
     this.#socket = socket;
     socket.on("open", () => {
       if (this.#socket !== socket) {
@@ -304,6 +338,7 @@ export class FchatSession {
       case "IDN":
         this.state.apply(command);
         this.#attempt = 0;
+        this.#identifyRejections = 0;
         this.#setStatus("online");
         for (const channel of this.#desiredChannels) {
           this.#send({ cmd: "JCH", payload: { channel } });
@@ -312,6 +347,15 @@ export class FchatSession {
         return;
       case "ERR":
         this.#handleError(command.payload.number);
+        this.events.emit("command", command);
+        return;
+      case "LCH":
+        if (command.payload.character === this.character) {
+          // Server-initiated removal (kick/ban) — stop rejoining it on
+          // reconnect. Our own leaveChannel() already forgot the channel.
+          this.#desiredChannels.delete(command.payload.channel);
+        }
+        this.state.apply(command);
         this.events.emit("command", command);
         return;
       default:
@@ -332,6 +376,16 @@ export class FchatSession {
       // is stale, the TicketManager throws FlistAuthError and we stop.
       this.#log.warn({ number }, "identification rejected, dropping ticket");
       this.#tickets.invalidate();
+      this.#identifyRejections += 1;
+      if (this.#identifyRejections >= MAX_IDENTIFY_REJECTIONS) {
+        // Fresh tickets keep being rejected: the character is gone or the
+        // account is in a state the user must resolve. Looping would churn
+        // tickets account-wide.
+        this.stop(
+          `identification rejected ${String(this.#identifyRejections)} times — check the character still exists`,
+        );
+        return;
+      }
       this.#scheduleReconnect();
       return;
     }
@@ -362,7 +416,7 @@ export class FchatSession {
     );
     this.#reconnectTimer = setTimeout(() => {
       this.#reconnectTimer = undefined;
-      void this.#connect();
+      this.#connectSafely();
     }, delay);
   }
 
@@ -400,10 +454,13 @@ export class FchatSession {
     }, this.#watchdogMs);
   }
 
-  #send(command: ClientCommand): void {
+  /** Returns false when the socket cannot take the frame (closing/closed). */
+  #send(command: ClientCommand): boolean {
     if (this.#socket?.readyState === WebSocket.OPEN) {
       this.#socket.send(serializeClientCommand(command));
+      return true;
     }
+    return false;
   }
 
   #setStatus(status: SessionStatus, reason?: string): void {

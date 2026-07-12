@@ -1,13 +1,25 @@
 import { z } from "zod";
 
+// The .env.example placeholder. Refusing it at startup means a copied-but-
+// unedited env file cannot silently ship a world-readable signing secret.
+const PLACEHOLDER_AUTH_SECRET = "dev-only-secret-change-me-0000000000";
+
 // All deployment-specific values — including branding and the IDN
 // cname/cversion — come from the environment (decisions.md §5).
 const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
-  AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
+  AUTH_SECRET: z
+    .string()
+    .min(32, "AUTH_SECRET must be at least 32 characters")
+    .refine((secret) => secret !== PLACEHOLDER_AUTH_SECRET, {
+      message:
+        "AUTH_SECRET is the .env.example placeholder — generate a real one",
+    }),
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-  FCHAT_URL: z.url().default("wss://chat.f-list.net/chat2"),
+  FCHAT_URL: z
+    .url({ protocol: /^wss?$/ })
+    .default("wss://chat.f-list.net/chat2"),
   FLIST_API_URL: z.url().default("https://www.f-list.net"),
   APP_NAME: z.string().default("Emberline"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
@@ -17,6 +29,13 @@ const configSchema = z.object({
   CORS_ORIGIN: z.string().optional(),
   /** Requests per minute per IP on the auth endpoints. */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+  /**
+   * Fastify trustProxy setting. Unset means "no proxy" (client IPs are taken
+   * from the socket). Behind nginx/traefik this MUST be set, or rate limits
+   * key on the proxy's address — one shared bucket for every client.
+   * Accepts: "true"/"false", a hop count, or comma-separated addresses/CIDRs.
+   */
+  TRUST_PROXY: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -25,4 +44,23 @@ export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): AppConfig {
   return configSchema.parse(env);
+}
+
+/** Translates TRUST_PROXY into the value Fastify's trustProxy option takes. */
+export function trustProxyValue(
+  raw: string | undefined,
+): boolean | number | string | string[] {
+  if (raw === undefined || raw === "" || raw === "false") {
+    return false;
+  }
+  if (raw === "true") {
+    return true;
+  }
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  if (raw.includes(",")) {
+    return raw.split(",").map((part) => part.trim());
+  }
+  return raw;
 }

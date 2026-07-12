@@ -68,6 +68,24 @@ describe("RateGate", () => {
     expect(sent).toEqual(["first"]);
   });
 
+  it("rejects the caller when send throws (socket died mid-queue)", async () => {
+    const gate = new RateGate(() => 0.1);
+    const sent: string[] = [];
+    await gate.schedule("MSG", () => sent.push("ok"));
+    // The failure surfaces to its caller (handler attached up front — the
+    // rejection fires from a timer); the queue keeps draining.
+    const dead = expect(
+      gate.schedule("MSG", () => {
+        throw new Error("socket closed");
+      }),
+    ).rejects.toThrow("socket closed");
+    const after = gate.schedule("MSG", () => sent.push("after"));
+    await vi.advanceTimersByTimeAsync(2 * (100 + FLOOD_MARGIN_MS));
+    await dead;
+    await after;
+    expect(sent).toEqual(["ok", "after"]);
+  });
+
   it("recovers after clear(): the next send goes out immediately", async () => {
     const gate = new RateGate(() => 60);
     const sent: string[] = [];
