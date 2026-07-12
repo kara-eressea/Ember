@@ -1,3 +1,12 @@
 packages:
   - apps/*
   - packages/*
+allowBuilds:
+  # argon2 ships a native module; its install script resolves/builds the binding.
+  argon2: true
+  # drizzle-kit runs via the esbuild binary.
+  esbuild: true
+  # Optional testcontainers transitive deps (ssh tunnels) — not used; keep scripts off.
+  cpu-features: false
+  ssh2: false
+  protobufjs: false

@@ -1,0 +1,261 @@
+import argon2 from "argon2";
+import { and, eq, gt } from "drizzle-orm";
+import { z } from "zod";
+import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import type { Db } from "../../db/index.js";
+import { appUsers, authSessions } from "../../db/schema.js";
+import { ACCESS_TOKEN_TTL } from "../../plugins/auth.js";
+import {
+  generateRefreshToken,
+  hashRefreshToken,
+  refreshExpiry,
+} from "./tokens.js";
+
+const userResponse = z.object({
+  id: z.string(),
+  email: z.string(),
+  username: z.string(),
+  createdAt: z.date(),
+});
+
+const tokenResponse = z.object({
+  user: userResponse,
+  accessToken: z.string(),
+  refreshToken: z.string(),
+});
+
+const registerBody = z.object({
+  email: z.email().max(254),
+  username: z
+    .string()
+    .min(3)
+    .max(32)
+    .regex(/^[a-zA-Z0-9_.-]+$/, "letters, digits, and _.- only"),
+  password: z.string().min(8).max(128),
+  deviceLabel: z.string().max(100).optional(),
+});
+
+const loginBody = z.object({
+  email: z.email().max(254),
+  password: z.string().min(1).max(128),
+  deviceLabel: z.string().max(100).optional(),
+});
+
+const refreshBody = z.object({ refreshToken: z.string().min(1) });
+
+// Verified against when the email is unknown, so login latency does not
+// reveal whether an account exists.
+const dummyHash = await argon2.hash("emberline-timing-equalizer");
+
+const PG_UNIQUE_VIOLATION = "23505";
+
+// Drizzle wraps driver errors (DrizzleQueryError), so the Postgres error
+// code sits on `cause` — walk the chain.
+function isUniqueViolation(error: unknown): boolean {
+  for (
+    let current = error;
+    typeof current === "object" && current !== null;
+    current = (current as { cause?: unknown }).cause
+  ) {
+    if ((current as { code?: unknown }).code === PG_UNIQUE_VIOLATION) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export interface AuthRoutesOptions {
+  db: Db;
+  /** Requests per minute per IP on these endpoints. */
+  rateLimitMax: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
+export async function authRoutes(
+  instance: FastifyInstance,
+  options: AuthRoutesOptions,
+): Promise<void> {
+  const app = instance.withTypeProvider<ZodTypeProvider>();
+  const { db, rateLimitMax } = options;
+  const rateLimit = { max: rateLimitMax, timeWindow: "1 minute" };
+
+  async function issueSession(
+    user: { id: string; email: string; username: string; createdAt: Date },
+    deviceLabel: string | undefined,
+  ) {
+    const { token, hash } = generateRefreshToken();
+    const [session] = await db
+      .insert(authSessions)
+      .values({
+        userId: user.id,
+        refreshTokenHash: hash,
+        deviceLabel: deviceLabel ?? null,
+        expiresAt: refreshExpiry(),
+      })
+      .returning({ id: authSessions.id });
+    if (!session) {
+      throw new Error("session insert returned no row");
+    }
+    const accessToken = app.jwt.sign(
+      { sub: user.id, sid: session.id },
+      { expiresIn: ACCESS_TOKEN_TTL },
+    );
+    return { user, accessToken, refreshToken: token };
+  }
+
+  app.post(
+    "/register",
+    {
+      config: { rateLimit },
+      schema: {
+        body: registerBody,
+        response: { 201: tokenResponse, 409: z.object({ error: z.string() }) },
+      },
+    },
+    async (request, reply) => {
+      const { email, username, password, deviceLabel } = request.body;
+      const passwordHash = await argon2.hash(password);
+      let user;
+      try {
+        [user] = await db
+          .insert(appUsers)
+          .values({ email: email.toLowerCase(), username, passwordHash })
+          .returning({
+            id: appUsers.id,
+            email: appUsers.email,
+            username: appUsers.username,
+            createdAt: appUsers.createdAt,
+          });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          return reply
+            .code(409)
+            .send({ error: "Email or username is already taken" });
+        }
+        throw error;
+      }
+      if (!user) {
+        throw new Error("user insert returned no row");
+      }
+      return reply.code(201).send(await issueSession(user, deviceLabel));
+    },
+  );
+
+  app.post(
+    "/login",
+    {
+      config: { rateLimit },
+      schema: {
+        body: loginBody,
+        response: { 200: tokenResponse, 401: z.object({ error: z.string() }) },
+      },
+    },
+    async (request, reply) => {
+      const { email, password, deviceLabel } = request.body;
+      const [user] = await db
+        .select()
+        .from(appUsers)
+        .where(eq(appUsers.email, email.toLowerCase()))
+        .limit(1);
+      const validPassword = await argon2.verify(
+        user?.passwordHash ?? dummyHash,
+        password,
+      );
+      if (!user || !validPassword) {
+        return reply.code(401).send({ error: "Invalid email or password" });
+      }
+      return reply.send(await issueSession(user, deviceLabel));
+    },
+  );
+
+  app.post(
+    "/refresh",
+    {
+      config: { rateLimit },
+      schema: {
+        body: refreshBody,
+        response: {
+          200: z.object({ accessToken: z.string(), refreshToken: z.string() }),
+          401: z.object({ error: z.string() }),
+        },
+      },
+    },
+    async (request, reply) => {
+      const now = new Date();
+      const presentedHash = hashRefreshToken(request.body.refreshToken);
+      // Rotation: swap in a new token in the same statement that matches the
+      // old one, so a token can never be redeemed twice.
+      const { token, hash } = generateRefreshToken();
+      const [session] = await db
+        .update(authSessions)
+        .set({
+          refreshTokenHash: hash,
+          expiresAt: refreshExpiry(now),
+          lastSeenAt: now,
+        })
+        .where(
+          and(
+            eq(authSessions.refreshTokenHash, presentedHash),
+            gt(authSessions.expiresAt, now),
+          ),
+        )
+        .returning({ id: authSessions.id, userId: authSessions.userId });
+      if (!session) {
+        return reply
+          .code(401)
+          .send({ error: "Invalid or expired refresh token" });
+      }
+      const accessToken = app.jwt.sign(
+        { sub: session.userId, sid: session.id },
+        { expiresIn: ACCESS_TOKEN_TTL },
+      );
+      return reply.send({ accessToken, refreshToken: token });
+    },
+  );
+
+  app.post(
+    "/logout",
+    { config: { rateLimit }, schema: { body: refreshBody } },
+    async (request, reply) => {
+      await db
+        .delete(authSessions)
+        .where(
+          eq(
+            authSessions.refreshTokenHash,
+            hashRefreshToken(request.body.refreshToken),
+          ),
+        );
+      return reply.code(204).send();
+    },
+  );
+
+  app.get(
+    "/me",
+    {
+      preHandler: app.authenticate,
+      schema: {
+        response: {
+          200: z.object({ user: userResponse }),
+          401: z.object({ error: z.string() }),
+        },
+      },
+    },
+    async (request, reply) => {
+      const [user] = await db
+        .select({
+          id: appUsers.id,
+          email: appUsers.email,
+          username: appUsers.username,
+          createdAt: appUsers.createdAt,
+        })
+        .from(appUsers)
+        .where(eq(appUsers.id, request.user.sub))
+        .limit(1);
+      if (!user) {
+        return reply.code(401).send({ error: "Unauthorized" });
+      }
+      return reply.send({ user });
+    },
+  );
+}
