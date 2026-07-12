@@ -1,3 +1,7 @@
-// F-Chat wire types + codec (M1 step 2): frame codec, zod command schemas,
-// ServerVars, error codes, F-List JSON API types.
-export {};
+// F-Chat wire protocol: frame codec, command schemas, server vars, error codes.
+export * from "./codec.js";
+export * from "./enums.js";
+export * from "./server-commands.js";
+export * from "./client-commands.js";
+export * from "./vars.js";
+export * from "./error-codes.js";

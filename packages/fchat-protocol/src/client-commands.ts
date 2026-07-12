@@ -1,0 +1,94 @@
+// Schemas for commands sent by the F-Chat client (design/client-commands.md).
+//
+// Our own code constructs these as typed ClientCommand values and serializes
+// with serializeClientCommand. parseClientCommand exists for the other side
+// of the wire — packages/fchat-sim — and is as lenient as the server parser.
+
+import { z } from "zod";
+import { parseFrame, serializeFrame, type RawCommand } from "./codec.js";
+import { CLIENT_SETTABLE_STATUSES, TYPING_STATUSES } from "./enums.js";
+
+export const clientCommandSchemas = {
+  /** Request the list of all public channels. Bare command. */
+  CHA: z.undefined(),
+  /**
+   * Identify with the server. Must be the first command sent; cname/cversion
+   * uniquely identify this client (developer policy).
+   */
+  IDN: z.object({
+    method: z.literal("ticket"),
+    account: z.string(),
+    ticket: z.string(),
+    character: z.string(),
+    cname: z.string(),
+    cversion: z.string(),
+  }),
+  /** Join a channel. */
+  JCH: z.object({ channel: z.string() }),
+  /** Leave a channel. */
+  LCH: z.object({ channel: z.string() }),
+  /** Send a channel message. Length/flood limits come from VAR at runtime. */
+  MSG: z.object({ channel: z.string(), message: z.string() }),
+  /** Request the list of open private rooms. Bare command. */
+  ORS: z.undefined(),
+  /** Ping response. Bare command; never send more than one per 10 seconds. */
+  PIN: z.undefined(),
+  /** Send a private message. */
+  PRI: z.object({ recipient: z.string(), message: z.string() }),
+  /** Set own status. "crown" is server-set (RWD) and deliberately excluded. */
+  STA: z.object({
+    status: z.enum(CLIENT_SETTABLE_STATUSES),
+    statusmsg: z.string(),
+  }),
+  /** Send own typing status for a private conversation. */
+  TPN: z.object({ character: z.string(), status: z.enum(TYPING_STATUSES) }),
+} as const;
+
+export type ClientCommandName = keyof typeof clientCommandSchemas;
+
+export type ClientCommandPayload<K extends ClientCommandName> = z.infer<
+  (typeof clientCommandSchemas)[K]
+>;
+
+export type ClientCommand = {
+  [K in ClientCommandName]: undefined extends ClientCommandPayload<K>
+    ? { readonly cmd: K }
+    : { readonly cmd: K; readonly payload: ClientCommandPayload<K> };
+}[ClientCommandName];
+
+export function isClientCommandName(cmd: string): cmd is ClientCommandName {
+  return Object.hasOwn(clientCommandSchemas, cmd);
+}
+
+export function serializeClientCommand(command: ClientCommand): string {
+  return serializeFrame(command);
+}
+
+/**
+ * Parses a raw wire string sent by a client (used by fchat-sim). Never
+ * throws; anything unknown, malformed, or schema-mismatched comes back as a
+ * RawCommand.
+ */
+export function parseClientCommand(raw: string): ClientCommand | RawCommand {
+  const result = parseFrame(raw);
+  if (!result.ok) {
+    return { cmd: raw.slice(0, 3), raw };
+  }
+  const { cmd, payload } = result.frame;
+  if (!isClientCommandName(cmd)) {
+    return { cmd, raw };
+  }
+  const parsed = clientCommandSchemas[cmd].safeParse(payload);
+  if (!parsed.success) {
+    return { cmd, raw };
+  }
+  return (
+    parsed.data === undefined ? { cmd } : { cmd, payload: parsed.data }
+  ) as ClientCommand;
+}
+
+export function isKnownClientCommand(
+  command: ClientCommand | RawCommand,
+): command is ClientCommand {
+  return !("raw" in command);
+}
