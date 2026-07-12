@@ -32,6 +32,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@emberline/fchat-protocol':
+        specifier: workspace:*
+        version: link:../../packages/fchat-protocol
       '@fastify/cors':
         specifier: ^11.3.0
         version: 11.3.0
@@ -63,6 +66,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@emberline/fchat-sim':
+        specifier: workspace:*
+        version: link:../../packages/fchat-sim
       '@testcontainers/postgresql':
         specifier: ^12.0.4
         version: 12.0.4

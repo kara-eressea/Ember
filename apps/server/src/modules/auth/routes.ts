@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
+import { isUniqueViolation } from "../../db/errors.js";
 import { appUsers, authSessions } from "../../db/schema.js";
 import { ACCESS_TOKEN_TTL } from "../../plugins/auth.js";
 import {
@@ -47,23 +48,6 @@ const refreshBody = z.object({ refreshToken: z.string().min(1) });
 // Verified against when the email is unknown, so login latency does not
 // reveal whether an account exists.
 const dummyHash = await argon2.hash("emberline-timing-equalizer");
-
-const PG_UNIQUE_VIOLATION = "23505";
-
-// Drizzle wraps driver errors (DrizzleQueryError), so the Postgres error
-// code sits on `cause` — walk the chain.
-function isUniqueViolation(error: unknown): boolean {
-  for (
-    let current = error;
-    typeof current === "object" && current !== null;
-    current = (current as { cause?: unknown }).cause
-  ) {
-    if ((current as { code?: unknown }).code === PG_UNIQUE_VIOLATION) {
-      return true;
-    }
-  }
-  return false;
-}
 
 export interface AuthRoutesOptions {
   db: Db;
