@@ -25,7 +25,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [x] 4. Postgres + Drizzle schema + Fastify auth
 - [x] 5. flist-accounts + TicketManager + in-memory credential vault
 - [x] 6. Session engine v1 against sim
-- [ ] 7. History sink + REST pagination
+- [x] 7. History sink + REST pagination
 - [ ] 8. Gateway (hello/sub/snapshot/event/cmd/ack)
 - [ ] 9. Web auth flows + theme system
 - [ ] 10. App shell + live chat (full slice E2E)
@@ -55,6 +55,8 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 | 2026-07-12 | Deployment context settled: VPS + docker-compose, friends-first scale (~tens), Brevo SMTP for M7 email. See `decisions.md` §5. |
 | 2026-07-12 | M1 started. Step 1 (repo scaffold) done: pnpm workspaces + Turborepo, 6 packages, ESLint flat config + Prettier, Vitest, GitHub Actions CI, `main` branch protection. TS note: packages build with native TS 7; root pins TS 6.0 for typescript-eslint until TS 7.1 ships the JS API. |
 | 2026-07-12 | M1 step 2 (`fchat-protocol`) done (PR #2): frame codec, zod schemas for the 20 core server commands + client counterparts, ServerVars/applyVar, error codes. Lenient parsing — anything unknown/malformed returns `{ cmd, raw }`. `parseClientCommand` is ready for fchat-sim (step 3). |
+| 2026-07-12 | M1 step 7 (history sink + pagination) done (Ember PR #1): HistorySink off the session event bus via SessionRegistry.onSessionStarted — persists channel MSG/PM/channel-SYS and our own sends (new `sent` session event, sentByUs flag) through a serial queue so message ids are the resume cursor; conversation find-or-create on the identity/kind/target unique index; joined flag follows own JCH/LCH. REST: conversation list + `messages?before=<id>&limit=` cursor pagination (ascending pages, hasMore, ownership-scoped). 6 integration tests through the production path. |
+| 2026-07-12 | Repo re-homed: history rewritten to the project identity and moved to a fresh repository; PR numbering restarts at #1. |
 | 2026-07-12 | Post-step-6 audit (coverage + two adversarial reviews) and fix pass: ws handshake timeout (session could hang in `connecting` forever), TRUST_PROXY config (rate limits collapsed to one bucket behind a proxy), identify-rejection cap (ERR 4 loop churned tickets account-wide), kick removes channel from rejoin set, sends reject instead of false-success on a dying socket, access tokens die with their session (sid checked on authenticate), placeholder AUTH_SECRET refused at boot, first-attempt backoff jitter, unhandled-rejection backstop on connect. SessionRegistry test suite added (was the one coverage hole). Remaining low-priority items → standing to-dos. |
 | 2026-07-12 | M1 step 6 (session engine v1) done (PR #11): FchatSession state machine (IDN-first, PIN ≤1/10s, ~90s watchdog, jittered reconnect backoff floored at 10s/capped 5 min, channel rejoin, bad-ticket refresh, auth-failure stop), SessionState roster, RateGate (live msg_flood + 100ms margin — server measures the window at receive time), SessionEventBus, SessionRegistry as `app.sessions`. 25 tests incl. sim-scripted watchdog/backoff-floor/PIN-discipline scenarios. |
 | 2026-07-12 | M1 step 5 (flist-accounts) done (PR #9): FlistApiClient (1 req/s throttle), per-account TicketManager (25-min cache, coalesced fetches, invalidate hook), in-memory CredentialVault with serialization redaction, add/unlock/characters/delete routes. Integration tests incl. restart→423→unlock flow and log-capture proof that passwords never hit logs. |
