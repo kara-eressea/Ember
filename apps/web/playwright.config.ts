@@ -17,7 +17,7 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${String(WEB_PORT)}`,
   },
   webServer: {
-    command: `pnpm exec vite --port ${String(WEB_PORT)} --strictPort`,
+    command: `pnpm exec vite --host 127.0.0.1 --port ${String(WEB_PORT)} --strictPort`,
     url: `http://127.0.0.1:${String(WEB_PORT)}`,
     // Generous: on a cold CI runner this window also covers global-setup's
     // first-time postgres image pull.
