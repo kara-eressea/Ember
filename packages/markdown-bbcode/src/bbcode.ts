@@ -1,0 +1,319 @@
+// BBCode AST for exactly the F-Chat chat subset (design/chat-bbcode-tags.md):
+// b i u s sup sub color url user icon eicon noparse. The parser never
+// interprets anything outside the subset — unknown or malformed tags come
+// back as literal text, which is also how the official clients display them.
+// Renderers consume the AST; `sanitizeBBCode` is the parse→serialize
+// normalization for contexts that need a guaranteed-subset string.
+
+/** The [color=…] names F-Chat accepts (fixed list, wiki-verified). */
+export const BB_COLORS = [
+  "red",
+  "blue",
+  "white",
+  "yellow",
+  "pink",
+  "gray",
+  "green",
+  "orange",
+  "purple",
+  "black",
+  "brown",
+  "cyan",
+] as const;
+export type BBColor = (typeof BB_COLORS)[number];
+
+/** Plain formatting wrappers: nestable, no parameters. */
+export const BB_WRAPPER_TAGS = ["b", "i", "u", "s", "sup", "sub"] as const;
+export type BBWrapperTag = (typeof BB_WRAPPER_TAGS)[number];
+
+/** Tags whose body is a bare F-List name, never markup. */
+export const BB_NAME_TAGS = ["user", "icon", "eicon"] as const;
+export type BBNameTag = (typeof BB_NAME_TAGS)[number];
+
+export type BBNode =
+  | { readonly type: "text"; readonly text: string }
+  | {
+      readonly type: "wrapper";
+      readonly tag: BBWrapperTag;
+      readonly children: readonly BBNode[];
+    }
+  | {
+      readonly type: "color";
+      readonly color: BBColor;
+      readonly children: readonly BBNode[];
+    }
+  | {
+      readonly type: "url";
+      readonly href: string;
+      readonly children: readonly BBNode[];
+    }
+  | { readonly type: "name"; readonly tag: BBNameTag; readonly name: string }
+  | { readonly type: "noparse"; readonly text: string };
+
+/** F-List character names; eicon names additionally allow dots. */
+const NAME_RE = /^[a-zA-Z0-9 _.-]{1,64}$/;
+
+/** The wiki is explicit: the scheme is required or the URL "fails as bad". */
+function validHref(href: string): boolean {
+  return /^https?:\/\/\S+$/i.test(href);
+}
+
+interface TagToken {
+  readonly closing: boolean;
+  readonly tag: string;
+  readonly param: string | undefined;
+  /** Raw source of the token, for literalizing. */
+  readonly raw: string;
+  readonly length: number;
+}
+
+/** Matches `[tag]`, `[/tag]`, `[tag=param]` at `input[at]`, or nothing. */
+function readTagToken(input: string, at: number): TagToken | undefined {
+  const match = /^\[(\/?)([a-zA-Z]+)(?:=([^\]\n]*))?\]/.exec(input.slice(at));
+  if (!match) {
+    return undefined;
+  }
+  return {
+    closing: match[1] === "/",
+    tag: match[2]!.toLowerCase(),
+    param: match[3],
+    raw: match[0],
+    length: match[0].length,
+  };
+}
+
+function isWrapperTag(tag: string): tag is BBWrapperTag {
+  return (BB_WRAPPER_TAGS as readonly string[]).includes(tag);
+}
+
+function isNameTag(tag: string): tag is BBNameTag {
+  return (BB_NAME_TAGS as readonly string[]).includes(tag);
+}
+
+function isColor(param: string): param is BBColor {
+  return (BB_COLORS as readonly string[]).includes(param);
+}
+
+interface Frame {
+  /** The node under construction; text/children accumulate in `children`. */
+  readonly open: TagToken;
+  readonly children: BBNode[];
+}
+
+function pushText(children: BBNode[], text: string): void {
+  if (text === "") {
+    return;
+  }
+  const last = children.at(-1);
+  if (last?.type === "text") {
+    children[children.length - 1] = { type: "text", text: last.text + text };
+    return;
+  }
+  children.push({ type: "text", text });
+}
+
+/**
+ * Finds `[/tag]` (case-insensitive) from `from`; used for raw-body tags
+ * (noparse, name tags, parameterless url) whose contents are never markup.
+ */
+function findClose(input: string, from: number, tag: string): number {
+  const needle = `[/${tag}]`;
+  const index = input.toLowerCase().indexOf(needle, from);
+  return index;
+}
+
+/**
+ * Parses BBCode into the subset AST. Lenient by design: unknown tags,
+ * mismatched closers, bad parameters, and unclosed openers all become
+ * literal text rather than errors — chat input is hostile and the wire
+ * must never make us throw.
+ */
+export function parseBBCode(input: string): BBNode[] {
+  const root: Frame = {
+    open: { closing: false, tag: "", param: undefined, raw: "", length: 0 },
+    children: [],
+  };
+  const stack: Frame[] = [root];
+  let at = 0;
+
+  const top = (): Frame => stack[stack.length - 1]!;
+
+  while (at < input.length) {
+    const bracket = input.indexOf("[", at);
+    if (bracket === -1) {
+      pushText(top().children, input.slice(at));
+      break;
+    }
+    if (bracket > at) {
+      pushText(top().children, input.slice(at, bracket));
+      at = bracket;
+    }
+    const token = readTagToken(input, at);
+    if (!token) {
+      pushText(top().children, "[");
+      at += 1;
+      continue;
+    }
+
+    if (token.closing) {
+      if (stack.length > 1 && top().open.tag === token.tag) {
+        const frame = stack.pop()!;
+        top().children.push(buildNode(frame));
+      } else {
+        // A closer with no matching opener on top: literal.
+        pushText(top().children, token.raw);
+      }
+      at += token.length;
+      continue;
+    }
+
+    // Raw-body tags: consume straight to their closer, no nesting.
+    if (token.tag === "noparse" && token.param === undefined) {
+      const bodyStart = at + token.length;
+      const close = findClose(input, bodyStart, "noparse");
+      if (close === -1) {
+        pushText(top().children, token.raw);
+        at = bodyStart;
+        continue;
+      }
+      top().children.push({
+        type: "noparse",
+        text: input.slice(bodyStart, close),
+      });
+      at = close + "[/noparse]".length;
+      continue;
+    }
+    if (isNameTag(token.tag) && token.param === undefined) {
+      const bodyStart = at + token.length;
+      const close = findClose(input, bodyStart, token.tag);
+      const name = close === -1 ? undefined : input.slice(bodyStart, close);
+      if (name === undefined || !NAME_RE.test(name)) {
+        pushText(top().children, token.raw);
+        at = bodyStart;
+        continue;
+      }
+      top().children.push({ type: "name", tag: token.tag, name });
+      at = close + `[/${token.tag}]`.length;
+      continue;
+    }
+    if (token.tag === "url" && token.param === undefined) {
+      // [url]href[/url] — the body IS the link.
+      const bodyStart = at + token.length;
+      const close = findClose(input, bodyStart, "url");
+      const href = close === -1 ? undefined : input.slice(bodyStart, close);
+      if (href === undefined || !validHref(href)) {
+        pushText(top().children, token.raw);
+        at = bodyStart;
+        continue;
+      }
+      top().children.push({
+        type: "url",
+        href,
+        children: [{ type: "text", text: href }],
+      });
+      at = close + "[/url]".length;
+      continue;
+    }
+
+    // Nesting tags.
+    if (isWrapperTag(token.tag) && token.param === undefined) {
+      stack.push({ open: token, children: [] });
+      at += token.length;
+      continue;
+    }
+    if (token.tag === "color" && token.param !== undefined) {
+      const color = token.param.trim().toLowerCase();
+      if (isColor(color)) {
+        stack.push({
+          open: { ...token, param: color },
+          children: [],
+        });
+        at += token.length;
+        continue;
+      }
+      pushText(top().children, token.raw);
+      at += token.length;
+      continue;
+    }
+    if (token.tag === "url" && token.param !== undefined) {
+      if (validHref(token.param.trim())) {
+        stack.push({
+          open: { ...token, param: token.param.trim() },
+          children: [],
+        });
+        at += token.length;
+        continue;
+      }
+      pushText(top().children, token.raw);
+      at += token.length;
+      continue;
+    }
+
+    // Anything else — unknown tag, or a subset tag with an illegal
+    // parameter shape: literal.
+    pushText(top().children, token.raw);
+    at += token.length;
+  }
+
+  // Unclosed openers re-literalize; their parsed children become siblings.
+  while (stack.length > 1) {
+    const frame = stack.pop()!;
+    pushText(top().children, frame.open.raw);
+    for (const child of frame.children) {
+      if (child.type === "text") {
+        pushText(top().children, child.text);
+      } else {
+        top().children.push(child);
+      }
+    }
+  }
+  return root.children;
+}
+
+function buildNode(frame: Frame): BBNode {
+  const { open, children } = frame;
+  if (open.tag === "color") {
+    return { type: "color", color: open.param as BBColor, children };
+  }
+  if (open.tag === "url") {
+    return { type: "url", href: open.param!, children };
+  }
+  return { type: "wrapper", tag: open.tag as BBWrapperTag, children };
+}
+
+/** Serializes the AST back to BBCode. Only ever emits subset tags. */
+export function serializeBBCode(nodes: readonly BBNode[]): string {
+  let out = "";
+  for (const node of nodes) {
+    switch (node.type) {
+      case "text":
+        out += node.text;
+        break;
+      case "wrapper":
+        out += `[${node.tag}]${serializeBBCode(node.children)}[/${node.tag}]`;
+        break;
+      case "color":
+        out += `[color=${node.color}]${serializeBBCode(node.children)}[/color]`;
+        break;
+      case "url":
+        out += `[url=${node.href}]${serializeBBCode(node.children)}[/url]`;
+        break;
+      case "name":
+        out += `[${node.tag}]${node.name}[/${node.tag}]`;
+        break;
+      case "noparse":
+        out += `[noparse]${node.text}[/noparse]`;
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Parse→serialize normalization: tag casing/parameters canonicalized,
+ * everything outside the subset reduced to inert literal text. The result
+ * always re-parses to the same AST (see the fixpoint property test).
+ */
+export function sanitizeBBCode(input: string): string {
+  return serializeBBCode(parseBBCode(input));
+}
