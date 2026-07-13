@@ -53,10 +53,14 @@ test("register, connect an F-List account, and pick a character with avatars", a
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
 
-  // The character list — with avatar images — is the step gate.
+  // The character list — with avatar images — is the step gate. The server
+  // honors the real ≤1 req/s F-List ticket budget, and spec files run in
+  // parallel on multi-core machines, so this fetch can queue behind the
+  // other specs' registrations — give it the same window as session-online
+  // waits, not the 5s expect default.
   const amber = page.getByRole("listitem").filter({ hasText: "Amber Vale" });
   const cindral = page.getByRole("listitem").filter({ hasText: "Cindral" });
-  await expect(amber).toBeVisible();
+  await expect(amber).toBeVisible({ timeout: 15_000 });
   await expect(cindral).toBeVisible();
   await expect(amber.locator("img")).toHaveAttribute(
     "src",
