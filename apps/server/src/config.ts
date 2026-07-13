@@ -23,6 +23,12 @@ const configSchema = z.object({
   FLIST_API_URL: z.url().default("https://www.f-list.net"),
   APP_NAME: z.string().default("Emberline"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
+  /**
+   * Absolute path to the built web app (apps/web/dist). When set, the server
+   * serves the SPA alongside the API — the production mode (M1 step 11).
+   * Unset in development, where Vite serves the web app itself.
+   */
+  WEB_DIST: z.string().optional(),
   CLIENT_NAME: z.string().default("Emberline"),
   CLIENT_VERSION: z.string().default("0.0.0"),
   /** Comma-separated browser origins allowed by CORS. */

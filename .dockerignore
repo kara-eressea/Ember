@@ -1,0 +1,16 @@
+# Build context hygiene — sources go in, artifacts and junk stay out.
+# dist/ is rebuilt inside the image so stale host builds can't leak in.
+.git
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+**/test-results
+**/playwright-report
+.env
+.env.*
+!.env.example
+design
+prototype
+Dockerfile
+docker-compose*.yml

@@ -34,6 +34,8 @@ import { DEFAULT_WORLD, type SimWorld } from "./world.js";
 export interface FchatSimOptions {
   /** Port to listen on; 0 (default) picks a free port. */
   readonly port?: number;
+  /** Bind address; loopback by default, "0.0.0.0" for the sim container. */
+  readonly host?: string;
   readonly world?: SimWorld;
   readonly serverVars?: Partial<ServerVars>;
   /** How often the sim pings clients. Real server: 30s. */
@@ -106,6 +108,7 @@ export class FchatSim {
   readonly #pingIntervalMs: number;
   readonly #lisBatchSize: number;
   readonly #requestedPort: number;
+  readonly #host: string;
   readonly #log: (line: string) => void;
   readonly #tickets: TicketService;
   readonly #http: Server;
@@ -123,6 +126,7 @@ export class FchatSim {
     this.#pingIntervalMs = options.pingIntervalMs ?? 30_000;
     this.#lisBatchSize = options.lisBatchSize ?? 100;
     this.#requestedPort = options.port ?? 0;
+    this.#host = options.host ?? "127.0.0.1";
     this.#log = options.log ?? (() => {});
     this.#tickets = new TicketService(this.#world.accounts);
     for (const seed of this.#world.channels) {
@@ -155,7 +159,7 @@ export class FchatSim {
   async start(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       this.#http.once("error", reject);
-      this.#http.listen(this.#requestedPort, "127.0.0.1", () => {
+      this.#http.listen(this.#requestedPort, this.#host, () => {
         this.#http.removeListener("error", reject);
         resolve();
       });

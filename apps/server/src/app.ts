@@ -22,6 +22,7 @@ import { identitiesRoutes } from "./modules/identities/routes.js";
 import { HistorySink } from "./modules/history/sink.js";
 import { SessionRegistry } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
+import { webStatic } from "./plugins/web-static.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -111,6 +112,13 @@ export async function buildApp({
   await app.register(gatewayRoutes, { db, sessions, history, hub });
 
   app.get("/healthz", () => ({ status: "ok" }));
+
+  if (config.WEB_DIST !== undefined) {
+    await app.register(webStatic, {
+      root: config.WEB_DIST,
+      appName: config.APP_NAME,
+    });
+  }
 
   return app;
 }
