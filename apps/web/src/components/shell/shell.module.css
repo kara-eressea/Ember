@@ -297,3 +297,17 @@
   color: var(--eb-dim);
   text-decoration: none;
 }
+
+.navPin {
+  flex: none;
+  color: var(--eb-faint);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  transform: rotate(45deg);
+}
+
+/* Mention badge (COMPONENTS.md §4): accent fill, bg text — reads as "@n". */
+.navBadgeMention {
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+}

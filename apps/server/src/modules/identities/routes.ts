@@ -15,6 +15,8 @@ import {
   type TicketManagerRegistry,
 } from "../flist-api/ticket-manager.js";
 import type { GatewayHub } from "../gateway/gateway.js";
+import type { HistorySink } from "../history/sink.js";
+import { connectIdentity } from "../session-engine/connect-identity.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 
 const identityResponse = z.object({
@@ -24,6 +26,8 @@ const identityResponse = z.object({
   autoConnect: z.boolean(),
   sortOrder: z.number(),
   createdAt: z.date(),
+  /** FchatSession status, "offline" when no session exists. */
+  sessionStatus: z.string(),
 });
 
 const errorResponse = z.object({ error: z.string() });
@@ -38,6 +42,7 @@ export interface IdentitiesRoutesOptions {
   sessions: SessionRegistry;
   tickets: TicketManagerRegistry;
   hub: GatewayHub;
+  history: HistorySink;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -46,7 +51,7 @@ export async function identitiesRoutes(
   options: IdentitiesRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, sessions, tickets, hub } = options;
+  const { db, sessions, tickets, hub, history } = options;
 
   app.addHook("preHandler", app.authenticate);
 
@@ -74,7 +79,12 @@ export async function identitiesRoutes(
         )
         .where(eq(flistAccounts.userId, request.user.sub))
         .orderBy(identities.sortOrder, identities.createdAt);
-      return { identities: rows };
+      return {
+        identities: rows.map((row) => ({
+          ...row,
+          sessionStatus: sessions.get(row.id)?.status ?? "offline",
+        })),
+      };
     },
   );
 
@@ -135,15 +145,135 @@ export async function identitiesRoutes(
       try {
         const [identity] = await db
           .insert(identities)
-          .values({ flistAccountId: account.id, characterName })
+          .values({
+            flistAccountId: account.id,
+            characterName,
+            // A freshly picked identity's intent is to be online: it counts
+            // for unlock auto-connect until an explicit disconnect clears it.
+            autoConnect: true,
+          })
           .returning();
-        return await reply.code(201).send({ identity: identity! });
+        return await reply
+          .code(201)
+          .send({ identity: { ...identity!, sessionStatus: "offline" } });
       } catch (error) {
         if (isUniqueViolation(error)) {
           return reply.code(409).send({ error: "Identity already exists" });
         }
         throw error;
       }
+    },
+  );
+
+  // The picker's connect (REST twin of the gateway `session.connect` cmd,
+  // both through connectIdentity): needed because the shell's connect-on-
+  // visit deliberately ignores identities the user explicitly logged off.
+  app.post(
+    "/:id/connect",
+    {
+      schema: {
+        params: z.object({ id: z.uuid() }),
+        response: {
+          200: z.object({ identity: identityResponse }),
+          404: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const [row] = await db
+        .select({
+          identity: identities,
+          accountId: flistAccounts.id,
+          accountName: flistAccounts.accountName,
+        })
+        .from(identities)
+        .innerJoin(
+          flistAccounts,
+          eq(identities.flistAccountId, flistAccounts.id),
+        )
+        .where(
+          and(
+            eq(identities.id, request.params.id),
+            eq(flistAccounts.userId, request.user.sub),
+          ),
+        )
+        .limit(1);
+      if (!row) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      const session = await connectIdentity(
+        { db, sessions, history },
+        {
+          identityId: row.identity.id,
+          character: row.identity.characterName,
+          accountId: row.accountId,
+          accountName: row.accountName,
+        },
+      );
+      hub.broadcast(row.identity.id, {
+        kind: "identity.updated",
+        d: { autoConnect: true },
+      });
+      return reply.send({
+        identity: {
+          ...row.identity,
+          autoConnect: true,
+          sessionStatus: session.status,
+        },
+      });
+    },
+  );
+
+  // The picker's log-off (M2: sessions outlive tabs, so the picker needs an
+  // explicit way to take a character offline — the gateway cmd equivalent
+  // for pages without a gateway connection).
+  app.post(
+    "/:id/disconnect",
+    {
+      schema: {
+        params: z.object({ id: z.uuid() }),
+        response: {
+          200: z.object({ identity: identityResponse }),
+          404: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const [row] = await db
+        .select({ id: identities.id })
+        .from(identities)
+        .innerJoin(
+          flistAccounts,
+          eq(identities.flistAccountId, flistAccounts.id),
+        )
+        .where(
+          and(
+            eq(identities.id, request.params.id),
+            eq(flistAccounts.userId, request.user.sub),
+          ),
+        )
+        .limit(1);
+      if (!row) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      // Flag first, stop second — a tab with a stale autoConnect mirror
+      // would otherwise auto-resurrect the session on the stopped event.
+      const [updated] = await db
+        .update(identities)
+        .set({ autoConnect: false })
+        .where(eq(identities.id, row.id))
+        .returning();
+      hub.broadcast(row.id, {
+        kind: "identity.updated",
+        d: { autoConnect: false },
+      });
+      sessions.stop(row.id, "disconnected by user");
+      return reply.send({
+        identity: {
+          ...updated!,
+          sessionStatus: sessions.get(row.id)?.status ?? "offline",
+        },
+      });
     },
   );
 
@@ -179,6 +309,10 @@ export async function identitiesRoutes(
       sessions.stop(row.id, "identity deleted");
       hub.identityDeleted(row.id);
       await db.delete(identities).where(eq(identities.id, row.id));
+      // A connect/unlock racing this delete may have started a session
+      // between the stop above and the row vanishing — stop again now that
+      // no route can find the identity anymore.
+      sessions.stop(row.id, "identity deleted");
       return reply.code(204).send(null);
     },
   );

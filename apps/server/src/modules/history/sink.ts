@@ -1,7 +1,10 @@
 // History sink — subscribes to a session's event bus and persists MSG/PRI/SYS
 // (inbound and our own sends) into conversations/messages. The messages table
 // is the gateway resume log (architecture.md §Resume semantics): bigserial
-// ids in arrival order are the cursor, so writes go through a serial queue.
+// ids in arrival order are the cursor, so writes go through a serial queue
+// per identity — cursor order only matters within a conversation, and a
+// conversation belongs to exactly one identity, so identities never queue
+// behind each other's traffic.
 //
 // After every write it emits on its own bus. The gateway fans those out —
 // `message.new` events must carry the persisted messages.id, so live fan-out
@@ -68,8 +71,8 @@ export class HistorySink {
   readonly #db: Db;
   readonly #log: SessionLogger;
   readonly #maxConversationsPerIdentity: number;
-  /** Serial write queue: message ids must reflect arrival order. */
-  #queue: Promise<void> = Promise.resolve();
+  /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */
+  readonly #queues = new Map<string, Promise<void>>();
   /** conversation-row cache, keyed `${identityId}:${kind}:${key}`. */
   readonly #conversationIds = new Map<string, string>();
 
@@ -173,8 +176,8 @@ export class HistorySink {
   }
 
   /** Resolves once everything enqueued so far is written (used by tests). */
-  flush(): Promise<void> {
-    return this.#queue;
+  async flush(): Promise<void> {
+    await Promise.all(this.#queues.values());
   }
 
   /** Find-or-create a PM conversation (gateway `pm.open`). */
@@ -236,6 +239,99 @@ export class HistorySink {
     return row;
   }
 
+  /**
+   * Pins/unpins a conversation (gateway `conv.pin`). Pinned channels are the
+   * ones an explicit connect rejoins (decisions.md §9). Emits the updated row
+   * so every tab converges.
+   */
+  async setPinned(
+    identityId: string,
+    conversationId: string,
+    pinned: boolean,
+  ): Promise<ConversationRow | undefined> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({ pinned })
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.identityId, identityId),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
+    }
+    return row;
+  }
+
+  /**
+   * Channel seed for an explicit return from a log-off (decisions.md §9
+   * scenario 3): only pinned channels come back. Read-only — the joined-flag
+   * reconcile is a separate, deliberately deferred step
+   * (reconcileJoinedForConnect).
+   */
+  pinnedChannelKeys(identityId: string): Promise<string[]> {
+    return this.#channelKeys(identityId, eq(conversations.pinned, true));
+  }
+
+  /**
+   * Channel seed for recovery (decisions.md §9 scenario 2 — restart, outage:
+   * the user never chose to leave): exactly the channels the identity was
+   * in, per the joined flags the sink itself maintains.
+   */
+  channelsForResume(identityId: string): Promise<string[]> {
+    return this.#channelKeys(identityId, eq(conversations.joined, true));
+  }
+
+  /**
+   * Scenario-3 reconcile: rows still flagged joined but not pinned flip to
+   * joined = false, so a later restart recovery doesn't resurrect channels
+   * the user deliberately left behind. Destructive — callers must run it
+   * only once the explicitly connected session actually reaches online
+   * (a failed connect must leave the recovery set intact). Enqueued on the
+   * identity's write queue so it serializes behind any joined-flag writes
+   * still draining from the previous session.
+   */
+  reconcileJoinedForConnect(identityId: string): void {
+    this.#enqueue(identityId, async () => {
+      const dropped = await this.#db
+        .update(conversations)
+        .set({ joined: false })
+        .where(
+          and(
+            eq(conversations.identityId, identityId),
+            eq(conversations.kind, "channel"),
+            eq(conversations.joined, true),
+            eq(conversations.pinned, false),
+          ),
+        )
+        .returning();
+      for (const row of dropped) {
+        this.events.emit("conversation", { identityId, conversation: row });
+      }
+    });
+  }
+
+  async #channelKeys(
+    identityId: string,
+    extraFilter: ReturnType<typeof eq>,
+  ): Promise<string[]> {
+    const rows = await this.#db
+      .select({ channelKey: conversations.channelKey })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+          extraFilter,
+        ),
+      );
+    return rows.flatMap((row) =>
+      row.channelKey === null ? [] : [row.channelKey],
+    );
+  }
+
   #channelTarget(session: FchatSession, key: string): ConversationTarget {
     return {
       kind: "channel",
@@ -254,7 +350,7 @@ export class HistorySink {
       sentByUs: boolean;
     },
   ): void {
-    this.#enqueue(async () => {
+    this.#enqueue(identityId, async () => {
       const conversationId = await this.#conversationId(
         identityId,
         entry.target,
@@ -280,7 +376,7 @@ export class HistorySink {
     target: ConversationTarget,
     joined: boolean,
   ): void {
-    this.#enqueue(async () => {
+    this.#enqueue(identityId, async () => {
       const conversationId = await this.#conversationId(identityId, target);
       const [row] = await this.#db
         .update(conversations)
@@ -293,10 +389,18 @@ export class HistorySink {
     });
   }
 
-  #enqueue(task: () => Promise<void>): void {
-    this.#queue = this.#queue.then(task).catch((error: unknown) => {
+  #enqueue(identityId: string, task: () => Promise<void>): void {
+    const prior = this.#queues.get(identityId) ?? Promise.resolve();
+    const next = prior.then(task).catch((error: unknown) => {
       // History must never take the F-Chat session down with it.
       this.#log.error({ err: error }, "history sink write failed");
+    });
+    this.#queues.set(identityId, next);
+    void next.then(() => {
+      // Drop drained chains so the map doesn't grow with every identity ever seen.
+      if (this.#queues.get(identityId) === next) {
+        this.#queues.delete(identityId);
+      }
     });
   }
 

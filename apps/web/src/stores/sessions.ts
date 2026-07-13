@@ -25,7 +25,11 @@ export interface ChannelView {
   /** Set semantics — empty while we are not live in the channel. */
   members: MemberDto[];
   joined: boolean;
+  pinned: boolean;
   unread: number;
+  /** Unread messages naming this identity (server-counted at snapshot,
+   * bumped client-side for live messages). */
+  mentions: number;
   lastReadMessageId: number | null;
 }
 
@@ -36,6 +40,7 @@ export interface DmView {
   online: boolean;
   status: string;
   statusmsg: string;
+  pinned: boolean;
   /** TPN state: "typing" | "paused" | "clear". */
   typing: string;
   unread: number;
@@ -47,6 +52,8 @@ export interface IdentitySession {
   character: string;
   sessionStatus: GatewaySessionStatus;
   statusReason?: string;
+  /** Live server VARs (bytes) from the snapshot — composer limits. */
+  limits: { chatMax: number; privMax: number };
   /** Keyed by channel key (events address channels by key). */
   channels: Record<string, ChannelView>;
   /** Keyed by conversation id. */
@@ -59,15 +66,29 @@ export interface IdentitySession {
   notice?: { kind: "sys" | "error"; text: string };
 }
 
+export interface IdentitySummary {
+  id: string;
+  name: string;
+  /** Connect intent — gates the shell's connect-on-visit. The server
+   * maintains it (connect sets, disconnect clears); mirrored locally when
+   * this tab issues the cmd, and re-synced by the next ready frame. */
+  autoConnect: boolean;
+}
+
 interface SessionsState {
   /** From the ready frame — everything the app account owns. */
-  identities: { id: string; name: string }[] | undefined;
+  identities: IdentitySummary[] | undefined;
   sessions: Record<string, IdentitySession>;
 
-  applyReady(identities: { id: string; name: string }[]): void;
+  applyReady(identities: IdentitySummary[]): void;
+  setAutoConnect(identityId: string, value: boolean): void;
   applySnapshot(d: {
     identityId: string;
-    self: { character: string; sessionStatus: GatewaySessionStatus };
+    self: {
+      character: string;
+      sessionStatus: GatewaySessionStatus;
+      limits: { chatMax: number; privMax: number };
+    };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
   }): void;
@@ -111,10 +132,15 @@ interface SessionsState {
       statusmsg?: string;
     },
   ): void;
+  /** One LIS roster batch — [name, gender, status, statusmsg]. */
+  applyPresenceBulk(
+    identityId: string,
+    characters: [string, string, string, string][],
+  ): void;
   applyTyping(identityId: string, character: string, status: string): void;
   applyNotice(identityId: string, kind: "sys" | "error", text: string): void;
   clearNotice(identityId: string): void;
-  bumpUnread(identityId: string, convId: string): void;
+  bumpUnread(identityId: string, convId: string, mention?: boolean): void;
   clearUnread(identityId: string, convId: string): void;
   reset(): void;
 }
@@ -124,6 +150,8 @@ function emptySession(identityId: string): IdentitySession {
     identityId,
     character: "",
     sessionStatus: "offline",
+    // Placeholder until the snapshot delivers the live VARs.
+    limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
     dms: {},
     channelByConvId: {},
@@ -174,7 +202,9 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         oplist: [],
         members: [],
         joined: false,
+        pinned: false,
         unread: 0,
+        mentions: 0,
         lastReadMessageId: null,
       };
       return {
@@ -190,6 +220,16 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyReady(identities) {
       set({ identities });
+    },
+
+    setAutoConnect(identityId, value) {
+      set((state) => ({
+        identities: state.identities?.map((identity) =>
+          identity.id === identityId
+            ? { ...identity, autoConnect: value }
+            : identity,
+        ),
+      }));
     },
 
     applySnapshot(d) {
@@ -213,6 +253,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ...session,
         character: d.self.character,
         sessionStatus: d.self.sessionStatus,
+        limits: d.self.limits,
         channels,
         dms,
         channelByConvId,
@@ -251,6 +292,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 convId: conversation.id,
                 title: conversation.title,
                 joined: conversation.joined,
+                pinned: conversation.pinned,
                 lastReadMessageId: conversation.lastReadMessageId,
               }
             : {
@@ -262,17 +304,20 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 oplist: [],
                 members: [],
                 joined: conversation.joined,
+                pinned: conversation.pinned,
                 unread: 0,
+                mentions: 0,
                 lastReadMessageId: conversation.lastReadMessageId,
               };
           // The read cursor moved (this tab's ack or another's): drop the
-          // badge — anything above the cursor is what unread counts.
+          // badges — anything above the cursor is what the counters count.
           if (
             existing &&
             (conversation.lastReadMessageId ?? 0) >
               (existing.lastReadMessageId ?? 0)
           ) {
             channel.unread = 0;
+            channel.mentions = 0;
           }
           return {
             ...session,
@@ -288,6 +333,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           ? {
               ...existing,
               title: conversation.title,
+              pinned: conversation.pinned,
               lastReadMessageId: conversation.lastReadMessageId,
               unread:
                 (conversation.lastReadMessageId ?? 0) >
@@ -302,6 +348,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               online: false,
               status: "",
               statusmsg: "",
+              pinned: conversation.pinned,
               typing: "clear",
               unread: 0,
               lastReadMessageId: conversation.lastReadMessageId,
@@ -404,6 +451,34 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       });
     },
 
+    applyPresenceBulk(identityId, characters) {
+      patch(identityId, (session) => {
+        const byLower = new Map(
+          characters.map(([name, gender, status, statusmsg]) => [
+            name.toLowerCase(),
+            { gender, status, statusmsg },
+          ]),
+        );
+        const dms = Object.fromEntries(
+          Object.entries(session.dms).map(([convId, dm]) => {
+            const presence = byLower.get(dm.partner.toLowerCase());
+            return [
+              convId,
+              presence
+                ? {
+                    ...dm,
+                    online: true,
+                    status: presence.status,
+                    statusmsg: presence.statusmsg,
+                  }
+                : dm,
+            ];
+          }),
+        );
+        return { ...session, dms };
+      });
+    },
+
     applyTyping(identityId, character, status) {
       patch(identityId, (session) => ({
         ...session,
@@ -429,7 +504,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       patch(identityId, (session) => ({ ...session, notice: undefined }));
     },
 
-    bumpUnread(identityId, convId) {
+    bumpUnread(identityId, convId, mention = false) {
       patch(identityId, (session) => {
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
@@ -438,7 +513,11 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             ...session,
             channels: {
               ...session.channels,
-              [key]: { ...channel, unread: channel.unread + 1 },
+              [key]: {
+                ...channel,
+                unread: channel.unread + 1,
+                mentions: channel.mentions + (mention ? 1 : 0),
+              },
             },
           };
         }
@@ -461,14 +540,14 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
           const channel = session.channels[key];
-          if (channel.unread === 0) {
+          if (channel.unread === 0 && channel.mentions === 0) {
             return session;
           }
           return {
             ...session,
             channels: {
               ...session.channels,
-              [key]: { ...channel, unread: 0 },
+              [key]: { ...channel, unread: 0, mentions: 0 },
             },
           };
         }

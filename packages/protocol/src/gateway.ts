@@ -52,8 +52,8 @@ const resumeSchema = z
   });
 
 /**
- * Gateway commands, M1 subset. `status.set`, `typing.set` and
- * `ignore.add/remove` join in their milestones.
+ * Gateway commands (M1 core + M2 `conv.pin`). `status.set`, `typing.set`
+ * and `ignore.add/remove` join in their milestones.
  */
 const cmdSchema = z.discriminatedUnion("action", [
   z.object({
@@ -85,6 +85,11 @@ const cmdSchema = z.discriminatedUnion("action", [
     identityId: z.uuid(),
     action: z.literal("pm.open"),
     d: z.object({ character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("conv.pin"),
+    d: z.object({ convId: z.uuid(), pinned: z.boolean() }),
   }),
 ]);
 
@@ -172,7 +177,13 @@ export interface SnapshotChannel {
   /** Empty while the session is not online. */
   members: MemberDto[];
   joined: boolean;
+  pinned: boolean;
   unread: number;
+  /** Unread inbound messages matching the identity's character name (word
+   * boundary, case-insensitive; M5 highlight rules extend this). Counted
+   * within the same capped window as `unread`. DMs carry no mention count —
+   * every DM is already directed at the user. */
+  mentions: number;
   lastReadMessageId: number | null;
 }
 
@@ -183,6 +194,7 @@ export interface SnapshotDm {
   online: boolean;
   status: string;
   statusmsg: string;
+  pinned: boolean;
   unread: number;
   lastReadMessageId: number | null;
 }
@@ -231,11 +243,20 @@ export type GatewayEvent =
         statusmsg?: string;
       };
     }
+  | {
+      kind: "presence.bulk";
+      /** One LIS roster batch ([name, gender, status, statusmsg]) — the
+       * already-online world streams in AFTER identify, so a snapshot taken
+       * while it streams would otherwise show everyone offline until their
+       * next status change. */
+      d: { characters: [string, string, string, string][] };
+    }
   | { kind: "typing"; d: { character: string; status: string } }
   | {
       kind: "session.status";
       d: { status: GatewaySessionStatus; reason?: string };
     }
+  | { kind: "identity.updated"; d: { autoConnect: boolean } }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
 
@@ -248,6 +269,11 @@ export type ServerFrame =
           id: string;
           name: string;
           sessionStatus: GatewaySessionStatus;
+          /** Intent flag: this identity should be online when possible.
+           * Maintained implicitly — set by identity creation and explicit
+           * session.connect, cleared by explicit session.disconnect. Unlock
+           * reconnects every autoConnect identity on the account. */
+          autoConnect: boolean;
         }[];
       };
     }
@@ -255,7 +281,12 @@ export type ServerFrame =
       t: "snapshot";
       d: {
         identityId: string;
-        self: { character: string; sessionStatus: GatewaySessionStatus };
+        self: {
+          character: string;
+          sessionStatus: GatewaySessionStatus;
+          /** Live server VARs (bytes) — composer limits, never hardcoded. */
+          limits: { chatMax: number; privMax: number };
+        };
         channels: SnapshotChannel[];
         dms: SnapshotDm[];
       };
@@ -276,7 +307,7 @@ export type ServerFrame =
       d: {
         ok: boolean;
         error?: string;
-        /** pm.open result: the found-or-created conversation. */
+        /** pm.open / conv.pin result: the affected conversation row. */
         conversation?: ConversationDto;
       };
     }

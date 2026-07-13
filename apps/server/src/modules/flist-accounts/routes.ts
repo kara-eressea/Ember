@@ -4,12 +4,15 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
-import { flistAccounts } from "../../db/schema.js";
+import { flistAccounts, identities } from "../../db/schema.js";
 import {
   AccountLockedError,
   FlistAuthError,
   type TicketManagerRegistry,
 } from "../flist-api/ticket-manager.js";
+import type { GatewayHub } from "../gateway/gateway.js";
+import type { HistorySink } from "../history/sink.js";
+import type { SessionRegistry } from "../session-engine/registry.js";
 import type { CredentialVault } from "./vault.js";
 
 const accountResponse = z.object({
@@ -37,6 +40,16 @@ export interface FlistAccountsRoutesOptions {
   db: Db;
   vault: CredentialVault;
   tickets: TicketManagerRegistry;
+  sessions: SessionRegistry;
+  history: HistorySink;
+  hub: GatewayHub;
+  /**
+   * Per-route rate limit for the endpoints that consume a guaranteed slot
+   * on the process-wide 1 req/s F-List throttle (add, unlock). Without it,
+   * one user hammering unlock queues every other tenant's ticket
+   * acquisition behind theirs.
+   */
+  rateLimitMax: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -45,7 +58,10 @@ export async function flistAccountsRoutes(
   options: FlistAccountsRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, vault, tickets } = options;
+  const { db, vault, tickets, sessions, history, hub, rateLimitMax } = options;
+  const flistRateLimit = {
+    rateLimit: { max: rateLimitMax, timeWindow: "1 minute" },
+  };
 
   app.addHook("preHandler", app.authenticate);
 
@@ -86,6 +102,7 @@ export async function flistAccountsRoutes(
   app.post(
     "/",
     {
+      config: flistRateLimit,
       schema: {
         body: addAccountBody,
         response: {
@@ -146,11 +163,16 @@ export async function flistAccountsRoutes(
   app.post(
     "/:id/unlock",
     {
+      config: flistRateLimit,
       schema: {
         params: idParams,
         body: unlockBody,
         response: {
-          200: z.object({ account: accountResponse }),
+          200: z.object({
+            account: accountResponse,
+            /** Identities brought back online by this unlock. */
+            reconnected: z.array(z.string()),
+          }),
           401: errorResponse,
           404: errorResponse,
           502: errorResponse,
@@ -178,7 +200,46 @@ export async function flistAccountsRoutes(
         request.log.error({ err: error }, "unlock verification failed");
         return reply.code(502).send({ error: "Could not reach F-List" });
       }
-      return reply.send({ account: present(row) });
+      // One unlock brings every autoConnect identity back (restart recovery,
+      // decisions.md §9 scenario 2): resume exactly the channels each was in.
+      const wanted = await db
+        .select({
+          id: identities.id,
+          characterName: identities.characterName,
+        })
+        .from(identities)
+        .where(
+          and(
+            eq(identities.flistAccountId, row.id),
+            eq(identities.autoConnect, true),
+          ),
+        );
+      const reconnected: string[] = [];
+      for (const identity of wanted) {
+        const existing = sessions.get(identity.id);
+        if (existing && existing.status !== "stopped") {
+          continue; // already online — nothing to recover
+        }
+        // Best-effort per identity: one failing seed query or start must
+        // not 500 a request whose vault unlock (and possibly some session
+        // starts) already happened.
+        try {
+          sessions.start({
+            identityId: identity.id,
+            character: identity.characterName,
+            accountId: row.id,
+            accountName: row.accountName,
+            seedChannels: await history.channelsForResume(identity.id),
+          });
+          reconnected.push(identity.id);
+        } catch (error) {
+          request.log.error(
+            { err: error, identityId: identity.id },
+            "unlock auto-connect failed for identity",
+          );
+        }
+      }
+      return reply.send({ account: present(row), reconnected });
     },
   );
 
@@ -236,9 +297,25 @@ export async function flistAccountsRoutes(
       if (!row) {
         return reply.code(404).send({ error: "Account not found" });
       }
+      // The identities FK cascades, so their rows die with the account — the
+      // running F-Chat sessions would NOT (zombies until the next re-ticket
+      // fails). Stop them and drop the gateway caches first, like the
+      // per-identity delete route does.
+      const owned = await db
+        .select({ id: identities.id })
+        .from(identities)
+        .where(eq(identities.flistAccountId, row.id));
+      for (const identity of owned) {
+        sessions.stop(identity.id, "account removed");
+        hub.identityDeleted(identity.id);
+      }
       await db.delete(flistAccounts).where(eq(flistAccounts.id, row.id));
       vault.delete(row.id);
       tickets.drop(row.id);
+      // A connect/unlock racing the delete may have restarted one in between.
+      for (const identity of owned) {
+        sessions.stop(identity.id, "account removed");
+      }
       return reply.code(204).send(null);
     },
   );

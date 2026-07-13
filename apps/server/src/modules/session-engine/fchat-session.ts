@@ -43,6 +43,9 @@ export const WATCHDOG_MS = 90_000;
  * tickets, which invalidate account-wide and degrade sibling sessions.
  */
 export const MAX_IDENTIFY_REJECTIONS = 3;
+/** JCH sends without an echo before a channel is dropped from the desired
+ * set. See #unconfirmedJoins. */
+export const MAX_UNCONFIRMED_JOIN_ATTEMPTS = 2;
 
 export interface BackoffOptions {
   readonly floorMs: number;
@@ -146,6 +149,23 @@ export class FchatSession {
   #identifyRejections = 0;
   /** Channels the user wants to be in; rejoined after every reconnect. */
   readonly #desiredChannels = new Set<string>();
+  /**
+   * JCH sends per channel that have no echo yet. ERR frames carry no channel
+   * reference, so a refused join (banned, invite only, deleted) is detected
+   * by its missing echo: a channel still unconfirmed after
+   * MAX_UNCONFIRMED_JOIN_ATTEMPTS sends is dropped from the desired set
+   * (decisions.md §9 — never fight a ban). Two attempts, not one, because a
+   * connection can die with the echo in flight — a single mid-handshake drop
+   * must not silently unsubscribe every channel. The ERRs still reach the
+   * user via the event bus.
+   */
+  readonly #unconfirmedJoins = new Map<string, number>();
+  /**
+   * Our own LCH sends awaiting their echo. A self-LCH with no pending leave
+   * is a kick/ban; one with a pending leave is just our echo — and must not
+   * clobber the desired set, which a quick leave→rejoin may have re-added to.
+   */
+  readonly #pendingLeaves = new Map<string, number>();
 
   constructor(options: FchatSessionOptions) {
     this.character = options.character;
@@ -193,14 +213,25 @@ export class FchatSession {
   joinChannel(channel: string): void {
     this.#desiredChannels.add(channel);
     if (this.#status === "online") {
+      this.#unconfirmedJoins.set(
+        channel,
+        (this.#unconfirmedJoins.get(channel) ?? 0) + 1,
+      );
       this.#send({ cmd: "JCH", payload: { channel } });
     }
   }
 
   leaveChannel(channel: string): void {
     this.#desiredChannels.delete(channel);
-    if (this.#status === "online") {
-      this.#send({ cmd: "LCH", payload: { channel } });
+    this.#unconfirmedJoins.delete(channel);
+    if (
+      this.#status === "online" &&
+      this.#send({ cmd: "LCH", payload: { channel } })
+    ) {
+      this.#pendingLeaves.set(
+        channel,
+        (this.#pendingLeaves.get(channel) ?? 0) + 1,
+      );
     }
   }
 
@@ -337,29 +368,68 @@ export class FchatSession {
       case "PIN":
         this.#replyPin();
         return;
-      case "IDN":
+      case "IDN": {
         this.state.apply(command);
         this.#attempt = 0;
         this.#identifyRejections = 0;
         this.#setStatus("online");
+        // A disconnect voids any in-flight leave echo (FLN is a global LCH).
+        this.#pendingLeaves.clear();
+        // Rejoin the desired set — except channels the server has refused
+        // MAX_UNCONFIRMED_JOIN_ATTEMPTS times (no echo ever came back).
         for (const channel of this.#desiredChannels) {
+          const attempts = this.#unconfirmedJoins.get(channel) ?? 0;
+          if (attempts >= MAX_UNCONFIRMED_JOIN_ATTEMPTS) {
+            this.#log.info(
+              { channel, attempts },
+              "join never confirmed, giving up",
+            );
+            this.#desiredChannels.delete(channel);
+            this.#unconfirmedJoins.delete(channel);
+            continue;
+          }
+          this.#unconfirmedJoins.set(channel, attempts + 1);
           this.#send({ cmd: "JCH", payload: { channel } });
         }
         this.events.emit("command", command);
         return;
+      }
       case "ERR":
         this.#handleError(command.payload.number);
         this.events.emit("command", command);
         return;
-      case "LCH":
-        if (command.payload.character === this.character) {
-          // Server-initiated removal (kick/ban) — stop rejoining it on
-          // reconnect. Our own leaveChannel() already forgot the channel.
-          this.#desiredChannels.delete(command.payload.channel);
+      case "JCH":
+        if (command.payload.character.identity === this.character) {
+          // Our join echo: confirmed, safe to rejoin on future reconnects.
+          this.#unconfirmedJoins.delete(command.payload.channel);
         }
         this.state.apply(command);
         this.events.emit("command", command);
         return;
+      case "LCH": {
+        if (command.payload.character === this.character) {
+          const channel = command.payload.channel;
+          const pendingLeaves = this.#pendingLeaves.get(channel) ?? 0;
+          if (pendingLeaves > 0) {
+            // The echo of our own leaveChannel() — which already forgot the
+            // channel. Don't touch the desired set: a quick leave→rejoin may
+            // have legitimately re-added it since.
+            if (pendingLeaves === 1) {
+              this.#pendingLeaves.delete(channel);
+            } else {
+              this.#pendingLeaves.set(channel, pendingLeaves - 1);
+            }
+          } else {
+            // Server-initiated removal (kick/ban) — stop rejoining it on
+            // reconnect.
+            this.#desiredChannels.delete(channel);
+            this.#unconfirmedJoins.delete(channel);
+          }
+        }
+        this.state.apply(command);
+        this.events.emit("command", command);
+        return;
+      }
       default:
         this.state.apply(command);
         this.events.emit("command", command);

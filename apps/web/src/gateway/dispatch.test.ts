@@ -42,7 +42,11 @@ function snapshot(): ServerFrame {
     t: "snapshot",
     d: {
       identityId: IDENTITY,
-      self: { character: "Amber Vale", sessionStatus: "online" },
+      self: {
+        character: "Amber Vale",
+        sessionStatus: "online",
+        limits: { chatMax: 4096, privMax: 50000 },
+      },
       channels: [
         {
           convId: CONV_CHANNEL,
@@ -53,7 +57,9 @@ function snapshot(): ServerFrame {
           oplist: ["", "Nyx Firemane"],
           members: [member("Amber Vale"), member("Nyx Firemane")],
           joined: true,
+          pinned: false,
           unread: 3,
+          mentions: 1,
           lastReadMessageId: 10,
         },
       ],
@@ -65,6 +71,7 @@ function snapshot(): ServerFrame {
           online: true,
           status: "online",
           statusmsg: "",
+          pinned: false,
           unread: 0,
           lastReadMessageId: null,
         },
@@ -95,6 +102,7 @@ describe("snapshot", () => {
     expect(s.character).toBe("Amber Vale");
     expect(s.sessionStatus).toBe("online");
     expect(s.channels["Frontpage"]?.unread).toBe(3);
+    expect(s.channels["Frontpage"]?.mentions).toBe(1);
     expect(s.channelByConvId[CONV_CHANNEL]).toBe("Frontpage");
     expect(s.dms[CONV_DM]?.partner).toBe("Nyx Firemane");
   });
@@ -237,6 +245,28 @@ describe("presence", () => {
     );
     expect(session().dms[CONV_DM]?.status).toBe("busy");
   });
+
+  it("presence.bulk (LIS roster) brings DM partners online, case-insensitively", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    expect(session().dms[CONV_DM]?.online).toBe(false);
+    dispatchFrame(
+      event("presence.bulk", {
+        characters: [
+          ["Somebody Else", "None", "online", ""],
+          ["NYX FIREMANE", "Female", "looking", "Open!"],
+        ],
+      }),
+    );
+    const dm = session().dms[CONV_DM];
+    expect(dm?.online).toBe(true);
+    expect(dm?.status).toBe("looking");
+    expect(dm?.statusmsg).toBe("Open!");
+    // The snapshot carried the live limits too.
+    expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000 });
+  });
 });
 
 describe("message.new and unread", () => {
@@ -267,6 +297,58 @@ describe("message.new and unread", () => {
       }),
     );
     expect(session().channels["Frontpage"]?.unread).toBe(3);
+  });
+
+  it("bumps mentions when an inbound channel message names our character", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, { bbcode: "ping Amber Vale, you around?" }),
+      }),
+    );
+    // Word boundary: a longer name containing ours does not count.
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(12, { bbcode: "Amber Valery sends regards" }),
+      }),
+    );
+    // Our own message naming ourselves does not count.
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(13, {
+          bbcode: "I am Amber Vale",
+          sentByUs: true,
+        }),
+      }),
+    );
+    const channel = session().channels["Frontpage"];
+    expect(channel?.mentions).toBe(2); // 1 from the snapshot + 1 live
+    expect(channel?.unread).toBe(5);
+  });
+
+  it("identity.updated converges the autoConnect mirror across tabs", () => {
+    dispatchFrame({
+      t: "ready",
+      d: {
+        userId: "user-1",
+        identities: [
+          {
+            id: IDENTITY,
+            name: "Amber Vale",
+            sessionStatus: "online",
+            autoConnect: true,
+          },
+        ],
+      },
+    });
+    dispatchFrame(event("identity.updated", { autoConnect: false }));
+    expect(
+      useSessionsStore.getState().identities?.find((i) => i.id === IDENTITY)
+        ?.autoConnect,
+    ).toBe(false);
   });
 
   it("an advanced read cursor (any tab's ack) zeroes the badge", () => {

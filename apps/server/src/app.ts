@@ -19,8 +19,12 @@ import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
+import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
-import { SessionRegistry } from "./modules/session-engine/registry.js";
+import {
+  SessionRegistry,
+  type SessionTuning,
+} from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
 import { webStatic } from "./plugins/web-static.js";
 
@@ -37,6 +41,8 @@ export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
   /** Injectable for tests (e.g. a client with no request throttle). */
   flistApiClient?: FlistApiClient;
+  /** Test-only session timing knobs; production always runs policy defaults. */
+  sessionTuning?: SessionTuning;
 }
 
 export async function buildApp({
@@ -44,6 +50,7 @@ export async function buildApp({
   db,
   logger = true,
   flistApiClient,
+  sessionTuning,
 }: BuildAppOptions): Promise<FastifyInstance> {
   // Without the right trustProxy, every client behind a reverse proxy shares
   // the proxy's IP and the per-IP rate limits become one global bucket.
@@ -66,6 +73,9 @@ export async function buildApp({
     clientName: config.CLIENT_NAME,
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
+    // Hard gate, not just wiring discipline: the 10s backoff floor is
+    // developer policy, so timing knobs are inert outside the test runner.
+    tuning: process.env.NODE_ENV === "test" ? sessionTuning : undefined,
     onSessionStarted: (identityId, session) => {
       // History first: message.new fan-out happens post-persistence via the
       // sink's bus, so the sink must see every command the hub translates.
@@ -75,7 +85,15 @@ export async function buildApp({
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
+  const retention = new RetentionJob({
+    db,
+    policy: config.RETENTION_POLICY,
+    sweepIntervalMs: config.RETENTION_SWEEP_INTERVAL_MS,
+    logger: app.log,
+  });
+  retention.start();
   app.addHook("onClose", () => {
+    retention.stop();
     sessions.stopAll();
   });
 
@@ -95,6 +113,12 @@ export async function buildApp({
     db,
     vault,
     tickets,
+    sessions,
+    history,
+    hub,
+    // Same knob as the auth endpoints: these routes hold F-List credentials
+    // and consume the process-wide F-List API throttle.
+    rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
   await app.register(identitiesRoutes, {
@@ -103,6 +127,7 @@ export async function buildApp({
     sessions,
     tickets,
     hub,
+    history,
   });
   // Gateway frames are tiny; without a cap the ws default (100 MiB) lets a
   // pre-hello client force huge buffers + JSON.parse work.

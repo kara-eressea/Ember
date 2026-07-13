@@ -5,6 +5,7 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
+import { mentionsCharacter } from "../lib/mention.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
@@ -14,7 +15,11 @@ export function dispatchFrame(frame: ServerFrame): void {
   switch (frame.t) {
     case "ready":
       sessions.applyReady(
-        frame.d.identities.map(({ id, name }) => ({ id, name })),
+        frame.d.identities.map(({ id, name, autoConnect }) => ({
+          id,
+          name,
+          autoConnect,
+        })),
       );
       for (const identity of frame.d.identities) {
         sessions.applySessionStatus(identity.id, identity.sessionStatus);
@@ -51,7 +56,15 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         ui.activeIdentityId === identityId &&
         ui.activeConvId === event.d.convId;
       if (!event.d.message.sentByUs && !active) {
-        sessions.bumpUnread(identityId, event.d.convId);
+        // Live counterpart of the server's snapshot-time mention counter:
+        // channel messages naming our character (DMs carry no mention count).
+        const mention =
+          event.d.message.kind === "msg" &&
+          mentionsCharacter(
+            event.d.message.bbcode,
+            sessions.sessions[identityId]?.character ?? "",
+          );
+        sessions.bumpUnread(identityId, event.d.convId, mention);
       }
       return;
     }
@@ -77,11 +90,19 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "presence":
       sessions.applyPresence(identityId, event.d);
       return;
+    case "presence.bulk":
+      sessions.applyPresenceBulk(identityId, event.d.characters);
+      return;
     case "typing":
       sessions.applyTyping(identityId, event.d.character, event.d.status);
       return;
     case "session.status":
       sessions.applySessionStatus(identityId, event.d.status, event.d.reason);
+      return;
+    case "identity.updated":
+      // Keeps every tab's connect-intent mirror honest — a stale mirror
+      // could silently reconnect an identity logged off in another tab.
+      sessions.setAutoConnect(identityId, event.d.autoConnect);
       return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);

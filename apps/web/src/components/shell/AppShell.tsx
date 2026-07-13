@@ -1,8 +1,9 @@
 // AppShell (COMPONENTS.md §Layout): sidebar · main · members grid, driven by
 // /app/:identityId/:convId?. Owns the gateway lifecycle for the tab: connect
-// the socket, subscribe the routed identity, start its F-Chat session on
-// demand (M1 — sessions run while wanted), and advance the read cursor for
-// whatever conversation is on screen.
+// the socket, subscribe the routed identity, connect its F-Chat session when
+// the autoConnect intent says so (sessions themselves outlive every tab —
+// the bouncer property), and advance the read cursor for whatever
+// conversation is on screen.
 
 import { useEffect, useRef } from "react";
 import { Link, useParams } from "react-router";
@@ -47,23 +48,28 @@ export function AppShell() {
     };
   }, [identityId, convId]);
 
-  // Start the F-Chat session on demand — once per shell visit, so a stop
-  // (locked vault, auth failure) surfaces its reason instead of looping.
-  const connectAttempted = useRef(false);
+  // Start the F-Chat session on demand — once per identity per shell visit,
+  // so a stop (locked vault, auth failure) surfaces its reason instead of
+  // looping. Gated on the autoConnect intent flag: an identity the user
+  // explicitly disconnected stays offline until they explicitly connect it
+  // again (the MeBar power control), never because a tab happened to open.
+  const connectAttemptedFor = useRef<string>(undefined);
   const sessionStatus = session?.sessionStatus;
   const synced = session?.synced ?? false;
+  const autoConnect = identities?.find((i) => i.id === identityId)?.autoConnect;
   useEffect(() => {
     if (
       identityId === undefined ||
       !synced ||
-      connectAttempted.current ||
+      autoConnect !== true ||
+      connectAttemptedFor.current === identityId ||
       (sessionStatus !== "offline" && sessionStatus !== "stopped")
     ) {
       return;
     }
-    connectAttempted.current = true;
+    connectAttemptedFor.current = identityId;
     void gateway.cmd({ identityId, action: "session.connect" });
-  }, [identityId, synced, sessionStatus]);
+  }, [identityId, synced, sessionStatus, autoConnect]);
 
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.
@@ -137,11 +143,23 @@ export function AppShell() {
         ) : (
           <>
             {conversation.kind === "channel" ? (
-              <ChannelHeader channel={conversation.channel} />
+              <ChannelHeader
+                identityId={identityId}
+                channel={conversation.channel}
+              />
             ) : (
-              <DmHeader dm={conversation.dm} />
+              <DmHeader identityId={identityId} dm={conversation.dm} />
             )}
-            <MessageLog identityId={identityId} convId={convId} />
+            <MessageLog
+              key={convId}
+              identityId={identityId}
+              convId={convId}
+              readCursorAtAttach={
+                conversation.kind === "channel"
+                  ? conversation.channel.lastReadMessageId
+                  : conversation.dm.lastReadMessageId
+              }
+            />
             <Composer
               session={session}
               convId={convId}
@@ -149,6 +167,11 @@ export function AppShell() {
                 conversation.kind === "channel"
                   ? `Message #${conversation.channel.title}`
                   : `Message ${conversation.dm.partner}`
+              }
+              maxBytes={
+                conversation.kind === "channel"
+                  ? session.limits.chatMax
+                  : session.limits.privMax
               }
               // A channel we hold history for but are not live in (fresh
               // session, or kicked) offers rejoin instead of a dead input.

@@ -3,7 +3,7 @@
 // sub; durable state (messages) resumes via per-conversation messages.id
 // cursors read straight from the messages table — it *is* the resume log.
 
-import { and, asc, count, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type {
   MemberDto,
   MessageDto,
@@ -18,6 +18,66 @@ import type { SessionState } from "../session-engine/session-state.js";
 
 /** Unread counts are capped server-side; the client renders 99 as "99+". */
 export const UNREAD_CAP = 99;
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Per-conversation unread + mention counts past the read cursor, computed in
+ * one pass. The inner ORDER BY + LIMIT caps the rows *scanned* per
+ * conversation at UNREAD_CAP, newest first (a deterministic window walking
+ * the (conversation_id, id desc) index and stopping early) — a busy channel
+ * with 40k unread costs the same as one with 99. Own sends never count as
+ * unread (matching the client's live bump). Mentions are counted within the
+ * same window: a word-boundary, case-insensitive match of the identity's
+ * character name in inbound channel messages (M5 highlight rules will
+ * extend the matcher). DMs carry no mention count — every DM is already
+ * directed at the user.
+ */
+async function conversationCounts(
+  db: Db,
+  identityId: string,
+  character: string,
+): Promise<Map<string, { unread: number; mentions: number }>> {
+  // Explicit ASCII word-boundary classes, NOT Postgres \m/\M: it keeps the
+  // semantics byte-identical with the client matcher (lib/mention.ts, JS \w
+  // is ASCII) and works for names with leading/trailing hyphens, which have
+  // no \m/\M boundary at all. "Amber Vale" still never matches inside
+  // "Amber Valery".
+  const pattern = `(^|[^a-zA-Z0-9_])${escapeRegex(character)}([^a-zA-Z0-9_]|$)`;
+  const result = await db.execute(sql`
+    select c.id as conv_id,
+           u.unread::int as unread,
+           u.mentions::int as mentions
+    from conversations c
+    cross join lateral (
+      select count(*) as unread,
+             count(*) filter (where t.mention) as mentions
+      from (
+        select (m.kind = 'msg' and m.bbcode ~* ${pattern}) as mention
+        from messages m
+        where m.conversation_id = c.id
+          and m.id > coalesce(c.last_read_message_id, 0)
+          and not m.sent_by_us
+        order by m.id desc
+        limit ${UNREAD_CAP}
+      ) t
+    ) u
+    where c.identity_id = ${identityId}
+  `);
+  const rows = result.rows as {
+    conv_id: string;
+    unread: number;
+    mentions: number;
+  }[];
+  return new Map(
+    rows.map((row) => [
+      row.conv_id,
+      { unread: row.unread, mentions: row.mentions },
+    ]),
+  );
+}
 
 export interface SnapshotData {
   channels: SnapshotChannel[];
@@ -48,6 +108,7 @@ export function messageDto(row: MessageRow): MessageDto {
 export async function buildSnapshot(
   db: Db,
   identityId: string,
+  character: string,
   session: FchatSession | undefined,
 ): Promise<SnapshotData> {
   const rows = await db
@@ -56,20 +117,20 @@ export async function buildSnapshot(
     .where(eq(conversations.identityId, identityId))
     .orderBy(conversations.createdAt);
 
-  const unreadRows = await db
-    .select({ convId: messages.conversationId, unread: count() })
-    .from(messages)
-    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-    .where(
-      and(
-        eq(conversations.identityId, identityId),
-        gt(messages.id, sql`coalesce(${conversations.lastReadMessageId}, 0)`),
-      ),
-    )
-    .groupBy(messages.conversationId);
-  const unread = new Map(
-    unreadRows.map((r) => [r.convId, Math.min(r.unread, UNREAD_CAP)]),
-  );
+  const counts = await conversationCounts(db, identityId, character);
+
+  // F-Chat resolves names case-insensitively, and a DM row keeps the casing
+  // of whoever created it — a typed lowercase partner must still find its
+  // presence entry.
+  const presenceByLower = new Map<
+    string,
+    { gender: string; status: string; statusmsg: string }
+  >();
+  if (session) {
+    for (const [name, presence] of session.state.characters) {
+      presenceByLower.set(name.toLowerCase(), presence);
+    }
+  }
 
   const channels: SnapshotChannel[] = [];
   const dms: SnapshotDm[] = [];
@@ -90,12 +151,14 @@ export async function buildSnapshot(
             ? [...live.members].map((name) => memberDto(state, name))
             : [],
         joined: row.joined,
-        unread: unread.get(row.id) ?? 0,
+        pinned: row.pinned,
+        unread: counts.get(row.id)?.unread ?? 0,
+        mentions: counts.get(row.id)?.mentions ?? 0,
         lastReadMessageId: row.lastReadMessageId,
       });
     } else {
       const partner = row.partnerCharacter ?? "";
-      const presence = session?.state.characters.get(partner);
+      const presence = presenceByLower.get(partner.toLowerCase());
       dms.push({
         convId: row.id,
         partner,
@@ -103,7 +166,8 @@ export async function buildSnapshot(
         online: presence !== undefined,
         status: presence?.status ?? "",
         statusmsg: presence?.statusmsg ?? "",
-        unread: unread.get(row.id) ?? 0,
+        pinned: row.pinned,
+        unread: counts.get(row.id)?.unread ?? 0,
         lastReadMessageId: row.lastReadMessageId,
       });
     }
@@ -111,22 +175,64 @@ export async function buildSnapshot(
   return { channels, dms };
 }
 
-/** The identity's conversation ids among `convIds` — resume cursors for
- * anything else (foreign or deleted conversations) are silently dropped. */
-export async function ownedConversationIds(
+export interface CatchupPlanEntry {
+  convId: string;
+  /** Replay strictly-after this messages.id. */
+  afterId: number;
+}
+
+/**
+ * Which conversations to replay on sub, and from where. Two regimes:
+ *
+ * - The client sent a cursor: it holds a contiguous buffer up to that id, so
+ *   replay everything past it — this is the headline catch-up path. Cursors
+ *   for foreign or deleted conversations are silently dropped (the plan is
+ *   built from the identity's own rows).
+ * - No cursor (conversation created or first seen while this client was
+ *   detached, or a fresh device): replay only the unread tail — from
+ *   lastReadMessageId, floored at `maxId - batchSize`. Ids are global across
+ *   conversations, so that floor is an id-space bound: at most `batchSize`
+ *   rows, usually fewer. A fully-read conversation replays nothing, and deep
+ *   history stays with REST backfill on open; replaying from id 0 would
+ *   stream entire histories to every new device.
+ */
+export async function catchupPlan(
   db: Db,
   identityId: string,
-  convIds: string[],
-): Promise<Set<string>> {
-  if (convIds.length === 0) {
-    return new Set();
-  }
+  cursors: Record<string, number>,
+  batchSize: number,
+): Promise<CatchupPlanEntry[]> {
+  // Correlated max, not a join+groupBy: O(1) per conversation via the
+  // (conversation_id, id desc) index instead of aggregating every message
+  // row the identity owns on each sub. Static identifiers on purpose —
+  // drizzle renders interpolated columns in selected fields unqualified,
+  // which mis-scopes the correlated outer reference. mapWith(Number)
+  // because max(bigint) comes back from node-postgres as a string.
   const rows = await db
-    .select({ id: conversations.id })
+    .select({
+      id: conversations.id,
+      lastRead: conversations.lastReadMessageId,
+      maxId:
+        sql<number>`(select coalesce(max(m.id), 0) from messages m where m.conversation_id = conversations.id)`.mapWith(
+          Number,
+        ),
+    })
     .from(conversations)
     .where(eq(conversations.identityId, identityId));
-  const owned = new Set(rows.map((r) => r.id));
-  return new Set(convIds.filter((id) => owned.has(id)));
+
+  const plan: CatchupPlanEntry[] = [];
+  for (const row of rows) {
+    const cursor = cursors[row.id];
+    if (cursor !== undefined) {
+      plan.push({ convId: row.id, afterId: cursor });
+      continue;
+    }
+    const afterId = Math.max(row.lastRead ?? 0, row.maxId - batchSize);
+    if (afterId < row.maxId) {
+      plan.push({ convId: row.id, afterId });
+    }
+  }
+  return plan;
 }
 
 /** One ascending catchup batch: messages strictly after the cursor. */

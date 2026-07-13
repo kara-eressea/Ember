@@ -7,7 +7,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
@@ -32,7 +32,12 @@ import {
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
-import { authSessions, identities } from "../../db/schema.js";
+import {
+  authSessions,
+  conversations,
+  identities,
+  messages,
+} from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
@@ -71,6 +76,8 @@ beforeAll(async () => {
       baseUrl: sim.httpUrl,
       minRequestIntervalMs: 0,
     }),
+    // The reconnect scenario can't wait out the 10s policy floor.
+    sessionTuning: { backoffFloorMs: 200, backoffCapMs: 400 },
   });
   const address = await app.listen({ port: 0, host: "127.0.0.1" });
   gatewayUrl = `${address.replace(/^http/, "ws")}/gateway`;
@@ -357,6 +364,277 @@ async function nextConversationUpdate<
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+describe("channel rejoin semantics (decisions.md §9)", () => {
+  it("pins over the gateway; an explicit reconnect rejoins pinned channels only", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+    await joinAndSettle(session, "Development");
+    await app.history.flush();
+
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const frontpage = snapshot.d.channels.find((c) => c.key === "Frontpage");
+    expect(frontpage).toBeDefined();
+
+    // conv.pin: ack carries the updated conversation, and the update fans out.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "conv.pin",
+        d: { convId: frontpage!.convId, pinned: true },
+      },
+    });
+    const pinAck = await client.nextOfType("ack");
+    expect(pinAck.d).toMatchObject({
+      ok: true,
+      conversation: { id: frontpage!.convId, pinned: true },
+    });
+    await nextConversationUpdate<{
+      id: string;
+      lastReadMessageId: number | null;
+      pinned: boolean;
+    }>(client, (c) => c.id === frontpage!.convId && c.pinned);
+
+    // Explicit disconnect, then connect: the user chose to log off, so only
+    // the pinned channel comes back and the casual one reconciles to
+    // joined = false.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "session.disconnect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+
+    const fresh = app.sessions.get(identityId);
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(session);
+    await waitForOnline(fresh!);
+    await vi.waitFor(() => {
+      expect(fresh!.state.channels.has("Frontpage")).toBe(true);
+    });
+    expect(fresh!.state.channels.has("Development")).toBe(false);
+
+    // The reconcile runs once the session is online, through the sink queue.
+    await app.history.flush();
+    const [devRow] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Development"),
+        ),
+      );
+    expect(devRow?.joined).toBe(false);
+
+    // A second connect while the session is live must not reseed anything —
+    // leave Frontpage, reconnect from another tab, still left.
+    fresh!.leaveChannel("Frontpage");
+    await vi.waitFor(() => {
+      expect(fresh!.state.channels.has("Frontpage")).toBe(false);
+    });
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(app.sessions.get(identityId)).toBe(fresh);
+    expect(fresh!.state.channels.has("Frontpage")).toBe(false);
+  });
+
+  it("recovers an F-Chat drop with no user interaction: re-tickets from the vault, rejoins channels (M2 verification)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Invalidate the server's cached ticket account-wide (a newer ticket
+    // always does), then drop the connection: the reconnect must survive the
+    // stale-ticket rejection by re-fetching through the vaulted password —
+    // the full "re-ticket from the vault" path, not the ticket cache.
+    sim.issueTicketFor(ACCOUNT);
+    sim.disconnect(CHARACTER);
+
+    // Subscribed browsers watch the outage and recovery as status events.
+    for (;;) {
+      const frame = await client.nextEvent("session.status", 15_000);
+      if (eventPayload<{ status: string }>(frame).status === "online") {
+        break;
+      }
+    }
+    await vi.waitFor(() => {
+      expect(
+        session.state.channels.get("Frontpage")?.members.has(CHARACTER),
+      ).toBe(true);
+    });
+  });
+
+  it("session.connect and session.disconnect maintain the autoConnect intent flag and fan it out", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId); // identity.updated arrives via fan-out
+
+    const flag = async () => {
+      const [row] = await db
+        .select({ autoConnect: identities.autoConnect })
+        .from(identities)
+        .where(eq(identities.id, identityId));
+      return row?.autoConnect;
+    };
+    expect(await flag()).toBe(false); // direct insert bypasses the API default
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(await flag()).toBe(true);
+    expect(
+      eventPayload<{ autoConnect: boolean }>(
+        await client.nextEvent("identity.updated"),
+      ).autoConnect,
+    ).toBe(true);
+
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "session.disconnect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(await flag()).toBe(false);
+    expect(
+      eventPayload<{ autoConnect: boolean }>(
+        await client.nextEvent("identity.updated"),
+      ).autoConnect,
+    ).toBe(false);
+  });
+
+  it("a connect while autoConnect is set is a recovery: exact channels, no reconcile", async () => {
+    const { identityId, token } = await createIdentity();
+    // Persisted state from "before the outage": flagged for auto-connect,
+    // one casually joined channel, one pinned-but-left channel.
+    await db
+      .update(identities)
+      .set({ autoConnect: true })
+      .where(eq(identities.id, identityId));
+    await db.insert(conversations).values([
+      {
+        identityId,
+        kind: "channel",
+        channelKey: "Frontpage",
+        title: "Frontpage",
+        joined: true,
+        pinned: false,
+      },
+      {
+        identityId,
+        kind: "channel",
+        channelKey: "Development",
+        title: "Development",
+        joined: false,
+        pinned: true,
+      },
+    ]);
+
+    const client = await connectClient();
+    await client.hello(token);
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+
+    const session = app.sessions.get(identityId);
+    expect(session).toBeDefined();
+    await waitForOnline(session!);
+    await vi.waitFor(() => {
+      expect(session!.state.channels.has("Frontpage")).toBe(true);
+    });
+    // Recovery restores the joined set, not the pinned set.
+    expect(session!.state.channels.has("Development")).toBe(false);
+
+    // And it never reconciles: the casual row keeps its joined flag.
+    await app.history.flush();
+    const [row] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Frontpage"),
+        ),
+      );
+    expect(row?.joined).toBe(true);
+  });
+
+  it("an explicit connect that never reaches online leaves the recovery set intact", async () => {
+    const { identityId, token } = await createIdentity(); // autoConnect false
+    // A character no longer on the account: identify is rejected until the
+    // session gives up — it never reaches online.
+    await db
+      .update(identities)
+      .set({ characterName: "Nobody Real" })
+      .where(eq(identities.id, identityId));
+    await db.insert(conversations).values({
+      identityId,
+      kind: "channel",
+      channelKey: "Frontpage",
+      title: "Frontpage",
+      joined: true,
+      pinned: false,
+    });
+
+    const client = await connectClient();
+    await client.hello(token);
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+
+    const session = app.sessions.get(identityId);
+    expect(session).toBeDefined();
+    await vi.waitFor(
+      () => {
+        expect(session!.status).toBe("stopped");
+      },
+      { timeout: 10_000 },
+    );
+
+    // The destructive scenario-3 reconcile never ran — after re-auth, a
+    // recovery still finds the channel set intact.
+    await app.history.flush();
+    const [row] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Frontpage"),
+        ),
+      );
+    expect(row?.joined).toBe(true);
+  });
+});
+
 describe("gateway handshake", () => {
   it("answers hello with ready and lists the user's identities", async () => {
     const { identityId, token } = await createIdentity();
@@ -365,7 +643,14 @@ describe("gateway handshake", () => {
     const client = await connectClient();
     const ready = await client.hello(token);
     expect(ready.d.identities).toEqual([
-      { id: identityId, name: CHARACTER, sessionStatus: "online" },
+      {
+        id: identityId,
+        name: CHARACTER,
+        sessionStatus: "online",
+        // Inserted directly by the test helper, so the API default (true)
+        // does not apply.
+        autoConnect: false,
+      },
     ]);
 
     client.send({ t: "ping" });
@@ -458,19 +743,48 @@ describe("gateway fan-out", () => {
     });
   });
 
-  it("snapshots live channel state with unread counts", async () => {
+  it("snapshots live channel state with unread and mention counts", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
     await joinAndSettle(session, "Development");
+    const say = (message: string) =>
+      inject(session, {
+        cmd: "MSG",
+        payload: { character: "Nyx Firemane", message, channel: "Development" },
+      });
+    await say("unread me");
+    await say(`hey ${CHARACTER}, look at this`); // mention
+    await say("Amber Valery is someone else"); // word boundary: no match
     await inject(session, {
-      cmd: "MSG",
-      payload: {
-        character: "Nyx Firemane",
-        message: "unread me",
-        channel: "Development",
-      },
-    });
+      cmd: "SYS",
+      payload: { message: `${CHARACTER} joined`, channel: "Development" },
+    }); // sys rows never count as mentions
+    // Our own send counts as neither unread nor mention — matching the
+    // client's live behavior.
+    await session.sendChannelMessage(
+      "Development",
+      `I, ${CHARACTER}, speak of myself`,
+    );
     await app.history.flush();
+
+    // A conversation with more unread than the cap: counting stops at 99.
+    const [flooded] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Flooded",
+        title: "Flooded",
+      })
+      .returning();
+    await db.insert(messages).values(
+      Array.from({ length: 120 }, (_, i) => ({
+        conversationId: flooded!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `spam ${String(i + 1)}`,
+      })),
+    );
 
     const client = await connectClient();
     await client.hello(token);
@@ -478,16 +792,47 @@ describe("gateway fan-out", () => {
     expect(snapshot.d.self).toEqual({
       character: CHARACTER,
       sessionStatus: "online",
+      // The sim serves the documented default VARs.
+      limits: { chatMax: 4096, privMax: 50000 },
     });
-    expect(snapshot.d.channels).toHaveLength(1);
-    const channel = snapshot.d.channels[0]!;
+    expect(snapshot.d.channels).toHaveLength(2);
+    const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
     expect(channel).toMatchObject({
       key: "Development",
       joined: true,
-      unread: 1,
+      unread: 4,
+      mentions: 1,
     });
     expect(channel.members.map((m) => m.character)).toContain(CHARACTER);
     expect(channel.description).not.toBe("");
+
+    const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
+    expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("resolves DM presence case-insensitively and fans the LIS roster out as presence.bulk", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    // A DM opened with a lowercase name must still find its partner's
+    // presence at snapshot time (rows keep the creator's casing).
+    await app.history.ensurePmConversation(identityId, "nyx firemane");
+
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const dm = snapshot.d.dms.find((d) => d.partner === "nyx firemane");
+    expect(dm).toMatchObject({ online: true, status: "online" });
+
+    // The already-online roster (LIS) streams after identify; subscribed
+    // clients that raced it get the batches as presence.bulk events.
+    await inject(session, {
+      cmd: "LIS",
+      payload: { characters: [["Late Arrival", "None", "busy", "brb"]] },
+    });
+    const bulk = await client.nextEvent("presence.bulk");
+    expect(eventPayload<{ characters: unknown[] }>(bulk).characters).toEqual([
+      ["Late Arrival", "None", "busy", "brb"],
+    ]);
   });
 
   it("replays missed messages via catchup, then streams live without duplicates", async () => {
@@ -560,6 +905,133 @@ describe("gateway fan-out", () => {
       eventPayload<{ message: { bbcode: string } }>(live).message.bbcode,
     ).toBe("m4");
     expect(second.bufferedFrames.filter((f) => f.t === "event")).toHaveLength(
+      0,
+    );
+  });
+
+  it("replays the unread tail of conversations the client has no cursor for", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    // A client sees one Frontpage message and detaches with its cursor.
+    const first = await connectClient();
+    await first.hello(token);
+    await first.subscribe(identityId);
+    await inject(session, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: "before detach",
+        channel: "Frontpage",
+      },
+    });
+    const seen = eventPayload<{ convId: string; message: { id: number } }>(
+      await first.nextEvent("message.new"),
+    );
+    first.close();
+
+    // While detached: a brand-new PM thread arrives (no client cursor)…
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "new thread" },
+    });
+    await app.history.flush();
+    // …a large conversation appears with more unread than one batch…
+    const [seeded] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Seeded",
+        title: "Seeded",
+      })
+      .returning();
+    await db.insert(messages).values(
+      Array.from({ length: 210 }, (_, i) => ({
+        conversationId: seeded!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `bulk ${String(i + 1)}`,
+      })),
+    );
+    // …and a fully-read conversation exists that must not be replayed.
+    const [readConv] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "pm",
+        partnerCharacter: "Tally Marsh",
+        title: "Tally Marsh",
+      })
+      .returning();
+    const [readMsg] = await db
+      .insert(messages)
+      .values({
+        conversationId: readConv!.id,
+        senderCharacter: "Tally Marsh",
+        kind: "pm",
+        bbcode: "already read",
+      })
+      .returning();
+    await db
+      .update(conversations)
+      .set({ lastReadMessageId: readMsg!.id })
+      .where(eq(conversations.id, readConv!.id));
+
+    // Resume with only the Frontpage cursor.
+    const second = await connectClient();
+    await second.hello(token, {
+      [identityId]: {
+        convCursors: { [seen.convId]: seen.message.id },
+      },
+    });
+    await second.subscribe(identityId);
+
+    // Frontpage (cursor'd, nothing new): 1 empty done frame. PM tail: 1
+    // frame. Seeded tail: a full batch (200) then the empty done frame.
+    const frames = [];
+    for (let i = 0; i < 4; i += 1) {
+      frames.push(await second.nextOfType("catchup"));
+    }
+    const byConv = new Map<string, { bbcode: string }[]>();
+    for (const frame of frames) {
+      const list = byConv.get(frame.d.convId) ?? [];
+      list.push(...frame.d.messages);
+      byConv.set(frame.d.convId, list);
+    }
+    expect(byConv.get(seen.convId)).toEqual([]);
+    expect(byConv.has(readConv!.id)).toBe(false);
+
+    const [pmConv] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.partnerCharacter, "Nyx Firemane"),
+        ),
+      );
+    expect(byConv.get(pmConv!.id)?.map((m) => m.bbcode)).toEqual([
+      "new thread",
+    ]);
+
+    // The tail is capped at one batch: bulk 11..210, never bulk 1.
+    const tail = byConv.get(seeded!.id) ?? [];
+    expect(tail).toHaveLength(200);
+    expect(tail[0]?.bbcode).toBe("bulk 11");
+    expect(tail.at(-1)?.bbcode).toBe("bulk 210");
+
+    // Live still flows and no further catchup frames are pending.
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "live again" },
+    });
+    const live = await second.nextEvent("message.new");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(live).message.bbcode,
+    ).toBe("live again");
+    expect(second.bufferedFrames.filter((f) => f.t === "catchup")).toHaveLength(
       0,
     );
   });

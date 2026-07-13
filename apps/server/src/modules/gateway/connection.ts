@@ -9,6 +9,7 @@
 
 import type WebSocket from "ws";
 import { and, eq } from "drizzle-orm";
+import { DEFAULT_SERVER_VARS } from "@emberchat/fchat-protocol";
 import {
   clientFrameSchema,
   GATEWAY_CLOSE,
@@ -27,6 +28,7 @@ import {
   type ConversationRow,
   type HistorySink,
 } from "../history/sink.js";
+import { connectIdentity } from "../session-engine/connect-identity.js";
 import type {
   FchatSession,
   SessionLogger,
@@ -35,9 +37,9 @@ import type { SessionRegistry } from "../session-engine/registry.js";
 import type { GatewayHub } from "./gateway.js";
 import {
   buildSnapshot,
+  catchupPlan,
   fetchMessagesAfter,
   messageDto,
-  ownedConversationIds,
 } from "./snapshot.js";
 
 /** Close the socket if no hello arrived within this window. */
@@ -283,13 +285,19 @@ export class GatewayConnection {
         character: identities.characterName,
         accountId: flistAccounts.id,
         accountName: flistAccounts.accountName,
+        autoConnect: identities.autoConnect,
       })
       .from(identities)
       .innerJoin(flistAccounts, eq(identities.flistAccountId, flistAccounts.id))
       .where(eq(flistAccounts.userId, auth.userId))
       .orderBy(identities.sortOrder, identities.createdAt);
     for (const row of rows) {
-      this.#owned.set(row.id, row);
+      this.#owned.set(row.id, {
+        id: row.id,
+        character: row.character,
+        accountId: row.accountId,
+        accountName: row.accountName,
+      });
     }
     this.#send({
       t: "ready",
@@ -300,6 +308,7 @@ export class GatewayConnection {
           name: row.character,
           sessionStatus:
             this.#ctx.sessions.get(row.id)?.status ?? ("offline" as const),
+          autoConnect: row.autoConnect,
         })),
       },
     });
@@ -382,7 +391,13 @@ export class GatewayConnection {
     this.#ctx.hub.subscribe(identityId, this);
 
     const session = this.#ctx.sessions.get(identityId);
-    const snapshot = await buildSnapshot(this.#ctx.db, identityId, session);
+    const snapshot = await buildSnapshot(
+      this.#ctx.db,
+      identityId,
+      identity.character,
+      session,
+    );
+    const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
     this.#send({
       t: "snapshot",
       d: {
@@ -390,6 +405,7 @@ export class GatewayConnection {
         self: {
           character: identity.character,
           sessionStatus: session?.status ?? "offline",
+          limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
         },
         channels: snapshot.channels,
         dms: snapshot.dms,
@@ -413,13 +429,14 @@ export class GatewayConnection {
 
   async #sendCatchup(identityId: string, sub: Subscription): Promise<void> {
     const cursors = this.#resume[identityId]?.convCursors ?? {};
-    const convIds = await ownedConversationIds(
+    const plan = await catchupPlan(
       this.#ctx.db,
       identityId,
-      Object.keys(cursors),
+      cursors,
+      CATCHUP_BATCH_SIZE,
     );
-    for (const convId of convIds) {
-      let afterId = cursors[convId] ?? 0;
+    for (const { convId, afterId: planStart } of plan) {
+      let afterId = planStart;
       sub.delivered.set(convId, afterId);
       for (;;) {
         if (this.#subscriptions.get(identityId) !== sub) {
@@ -468,15 +485,25 @@ export class GatewayConnection {
     }
     switch (cmd.action) {
       case "session.connect":
-        this.#ctx.sessions.start({
+        // Scenario selection, seeding and the deferred reconcile live in
+        // connectIdentity (shared with the REST connect route).
+        await connectIdentity(this.#ctx, {
           identityId: identity.id,
           character: identity.character,
           accountId: identity.accountId,
           accountName: identity.accountName,
         });
+        this.#ctx.hub.broadcast(identity.id, {
+          kind: "identity.updated",
+          d: { autoConnect: true },
+        });
         this.#ack(id, { ok: true });
         return;
       case "session.disconnect":
+        // Flag first, stop second: clients react to the stopped status
+        // event, and a tab whose autoConnect mirror still says true would
+        // auto-resurrect the session the user just logged off.
+        await this.#setAutoConnect(identity.id, false);
         this.#ctx.sessions.stop(identity.id, "disconnected by user");
         this.#ack(id, { ok: true });
         return;
@@ -509,6 +536,19 @@ export class GatewayConnection {
             return;
           }
           throw error;
+        }
+        return;
+      }
+      case "conv.pin": {
+        const row = await this.#ctx.history.setPinned(
+          identity.id,
+          cmd.d.convId,
+          cmd.d.pinned,
+        );
+        if (row) {
+          this.#ack(id, { ok: true, conversation: conversationDto(row) });
+        } else {
+          this.#ack(id, { ok: false, error: "conversation not found" });
         }
         return;
       }
@@ -562,6 +602,25 @@ export class GatewayConnection {
         });
       },
     );
+  }
+
+  /**
+   * autoConnect mirrors the user's connect intent: an explicit connect sets
+   * it, an explicit disconnect clears it — so after a restart, "identities
+   * that need re-auth" is exactly the autoConnect set, and one unlock brings
+   * them all back (milestone-2 §Scope). Fanned out so every tab's mirror
+   * converges — a stale mirror could silently reconnect an identity the
+   * user just logged off elsewhere.
+   */
+  async #setAutoConnect(identityId: string, value: boolean): Promise<void> {
+    await this.#ctx.db
+      .update(identities)
+      .set({ autoConnect: value })
+      .where(eq(identities.id, identityId));
+    this.#ctx.hub.broadcast(identityId, {
+      kind: "identity.updated",
+      d: { autoConnect: value },
+    });
   }
 
   #requireSession(

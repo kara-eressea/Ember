@@ -69,6 +69,20 @@ The mockups show a text-only message log, but F-Chat messages routinely contain 
 - **`icon_blacklist` VAR**: some channels disallow (e)icons (server-enforced). Render whatever the server sends; the composer warns when inserting an eicon into a blacklisted channel.
 - **Input syntax**: `[eicon]name[/eicon]` typed literally always works and passes through the Markdown layer untouched (developer policy: smiley syntax must be consistent with official clients). The composer's ☺ button is an insert-by-name helper (M4); per-user favorites list joins in M5. No eicon search — F-List has no public search API for the gallery.
 
+## 9. Channel rejoin semantics (2026-07-13)
+
+Which channels a session joins depends on *why* it is (re)connecting. Three scenarios:
+
+1. **In-process F-Chat drop** (network blip, F-Chat maintenance): the session auto-reconnects and rejoins **the exact same channels** (the in-memory desired-channel set). The user never perceives leaving.
+2. **Server restart → unlock + auto-connect**: the user didn't choose to leave either, so restore **the exact same channels** — seeded from the persisted `joined = true` conversation rows the history sink maintains.
+3. **Explicit disconnect → later connect** (intentional log-off): rejoin **pinned channels only**. On this connect, previously joined-but-unpinned rows are reconciled to `joined = false` so a later restart-recovery (scenario 2) doesn't resurrect channels the user deliberately left.
+
+This gives pinning one crisp meaning: *"channels this character is always in when they come online."* Casually browsed channels don't stick across deliberate logoffs — unlike official-client pins, which double as "remember this at all."
+
+**Operational rule (M2 audit refinement):** which scenario a `session.connect` is, is decided by the `autoConnect` intent flag *at the moment of connecting*. `autoConnect = true` means the user never logged this identity off — the stopped session is an outage or server restart, so the connect is a **recovery** (scenario 2, seed from `joined`, non-destructive). `autoConnect = false` means they explicitly logged off earlier and this connect is the deliberate return (scenario 3, pinned seed). The scenario-3 `joined`-flag reconcile is destructive, so it runs only once the session actually reaches *online* (a connect that dies on a locked vault or bad password leaves the recovery set intact) and is serialized through the history sink's per-identity write queue.
+
+**Kick/ban exception:** a server-initiated removal (kick, ban, timeout) drops the channel from the desired set — the session never fights a moderator by auto-rejoining, in any scenario. Pinned channels are not exempt: F-Chat's `ERR` frames carry no channel reference, so a refused join (banned, invite-only, deleted) is detected by its missing echo, and a channel is given up after **two** unconfirmed attempts — two rather than one because a connection can die with the echo in flight, and a single network blip must not silently unsubscribe channels. The errors still surface to the user. Beyond politeness, this minimizes abuse reports against the app itself.
+
 ## Other settled points
 
 - The server is a **bouncer**: it owns one F-Chat WebSocket per connected identity; browsers attach via our own gateway protocol and receive synchronized events. This is what makes "stay online when the app is closed", catch-up, and multi-device login possible.

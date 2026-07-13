@@ -42,6 +42,18 @@ const configSchema = z.object({
    * Accepts: "true"/"false", a hop count, or comma-separated addresses/CIDRs.
    */
   TRUST_PROXY: z.string().optional(),
+  /**
+   * Message retention policy. "forever" (the default) never deletes
+   * anything; age/size policies join in M7 and extend this enum — an
+   * unrecognized value is refused at boot rather than silently kept forever.
+   */
+  RETENTION_POLICY: z.literal("forever").default("forever"),
+  /** How often the retention sweep runs (a no-op under "forever"). */
+  RETENTION_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(6 * 60 * 60 * 1000),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

@@ -30,6 +30,8 @@ export interface IdentityDto {
   autoConnect: boolean;
   sortOrder: number;
   createdAt: string;
+  /** FchatSession status, "offline" when no session exists. */
+  sessionStatus: string;
 }
 
 export interface HistoryMessageDto {
@@ -164,10 +166,16 @@ export const api = {
     });
   },
   unlockFlistAccount(id: string, password: string) {
-    return apiRequest<{ account: FlistAccountDto }>(
+    return apiRequest<{ account: FlistAccountDto; reconnected: string[] }>(
       `/flist-accounts/${id}/unlock`,
       { method: "POST", body: { password }, auth: true },
     );
+  },
+  deleteFlistAccount(id: string) {
+    return apiRequest<undefined>(`/flist-accounts/${id}`, {
+      method: "DELETE",
+      auth: true,
+    });
   },
   listCharacters(accountId: string) {
     return apiRequest<{ characters: string[] }>(
@@ -193,6 +201,18 @@ export const api = {
       method: "DELETE",
       auth: true,
     });
+  },
+  connectIdentity(id: string) {
+    return apiRequest<{ identity: IdentityDto }>(`/identities/${id}/connect`, {
+      method: "POST",
+      auth: true,
+    });
+  },
+  disconnectIdentity(id: string) {
+    return apiRequest<{ identity: IdentityDto }>(
+      `/identities/${id}/disconnect`,
+      { method: "POST", auth: true },
+    );
   },
 
   /** One page of history, ascending; `before` walks toward older messages. */

@@ -8,7 +8,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -20,7 +20,12 @@ import { createDb, type Db } from "../../db/index.js";
 import { conversations, identities, messages } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
-import { ConversationLimitError, HistorySink } from "./sink.js";
+import { SessionEventBus } from "../session-engine/event-bus.js";
+import {
+  ConversationLimitError,
+  HistorySink,
+  type ConversationRow,
+} from "./sink.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
@@ -347,6 +352,187 @@ describe("history sink", () => {
     // Still monotonic: a stale ack never regresses the cursor.
     const stale = await app.history.markRead(identityId, conv!.id, 1);
     expect(stale?.lastReadMessageId).toBe(message!.id);
+  });
+
+  it("pins conversations and seeds connect/resume channel sets (decisions.md §9)", async () => {
+    const { identityId } = await startIdentity();
+    const insertChannel = async (
+      key: string,
+      flags: { pinned: boolean; joined: boolean },
+    ) => {
+      const [row] = await db
+        .insert(conversations)
+        .values({
+          identityId,
+          kind: "channel",
+          channelKey: key,
+          title: key,
+          ...flags,
+        })
+        .returning();
+      return row!;
+    };
+    const pinnedJoined = await insertChannel("Pinned Joined", {
+      pinned: true,
+      joined: true,
+    });
+    const casual = await insertChannel("Casual", {
+      pinned: false,
+      joined: true,
+    });
+    await insertChannel("Pinned Left", { pinned: true, joined: false });
+    // A joined PM row must never leak into channel seeds.
+    await db.insert(conversations).values({
+      identityId,
+      kind: "pm",
+      partnerCharacter: "Nyx Firemane",
+      title: "Nyx Firemane",
+      joined: true,
+    });
+
+    const events: ConversationRow[] = [];
+    const off = app.history.events.on("conversation", (event) => {
+      if (event.identityId === identityId) {
+        events.push(event.conversation);
+      }
+    });
+
+    // Restart recovery: exactly the channels the identity was in.
+    expect((await app.history.channelsForResume(identityId)).sort()).toEqual([
+      "Casual",
+      "Pinned Joined",
+    ]);
+
+    // Explicit return from a log-off: the pinned seed is a pure read…
+    expect((await app.history.pinnedChannelKeys(identityId)).sort()).toEqual([
+      "Pinned Joined",
+      "Pinned Left",
+    ]);
+    const [casualBefore] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, casual.id));
+    expect(casualBefore?.joined).toBe(true);
+
+    // …and the destructive reconcile is a separate, queued step that flips
+    // the casually joined row to joined = false (with a fan-out event).
+    app.history.reconcileJoinedForConnect(identityId);
+    await app.history.flush();
+    const [casualAfter] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, casual.id));
+    expect(casualAfter?.joined).toBe(false);
+    expect(events.some((c) => c.id === casual.id && !c.joined)).toBe(true);
+
+    // A later restart recovery no longer resurrects the reconciled channel.
+    expect(await app.history.channelsForResume(identityId)).toEqual([
+      "Pinned Joined",
+    ]);
+
+    // Pin round trip: persists, emits, scoped to the owning identity.
+    const unpinned = await app.history.setPinned(
+      identityId,
+      pinnedJoined.id,
+      false,
+    );
+    expect(unpinned?.pinned).toBe(false);
+    expect(events.some((c) => c.id === pinnedJoined.id && !c.pinned)).toBe(
+      true,
+    );
+    expect(
+      await app.history.setPinned(
+        identityId,
+        "00000000-0000-7000-8000-000000000000",
+        true,
+      ),
+    ).toBeUndefined();
+    off();
+  });
+
+  it("shards the write queue per identity — one identity's stalled write never blocks another's", async () => {
+    // Two identities on the same F-List account; sink events come from fake
+    // session buses so each identity's traffic can be driven independently
+    // (the sink only reads `events`, `character`, and `state.channels`).
+    const { identityId: identityA } = await startIdentity();
+    const [accountRow] = await db
+      .select({ flistAccountId: identities.flistAccountId })
+      .from(identities)
+      .where(eq(identities.id, identityA));
+    const [identityRowB] = await db
+      .insert(identities)
+      .values({
+        flistAccountId: accountRow!.flistAccountId,
+        characterName: "Bee Wildfire",
+      })
+      .returning({ id: identities.id });
+    const identityB = identityRowB!.id;
+
+    const fakeSession = (character: string) =>
+      ({
+        character,
+        events: new SessionEventBus(),
+        state: { channels: new Map() },
+      }) as unknown as FchatSession;
+    const sessionA = fakeSession(CHARACTER);
+    const sessionB = fakeSession("Bee Wildfire");
+    const sink = new HistorySink(db);
+    sink.attach(identityA, sessionA);
+    sink.attach(identityB, sessionB);
+
+    const messagesFor = (identityId: string) =>
+      db
+        .select({ bbcode: messages.bbcode })
+        .from(messages)
+        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+        .where(eq(conversations.identityId, identityId))
+        .orderBy(messages.id);
+
+    // Stall identity A's next message insert: an open FOR UPDATE on its
+    // conversation row blocks the insert's FK KEY SHARE lock on that row.
+    const convA = await sink.ensurePmConversation(identityA, "Nyx Firemane");
+    let releaseLock!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockAcquired!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      lockAcquired = resolve;
+    });
+    const lockHolder = db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select id from ${conversations} where id = ${convA.id} for update`,
+      );
+      lockAcquired();
+      await gate;
+    });
+    await locked;
+
+    try {
+      sessionA.events.emit("command", {
+        cmd: "PRI",
+        payload: { character: "Nyx Firemane", message: "stalled write" },
+      });
+      sessionB.events.emit("command", {
+        cmd: "PRI",
+        payload: { character: "Nyx Firemane", message: "independent write" },
+      });
+
+      // B's write lands while A's chain is still stuck behind the row lock.
+      await vi.waitFor(async () => {
+        const rows = await messagesFor(identityB);
+        expect(rows.map((r) => r.bbcode)).toEqual(["independent write"]);
+      });
+      expect(await messagesFor(identityA)).toHaveLength(0);
+    } finally {
+      releaseLock();
+    }
+
+    await lockHolder;
+    await sink.flush();
+    expect((await messagesFor(identityA)).map((r) => r.bbcode)).toEqual([
+      "stalled write",
+    ]);
   });
 
   it("tracks the joined flag across join and leave", async () => {

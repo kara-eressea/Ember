@@ -1,9 +1,21 @@
-// One FchatSession per identity. In milestone 1 sessions are started and
-// stopped by the gateway on browser attach/detach; milestone 2 keeps them
-// alive independently (always-online bouncer).
+// One FchatSession per identity. Session life is independent of any browser
+// connection (always-online bouncer): sessions start on explicit
+// `session.connect` (or unlock auto-connect) and stop only on explicit
+// `session.disconnect`, identity deletion, or server shutdown.
 
 import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
-import { FchatSession, type SessionLogger } from "./fchat-session.js";
+import {
+  FchatSession,
+  type FchatSessionOptions,
+  type SessionLogger,
+} from "./fchat-session.js";
+
+/** Test-only timing knobs (integration tests can't wait out the 10s policy
+ * floor). Never wired to config — production always runs policy defaults. */
+export type SessionTuning = Pick<
+  FchatSessionOptions,
+  "backoffFloorMs" | "backoffCapMs" | "watchdogMs" | "random"
+>;
 
 export interface SessionRegistryOptions {
   readonly tickets: TicketManagerRegistry;
@@ -12,6 +24,7 @@ export interface SessionRegistryOptions {
   readonly clientName: string;
   readonly clientVersion: string;
   readonly logger?: SessionLogger;
+  readonly tuning?: SessionTuning;
   /**
    * Invoked for every newly created session BEFORE it starts connecting, so
    * subscribers (history sink, gateway) never miss an event.
@@ -27,6 +40,13 @@ export interface StartSessionParams {
   readonly character: string;
   readonly accountId: string;
   readonly accountName: string;
+  /**
+   * Channels seeded into the desired set of a NEWLY created session (joined
+   * at identify). Ignored when a running session exists — a live channel set
+   * is never reseeded, so concurrent connect/unlock callers can compute
+   * seeds optimistically without racing each other.
+   */
+  readonly seedChannels?: readonly string[];
 }
 
 export class SessionRegistry {
@@ -54,7 +74,11 @@ export class SessionRegistry {
       clientName: this.#options.clientName,
       clientVersion: this.#options.clientVersion,
       logger: this.#options.logger,
+      ...this.#options.tuning,
     });
+    for (const channel of params.seedChannels ?? []) {
+      session.joinChannel(channel);
+    }
     this.#sessions.set(params.identityId, session);
     this.#options.onSessionStarted?.(params.identityId, session);
     session.start();

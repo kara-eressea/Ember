@@ -118,6 +118,8 @@ export class FchatSim {
   readonly #online = new Map<string, CharacterState>();
   /** Misbehavior toggle: stop sending server PINs. */
   dropPings = false;
+  /** Misbehavior control: channels whose JCH fails with the mapped ERR. */
+  readonly #joinRejections = new Map<string, number>();
   #port: number | undefined;
 
   constructor(options: FchatSimOptions = {}) {
@@ -228,6 +230,18 @@ export class FchatSim {
 
   sendErrorTo(character: string, number: number): void {
     this.#sendError(this.#connectionFor(character), number);
+  }
+
+  /** JCH for this channel fails with the given ERR (default: channel ban). */
+  rejectJoins(
+    channel: string,
+    number: number = FchatErrorCode.BannedFromChannel,
+  ): void {
+    this.#joinRejections.set(channel, number);
+  }
+
+  allowJoins(channel: string): void {
+    this.#joinRejections.delete(channel);
   }
 
   #connectionFor(character: string): Connection {
@@ -547,6 +561,11 @@ export class FchatSim {
     const channel = this.#channels.get(channelName);
     if (!channel) {
       this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    const rejection = this.#joinRejections.get(channelName);
+    if (rejection !== undefined) {
+      this.#sendError(connection, rejection);
       return;
     }
     if (channel.members.has(character)) {
