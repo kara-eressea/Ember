@@ -870,6 +870,36 @@ describe("FchatSession against fchat-sim", () => {
     expect(frames.filter((raw) => raw.startsWith("ERR"))).toEqual([]);
   });
 
+  it("TPN dedupes per recipient: only status changes hit the wire", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    const recipient = makeSession(sim, { character: "Cindral" });
+    recipient.start();
+    await waitForStatus(recipient, "online");
+
+    const seen: string[] = [];
+    recipient.events.on("command", (command) => {
+      if (command.cmd === "TPN") {
+        seen.push(command.payload.status);
+      }
+    });
+
+    const paused = waitForCommand(
+      recipient,
+      (c) => c.cmd === "TPN" && c.payload.status === "paused",
+    );
+    session.sendTyping("Cindral", "typing");
+    session.sendTyping("Cindral", "typing"); // repeats never reach the wire
+    session.sendTyping("cindral", "typing"); // …case-insensitively
+    session.sendTyping("Cindral", "paused");
+    const frame = await paused;
+    expect(frame.cmd === "TPN" && frame.payload.character).toBe(CHARACTER);
+    // Exactly two frames made it out: the change to typing, then to paused.
+    expect(seen).toEqual(["typing", "paused"]);
+  });
+
   it("drops a rejected ticket and identifies with a fresh one", async () => {
     const sim = await startSim();
     let fetches = 0;
