@@ -1,13 +1,15 @@
-// Standalone runner for manual poking (wscat) and local development:
-//   pnpm --filter @emberline/fchat-sim build && pnpm --filter @emberline/fchat-sim start
-// Port comes from FCHAT_SIM_PORT (default 9090).
+// Standalone runner for manual poking (wscat), local development, and the
+// docker-compose smoke profile. Port from FCHAT_SIM_PORT (default 9090);
+// bind address from FCHAT_SIM_HOST (default loopback; 0.0.0.0 in a container).
 
 import { FchatSim } from "./sim-server.js";
 import { DEFAULT_WORLD } from "./world.js";
 
 const port = Number(process.env["FCHAT_SIM_PORT"] ?? 9090);
+const host = process.env["FCHAT_SIM_HOST"] ?? "127.0.0.1";
 const sim = new FchatSim({
   port,
+  host,
   log: (line) => console.log(line),
 });
 

@@ -1,0 +1,67 @@
+# Production-shaped deployment (decisions.md §5: VPS + docker-compose).
+# Copy .env.example to .env and set real values first. TLS termination is a
+# reverse proxy's job (set TRUST_PROXY when one is in front).
+#
+# The `sim` profile adds fchat-sim for smoke testing against a fake F-Chat:
+#   docker compose --profile sim up  (with FCHAT_URL/FLIST_API_URL pointed at it)
+# Never run the sim profile in a real deployment.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: emberline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: emberline
+    volumes:
+      # postgres:18 images moved the volume mount up to /var/lib/postgresql
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emberline"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgres://emberline:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/emberline
+      AUTH_SECRET: ${AUTH_SECRET:?set in .env}
+      FCHAT_URL: ${FCHAT_URL:-wss://chat.f-list.net/chat2}
+      FLIST_API_URL: ${FLIST_API_URL:-https://www.f-list.net}
+      APP_NAME: ${APP_NAME:-Emberline}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      CLIENT_NAME: ${CLIENT_NAME:-Emberline}
+      CLIENT_VERSION: ${CLIENT_VERSION:-0.0.0}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Fake F-Chat for smoke tests only (fixture accounts, no persistence).
+  sim:
+    profiles: ["sim"]
+    build:
+      context: .
+      target: sim
+    restart: unless-stopped
+
+volumes:
+  pgdata:
