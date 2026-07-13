@@ -35,9 +35,9 @@ import type { SessionRegistry } from "../session-engine/registry.js";
 import type { GatewayHub } from "./gateway.js";
 import {
   buildSnapshot,
+  catchupPlan,
   fetchMessagesAfter,
   messageDto,
-  ownedConversationIds,
 } from "./snapshot.js";
 
 /** Close the socket if no hello arrived within this window. */
@@ -420,13 +420,14 @@ export class GatewayConnection {
 
   async #sendCatchup(identityId: string, sub: Subscription): Promise<void> {
     const cursors = this.#resume[identityId]?.convCursors ?? {};
-    const convIds = await ownedConversationIds(
+    const plan = await catchupPlan(
       this.#ctx.db,
       identityId,
-      Object.keys(cursors),
+      cursors,
+      CATCHUP_BATCH_SIZE,
     );
-    for (const convId of convIds) {
-      let afterId = cursors[convId] ?? 0;
+    for (const { convId, afterId: planStart } of plan) {
+      let afterId = planStart;
       sub.delivered.set(convId, afterId);
       for (;;) {
         if (this.#subscriptions.get(identityId) !== sub) {

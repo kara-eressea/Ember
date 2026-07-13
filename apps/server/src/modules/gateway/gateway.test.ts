@@ -32,7 +32,12 @@ import {
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
-import { authSessions, conversations, identities } from "../../db/schema.js";
+import {
+  authSessions,
+  conversations,
+  identities,
+  messages,
+} from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
@@ -686,6 +691,133 @@ describe("gateway fan-out", () => {
       eventPayload<{ message: { bbcode: string } }>(live).message.bbcode,
     ).toBe("m4");
     expect(second.bufferedFrames.filter((f) => f.t === "event")).toHaveLength(
+      0,
+    );
+  });
+
+  it("replays the unread tail of conversations the client has no cursor for", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    // A client sees one Frontpage message and detaches with its cursor.
+    const first = await connectClient();
+    await first.hello(token);
+    await first.subscribe(identityId);
+    await inject(session, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: "before detach",
+        channel: "Frontpage",
+      },
+    });
+    const seen = eventPayload<{ convId: string; message: { id: number } }>(
+      await first.nextEvent("message.new"),
+    );
+    first.close();
+
+    // While detached: a brand-new PM thread arrives (no client cursor)…
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "new thread" },
+    });
+    await app.history.flush();
+    // …a large conversation appears with more unread than one batch…
+    const [seeded] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Seeded",
+        title: "Seeded",
+      })
+      .returning();
+    await db.insert(messages).values(
+      Array.from({ length: 210 }, (_, i) => ({
+        conversationId: seeded!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `bulk ${String(i + 1)}`,
+      })),
+    );
+    // …and a fully-read conversation exists that must not be replayed.
+    const [readConv] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "pm",
+        partnerCharacter: "Tally Marsh",
+        title: "Tally Marsh",
+      })
+      .returning();
+    const [readMsg] = await db
+      .insert(messages)
+      .values({
+        conversationId: readConv!.id,
+        senderCharacter: "Tally Marsh",
+        kind: "pm",
+        bbcode: "already read",
+      })
+      .returning();
+    await db
+      .update(conversations)
+      .set({ lastReadMessageId: readMsg!.id })
+      .where(eq(conversations.id, readConv!.id));
+
+    // Resume with only the Frontpage cursor.
+    const second = await connectClient();
+    await second.hello(token, {
+      [identityId]: {
+        convCursors: { [seen.convId]: seen.message.id },
+      },
+    });
+    await second.subscribe(identityId);
+
+    // Frontpage (cursor'd, nothing new): 1 empty done frame. PM tail: 1
+    // frame. Seeded tail: a full batch (200) then the empty done frame.
+    const frames = [];
+    for (let i = 0; i < 4; i += 1) {
+      frames.push(await second.nextOfType("catchup"));
+    }
+    const byConv = new Map<string, { bbcode: string }[]>();
+    for (const frame of frames) {
+      const list = byConv.get(frame.d.convId) ?? [];
+      list.push(...frame.d.messages);
+      byConv.set(frame.d.convId, list);
+    }
+    expect(byConv.get(seen.convId)).toEqual([]);
+    expect(byConv.has(readConv!.id)).toBe(false);
+
+    const [pmConv] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.partnerCharacter, "Nyx Firemane"),
+        ),
+      );
+    expect(byConv.get(pmConv!.id)?.map((m) => m.bbcode)).toEqual([
+      "new thread",
+    ]);
+
+    // The tail is capped at one batch: bulk 11..210, never bulk 1.
+    const tail = byConv.get(seeded!.id) ?? [];
+    expect(tail).toHaveLength(200);
+    expect(tail[0]?.bbcode).toBe("bulk 11");
+    expect(tail.at(-1)?.bbcode).toBe("bulk 210");
+
+    // Live still flows and no further catchup frames are pending.
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "live again" },
+    });
+    const live = await second.nextEvent("message.new");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(live).message.bbcode,
+    ).toBe("live again");
+    expect(second.bufferedFrames.filter((f) => f.t === "catchup")).toHaveLength(
       0,
     );
   });
