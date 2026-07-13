@@ -23,6 +23,17 @@ export const clientCommandSchemas = {
     cname: z.string(),
     cversion: z.string(),
   }),
+  /**
+   * Ignore-list actions. Ignoring is the client's responsibility — the
+   * server only stores the list; `notify` tells it an inbound PRI was
+   * dropped (it informs the sender), `list` requests the full list.
+   */
+  IGN: z.discriminatedUnion("action", [
+    z.object({ action: z.literal("add"), character: z.string() }),
+    z.object({ action: z.literal("delete"), character: z.string() }),
+    z.object({ action: z.literal("notify"), character: z.string() }),
+    z.object({ action: z.literal("list") }),
+  ]),
   /** Join a channel. */
   JCH: z.object({ channel: z.string() }),
   /** Leave a channel. */

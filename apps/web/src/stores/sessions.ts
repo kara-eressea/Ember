@@ -55,6 +55,9 @@ export interface IdentitySession {
   /** Our own F-Chat status (STA) — distinct from the session lifecycle. */
   ownStatus: string;
   ownStatusmsg: string;
+  /** Ignore list (canonical casing). Messages from these characters stay
+   * persisted but are hidden from render. */
+  ignores: string[];
   /** Live server VARs (bytes) from the snapshot — composer limits. */
   limits: { chatMax: number; privMax: number };
   /** Keyed by channel key (events address channels by key). */
@@ -100,11 +103,14 @@ interface SessionsState {
       sessionStatus: GatewaySessionStatus;
       status: string;
       statusmsg: string;
+      ignores: string[];
       limits: { chatMax: number; privMax: number };
     };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
   }): void;
+  /** Full ignore-list overwrite (ignore.updated / snapshot). */
+  applyIgnores(identityId: string, characters: string[]): void;
   applySessionStatus(
     identityId: string,
     status: GatewaySessionStatus,
@@ -165,6 +171,7 @@ function emptySession(identityId: string): IdentitySession {
     sessionStatus: "offline",
     ownStatus: "online",
     ownStatusmsg: "",
+    ignores: [],
     // Placeholder until the snapshot delivers the live VARs.
     limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
@@ -284,11 +291,19 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         sessionStatus: d.self.sessionStatus,
         ownStatus: d.self.status,
         ownStatusmsg: d.self.statusmsg,
+        ignores: [...d.self.ignores],
         limits: d.self.limits,
         channels,
         dms,
         channelByConvId,
         synced: true,
+      }));
+    },
+
+    applyIgnores(identityId, characters) {
+      patch(identityId, (session) => ({
+        ...session,
+        ignores: [...characters],
       }));
     },
 

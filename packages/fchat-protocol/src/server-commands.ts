@@ -42,6 +42,14 @@ export const serverCommandSchemas = {
     character: z.object({ identity: z.string() }),
     title: z.string(),
   }),
+  /** Ignore-list state: `init` carries the full list at login, `add` and
+   * `delete` acknowledge client changes. Lenient on purpose — actions we do
+   * not know keep the command parseable. */
+  IGN: z.object({
+    action: z.string(),
+    character: z.string().optional(),
+    characters: z.array(z.string()).optional(),
+  }),
   /** A character left a channel (possibly our own). */
   LCH: z.object({ channel: z.string(), character: z.string() }),
   /** Online characters: [name, gender, status, status message]. Sent in batches. */

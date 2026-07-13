@@ -410,6 +410,9 @@ export class GatewayConnection {
     );
     const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
     const ownStatus = session?.ownStatus ?? { status: "online", statusmsg: "" };
+    // The persisted mirror, not live session state: it exists without a
+    // session, and the sink keeps it in step with the IGN acks anyway.
+    const ignores = await this.#ctx.history.listIgnores(identityId);
     this.#send({
       t: "snapshot",
       d: {
@@ -419,6 +422,7 @@ export class GatewayConnection {
           sessionStatus: session?.status ?? "offline",
           status: ownStatus.status,
           statusmsg: ownStatus.statusmsg,
+          ignores,
           limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
         },
         channels: snapshot.channels,
@@ -564,6 +568,29 @@ export class GatewayConnection {
               ok: false,
               error:
                 error instanceof Error ? error.message : "status set failed",
+            });
+          }
+        }
+        return;
+      }
+      case "ignore.add":
+      case "ignore.remove": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            // State, persistence and fan-out all follow the server's IGN
+            // acknowledgement — the cmd only puts the request on the wire.
+            if (cmd.action === "ignore.add") {
+              session.ignore(cmd.d.character);
+            } else {
+              session.unignore(cmd.d.character);
+            }
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : "ignore change failed",
             });
           }
         }

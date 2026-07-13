@@ -271,6 +271,22 @@ export class FchatSession {
     return this.#desiredStatus ?? { status: "online", statusmsg: "" };
   }
 
+  /** Adds a character to the server-side ignore list (IGN add). State and
+   * persistence follow the server's acknowledgement, not the send. */
+  ignore(character: string): void {
+    this.#assertOnline();
+    if (!this.#send({ cmd: "IGN", payload: { action: "add", character } })) {
+      throw new SessionNotOnlineError(this.#status);
+    }
+  }
+
+  unignore(character: string): void {
+    this.#assertOnline();
+    if (!this.#send({ cmd: "IGN", payload: { action: "delete", character } })) {
+      throw new SessionNotOnlineError(this.#status);
+    }
+  }
+
   /**
    * Sets the character's status (STA). Remembered and re-sent after every
    * reconnect. A synthetic self-STA is emitted on the event bus so every
@@ -428,6 +444,19 @@ export class FchatSession {
       }
       case "ERR":
         this.#handleError(command.payload.number);
+        this.events.emit("command", command);
+        return;
+      case "PRI":
+        // Ignoring is the client's responsibility (developer policy): tell
+        // the server so it informs the sender. The message still flows to
+        // the sink — history keeps it, clients hide it from render.
+        if (this.state.isIgnored(command.payload.character)) {
+          this.#send({
+            cmd: "IGN",
+            payload: { action: "notify", character: command.payload.character },
+          });
+        }
+        this.state.apply(command);
         this.events.emit("command", command);
         return;
       case "JCH":

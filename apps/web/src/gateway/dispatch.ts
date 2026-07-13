@@ -111,6 +111,9 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "identities.reordered":
       sessions.applyIdentityOrder(event.d.order);
       return;
+    case "ignore.updated":
+      sessions.applyIgnores(identityId, event.d.characters);
+      return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;

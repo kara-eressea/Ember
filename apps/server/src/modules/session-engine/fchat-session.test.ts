@@ -763,6 +763,85 @@ describe("FchatSession against fchat-sim", () => {
     );
   });
 
+  it("auto-notifies the server about an ignored PRI, which still reaches the bus", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+
+    const acked = waitForCommand(
+      session,
+      (c) => c.cmd === "IGN" && c.payload.action === "add",
+    );
+    session.ignore("Cindral");
+    await acked;
+    expect(session.state.isIgnored("cindral")).toBe(true); // case-insensitive
+
+    // Cindral logs in on a raw socket (same sim account) and PMs us.
+    const frames: string[] = [];
+    const waiters: (() => void)[] = [];
+    const socket = new WebSocket(sim.wsUrl);
+    socket.on("message", (data) => {
+      frames.push(rawDataToString(data));
+      for (const wake of waiters.splice(0)) {
+        wake();
+      }
+    });
+    cleanups.push(() => {
+      socket.close();
+    });
+    async function rawWaitFor(cmd: string): Promise<string> {
+      for (;;) {
+        const index = frames.findIndex(
+          (raw) => raw === cmd || raw.startsWith(`${cmd} `),
+        );
+        if (index !== -1) {
+          return frames.splice(index, 1)[0]!;
+        }
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error(`timed out waiting for ${cmd}`));
+          }, 5000);
+          waiters.push(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+      }
+    }
+    await new Promise<void>((resolve) => socket.once("open", resolve));
+    socket.send(
+      serializeClientCommand({
+        cmd: "IDN",
+        payload: {
+          method: "ticket",
+          account: ACCOUNT,
+          ticket: sim.issueTicketFor(ACCOUNT),
+          character: "Cindral",
+          cname: "raw-test",
+          cversion: "0",
+        },
+      }),
+    );
+    await rawWaitFor("IDN");
+
+    const received = waitForCommand(session, (c) => c.cmd === "PRI");
+    socket.send(
+      serializeClientCommand({
+        cmd: "PRI",
+        payload: { recipient: CHARACTER, message: "can you hear me?" },
+      }),
+    );
+    // The message still reaches the event bus — history keeps it, clients
+    // hide it from render...
+    const pri = await received;
+    expect(pri.cmd === "PRI" && pri.payload.character).toBe("Cindral");
+    // ...and the session auto-sent IGN notify, so the sim relayed ERR 20
+    // (IgnoredByRecipient) to Cindral.
+    const err = await rawWaitFor("ERR");
+    expect(JSON.parse(err.slice(4))).toMatchObject({ number: 20 });
+  });
+
   it("drops a rejected ticket and identifies with a fresh one", async () => {
     const sim = await startSim();
     let fetches = 0;
