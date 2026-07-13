@@ -274,6 +274,14 @@ export type ServerFrame =
            * session.connect, cleared by explicit session.disconnect. Unlock
            * reconnects every autoConnect identity on the account. */
           autoConnect: boolean;
+          /** Badge totals across the identity's conversations, so the rail
+           * paints before (or without) a sub. Sums of the same capped
+           * per-conversation windows the snapshot counts — a signal, not an
+           * exact figure; the client clamps display at 99+. Kept live
+           * client-side by aggregating subscribed slices; these are the
+           * initial values. */
+          unread: number;
+          mentions: number;
         }[];
       };
     }

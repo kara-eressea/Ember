@@ -73,6 +73,11 @@ export interface IdentitySummary {
    * maintains it (connect sets, disconnect clears); mirrored locally when
    * this tab issues the cmd, and re-synced by the next ready frame. */
   autoConnect: boolean;
+  /** Ready-time badge totals across the identity's conversations. Initial
+   * paint only — once a slice is synced, the rail aggregates its live
+   * per-conversation counters instead. */
+  unread: number;
+  mentions: number;
 }
 
 interface SessionsState {
