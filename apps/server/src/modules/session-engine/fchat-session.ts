@@ -146,6 +146,15 @@ export class FchatSession {
   #identifyRejections = 0;
   /** Channels the user wants to be in; rejoined after every reconnect. */
   readonly #desiredChannels = new Set<string>();
+  /**
+   * Channels whose JCH went out but whose echo hasn't come back. A join that
+   * is still pending at the next identify never confirmed — banned, invite
+   * only, deleted — so it is dropped from the desired set instead of being
+   * retried on every reconnect (decisions.md §9: one attempt, no auto-retry;
+   * ERR frames carry no channel reference, so this is how failures are
+   * detected). The ERR itself still reaches the user via the event bus.
+   */
+  readonly #pendingJoins = new Set<string>();
 
   constructor(options: FchatSessionOptions) {
     this.character = options.character;
@@ -193,12 +202,14 @@ export class FchatSession {
   joinChannel(channel: string): void {
     this.#desiredChannels.add(channel);
     if (this.#status === "online") {
+      this.#pendingJoins.add(channel);
       this.#send({ cmd: "JCH", payload: { channel } });
     }
   }
 
   leaveChannel(channel: string): void {
     this.#desiredChannels.delete(channel);
+    this.#pendingJoins.delete(channel);
     if (this.#status === "online") {
       this.#send({ cmd: "LCH", payload: { channel } });
     }
@@ -342,7 +353,15 @@ export class FchatSession {
         this.#attempt = 0;
         this.#identifyRejections = 0;
         this.#setStatus("online");
+        // A join still pending from the previous connection never confirmed —
+        // give up on it rather than retrying against a ban forever.
+        for (const channel of this.#pendingJoins) {
+          this.#log.info({ channel }, "join never confirmed, not retrying");
+          this.#desiredChannels.delete(channel);
+        }
+        this.#pendingJoins.clear();
         for (const channel of this.#desiredChannels) {
+          this.#pendingJoins.add(channel);
           this.#send({ cmd: "JCH", payload: { channel } });
         }
         this.events.emit("command", command);
@@ -351,11 +370,20 @@ export class FchatSession {
         this.#handleError(command.payload.number);
         this.events.emit("command", command);
         return;
+      case "JCH":
+        if (command.payload.character.identity === this.character) {
+          // Our join echo: confirmed, safe to rejoin on future reconnects.
+          this.#pendingJoins.delete(command.payload.channel);
+        }
+        this.state.apply(command);
+        this.events.emit("command", command);
+        return;
       case "LCH":
         if (command.payload.character === this.character) {
           // Server-initiated removal (kick/ban) — stop rejoining it on
           // reconnect. Our own leaveChannel() already forgot the channel.
           this.#desiredChannels.delete(command.payload.channel);
+          this.#pendingJoins.delete(command.payload.channel);
         }
         this.state.apply(command);
         this.events.emit("command", command);

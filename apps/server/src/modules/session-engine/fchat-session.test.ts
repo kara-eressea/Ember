@@ -639,6 +639,48 @@ describe("FchatSession against fchat-sim", () => {
     expect(session.state.channels.has("Frontpage")).toBe(false);
   });
 
+  it("gives a rejected join one attempt per connect instead of retrying every reconnect", async () => {
+    const sim = await startSim();
+    sim.rejectJoins("Frontpage"); // ERR 48: banned from the channel
+    const session = makeSession(sim);
+    const commands = recordCommands(session);
+    session.start();
+    await waitForStatus(session, "online");
+
+    // The failed join surfaces as ERR on the bus (the gateway fans it out);
+    // a healthy join lands normally.
+    const rejected = waitForCommand(
+      session,
+      (c) => c.cmd === "ERR" && c.payload.number === 48,
+    );
+    session.joinChannel("Frontpage");
+    await rejected;
+    const joined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    session.joinChannel("Development");
+    await joined;
+
+    // Reconnect: the confirmed channel is rejoined, the never-confirmed one
+    // is dropped — no second JCH, so no second ERR 48.
+    const before = commands.length;
+    const rejoined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    sim.disconnect(CHARACTER);
+    await waitForStatus(session, "online", { next: true });
+    await rejoined;
+
+    expect(session.state.channels.has("Development")).toBe(true);
+    expect(session.state.channels.has("Frontpage")).toBe(false);
+    const errsAfterReconnect = commands
+      .slice(before)
+      .filter((c) => c.cmd === "ERR" && c.payload.number === 48);
+    expect(errsAfterReconnect).toHaveLength(0);
+  });
+
   it("drops a rejected ticket and identifies with a fresh one", async () => {
     const sim = await startSim();
     let fetches = 0;
