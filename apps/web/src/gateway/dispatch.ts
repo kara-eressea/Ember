@@ -90,6 +90,9 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "presence":
       sessions.applyPresence(identityId, event.d);
       return;
+    case "presence.bulk":
+      sessions.applyPresenceBulk(identityId, event.d.characters);
+      return;
     case "typing":
       sessions.applyTyping(identityId, event.d.character, event.d.status);
       return;

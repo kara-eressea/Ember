@@ -168,6 +168,11 @@ export function AppShell() {
                   ? `Message #${conversation.channel.title}`
                   : `Message ${conversation.dm.partner}`
               }
+              maxBytes={
+                conversation.kind === "channel"
+                  ? session.limits.chatMax
+                  : session.limits.privMax
+              }
               // A channel we hold history for but are not live in (fresh
               // session, or kicked) offers rejoin instead of a dead input.
               rejoinKey={

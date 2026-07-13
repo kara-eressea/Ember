@@ -197,6 +197,24 @@ function translateCommand(
           oplist: [...command.payload.oplist],
         },
       };
+    case "LIS":
+      // The already-online roster streams in batches after identify; a
+      // client whose snapshot raced it would otherwise show everyone
+      // offline until their next status change (found on live F-Chat —
+      // the sim's world is too small to ever lose that race).
+      return {
+        kind: "presence.bulk",
+        d: {
+          characters: command.payload.characters.map(
+            ([name, gender, status, statusmsg]) => [
+              name,
+              gender,
+              status,
+              statusmsg,
+            ],
+          ),
+        },
+      };
     case "NLN":
       return {
         kind: "presence",

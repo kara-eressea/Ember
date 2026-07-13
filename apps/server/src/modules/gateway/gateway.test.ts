@@ -792,6 +792,8 @@ describe("gateway fan-out", () => {
     expect(snapshot.d.self).toEqual({
       character: CHARACTER,
       sessionStatus: "online",
+      // The sim serves the documented default VARs.
+      limits: { chatMax: 4096, privMax: 50000 },
     });
     expect(snapshot.d.channels).toHaveLength(2);
     const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
@@ -806,6 +808,31 @@ describe("gateway fan-out", () => {
 
     const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("resolves DM presence case-insensitively and fans the LIS roster out as presence.bulk", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    // A DM opened with a lowercase name must still find its partner's
+    // presence at snapshot time (rows keep the creator's casing).
+    await app.history.ensurePmConversation(identityId, "nyx firemane");
+
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const dm = snapshot.d.dms.find((d) => d.partner === "nyx firemane");
+    expect(dm).toMatchObject({ online: true, status: "online" });
+
+    // The already-online roster (LIS) streams after identify; subscribed
+    // clients that raced it get the batches as presence.bulk events.
+    await inject(session, {
+      cmd: "LIS",
+      payload: { characters: [["Late Arrival", "None", "busy", "brb"]] },
+    });
+    const bulk = await client.nextEvent("presence.bulk");
+    expect(eventPayload<{ characters: unknown[] }>(bulk).characters).toEqual([
+      ["Late Arrival", "None", "busy", "brb"],
+    ]);
   });
 
   it("replays missed messages via catchup, then streams live without duplicates", async () => {
