@@ -727,6 +727,42 @@ describe("FchatSession against fchat-sim", () => {
     expect(session.state.channels.has("Frontpage")).toBe(true);
   });
 
+  it("sets own status (STA) and restores it after a reconnect", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim, {
+      backoffFloorMs: 200,
+      backoffCapMs: 400,
+    });
+    session.start();
+    await waitForStatus(session, "online");
+
+    // setStatus emits a synthetic self-STA so clients converge even if the
+    // server never echoes; the sim's broadcast is the idempotent duplicate.
+    const echo = waitForCommand(
+      session,
+      (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
+    );
+    session.setStatus("away", "brb tea");
+    await echo;
+    expect(session.ownStatus).toEqual({ status: "away", statusmsg: "brb tea" });
+
+    // A fresh connection resets F-Chat to plain "online" — the session
+    // re-sends its chosen status right after identifying, and the sim's
+    // broadcast of that STA is the proof it went out.
+    sim.disconnect(CHARACTER);
+    await waitForStatus(session, "online", { next: true });
+    const restored = await waitForCommand(
+      session,
+      (c) =>
+        c.cmd === "STA" &&
+        c.payload.character === CHARACTER &&
+        c.payload.status === "away",
+    );
+    expect(restored.cmd === "STA" && restored.payload.statusmsg).toBe(
+      "brb tea",
+    );
+  });
+
   it("drops a rejected ticket and identifies with a fresh one", async () => {
     const sim = await startSim();
     let fetches = 0;

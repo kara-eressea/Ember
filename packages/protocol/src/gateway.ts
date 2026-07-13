@@ -6,6 +6,12 @@
 // client trusts the server).
 
 import { z } from "zod";
+import { CLIENT_SETTABLE_STATUSES } from "@emberchat/fchat-protocol";
+
+// Re-exported so gateway consumers (the web app) can render status pickers
+// without a direct fchat-protocol dependency.
+export { CLIENT_SETTABLE_STATUSES };
+export type { ClientSettableStatus } from "@emberchat/fchat-protocol";
 
 /** Exchanged in the hello handshake; bump on breaking protocol changes. */
 export const PROTOCOL_VERSION = 1;
@@ -52,10 +58,20 @@ const resumeSchema = z
   });
 
 /**
- * Gateway commands (M1 core + M2 `conv.pin`). `status.set`, `typing.set`
+ * Gateway commands (M1 core + M2 `conv.pin` + M3 `status.set`). `typing.set`
  * and `ignore.add/remove` join in their milestones.
  */
 const cmdSchema = z.discriminatedUnion("action", [
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("status.set"),
+    // "crown" is server-set (RWD), deliberately not settable. The 255 cap is
+    // the official client's status-message limit (no VAR exists for it).
+    d: z.object({
+      status: z.enum(CLIENT_SETTABLE_STATUSES),
+      statusmsg: z.string().max(255),
+    }),
+  }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("session.connect"),
@@ -292,6 +308,10 @@ export type ServerFrame =
         self: {
           character: string;
           sessionStatus: GatewaySessionStatus;
+          /** Our own F-Chat status (the session's desired status — restored
+           * across reconnects). "online"/"" while no session is live. */
+          status: string;
+          statusmsg: string;
           /** Live server VARs (bytes) — composer limits, never hardcoded. */
           limits: { chatMax: number; privMax: number };
         };

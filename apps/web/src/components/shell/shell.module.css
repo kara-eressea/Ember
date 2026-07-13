@@ -336,12 +336,66 @@
 /* ── MeBar ───────────────────────────────────────────────────────────── */
 
 .meBar {
+  position: relative; /* anchors the status editor panel */
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 10px 12px;
   border-top: 1px solid var(--eb-border);
   background: var(--eb-side2);
+}
+
+.meStatusButton {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--eb-dim);
+  font-size: 11px;
+  text-align: left;
+}
+
+.meStatusButton:disabled {
+  cursor: default;
+}
+
+.meStatusButton:not(:disabled):hover .meStatusText {
+  color: var(--eb-text);
+}
+
+.meStatusButton .serverDot {
+  width: 7px;
+  height: 7px;
+}
+
+.meStatusText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.statusEditor {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-side);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+  z-index: 10;
+}
+
+.statusEditor .miniError {
+  margin: 0;
 }
 
 .meMeta {
@@ -355,19 +409,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.meStatus {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--eb-dim);
-}
-
-.meStatus .serverDot {
-  width: 7px;
-  height: 7px;
 }
 
 .meGear {

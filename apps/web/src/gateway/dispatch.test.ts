@@ -45,6 +45,8 @@ function snapshot(): ServerFrame {
       self: {
         character: "Amber Vale",
         sessionStatus: "online",
+        status: "online",
+        statusmsg: "",
         limits: { chatMax: 4096, privMax: 50000 },
       },
       channels: [
@@ -266,6 +268,29 @@ describe("presence", () => {
     expect(dm?.statusmsg).toBe("Open!");
     // The snapshot carried the live limits too.
     expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000 });
+  });
+
+  it("our own STA converges the MeBar/rail status", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("presence", {
+        character: "AMBER VALE", // self, any casing
+        online: true,
+        status: "away",
+        statusmsg: "brb tea",
+      }),
+    );
+    expect(session().ownStatus).toBe("away");
+    expect(session().ownStatusmsg).toBe("brb tea");
+    // Someone else's presence never touches our own status.
+    dispatchFrame(
+      event("presence", {
+        character: "Nyx Firemane",
+        online: true,
+        status: "busy",
+      }),
+    );
+    expect(session().ownStatus).toBe("away");
   });
 });
 

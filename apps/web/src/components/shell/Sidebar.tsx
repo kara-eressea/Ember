@@ -5,6 +5,10 @@
 
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
+import {
+  CLIENT_SETTABLE_STATUSES,
+  type ClientSettableStatus,
+} from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
@@ -139,15 +143,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
       <div className={styles.meBar}>
         <Avatar name={session.character || "?"} size={30} />
-        <span className={styles.meMeta}>
-          <div className={styles.meNick}>{session.character || "—"}</div>
-          <div className={styles.meStatus}>
-            <span
-              className={`${styles.serverDot} ${DOT_CLASS[online ? "ok" : "faint"]}`}
-            />
-            {sessionStatusLabel(session)}
-          </div>
-        </span>
+        <MeStatus session={session} online={online} />
         <PowerButton session={session} />
         <Link
           className={styles.meGear}
@@ -158,6 +154,125 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         </Link>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Nick + status row of the MeBar. While the session is online it doubles as
+ * the status control (F-Chat STA): clicking it opens a small editor above
+ * the bar — status select, optional message, one Set button. The session
+ * remembers the choice across reconnects; the fan-out converges every tab.
+ */
+function MeStatus({
+  session,
+  online,
+}: {
+  session: IdentitySession;
+  online: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<ClientSettableStatus>("online");
+  const [statusmsg, setStatusmsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const statusLine = online
+    ? session.ownStatus +
+      (session.ownStatusmsg ? ` — ${session.ownStatusmsg}` : "")
+    : sessionStatusLabel(session);
+  const dot: DotKind = online ? presenceDot(true, session.ownStatus) : "faint";
+
+  function toggle() {
+    if (!open) {
+      // Seed the editor with the current choice, not the last edit.
+      const current = CLIENT_SETTABLE_STATUSES.find(
+        (s) => s === session.ownStatus,
+      );
+      setStatus(current ?? "online");
+      setStatusmsg(session.ownStatusmsg);
+      setError(undefined);
+    }
+    setOpen(!open);
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    try {
+      const ack = await gateway.cmd({
+        identityId: session.identityId,
+        action: "status.set",
+        d: { status, statusmsg: statusmsg.trim() },
+      });
+      if (!ack.ok) {
+        setError(ack.error ?? "Could not set status");
+        return;
+      }
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className={styles.meMeta}>
+      <div className={styles.meNick}>{session.character || "—"}</div>
+      <button
+        className={styles.meStatusButton}
+        onClick={toggle}
+        disabled={!online}
+        title={online ? "Set status" : undefined}
+        aria-label="Set status"
+      >
+        <span className={`${styles.serverDot} ${DOT_CLASS[dot]}`} />
+        <span className={styles.meStatusText}>{statusLine}</span>
+      </button>
+      {open && online && (
+        <form
+          className={styles.statusEditor}
+          onSubmit={(event) => {
+            void submit(event);
+          }}
+        >
+          <select
+            className={styles.miniInput}
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value as ClientSettableStatus);
+            }}
+            aria-label="Status"
+          >
+            {CLIENT_SETTABLE_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <input
+            className={styles.miniInput}
+            value={statusmsg}
+            onChange={(e) => {
+              setStatusmsg(e.target.value);
+            }}
+            maxLength={255}
+            placeholder="Status message…"
+            aria-label="Status message"
+          />
+          <button className={styles.miniButton} type="submit" disabled={busy}>
+            Set
+          </button>
+          {error && (
+            <p className={styles.miniError} role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      )}
+    </span>
   );
 }
 

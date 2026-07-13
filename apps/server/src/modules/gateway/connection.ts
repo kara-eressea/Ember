@@ -409,6 +409,7 @@ export class GatewayConnection {
       session,
     );
     const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
+    const ownStatus = session?.ownStatus ?? { status: "online", statusmsg: "" };
     this.#send({
       t: "snapshot",
       d: {
@@ -416,6 +417,8 @@ export class GatewayConnection {
         self: {
           character: identity.character,
           sessionStatus: session?.status ?? "offline",
+          status: ownStatus.status,
+          statusmsg: ownStatus.statusmsg,
           limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
         },
         channels: snapshot.channels,
@@ -547,6 +550,22 @@ export class GatewayConnection {
             return;
           }
           throw error;
+        }
+        return;
+      }
+      case "status.set": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            session.setStatus(cmd.d.status, cmd.d.statusmsg);
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : "status set failed",
+            });
+          }
         }
         return;
       }
