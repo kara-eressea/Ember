@@ -142,11 +142,23 @@ export function AppShell() {
         ) : (
           <>
             {conversation.kind === "channel" ? (
-              <ChannelHeader channel={conversation.channel} />
+              <ChannelHeader
+                identityId={identityId}
+                channel={conversation.channel}
+              />
             ) : (
-              <DmHeader dm={conversation.dm} />
+              <DmHeader identityId={identityId} dm={conversation.dm} />
             )}
-            <MessageLog identityId={identityId} convId={convId} />
+            <MessageLog
+              key={convId}
+              identityId={identityId}
+              convId={convId}
+              readCursorAtAttach={
+                conversation.kind === "channel"
+                  ? conversation.channel.lastReadMessageId
+                  : conversation.dm.lastReadMessageId
+              }
+            />
             <Composer
               session={session}
               convId={convId}

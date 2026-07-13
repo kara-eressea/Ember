@@ -177,6 +177,7 @@ export interface SnapshotChannel {
   /** Empty while the session is not online. */
   members: MemberDto[];
   joined: boolean;
+  pinned: boolean;
   unread: number;
   /** Unread inbound messages matching the identity's character name (word
    * boundary, case-insensitive; M5 highlight rules extend this). Counted
@@ -193,6 +194,7 @@ export interface SnapshotDm {
   online: boolean;
   status: string;
   statusmsg: string;
+  pinned: boolean;
   unread: number;
   lastReadMessageId: number | null;
 }
