@@ -7,7 +7,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 | # | Milestone | Status | Depends on | Details |
 |---|---|---|---|---|
 | 1 | Thin vertical slice | in progress | — | [milestone-1-thin-vertical-slice.md](milestone-1-thin-vertical-slice.md) |
-| 2 | Always-online bouncer + catch-up | not started | M1 | [milestone-2-always-online-bouncer.md](milestone-2-always-online-bouncer.md) |
+| 2 | Always-online bouncer + catch-up | in progress | M1 | [milestone-2-always-online-bouncer.md](milestone-2-always-online-bouncer.md) |
 | 3 | Multi-identity | not started | M2 | [milestone-3-multi-identity.md](milestone-3-multi-identity.md) |
 | 4 | Markdown layer + delayed send | not started | M1 (parallel with M3) | [milestone-4-markdown-delayed-send.md](milestone-4-markdown-delayed-send.md) |
 | 5 | Highlights + preferences | not started | M3, M4 | [milestone-5-highlights-preferences.md](milestone-5-highlights-preferences.md) |
@@ -31,6 +31,25 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [x] 10. App shell + live chat (full slice E2E)
 - [ ] 11. Docker + supervised test-server pass — **Docker/compose/smoke done**; remaining: one supervised manual pass against the real F-Chat test server (blocked on the helpdesk-ticket standing to-do)
 
+## Milestone 2 step checklist
+
+> **Branching exception (temporary):** M2 lands on the **`staging`** branch — feature
+> PRs target `staging`, not `main` — so `main` stays frozen at the M1-ready state for
+> the manual UAT pass against the real F-Chat test server (M1 step 11). Once M1 UAT
+> passes and M2 completes, `staging` merges back to `main` and is deleted. This is the
+> explicit temporary-integration-branch exception allowed by `decisions.md` §7.
+
+An M1 audit showed much of M2's headline scope already works (sessions survive browser detach, auto-reconnect + re-ticket from vault, the full hello.resume → catchup → live protocol, snapshot unread counts + read-cursor acks). The steps below cover the actual gaps; channel rejoin behavior follows the scenario rules in `decisions.md` §9.
+
+- [ ] 1. Shard the HistorySink write queue per identity (deferred audit item; pre-always-on scale)
+- [ ] 2. Channel membership + rejoin semantics (server): `pinned` write path; seed desired channels on session start (explicit connect → pinned only + `joined` reconciliation; restart recovery → `joined` rows); kick/ban never auto-rejoined
+- [ ] 3. Unlock → auto-connect + re-auth UX: `autoConnect` toggle endpoint; unlock starts all of the account's auto-connect identities; web "re-enter password to reconnect" surface
+- [ ] 4. Catchup for cursor-less conversations (created while detached) — replay from id 0 instead of relying on REST backfill
+- [ ] 5. Unread 99-cap pushed into SQL (LATERAL + LIMIT) + mention counters (character-name match until M5 highlight rules) in snapshot/`conversation.updated`
+- [ ] 6. Web: "new since last visit" divider (attach-time read cursor, captured before the auto-ack advances it) + pin toggle UI (pinned sorts first)
+- [ ] 7. Retention job scaffold (`history/retention.ts`, `RETENTION_*` config, default "Forever")
+- [ ] 8. Milestone verification suite: detach/reattach exact catchup (no gaps/dupes); sim-drop → re-ticket + rejoin; restart → re-auth report → one unlock reconnects; two-device unread-badge convergence E2E
+
 ## Standing to-dos (not milestone-gated)
 
 - [ ] Decide final product name + register domain (working title "emberchat"; gates Brevo DKIM and public launch — see `decisions.md` §5)
@@ -40,7 +59,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [ ] **Before building opt-in at-rest credential storage** (eventual goal, under M7): decide on F-List outreach vs. disclosure-only (see `risks-and-open-questions.md`)
 - [ ] **Server hardening backlog** (deferred from the step-6 audit; natural timing M7): periodic cleanup of expired `auth_sessions` rows + per-user session cap; `@fastify/helmet` response headers; register endpoint reveals email/username existence (fold into email-verification flow); rate-gate uses `Date.now()` (not NTP-step-proof — switch to a monotonic clock if it ever matters); session-state ICH/COL/CDS assume the JCH echo arrives first (matches sim/docs/official client — make create-on-miss if the live server ever disagrees)
 
-- [ ] **Post-step-9 audit backlog** (deferred from the 2026-07-13 audit; HIGHs/most MEDIUMs were fixed immediately): shard the HistorySink write queue per identity before M2 always-on scale (single global chain is a throughput ceiling); push the unread-count 99-cap into SQL (LATERAL + LIMIT) instead of full COUNT per conversation at snapshot; cross-tab refresh coordination is best-effort (localStorage re-read + storage event) — consider a BroadcastChannel leader or server-side reuse grace window (M7); IdentityPicker add-flow dead-ends with multiple F-List accounts (needs an account chooser — natural timing M3); `register()` persists the refresh token without a "keep me signed in" choice; gateway catchup only replays cursor'd conversations — new conversations rely on REST backfill (decide in M2); hello-timeout and slow-consumer closes untested (need injectable timeouts); E2E ports are fixed (concurrent local runs collide).
+- [ ] **Post-step-9 audit backlog** (deferred from the 2026-07-13 audit; HIGHs/most MEDIUMs were fixed immediately; the HistorySink sharding, SQL unread-cap, and cursor-less-catchup items graduated into the M2 step checklist): cross-tab refresh coordination is best-effort (localStorage re-read + storage event) — consider a BroadcastChannel leader or server-side reuse grace window (M7); IdentityPicker add-flow dead-ends with multiple F-List accounts (needs an account chooser — natural timing M3); `register()` persists the refresh token without a "keep me signed in" choice; hello-timeout and slow-consumer closes untested (need injectable timeouts); E2E ports are fixed (concurrent local runs collide).
 
 - [ ] **fchat-sim fidelity backlog** (deferred from the step-3 review): NPCs are online in LIS but PRI to them returns ERR 6 (make them accept-and-drop or document); sim tickets never expire (real: 30 min — relevant to M1 step 5); add a guard test for the schema-table invariant behind the `as ServerCommand`/`as ClientCommand` casts (every schema is either always-bare or never-bare)
 
@@ -52,6 +71,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | **M2 started on the `staging` branch** (main frozen for M1 UAT — see the branching exception above). Channel rejoin semantics decided and recorded as `decisions.md` §9: in-process drops and restart recovery rejoin the exact same channels; an explicit disconnect→connect rejoins pinned channels only; kick/ban is never auto-rejoined (also to minimize abuse reports against the app). M2 step checklist added from a code audit against the milestone scope. CI push trigger extended to `staging`. |
 | 2026-07-13 | Working title renamed **Emberline → EmberChat** (repo-wide sweep: `@emberchat/*` package scope, config defaults, env prefix `EMBERCHAT_API_PROXY`, compose/db identifiers, docs and mockups; `eb.`/`--eb-` prefixes and the local folder name unchanged). Final-name/domain standing to-do stays open — the `emberchat.chat` domains in design files remain placeholders. Full gate + docker smoke green under the new name. |
 | 2026-07-13 | M1 step 11, Docker half done: multi-stage Dockerfile (build → filtered prod-deps → slim runtime as `node`; separate `sim` target), production `docker-compose.yml` (postgres + server with healthchecks; fchat-sim under an opt-in `sim` profile), root `.env.example`. Server gained `WEB_DIST` static mode: one Fastify serves API + gateway + built web app, SPA fallback, `window.__CONFIG__` injected into index.html at boot (branding stays runtime config), hashed assets cached immutable (+5 tests, server 103). `pnpm smoke` builds the image, boots the stack with the sim profile, and walks the slice end-to-end (statics/config injection, register, ticket vaulting against sim, identity, gateway session to "online") — green locally. Remaining for step 11: the supervised pass against the real F-Chat test server (helpdesk ticket still open). |
 | 2026-07-13 | M1 step 10 (app shell + live chat) done: gateway browser client (hello/resume cursors, cmd acks by request id, read acks, keepalive, reconnect backoff with one-refresh-then-retry on 4401), pure dispatch layer into Zustand stores (sessions: idempotent volatile-event semantics incl. the ICH/CDS-beats-conversation-row join race; messages: windowed buffers + REST backfill/scroll-up pagination; ui), AppShell grid + Sidebar (join-by-name, new-DM, MeBar) + ChannelHeader + virtualized MessageLog (@tanstack/react-virtual, date dividers, stick-to-bottom, anchor-preserving infinite scroll up) + Composer (Enter-to-send raw text) + grouped MemberList with lazy avatars; deep links preserved through the login redirect. Full-slice Playwright E2E: connect → join → chat both ways against a raw sim client → live member updates → PMs with unread badge → 70-message seed → reload (session stays online) → scroll-up history. Web 28 unit tests, E2E 5. |
