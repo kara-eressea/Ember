@@ -14,7 +14,7 @@ const LAST_IDENTITY_KEY = "emberchat.lastIdentityId";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function isUuid(value: string): boolean {
+function isUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
 
@@ -23,11 +23,11 @@ export function identityPath(name: string): string {
 }
 
 /** Path suffix under the identity segment: "c/Frontpage", "dm/Nyx%20Firemane". */
-export function channelSuffix(channelKey: string): string {
+function channelSuffix(channelKey: string): string {
   return `c/${encodeURIComponent(channelKey)}`;
 }
 
-export function dmSuffix(partner: string): string {
+function dmSuffix(partner: string): string {
   return `dm/${encodeURIComponent(partner)}`;
 }
 

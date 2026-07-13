@@ -410,9 +410,12 @@ export class GatewayConnection {
     );
     const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
     const ownStatus = session?.ownStatus ?? { status: "online", statusmsg: "" };
-    // The persisted mirror, not live session state: it exists without a
-    // session, and the sink keeps it in step with the IGN acks anyway.
-    const ignores = await this.#ctx.history.listIgnores(identityId);
+    // Live session state once this connection's IGN init has seeded it —
+    // the DB mirror trails it by the sink's queue. The mirror covers the
+    // rest: no session, or a session still mid-handshake.
+    const ignores = session?.state.ignoresSeeded
+      ? [...session.state.ignores.values()].sort((a, b) => a.localeCompare(b))
+      : await this.#ctx.history.listIgnores(identityId);
     this.#send({
       t: "snapshot",
       d: {
@@ -561,7 +564,7 @@ export class GatewayConnection {
         const session = this.#requireSession(identity.id, id);
         if (session) {
           try {
-            session.setStatus(cmd.d.status, cmd.d.statusmsg);
+            await session.setStatus(cmd.d.status, cmd.d.statusmsg);
             this.#ack(id, { ok: true });
           } catch (error) {
             this.#ack(id, {
@@ -581,9 +584,9 @@ export class GatewayConnection {
             // State, persistence and fan-out all follow the server's IGN
             // acknowledgement — the cmd only puts the request on the wire.
             if (cmd.action === "ignore.add") {
-              session.ignore(cmd.d.character);
+              await session.ignore(cmd.d.character);
             } else {
-              session.unignore(cmd.d.character);
+              await session.unignore(cmd.d.character);
             }
             this.#ack(id, { ok: true });
           } catch (error) {

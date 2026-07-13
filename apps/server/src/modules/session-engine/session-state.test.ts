@@ -179,10 +179,14 @@ describe("SessionState", () => {
 
   it("walks the IGN transitions: init replaces, add/delete adjust, reset clears", () => {
     const state = new SessionState();
+    // Before init, an empty list means "not seeded yet" — the snapshot falls
+    // back to the persisted mirror instead of reporting nobody ignored.
+    expect(state.ignoresSeeded).toBe(false);
     state.apply({
       cmd: "IGN",
       payload: { action: "init", characters: ["Teal Deer", "Old Name"] },
     });
+    expect(state.ignoresSeeded).toBe(true);
     expect(state.isIgnored("teal deer")).toBe(true); // case-insensitive
     expect(state.isIgnored("TEAL DEER")).toBe(true);
 
@@ -215,5 +219,6 @@ describe("SessionState", () => {
     // Volatile: IGN init re-seeds on every identify.
     state.resetVolatile();
     expect(state.isIgnored("Nyx Firemane")).toBe(false);
+    expect(state.ignoresSeeded).toBe(false);
   });
 });

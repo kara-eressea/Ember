@@ -45,6 +45,9 @@ export class SessionState {
   /** Ignore list, lowercased key → canonical casing (server-authoritative:
    * seeded by IGN init at login, adjusted by add/delete acks). */
   readonly ignores = new Map<string, string>();
+  /** True once this connection's IGN init arrived — before that, an empty
+   * `ignores` means "not seeded yet", not "nobody ignored". */
+  ignoresSeeded = false;
 
   /** F-Chat resolves names case-insensitively. */
   isIgnored(character: string): boolean {
@@ -61,6 +64,7 @@ export class SessionState {
         const { action, character, characters } = command.payload;
         if (action === "init") {
           this.ignores.clear();
+          this.ignoresSeeded = true;
           for (const name of characters ?? []) {
             this.ignores.set(name.toLowerCase(), name);
           }
@@ -172,5 +176,6 @@ export class SessionState {
     this.characters.clear();
     this.channels.clear();
     this.ignores.clear();
+    this.ignoresSeeded = false;
   }
 }

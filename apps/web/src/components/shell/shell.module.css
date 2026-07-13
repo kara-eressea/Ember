@@ -118,7 +118,7 @@
   border: 1px solid var(--eb-border);
   border-radius: var(--eb-radius);
   background: var(--eb-side);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow (§tokens) */
 }
 
 .railMenuName {
@@ -450,7 +450,7 @@
   border: 1px solid var(--eb-border);
   border-radius: var(--eb-radius);
   background: var(--eb-side);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow (§tokens) */
   z-index: 10;
 }
 

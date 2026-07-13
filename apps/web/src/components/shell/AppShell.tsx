@@ -107,12 +107,23 @@ export function AppShell() {
   // explicitly disconnected stays offline until they explicitly connect it
   // again (the MeBar power control), never because a tab happened to open.
   // All identities, not just the routed one — the rail promises background
-  // identities stay online.
-  const sessions = useSessionsStore((s) => s.sessions);
+  // identities stay online. Subscribed via a derived key, never the sessions
+  // map itself: every message/presence event replaces the map object, and
+  // with all identities subscribed that would re-render the entire shell on
+  // every event for any of them. Only the fields this loop reads take part.
+  const connectKey = useSessionsStore((s) =>
+    (s.identities ?? [])
+      .map((i) => {
+        const slice = s.sessions[i.id];
+        return `${i.id}:${i.autoConnect ? 1 : 0}:${slice?.synced ? 1 : 0}:${slice?.sessionStatus ?? ""}`;
+      })
+      .join("|"),
+  );
   const connectAttempted = useRef(new Set<string>());
   useEffect(() => {
-    for (const identity of identities ?? []) {
-      const slice = sessions[identity.id];
+    const state = useSessionsStore.getState();
+    for (const identity of state.identities ?? []) {
+      const slice = state.sessions[identity.id];
       if (
         !slice?.synced ||
         identity.autoConnect !== true ||
@@ -124,7 +135,7 @@ export function AppShell() {
       connectAttempted.current.add(identity.id);
       void gateway.cmd({ identityId: identity.id, action: "session.connect" });
     }
-  }, [identities, sessions]);
+  }, [connectKey]);
 
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.

@@ -266,9 +266,16 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
     },
 
     removeIdentity(identityId) {
-      set((state) => ({
-        identities: state.identities?.filter((i) => i.id !== identityId),
-      }));
+      set((state) => {
+        // The session slice goes with the identity — a ghost slice would
+        // resurface stale state if the id were ever reused via upsert.
+        const sessions = { ...state.sessions };
+        delete sessions[identityId];
+        return {
+          identities: state.identities?.filter((i) => i.id !== identityId),
+          sessions,
+        };
+      });
     },
 
     setAutoConnect(identityId, value) {

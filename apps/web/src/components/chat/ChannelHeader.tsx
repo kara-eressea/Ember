@@ -67,7 +67,7 @@ function IgnoreChip({
 
   return (
     <button
-      className={`${styles.pinChip} ${ignored ? (styles.pinChipActive ?? "") : ""}`}
+      className={`${styles.pinChip} ${ignored ? (styles.ignoreChipActive ?? "") : ""}`}
       onClick={() => {
         void toggle();
       }}

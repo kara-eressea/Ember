@@ -2,8 +2,10 @@
 // switched via the IdentityRail — the entire session context swaps, a
 // background identity accumulates a rail badge while another is active, and
 // the @me alias lands on the last-active identity. Owns rowan@example.test
-// (Rowan Redleaf + Petal Thorn): spec files run in parallel and a character
-// can hold only one sim connection, so specs never share characters.
+// (Rowan Redleaf + Petal Thorn) and the Gardening channel: spec files run in
+// parallel, a character can hold only one sim connection, and chat.spec
+// counts Frontpage members — so specs share neither characters nor counted
+// channels.
 
 import { expect, test } from "@playwright/test";
 import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
@@ -14,14 +16,14 @@ test("identity rail: full context swap, background badges, @me alias", async ({
   test.setTimeout(180_000);
   await interceptAvatars(page);
 
-  // ── Rowan Redleaf: register → connect → join Frontpage ────────────────
+  // ── Rowan Redleaf: register → connect → join Gardening ────────────────
   await registerAndConnect(page, "rowan@example.test", "Rowan Redleaf");
-  await page.getByLabel("Join a channel").fill("Frontpage");
+  await page.getByLabel("Join a channel").fill("Gardening");
   await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Frontpage" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Gardening" })).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf\/c\/Frontpage$/);
+  await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf\/c\/Gardening$/);
 
   // ── Add + connect the second identity from the picker ─────────────────
   await page.getByRole("link", { name: "Add or manage identities" }).click();
@@ -48,9 +50,9 @@ test("identity rail: full context swap, background badges, @me alias", async ({
 
   // ── Rail switch: the ENTIRE context swaps, back at Rowan's last spot ──
   await rowanItem.click();
-  await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf\/c\/Frontpage$/);
+  await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf\/c\/Gardening$/);
   await expect(page.getByText("Rowan Redleaf · online")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Frontpage" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gardening" })).toBeVisible();
   // Rowan never joined Development: it is not in this sidebar.
   const nav = page.getByRole("navigation").last(); // the sidebar, not the rail
   await expect(nav.getByRole("link", { name: /Development/ })).toHaveCount(0);
@@ -86,6 +88,31 @@ test("identity rail: full context swap, background badges, @me alias", async ({
     // ── @me lands on the last-active identity ───────────────────────────
     await page.goto("/app/@me");
     await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf/);
+
+    // ── Rail menu: set status ────────────────────────────────────────────
+    await rowanItem.click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Rowan Redleaf menu" });
+    await expect(menu).toBeVisible();
+    await menu.getByRole("menuitem", { name: "away", exact: true }).click();
+    // The MeBar status line converges via the presence fan-out.
+    await expect(
+      page.getByRole("button", { name: "Set status" }),
+    ).toContainText("away", { timeout: 10_000 });
+
+    // ── Rail menu: move down persists the order server-side ─────────────
+    await rowanItem.click({ button: "right" });
+    await expect(menu).toBeVisible();
+    await menu.getByRole("menuitem", { name: "Move down" }).click();
+    await expect(rail.getByTestId("rail-item").first()).toHaveAccessibleName(
+      /Petal Thorn/,
+    );
+    await page.reload();
+    await expect(page.getByText("Rowan Redleaf · online")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(rail.getByTestId("rail-item").first()).toHaveAccessibleName(
+      /Petal Thorn/,
+    );
   } finally {
     bramble.close();
   }

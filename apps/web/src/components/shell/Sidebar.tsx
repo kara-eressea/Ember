@@ -3,7 +3,7 @@
 // until then joining happens through the join-by-name mini form. Friends/
 // Bookmarks sections arrive with their milestones.
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   CLIENT_SETTABLE_STATUSES,
@@ -176,6 +176,30 @@ function MeStatus({
   const [statusmsg, setStatusmsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  // Escape / click-outside close the editor, like every other popover.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open]);
 
   const statusLine = online
     ? session.ownStatus +
@@ -220,7 +244,7 @@ function MeStatus({
   }
 
   return (
-    <span className={styles.meMeta}>
+    <span className={styles.meMeta} ref={containerRef}>
       <div className={styles.meNick}>{session.character || "—"}</div>
       <button
         className={styles.meStatusButton}

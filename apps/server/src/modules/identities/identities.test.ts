@@ -12,7 +12,9 @@ import { FchatSim } from "@emberchat/fchat-sim";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
+import { identities } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
+import { MAX_IDENTITIES_PER_USER } from "./routes.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
@@ -130,6 +132,22 @@ describe("identities CRUD", () => {
     expect(response.statusCode).toBe(422);
   });
 
+  it("caps identities per user", async () => {
+    const { token, accountId } = await setupUser();
+    // Seed the cap directly — the sim account only carries two characters.
+    await db.insert(identities).values(
+      Array.from({ length: MAX_IDENTITIES_PER_USER }, (_, i) => ({
+        flistAccountId: accountId,
+        characterName: `Filler ${String(i)}`,
+        autoConnect: false,
+        sortOrder: i,
+      })),
+    );
+    const refused = await createIdentity(token, accountId, "Amber Vale");
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json<{ error: string }>().error).toMatch(/identities/i);
+  });
+
   it("assigns rail order on create and reorders via PUT /order", async () => {
     const { token, accountId } = await setupUser();
     const first = await createIdentity(token, accountId, "Amber Vale");
@@ -152,6 +170,31 @@ describe("identities CRUD", () => {
       payload: { ids: [secondId] },
     });
     expect(partial.statusCode).toBe(422);
+
+    // Right length, but padded with a duplicate: refused.
+    const duped = await app.inject({
+      method: "PUT",
+      url: "/api/identities/order",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [secondId, secondId] },
+    });
+    expect(duped.statusCode).toBe(422);
+
+    // Another user's identity can't ride along either.
+    const stranger = await setupUser();
+    const foreign = await createIdentity(
+      stranger.token,
+      stranger.accountId,
+      "Amber Vale",
+    );
+    const foreignId = foreign.json<{ identity: { id: string } }>().identity.id;
+    const smuggled = await app.inject({
+      method: "PUT",
+      url: "/api/identities/order",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [foreignId, firstId] },
+    });
+    expect(smuggled.statusCode).toBe(422);
 
     const reordered = await app.inject({
       method: "PUT",
