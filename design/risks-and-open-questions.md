@@ -14,6 +14,8 @@
 
 6. **Message table growth.** Per-identity duplication multiplies volume. Pressure valves: `messages (conversation_id, id DESC)` index from day one, monthly range partitioning + user-configurable retention in M7; schema designed for both now.
 
+7. **Shared egress IP.** All F-Chat connections and ticket requests originate from the VPS — the protocol has no WEBIRC-style mechanism to declare the end-user's real IP, so forwarding it is impossible, not just unimplemented. Consequences: (a) **shared fate** — an F-List IP ban or IP-level rate limit triggered by one user hits every user on the instance, which raises the stakes on the M7 abuse controls (our own moderation is what protects the shared IP); (b) **visibility** — many accounts logging in from one datacenter IP is a conspicuous pattern F-List staff may notice and investigate on their own, which strengthens the case for proactive disclosure (see the outreach open question). Same trade-off as every IRC bouncer; accepted, not fixable.
+
 ## Open questions (resolve early)
 
 - Does F-List offer any OAuth-like alternative to password custody? (Almost certainly not — ask when requesting test-server access. Less pressing under bouncer-lite, but it would remove the residual transit/RAM exposure too.)
