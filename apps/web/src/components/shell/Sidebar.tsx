@@ -11,6 +11,7 @@ import { presenceDot, type DotKind } from "../../lib/presence.js";
 import {
   useSessionsStore,
   type ChannelView,
+  type DmView,
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
@@ -59,11 +60,42 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
   // convId "" = volatile placeholder whose conversation row is still being
   // written; it becomes routable one event later.
-  const channels = Object.values(session.channels)
+  const allChannels = Object.values(session.channels)
     .filter((channel) => channel.convId !== "")
     .sort((a, b) => a.title.localeCompare(b.title));
-  const dms = Object.values(session.dms).sort((a, b) =>
+  const allDms = Object.values(session.dms).sort((a, b) =>
     a.partner.localeCompare(b.partner),
+  );
+  // Pinning is cross-type (COMPONENTS.md §3): pinned channels and DMs
+  // surface together under Pinned; the rest stay in their type sections.
+  const pinnedChannels = allChannels.filter((c) => c.pinned);
+  const pinnedDms = allDms.filter((d) => d.pinned);
+  const channels = allChannels.filter((c) => !c.pinned);
+  const dms = allDms.filter((d) => !d.pinned);
+
+  const channelRow = (channel: ChannelView, pinned: boolean) => (
+    <NavRow
+      key={`c:${channel.key}`}
+      to={`/app/${session.identityId}/${channel.convId}`}
+      active={channel.convId === activeConvId}
+      unread={channel.unread}
+      mentions={channel.mentions}
+      pinned={pinned}
+      glyph="#"
+      label={channel.title}
+    />
+  );
+  const dmRow = (dm: DmView, pinned: boolean) => (
+    <NavRow
+      key={`d:${dm.convId}`}
+      to={`/app/${session.identityId}/${dm.convId}`}
+      active={dm.convId === activeConvId}
+      unread={dm.unread}
+      pinned={pinned}
+      dot={presenceDot(dm.online, dm.status)}
+      offline={!dm.online}
+      label={dm.partner}
+    />
   );
 
   return (
@@ -79,37 +111,29 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       </div>
 
       <div className={styles.navScroll}>
+        {pinnedChannels.length + pinnedDms.length > 0 && (
+          <>
+            <div className={styles.sectionHeader}>
+              <span>Pinned</span>
+              <span>{pinnedChannels.length + pinnedDms.length}</span>
+            </div>
+            {pinnedChannels.map((channel) => channelRow(channel, true))}
+            {pinnedDms.map((dm) => dmRow(dm, true))}
+          </>
+        )}
+
         <div className={styles.sectionHeader}>
           <span>Channels</span>
           <span>{channels.length || ""}</span>
         </div>
-        {channels.map((channel) => (
-          <NavRow
-            key={channel.key}
-            to={`/app/${session.identityId}/${channel.convId}`}
-            active={channel.convId === activeConvId}
-            unread={channel.unread}
-            glyph="#"
-            label={channel.title}
-          />
-        ))}
+        {channels.map((channel) => channelRow(channel, false))}
         <JoinChannelForm session={session} />
 
         <div className={styles.sectionHeader}>
           <span>Direct messages</span>
           <span>{dms.length || ""}</span>
         </div>
-        {dms.map((dm) => (
-          <NavRow
-            key={dm.convId}
-            to={`/app/${session.identityId}/${dm.convId}`}
-            active={dm.convId === activeConvId}
-            unread={dm.unread}
-            dot={presenceDot(dm.online, dm.status)}
-            offline={!dm.online}
-            label={dm.partner}
-          />
-        ))}
+        {dms.map((dm) => dmRow(dm, false))}
         <NewDmForm session={session} />
       </div>
 
@@ -196,6 +220,8 @@ interface NavRowProps {
   active: boolean;
   unread: number;
   label: string;
+  mentions?: number;
+  pinned?: boolean;
   glyph?: string;
   dot?: DotKind;
   offline?: boolean;
@@ -206,6 +232,8 @@ function NavRow({
   active,
   unread,
   label,
+  mentions = 0,
+  pinned = false,
   glyph,
   dot,
   offline,
@@ -227,8 +255,17 @@ function NavRow({
         <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
       )}
       <span className={styles.navLabel}>{label}</span>
-      {unread > 0 && (
-        <span className={styles.navBadge}>{unread > 99 ? "99+" : unread}</span>
+      {pinned && <span className={styles.navPin}>⚲</span>}
+      {mentions > 0 ? (
+        <span className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}>
+          @{mentions > 99 ? "99+" : mentions}
+        </span>
+      ) : (
+        unread > 0 && (
+          <span className={styles.navBadge}>
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )
       )}
     </Link>
   );

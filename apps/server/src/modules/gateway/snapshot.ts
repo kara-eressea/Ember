@@ -131,6 +131,7 @@ export async function buildSnapshot(
             ? [...live.members].map((name) => memberDto(state, name))
             : [],
         joined: row.joined,
+        pinned: row.pinned,
         unread: counts.get(row.id)?.unread ?? 0,
         mentions: counts.get(row.id)?.mentions ?? 0,
         lastReadMessageId: row.lastReadMessageId,
@@ -145,6 +146,7 @@ export async function buildSnapshot(
         online: presence !== undefined,
         status: presence?.status ?? "",
         statusmsg: presence?.statusmsg ?? "",
+        pinned: row.pinned,
         unread: counts.get(row.id)?.unread ?? 0,
         lastReadMessageId: row.lastReadMessageId,
       });

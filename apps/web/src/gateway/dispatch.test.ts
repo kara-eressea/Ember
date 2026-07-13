@@ -53,6 +53,7 @@ function snapshot(): ServerFrame {
           oplist: ["", "Nyx Firemane"],
           members: [member("Amber Vale"), member("Nyx Firemane")],
           joined: true,
+          pinned: false,
           unread: 3,
           mentions: 1,
           lastReadMessageId: 10,
@@ -66,6 +67,7 @@ function snapshot(): ServerFrame {
           online: true,
           status: "online",
           statusmsg: "",
+          pinned: false,
           unread: 0,
           lastReadMessageId: null,
         },
@@ -269,6 +271,36 @@ describe("message.new and unread", () => {
       }),
     );
     expect(session().channels["Frontpage"]?.unread).toBe(3);
+  });
+
+  it("bumps mentions when an inbound channel message names our character", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, { bbcode: "ping Amber Vale, you around?" }),
+      }),
+    );
+    // Word boundary: a longer name containing ours does not count.
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(12, { bbcode: "Amber Valery sends regards" }),
+      }),
+    );
+    // Our own message naming ourselves does not count.
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(13, {
+          bbcode: "I am Amber Vale",
+          sentByUs: true,
+        }),
+      }),
+    );
+    const channel = session().channels["Frontpage"];
+    expect(channel?.mentions).toBe(2); // 1 from the snapshot + 1 live
+    expect(channel?.unread).toBe(5);
   });
 
   it("an advanced read cursor (any tab's ack) zeroes the badge", () => {

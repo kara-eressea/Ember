@@ -5,6 +5,7 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
+import { mentionsCharacter } from "../lib/mention.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
@@ -55,7 +56,15 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         ui.activeIdentityId === identityId &&
         ui.activeConvId === event.d.convId;
       if (!event.d.message.sentByUs && !active) {
-        sessions.bumpUnread(identityId, event.d.convId);
+        // Live counterpart of the server's snapshot-time mention counter:
+        // channel messages naming our character (DMs carry no mention count).
+        const mention =
+          event.d.message.kind === "msg" &&
+          mentionsCharacter(
+            event.d.message.bbcode,
+            sessions.sessions[identityId]?.character ?? "",
+          );
+        sessions.bumpUnread(identityId, event.d.convId, mention);
       }
       return;
     }

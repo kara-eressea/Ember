@@ -4,17 +4,14 @@
 // layer in M4. Scrolling up past the buffer start pages older history in via
 // REST; the log sticks to the bottom while the user is there.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { MessageDto } from "@emberchat/protocol";
-import { dayKey, dayLabel, formatTime } from "../../lib/time.js";
+import { formatTime } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { nickColor } from "../../theme/tokens.js";
+import { buildRows } from "./log-rows.js";
 import styles from "./chat.module.css";
-
-type LogRow =
-  | { type: "divider"; key: string; label: string }
-  | { type: "message"; key: string; message: MessageDto };
 
 const EMPTY: MessageDto[] = [];
 /** Scroll-up distance that triggers the next history page. */
@@ -22,33 +19,27 @@ const LOAD_OLDER_THRESHOLD_PX = 120;
 /** Within this of the bottom still counts as "at the bottom". */
 const AT_BOTTOM_SLACK_PX = 60;
 
-function buildRows(messages: MessageDto[]): LogRow[] {
-  const rows: LogRow[] = [];
-  let lastDay: string | undefined;
-  for (const message of messages) {
-    const day = dayKey(message.createdAt);
-    if (day !== lastDay) {
-      rows.push({
-        type: "divider",
-        key: `d:${day}`,
-        label: dayLabel(message.createdAt),
-      });
-      lastDay = day;
-    }
-    rows.push({ type: "message", key: `m:${String(message.id)}`, message });
-  }
-  return rows;
-}
-
 export interface MessageLogProps {
   identityId: string;
   convId: string;
+  /** The conversation's read cursor as of attach. The parent keys this
+   * component by convId, so the freeze below happens once per visit —
+   * before the auto-ack advances the live cursor. */
+  readCursorAtAttach: number | null;
 }
 
-export function MessageLog({ identityId, convId }: MessageLogProps) {
+export function MessageLog({
+  identityId,
+  convId,
+  readCursorAtAttach,
+}: MessageLogProps) {
+  const [newSinceId] = useState(readCursorAtAttach);
   const buffer = useMessagesStore((s) => s.buffers[convId]);
   const messages = buffer?.messages ?? EMPTY;
-  const rows = useMemo(() => buildRows(messages), [messages]);
+  const rows = useMemo(
+    () => buildRows(messages, newSinceId),
+    [messages, newSinceId],
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -175,6 +166,10 @@ export function MessageLog({ identityId, convId }: MessageLogProps) {
             >
               {row.type === "divider" ? (
                 <div className={styles.dateDivider}>{row.label}</div>
+              ) : row.type === "new" ? (
+                <div className={styles.newDivider} data-testid="new-divider">
+                  new
+                </div>
               ) : row.message.kind === "sys" ? (
                 <SystemLine message={row.message} />
               ) : (
