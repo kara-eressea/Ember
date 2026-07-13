@@ -273,6 +273,13 @@ export type GatewayEvent =
       d: { status: GatewaySessionStatus; reason?: string };
     }
   | { kind: "identity.updated"; d: { autoConnect: boolean } }
+  | {
+      kind: "identities.reordered";
+      /** The user's full identity order (rail order). Broadcast to every
+       * identity's subscribers, so a tab subscribed to all of them applies
+       * the same order several times — idempotent by construction. */
+      d: { order: string[] };
+    }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
 

@@ -130,6 +130,49 @@ describe("identities CRUD", () => {
     expect(response.statusCode).toBe(422);
   });
 
+  it("assigns rail order on create and reorders via PUT /order", async () => {
+    const { token, accountId } = await setupUser();
+    const first = await createIdentity(token, accountId, "Amber Vale");
+    const second = await createIdentity(token, accountId, "Cindral");
+    // New identities join the end of the rail.
+    expect(
+      first.json<{ identity: { sortOrder: number } }>().identity,
+    ).toMatchObject({ sortOrder: 0 });
+    expect(
+      second.json<{ identity: { sortOrder: number } }>().identity,
+    ).toMatchObject({ sortOrder: 1 });
+    const firstId = first.json<{ identity: { id: string } }>().identity.id;
+    const secondId = second.json<{ identity: { id: string } }>().identity.id;
+
+    // Not a permutation (missing an id): refused, nothing scrambled.
+    const partial = await app.inject({
+      method: "PUT",
+      url: "/api/identities/order",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [secondId] },
+    });
+    expect(partial.statusCode).toBe(422);
+
+    const reordered = await app.inject({
+      method: "PUT",
+      url: "/api/identities/order",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [secondId, firstId] },
+    });
+    expect(reordered.statusCode).toBe(204);
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/identities",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(
+      listed
+        .json<{ identities: { characterName: string }[] }>()
+        .identities.map((i) => i.characterName),
+    ).toEqual(["Cindral", "Amber Vale"]);
+  });
+
   it("hides other users' accounts and identities", async () => {
     const { token, accountId } = await setupUser();
     const created = await createIdentity(token, accountId, "Amber Vale");

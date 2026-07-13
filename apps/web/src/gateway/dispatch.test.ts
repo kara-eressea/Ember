@@ -382,6 +382,32 @@ describe("message.new and unread", () => {
     ).toBe(false);
   });
 
+  it("identities.reordered re-sorts the rail, keeping unknown ids at the end", () => {
+    const summary = (id: string, name: string) => ({
+      id,
+      name,
+      sessionStatus: "online" as const,
+      autoConnect: true,
+      unread: 0,
+      mentions: 0,
+    });
+    dispatchFrame({
+      t: "ready",
+      d: {
+        userId: "user-1",
+        identities: [summary("a", "A"), summary("b", "B"), summary("c", "C")],
+      },
+    });
+    // Order from a tab that never saw "c" (created after its list) — the
+    // stragglers keep their place at the end instead of vanishing.
+    dispatchFrame(event("identities.reordered", { order: ["b", "a"] }));
+    expect(useSessionsStore.getState().identities?.map((i) => i.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+  });
+
   it("an advanced read cursor (any tab's ack) zeroes the badge", () => {
     dispatchFrame(snapshot());
     dispatchFrame(
