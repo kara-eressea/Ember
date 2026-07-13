@@ -1,6 +1,6 @@
-// Sidebar (COMPONENTS.md §2–4): ServerHead · sections (Channels, Direct
-// Messages) · MeBar. Channel discovery is the M6 ChannelBrowser; until then
-// joining happens through the join-by-name mini form. Pinned/Friends/
+// Sidebar (COMPONENTS.md §2–4): ServerHead · sections (Pinned, Channels,
+// Direct Messages) · MeBar. Channel discovery is the M6 ChannelBrowser;
+// until then joining happens through the join-by-name mini form. Friends/
 // Bookmarks sections arrive with their milestones.
 
 import { useState, type FormEvent } from "react";
@@ -187,6 +187,15 @@ function PowerButton({ session }: { session: IdentitySession }) {
         useSessionsStore
           .getState()
           .setAutoConnect(session.identityId, !connected);
+      } else {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            session.identityId,
+            "error",
+            ack.error ??
+              (connected ? "Could not log off" : "Could not connect"),
+          );
       }
     } finally {
       setBusy(false);
@@ -257,12 +266,15 @@ function NavRow({
       <span className={styles.navLabel}>{label}</span>
       {pinned && <span className={styles.navPin}>⚲</span>}
       {mentions > 0 ? (
-        <span className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}>
+        <span
+          className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}
+          data-testid="nav-badge"
+        >
           @{mentions > 99 ? "99+" : mentions}
         </span>
       ) : (
         unread > 0 && (
-          <span className={styles.navBadge}>
+          <span className={styles.navBadge} data-testid="nav-badge">
             {unread > 99 ? "99+" : unread}
           </span>
         )

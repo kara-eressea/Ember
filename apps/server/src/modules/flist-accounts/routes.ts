@@ -41,6 +41,13 @@ export interface FlistAccountsRoutesOptions {
   tickets: TicketManagerRegistry;
   sessions: SessionRegistry;
   history: HistorySink;
+  /**
+   * Per-route rate limit for the endpoints that consume a guaranteed slot
+   * on the process-wide 1 req/s F-List throttle (add, unlock). Without it,
+   * one user hammering unlock queues every other tenant's ticket
+   * acquisition behind theirs.
+   */
+  rateLimitMax: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -49,7 +56,10 @@ export async function flistAccountsRoutes(
   options: FlistAccountsRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, vault, tickets, sessions, history } = options;
+  const { db, vault, tickets, sessions, history, rateLimitMax } = options;
+  const flistRateLimit = {
+    rateLimit: { max: rateLimitMax, timeWindow: "1 minute" },
+  };
 
   app.addHook("preHandler", app.authenticate);
 
@@ -90,6 +100,7 @@ export async function flistAccountsRoutes(
   app.post(
     "/",
     {
+      config: flistRateLimit,
       schema: {
         body: addAccountBody,
         response: {
@@ -150,6 +161,7 @@ export async function flistAccountsRoutes(
   app.post(
     "/:id/unlock",
     {
+      config: flistRateLimit,
       schema: {
         params: idParams,
         body: unlockBody,
@@ -206,17 +218,24 @@ export async function flistAccountsRoutes(
         if (existing && existing.status !== "stopped") {
           continue; // already online — nothing to recover
         }
-        const seed = await history.channelsForResume(identity.id);
-        const session = sessions.start({
-          identityId: identity.id,
-          character: identity.characterName,
-          accountId: row.id,
-          accountName: row.accountName,
-        });
-        for (const key of seed) {
-          session.joinChannel(key);
+        // Best-effort per identity: one failing seed query or start must
+        // not 500 a request whose vault unlock (and possibly some session
+        // starts) already happened.
+        try {
+          sessions.start({
+            identityId: identity.id,
+            character: identity.characterName,
+            accountId: row.id,
+            accountName: row.accountName,
+            seedChannels: await history.channelsForResume(identity.id),
+          });
+          reconnected.push(identity.id);
+        } catch (error) {
+          request.log.error(
+            { err: error, identityId: identity.id },
+            "unlock auto-connect failed for identity",
+          );
         }
-        reconnected.push(identity.id);
       }
       return reply.send({ account: present(row), reconnected });
     },

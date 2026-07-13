@@ -40,6 +40,13 @@ export interface StartSessionParams {
   readonly character: string;
   readonly accountId: string;
   readonly accountName: string;
+  /**
+   * Channels seeded into the desired set of a NEWLY created session (joined
+   * at identify). Ignored when a running session exists — a live channel set
+   * is never reseeded, so concurrent connect/unlock callers can compute
+   * seeds optimistically without racing each other.
+   */
+  readonly seedChannels?: readonly string[];
 }
 
 export class SessionRegistry {
@@ -69,6 +76,9 @@ export class SessionRegistry {
       logger: this.#options.logger,
       ...this.#options.tuning,
     });
+    for (const channel of params.seedChannels ?? []) {
+      session.joinChannel(channel);
+    }
     this.#sessions.set(params.identityId, session);
     this.#options.onSessionStarted?.(params.identityId, session);
     session.start();

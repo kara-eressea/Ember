@@ -79,7 +79,9 @@ Which channels a session joins depends on *why* it is (re)connecting. Three scen
 
 This gives pinning one crisp meaning: *"channels this character is always in when they come online."* Casually browsed channels don't stick across deliberate logoffs — unlike official-client pins, which double as "remember this at all."
 
-**Kick/ban exception:** a server-initiated removal (kick, ban, timeout) drops the channel from the desired set — the session never fights a moderator by auto-rejoining, in any scenario. Pinned channels are not exempt: if a JCH fails on connect (e.g. banned), surface the error to the user once and do not retry. Beyond politeness, this minimizes abuse reports against the app itself.
+**Operational rule (M2 audit refinement):** which scenario a `session.connect` is, is decided by the `autoConnect` intent flag *at the moment of connecting*. `autoConnect = true` means the user never logged this identity off — the stopped session is an outage or server restart, so the connect is a **recovery** (scenario 2, seed from `joined`, non-destructive). `autoConnect = false` means they explicitly logged off earlier and this connect is the deliberate return (scenario 3, pinned seed). The scenario-3 `joined`-flag reconcile is destructive, so it runs only once the session actually reaches *online* (a connect that dies on a locked vault or bad password leaves the recovery set intact) and is serialized through the history sink's per-identity write queue.
+
+**Kick/ban exception:** a server-initiated removal (kick, ban, timeout) drops the channel from the desired set — the session never fights a moderator by auto-rejoining, in any scenario. Pinned channels are not exempt: F-Chat's `ERR` frames carry no channel reference, so a refused join (banned, invite-only, deleted) is detected by its missing echo, and a channel is given up after **two** unconfirmed attempts — two rather than one because a connection can die with the echo in flight, and a single network blip must not silently unsubscribe channels. The errors still surface to the user. Beyond politeness, this minimizes abuse reports against the app itself.
 
 ## Other settled points
 

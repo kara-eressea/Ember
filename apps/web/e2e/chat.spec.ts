@@ -4,7 +4,12 @@
 // may only hold one sim connection, so the specs never share one).
 
 import { expect, test } from "@playwright/test";
-import { SimClient, credentials, delay, interceptAvatars } from "./helpers.js";
+import {
+  SimClient,
+  delay,
+  interceptAvatars,
+  registerAndConnect,
+} from "./helpers.js";
 
 /** How many channel messages Birch pumps in to force history pagination
  * (the initial REST page is 50). */
@@ -17,27 +22,9 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
-  const creds = credentials();
 
-  // ── Register → identity → connect ─────────────────────────────────────
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(creds.username);
-  await page.getByLabel("Email").fill(creds.email);
-  await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByRole("button", { name: "Add a server identity" }).click();
-  await page.getByLabel("F-List account name").fill("amber@example.test");
-  await page.getByLabel("F-List password").fill("hunter2");
-  await page.getByRole("button", { name: "Verify account" }).click();
-  await page.getByRole("listitem").filter({ hasText: "Cindral" }).click();
-  await page.getByRole("button", { name: "Connect" }).click();
-
-  // The shell comes up and the server-held session reaches the sim.
-  await expect(page).toHaveURL(/\/app\//);
-  await expect(page.getByText("Cindral · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  // Register → identity → connect; the server-held session reaches the sim.
+  await registerAndConnect(page, "amber@example.test", "Cindral");
 
   // ── Join a channel ────────────────────────────────────────────────────
   await page.getByLabel("Join a channel").fill("Frontpage");
