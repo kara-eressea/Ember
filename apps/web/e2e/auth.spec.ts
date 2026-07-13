@@ -71,7 +71,11 @@ test("register, connect an F-List account, and pick a character with avatars", a
   await amber.click();
   const identityRow = page.getByText("Amber Vale", { exact: true });
   await expect(identityRow).toBeVisible();
-  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Connect" }),
+    // Identity creation validates the character via the throttled (1 req/s)
+    // F-List API — parallel spec files queue behind each other here.
+  ).toBeVisible({ timeout: 15_000 });
 
   // Connect leads into the app route (shell arrives in step 10).
   await page.getByRole("button", { name: "Connect" }).click();
@@ -105,7 +109,9 @@ test("login round trip sees the persisted identity again", async ({ page }) => {
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
   await page.getByRole("listitem").filter({ hasText: "Cindral" }).click();
-  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Sign out, log back in: the identity persisted server-side.
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -153,7 +159,9 @@ test("identities can be connected, disconnected and removed from the picker", as
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
   await page.getByRole("listitem").filter({ hasText: "Amber Vale" }).click();
-  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Connect from the picker; the shell reports the session online.
   await page.getByRole("button", { name: "Connect" }).click();
@@ -168,7 +176,9 @@ test("identities can be connected, disconnected and removed from the picker", as
   await expect(page.getByText(/amber@example\.test · online/)).toBeVisible();
   await page.getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByText(/amber@example\.test · offline/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Remove the identity: two-step confirm.
   await page

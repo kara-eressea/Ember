@@ -92,6 +92,12 @@ interface SessionsState {
   sessions: Record<string, IdentitySession>;
 
   applyReady(identities: IdentitySummary[]): void;
+  /** Local mirror maintenance for REST-driven identity CRUD (the picker):
+   * `ready` is the authority but arrives only at socket connect, so an
+   * identity created after the hello would otherwise not exist for this tab
+   * until a reconnect. */
+  upsertIdentity(identity: IdentitySummary): void;
+  removeIdentity(identityId: string): void;
   setAutoConnect(identityId: string, value: boolean): void;
   /** Re-sorts the rail; ids missing from `order` keep their relative place
    * at the end (a create racing the reorder must not vanish). */
@@ -242,6 +248,27 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyReady(identities) {
       set({ identities });
+    },
+
+    upsertIdentity(identity) {
+      set((state) => {
+        const identities = state.identities ?? [];
+        const existing = identities.findIndex((i) => i.id === identity.id);
+        return {
+          identities:
+            existing === -1
+              ? [...identities, identity]
+              : identities.map((i, index) =>
+                  index === existing ? { ...i, ...identity } : i,
+                ),
+        };
+      });
+    },
+
+    removeIdentity(identityId) {
+      set((state) => ({
+        identities: state.identities?.filter((i) => i.id !== identityId),
+      }));
     },
 
     setAutoConnect(identityId, value) {
