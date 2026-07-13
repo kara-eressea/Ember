@@ -12,6 +12,7 @@
 - Per-identity **ignore lists** wired to the F-Chat `IGN` command (init/add/delete) and the `ignores` table; ignored characters' messages hidden client-side (protocol note: ignoring is the client's responsibility; send `IGN notify` when receiving an ignored PRI).
 - Rail right-click menu: set status / reconnect / disconnect / reorder (persisted `sort_order`).
 - Background-identity badge aggregation (unread count, `@n` mentions) in `ready`/`snapshot` payloads.
+- **Human-readable URLs** (M1 UAT request, Discord-inspired): replace `/app/<identityId-uuid>/<convId-uuid>` with the identity as the first path segment — the analog of Discord's `@me` slot, per the multi-identity IA. F-List character names are globally unique, so names are the natural keys throughout: `/app/Kara%20Eressea/c/Frontpage` (channels by name, private rooms by their stable `ADH-` id), `/app/Kara%20Eressea/dm/Eressea` (DMs by partner). Resolution is case-insensitive (F-Chat semantics; F-List's own `/c/<name>` profile URLs are precedent for encoded spaces), canonical casing restored on load. Optional `@me` alias redirecting to the last-active identity, so bookmarks can stay identity-agnostic. Old UUID routes keep working as redirects. Finalize the exact shape when the rail lands.
 
 ## Verification
 
