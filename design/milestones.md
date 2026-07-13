@@ -6,8 +6,8 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 
 | # | Milestone | Status | Depends on | Details |
 |---|---|---|---|---|
-| 1 | Thin vertical slice | in progress | — | [milestone-1-thin-vertical-slice.md](milestone-1-thin-vertical-slice.md) |
-| 2 | Always-online bouncer + catch-up | done (on `staging`) | M1 | [milestone-2-always-online-bouncer.md](milestone-2-always-online-bouncer.md) |
+| 1 | Thin vertical slice | done | — | [milestone-1-thin-vertical-slice.md](milestone-1-thin-vertical-slice.md) |
+| 2 | Always-online bouncer + catch-up | done | M1 | [milestone-2-always-online-bouncer.md](milestone-2-always-online-bouncer.md) |
 | 3 | Multi-identity | not started | M2 | [milestone-3-multi-identity.md](milestone-3-multi-identity.md) |
 | 4 | Markdown layer + delayed send | not started | M1 (parallel with M3) | [milestone-4-markdown-delayed-send.md](milestone-4-markdown-delayed-send.md) |
 | 5 | Highlights + preferences | not started | M3, M4 | [milestone-5-highlights-preferences.md](milestone-5-highlights-preferences.md) |
@@ -29,15 +29,14 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [x] 8. Gateway (hello/sub/snapshot/event/cmd/ack)
 - [x] 9. Web auth flows + theme system
 - [x] 10. App shell + live chat (full slice E2E)
-- [ ] 11. Docker + supervised live pass — **Docker/compose/smoke done**; remaining: one supervised manual pass against the **production** F-Chat server (the test server is bot-only per helpdesk 2026-07-13; follow `testing-strategy.md` §Live F-Chat testing)
+- [x] 11. Docker + supervised live pass — Docker/compose/smoke done; supervised UAT pass against **production** F-Chat completed 2026-07-13 (register → identity → channels → PMs both directions with the official client on the other side, PIN discipline held, session survived tab closes; all findings fixed or scoped into milestones)
 
 ## Milestone 2 step checklist
 
-> **Branching exception (temporary):** M2 lands on the **`staging`** branch — feature
-> PRs target `staging`, not `main` — so `main` stays frozen at the M1-ready state for
-> the manual UAT pass against the real F-Chat test server (M1 step 11). Once M1 UAT
-> passes and M2 completes, `staging` merges back to `main` and is deleted. This is the
-> explicit temporary-integration-branch exception allowed by `decisions.md` §7.
+> **Branching exception (concluded 2026-07-13):** M2 was built on a temporary
+> `staging` branch while `main` stayed frozen at the M1-ready state for the live
+> UAT pass. After UAT sign-off, `staging` merged back to `main` and was deleted —
+> the workflow is back to `decisions.md` §7 normal (feature branches → `main`).
 
 An M1 audit showed much of M2's headline scope already works (sessions survive browser detach, auto-reconnect + re-ticket from vault, the full hello.resume → catchup → live protocol, snapshot unread counts + read-cursor acks). The steps below cover the actual gaps; channel rejoin behavior follows the scenario rules in `decisions.md` §9.
 
@@ -73,6 +72,7 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | **M1 signed off; M1 + M2 merged to `main`; v0.1.0 tagged.** Step 11's supervised pass ran against production F-Chat during the UAT session: register → identity → join channels → PMs both directions with the official client on the other side; PIN discipline held; the session survived tab closes (the bouncer property, observed live). Every UAT finding was fixed on `staging` (picker management, live-only LIS presence bug, composer growth + byte counter, padding) or scoped into its milestone (M3 URLs, M4 /me + BBCode surfaces, M5 aligned columns). `staging` merged back to `main` and deleted; CI push trigger back to `main` only. Next up: M3 (multi-identity) and/or M4 (Markdown layer) — independent, can run in parallel. |
 | 2026-07-13 | **Live UAT feedback round 2** (chat against production F-Chat confirmed working, first live conversation!). Fixed: DM presence was dead on live — the LIS roster streams *after* identify and produced no gateway events, so clients that raced it saw everyone offline until the next status change (sim world too small to catch it); LIS now fans out as `presence.bulk` and the snapshot's partner lookup is case-insensitive. Composer: auto-growing input (caps at 160px then scrolls) and a byte counter (`n/4096`) against the **live** chat_max/priv_max VARs, now carried in the snapshot (`self.limits`) — never hardcoded, danger-styled when over. Noted for later: `/me` slash-command + emote rendering → M4 scope; aligned-columns message layout → M5 Appearance prefs. Server 121, web 37. |
 | 2026-07-13 | **Identity/account management on the picker** (M1 UAT findings: no way to remove identities or accounts, the locked sim-era account bricked the read-only add form, no way to log a character off from the picker). Identity rows now show live session status with Disconnect (session live) / Connect / two-step Remove; the add flow gained an account chooser (unlock, remove, "use a different account", Manage accounts from the character grid) — the pre-M3 dead-end backlog item resolved early. New REST: `POST /identities/:id/connect` + `/disconnect` (the picker is REST-driven), sharing the §9 scenario logic with the gateway cmd via the extracted `connectIdentity` service (also resolves the audit's connect-duplication note); `GET /identities` carries `sessionStatus`. Server fix: deleting an F-List account now stops its identities' running sessions before the FK cascade orphans them (zombie sessions). E2E: picker connect→disconnect→remove flow + account chooser removal; MeBar log-off joined the M1-gate spec. Server 120, E2E 6 (one spec extended). |
 | 2026-07-13 | **M2 audit** (three adversarial reviews: security, correctness, quality — the M1 pattern) and fix pass. HIGHs: a tab opening after a restart ran the destructive scenario-3 reconcile before knowing the vault was locked, wiping the recovery channel set — connects now branch on the `autoConnect` flag (true = recovery, non-destructive; false = explicit return) and the reconcile is deferred to session-online + serialized through the sink queue (decisions.md §9 amended); the drop-unconfirmed-joins rule could wipe the whole desired set on a double connection drop — now two attempts before giving up, and our own leave echo no longer misreads as a kick after a quick leave→rejoin. MEDIUMs: unlock/add-account rate-limited per route (they consume the process-wide 1 req/s F-List throttle); `identity.updated` fan-out keeps every tab's autoConnect mirror honest; the count window got `ORDER BY id DESC` (deterministic newest-first) and own sends no longer count as unread (matches live); `catchupPlan` uses a correlated max instead of aggregating every message row per sub, with an explicit bigint→number cast; server mention pattern switched to explicit ASCII classes byte-identical with the client matcher; the channel seed moved into `SessionRegistry.start` (single freshness authority — also closes the unlock/connect seed race); pin/power controls surface failed acks as notices; `sessionTuning` is inert outside `NODE_ENV=test`. LOWs fixed: stale comments, per-identity connect-attempt ref, unlock loop error isolation, post-delete double session-stop, sink seed-query dedupe, E2E badge testids + shared registerAndConnect helper. Deferred LOWs → M2 audit backlog. Server 117, web 35, E2E 6. |
