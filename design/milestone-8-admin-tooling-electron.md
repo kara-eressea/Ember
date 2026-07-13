@@ -19,6 +19,10 @@
 - Distribution: electron-builder targets for Windows/macOS/Linux; CI job producing artifacts.
 - Keep the renderer pointing at the hosted service by default with a configurable server URL (self-hosters).
 
+#### Considered, not scheduled: fully local bundle
+
+A variant worth keeping in mind but deliberately out of scope: bundle `apps/server` *inside* the Electron app (child process or in-process, SQLite or embedded Postgres for storage) and point the renderer at `localhost`. That yields a self-contained desktop client with **none of the bouncer-architecture risks** — credentials never leave the user's machine, no shared egress IP (risk 7 in `risks-and-open-questions.md`), no trust in a third-party operator — at the cost of the headline feature: sessions live only while the app runs (tray-lingering softens this, but a closed laptop is a closed session). It is *not* a client that speaks F-Chat directly — the client stays gateway-only; the bouncer just moves onto the user's machine. The current architecture supports this without forking anything (it is essentially the docker-compose deployment folded into an app bundle), so the option stays open at zero ongoing cost. Revisit if there's demand for "the app without the hosted service"; the main new work would be storage (Postgres → SQLite via Drizzle, or pglite) and lifecycle/packaging.
+
 ## Verification
 
 - Admin: E2E covering disable-user → their sessions stop and tokens invalidate.
