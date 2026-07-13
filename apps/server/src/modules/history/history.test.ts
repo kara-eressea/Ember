@@ -8,7 +8,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -20,6 +20,7 @@ import { createDb, type Db } from "../../db/index.js";
 import { conversations, identities, messages } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
+import { SessionEventBus } from "../session-engine/event-bus.js";
 import { ConversationLimitError, HistorySink } from "./sink.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
@@ -347,6 +348,91 @@ describe("history sink", () => {
     // Still monotonic: a stale ack never regresses the cursor.
     const stale = await app.history.markRead(identityId, conv!.id, 1);
     expect(stale?.lastReadMessageId).toBe(message!.id);
+  });
+
+  it("shards the write queue per identity — one identity's stalled write never blocks another's", async () => {
+    // Two identities on the same F-List account; sink events come from fake
+    // session buses so each identity's traffic can be driven independently
+    // (the sink only reads `events`, `character`, and `state.channels`).
+    const { identityId: identityA } = await startIdentity();
+    const [accountRow] = await db
+      .select({ flistAccountId: identities.flistAccountId })
+      .from(identities)
+      .where(eq(identities.id, identityA));
+    const [identityRowB] = await db
+      .insert(identities)
+      .values({
+        flistAccountId: accountRow!.flistAccountId,
+        characterName: "Bee Wildfire",
+      })
+      .returning({ id: identities.id });
+    const identityB = identityRowB!.id;
+
+    const fakeSession = (character: string) =>
+      ({
+        character,
+        events: new SessionEventBus(),
+        state: { channels: new Map() },
+      }) as unknown as FchatSession;
+    const sessionA = fakeSession(CHARACTER);
+    const sessionB = fakeSession("Bee Wildfire");
+    const sink = new HistorySink(db);
+    sink.attach(identityA, sessionA);
+    sink.attach(identityB, sessionB);
+
+    const messagesFor = (identityId: string) =>
+      db
+        .select({ bbcode: messages.bbcode })
+        .from(messages)
+        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+        .where(eq(conversations.identityId, identityId))
+        .orderBy(messages.id);
+
+    // Stall identity A's next message insert: an open FOR UPDATE on its
+    // conversation row blocks the insert's FK KEY SHARE lock on that row.
+    const convA = await sink.ensurePmConversation(identityA, "Nyx Firemane");
+    let releaseLock!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockAcquired!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      lockAcquired = resolve;
+    });
+    const lockHolder = db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select id from ${conversations} where id = ${convA.id} for update`,
+      );
+      lockAcquired();
+      await gate;
+    });
+    await locked;
+
+    try {
+      sessionA.events.emit("command", {
+        cmd: "PRI",
+        payload: { character: "Nyx Firemane", message: "stalled write" },
+      });
+      sessionB.events.emit("command", {
+        cmd: "PRI",
+        payload: { character: "Nyx Firemane", message: "independent write" },
+      });
+
+      // B's write lands while A's chain is still stuck behind the row lock.
+      await vi.waitFor(async () => {
+        const rows = await messagesFor(identityB);
+        expect(rows.map((r) => r.bbcode)).toEqual(["independent write"]);
+      });
+      expect(await messagesFor(identityA)).toHaveLength(0);
+    } finally {
+      releaseLock();
+    }
+
+    await lockHolder;
+    await sink.flush();
+    expect((await messagesFor(identityA)).map((r) => r.bbcode)).toEqual([
+      "stalled write",
+    ]);
   });
 
   it("tracks the joined flag across join and leave", async () => {

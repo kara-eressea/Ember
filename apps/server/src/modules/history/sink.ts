@@ -1,7 +1,10 @@
 // History sink — subscribes to a session's event bus and persists MSG/PRI/SYS
 // (inbound and our own sends) into conversations/messages. The messages table
 // is the gateway resume log (architecture.md §Resume semantics): bigserial
-// ids in arrival order are the cursor, so writes go through a serial queue.
+// ids in arrival order are the cursor, so writes go through a serial queue
+// per identity — cursor order only matters within a conversation, and a
+// conversation belongs to exactly one identity, so identities never queue
+// behind each other's traffic.
 //
 // After every write it emits on its own bus. The gateway fans those out —
 // `message.new` events must carry the persisted messages.id, so live fan-out
@@ -68,8 +71,8 @@ export class HistorySink {
   readonly #db: Db;
   readonly #log: SessionLogger;
   readonly #maxConversationsPerIdentity: number;
-  /** Serial write queue: message ids must reflect arrival order. */
-  #queue: Promise<void> = Promise.resolve();
+  /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */
+  readonly #queues = new Map<string, Promise<void>>();
   /** conversation-row cache, keyed `${identityId}:${kind}:${key}`. */
   readonly #conversationIds = new Map<string, string>();
 
@@ -173,8 +176,8 @@ export class HistorySink {
   }
 
   /** Resolves once everything enqueued so far is written (used by tests). */
-  flush(): Promise<void> {
-    return this.#queue;
+  async flush(): Promise<void> {
+    await Promise.all(this.#queues.values());
   }
 
   /** Find-or-create a PM conversation (gateway `pm.open`). */
@@ -254,7 +257,7 @@ export class HistorySink {
       sentByUs: boolean;
     },
   ): void {
-    this.#enqueue(async () => {
+    this.#enqueue(identityId, async () => {
       const conversationId = await this.#conversationId(
         identityId,
         entry.target,
@@ -280,7 +283,7 @@ export class HistorySink {
     target: ConversationTarget,
     joined: boolean,
   ): void {
-    this.#enqueue(async () => {
+    this.#enqueue(identityId, async () => {
       const conversationId = await this.#conversationId(identityId, target);
       const [row] = await this.#db
         .update(conversations)
@@ -293,10 +296,18 @@ export class HistorySink {
     });
   }
 
-  #enqueue(task: () => Promise<void>): void {
-    this.#queue = this.#queue.then(task).catch((error: unknown) => {
+  #enqueue(identityId: string, task: () => Promise<void>): void {
+    const prior = this.#queues.get(identityId) ?? Promise.resolve();
+    const next = prior.then(task).catch((error: unknown) => {
       // History must never take the F-Chat session down with it.
       this.#log.error({ err: error }, "history sink write failed");
+    });
+    this.#queues.set(identityId, next);
+    void next.then(() => {
+      // Drop drained chains so the map doesn't grow with every identity ever seen.
+      if (this.#queues.get(identityId) === next) {
+        this.#queues.delete(identityId);
+      }
     });
   }
 
