@@ -415,3 +415,103 @@
   color: var(--eb-danger);
   font-weight: 700;
 }
+
+/* ── Rich text (COMPONENTS.md §7): the shared BBCode render path ────────── */
+
+.bbB {
+  font-weight: 700;
+  color: var(--eb-text);
+}
+
+.bbI {
+  font-style: italic;
+}
+
+.bbU {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bbS {
+  text-decoration: line-through;
+}
+
+.bbSup {
+  font-size: 0.8em;
+  vertical-align: top;
+}
+
+.bbSub {
+  font-size: 0.8em;
+  vertical-align: baseline;
+}
+
+.bodyLink {
+  color: var(--eb-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bodyMention {
+  color: var(--eb-accent);
+  background: var(--eb-accent-soft);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 600;
+}
+
+.bodyChannel {
+  color: var(--eb-accent);
+  cursor: pointer;
+}
+
+.bodyCode {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  background: var(--eb-codebg);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* Emote lines: italic, the name runs into the action, no nick separator. */
+.emoteBody {
+  font-style: italic;
+  color: var(--eb-dim);
+}
+
+/* F-Chat [color=…] wire colors (tokens in theme.ts, per-theme tunable). */
+.bbc-red {
+  color: var(--eb-bbc-red);
+}
+.bbc-blue {
+  color: var(--eb-bbc-blue);
+}
+.bbc-white {
+  color: var(--eb-bbc-white);
+}
+.bbc-yellow {
+  color: var(--eb-bbc-yellow);
+}
+.bbc-pink {
+  color: var(--eb-bbc-pink);
+}
+.bbc-gray {
+  color: var(--eb-bbc-gray);
+}
+.bbc-green {
+  color: var(--eb-bbc-green);
+}
+.bbc-orange {
+  color: var(--eb-bbc-orange);
+}
+.bbc-purple {
+  color: var(--eb-bbc-purple);
+}
+.bbc-black {
+  color: var(--eb-bbc-black);
+}
+.bbc-brown {
+  color: var(--eb-bbc-brown);
+}
+.bbc-cyan {
+  color: var(--eb-bbc-cyan);
+}
