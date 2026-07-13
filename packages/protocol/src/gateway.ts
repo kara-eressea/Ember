@@ -105,7 +105,24 @@ const cmdSchema = z.discriminatedUnion("action", [
     action: z.literal("msg.send"),
     // The live chat_max/priv_max VARs are enforced by the session at send
     // time; this is only an anti-abuse ceiling, far above any real limit.
-    d: z.object({ convId: z.uuid(), bbcode: z.string().min(1).max(65_536) }),
+    // `markdown` is the pre-translation source: stored with a delayed send
+    // so ArrowUp recall returns what the user typed, not the wire form.
+    d: z.object({
+      convId: z.uuid(),
+      bbcode: z.string().min(1).max(65_536),
+      markdown: z.string().max(65_536).optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("outbox.recall"),
+    d: z.object({ outboxId: z.uuid() }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // Per-user (not per-identity) preference; identityId routes the ack.
+    action: z.literal("prefs.set"),
+    d: z.object({ sendDelaySeconds: z.number().int().min(0).max(300) }),
   }),
   z.object({
     identityId: z.uuid(),
@@ -190,6 +207,20 @@ export interface MessageDto {
   sentByUs: boolean;
   /** ISO timestamp. */
   createdAt: string;
+}
+
+/** A message waiting in the delayed-send outbox (M4). */
+export interface OutboxItemDto {
+  id: string;
+  convId: string;
+  /** What the user typed — ArrowUp recall returns this to the composer. */
+  markdown: string;
+  /** The translated wire form that will be sent at release. */
+  bbcode: string;
+  /** ISO timestamp of the scheduled release. */
+  releaseAt: string;
+  /** "scheduled" | "failed" (release send refused; kept for visibility). */
+  state: string;
 }
 
 export interface SnapshotChannel {
@@ -296,6 +327,19 @@ export type GatewayEvent =
        * the same order several times — idempotent by construction. */
       d: { order: string[] };
     }
+  | {
+      kind: "outbox.updated";
+      /** The identity's full pending outbox after any change (schedule,
+       * release, recall, failure) — an idempotent overwrite that keeps
+       * every attached device's pending indicators in sync. */
+      d: { items: OutboxItemDto[] };
+    }
+  | {
+      kind: "prefs.updated";
+      /** Per-user preference change, broadcast to each identity's
+       * subscribers (idempotent duplicates across identities). */
+      d: { sendDelaySeconds: number };
+    }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
 
@@ -341,6 +385,13 @@ export type ServerFrame =
           ignores: string[];
           /** Live server VARs (bytes) — composer limits, never hardcoded. */
           limits: { chatMax: number; privMax: number };
+          /** Channels where the server disallows [icon]/[eicon] (the
+           * icon_blacklist VAR) — the composer warns before inserting. */
+          iconBlacklist: string[];
+          /** The user's delayed-send window (user_preferences). */
+          sendDelaySeconds: number;
+          /** Messages still waiting in the delayed-send outbox. */
+          outbox: OutboxItemDto[];
         };
         channels: SnapshotChannel[];
         dms: SnapshotDm[];
@@ -364,6 +415,8 @@ export type ServerFrame =
         error?: string;
         /** pm.open / conv.pin result: the affected conversation row. */
         conversation?: ConversationDto;
+        /** outbox.recall result: what the user typed, back to the composer. */
+        markdown?: string;
       };
     }
   | { t: "pong" }

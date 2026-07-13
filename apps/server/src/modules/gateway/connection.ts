@@ -22,7 +22,12 @@ import {
   type ServerFrame,
 } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
-import { conversations, flistAccounts, identities } from "../../db/schema.js";
+import {
+  conversations,
+  flistAccounts,
+  identities,
+  userPreferences,
+} from "../../db/schema.js";
 import {
   ConversationLimitError,
   type ConversationRow,
@@ -33,6 +38,7 @@ import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
+import type { Outbox } from "../outbox/outbox.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 import type { GatewayHub } from "./gateway.js";
 import {
@@ -63,6 +69,7 @@ export interface GatewayConnectionContext {
   readonly sessions: SessionRegistry;
   readonly history: HistorySink;
   readonly hub: GatewayHub;
+  readonly outbox: Outbox;
   readonly verifyToken: (
     token: string,
   ) => Promise<{ userId: string; sid: string } | undefined>;
@@ -427,6 +434,9 @@ export class GatewayConnection {
           statusmsg: ownStatus.statusmsg,
           ignores,
           limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
+          iconBlacklist: [...(session?.state.vars.icon_blacklist ?? [])],
+          sendDelaySeconds: await this.#sendDelaySeconds(),
+          outbox: await this.#ctx.outbox.list(identityId),
         },
         channels: snapshot.channels,
         dms: snapshot.dms,
@@ -615,12 +625,68 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "outbox.recall": {
+        const recalled = await this.#ctx.outbox.recall(
+          identity.id,
+          cmd.d.outboxId,
+        );
+        if (recalled) {
+          this.#ack(id, { ok: true, markdown: recalled.markdown });
+        } else {
+          // Released, already recalled, or never this identity's row.
+          this.#ack(id, { ok: false, error: "outbox item not found" });
+        }
+        return;
+      }
+      case "prefs.set": {
+        await this.#setSendDelay(cmd.d.sendDelaySeconds);
+        this.#ack(id, { ok: true });
+        return;
+      }
+    }
+  }
+
+  /** The user's delayed-send window; absent prefs row = 0 (immediate). */
+  async #sendDelaySeconds(): Promise<number> {
+    if (this.#userId === undefined) {
+      return 0;
+    }
+    const [prefs] = await this.#ctx.db
+      .select({ sendDelaySeconds: userPreferences.sendDelaySeconds })
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, this.#userId))
+      .limit(1);
+    return prefs?.sendDelaySeconds ?? 0;
+  }
+
+  /** Upserts the per-user preference and converges every identity's tabs. */
+  async #setSendDelay(sendDelaySeconds: number): Promise<void> {
+    if (this.#userId === undefined) {
+      return;
+    }
+    await this.#ctx.db
+      .insert(userPreferences)
+      .values({ userId: this.#userId, sendDelaySeconds })
+      .onConflictDoUpdate({
+        target: userPreferences.userId,
+        set: { sendDelaySeconds, updatedAt: new Date() },
+      });
+    const rows = await this.#ctx.db
+      .select({ id: identities.id })
+      .from(identities)
+      .innerJoin(flistAccounts, eq(identities.flistAccountId, flistAccounts.id))
+      .where(eq(flistAccounts.userId, this.#userId));
+    for (const row of rows) {
+      this.#ctx.hub.broadcast(row.id, {
+        kind: "prefs.updated",
+        d: { sendDelaySeconds },
+      });
     }
   }
 
   async #handleMsgSend(
     identityId: string,
-    d: { convId: string; bbcode: string },
+    d: { convId: string; bbcode: string; markdown?: string },
     id: number | undefined,
   ): Promise<void> {
     const session = this.#requireSession(identityId, id);
@@ -639,6 +705,22 @@ export class GatewayConnection {
       .limit(1);
     if (!conversation) {
       this.#ack(id, { ok: false, error: "conversation not found" });
+      return;
+    }
+    // A non-zero send delay parks the message in the server-side outbox —
+    // the release worker puts it on the wire when due, tab or no tab.
+    const delaySeconds = await this.#sendDelaySeconds();
+    if (delaySeconds > 0) {
+      await this.#ctx.outbox.schedule({
+        identityId,
+        conversationId: conversation.id,
+        // Recall restores what the user typed; raw-BBCode sends have no
+        // separate source form.
+        markdown: d.markdown ?? d.bbcode,
+        bbcode: d.bbcode,
+        releaseAt: new Date(Date.now() + delaySeconds * 1000),
+      });
+      this.#ack(id, { ok: true });
       return;
     }
     const send =
@@ -713,7 +795,12 @@ export class GatewayConnection {
 
   #ack(
     id: number | undefined,
-    d: { ok: boolean; error?: string; conversation?: ConversationDto },
+    d: {
+      ok: boolean;
+      error?: string;
+      conversation?: ConversationDto;
+      markdown?: string;
+    },
   ): void {
     if (id !== undefined) {
       this.#send({ t: "ack", id, d });
