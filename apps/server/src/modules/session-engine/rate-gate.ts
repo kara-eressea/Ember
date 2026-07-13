@@ -4,8 +4,11 @@
 // Intervals are read from live server VARs at send time, never hardcoded
 // (developer policy).
 
-/** Command classes with a flood limit. LRP (lfrp_flood) arrives in M4+. */
-export type RateGateClass = "MSG" | "PRI";
+/** Command classes with a flood limit. LRP (lfrp_flood) arrives in M4+.
+ * STA and IGN have no documented VAR of their own; they ride the msg_flood
+ * pace as client-side discipline — the server throttles STA on its side, and
+ * nothing user-triggered should be able to spam the wire unmetered. */
+export type RateGateClass = "MSG" | "PRI" | "STA" | "IGN";
 
 /**
  * Padding on top of the server's flood window. The server measures the

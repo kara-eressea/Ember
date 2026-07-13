@@ -22,6 +22,7 @@ import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
+import type { ServerCommandPayload } from "@emberchat/fchat-protocol";
 
 type ConversationKind = "channel" | "pm";
 
@@ -406,29 +407,43 @@ export class HistorySink {
 
   #enqueueIgnores(
     identityId: string,
-    payload: { action: string; character?: string; characters?: string[] },
+    payload: ServerCommandPayload<"IGN">,
   ): void {
     const { action, character, characters } = payload;
     if (action === "init") {
       this.#enqueue(identityId, async () => {
         // Full replacement: the login list is the truth (names may have
         // been ignored/unignored from another client while we were away).
-        await this.#db
-          .delete(ignores)
-          .where(eq(ignores.identityId, identityId));
-        if (characters !== undefined && characters.length > 0) {
-          await this.#db
-            .insert(ignores)
-            .values(characters.map((name) => ({ identityId, character: name })))
-            .onConflictDoNothing();
-        }
+        // One transaction: a concurrent snapshot read must never see the
+        // wiped midpoint, and a failed insert must not leave the mirror
+        // empty until the next reconnect.
+        await this.#db.transaction(async (tx) => {
+          await tx.delete(ignores).where(eq(ignores.identityId, identityId));
+          if (characters !== undefined && characters.length > 0) {
+            await tx
+              .insert(ignores)
+              .values(
+                characters.map((name) => ({ identityId, character: name })),
+              )
+              .onConflictDoNothing();
+          }
+        });
       });
     } else if (action === "add" && character !== undefined) {
       this.#enqueue(identityId, async () => {
-        await this.#db
-          .insert(ignores)
-          .values({ identityId, character })
-          .onConflictDoNothing();
+        // Replace any differently-cased leftover (the PK is case-sensitive,
+        // F-Chat names are not) so the list never shows duplicates.
+        await this.#db.transaction(async (tx) => {
+          await tx
+            .delete(ignores)
+            .where(
+              and(
+                eq(ignores.identityId, identityId),
+                sql`lower(${ignores.character}) = lower(${character})`,
+              ),
+            );
+          await tx.insert(ignores).values({ identityId, character });
+        });
       });
     } else if (action === "delete" && character !== undefined) {
       this.#enqueue(identityId, async () => {

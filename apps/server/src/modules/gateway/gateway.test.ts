@@ -895,13 +895,31 @@ describe("gateway fan-out", () => {
       eventPayload<{ message: { bbcode: string } }>(msg).message.bbcode,
     ).toBe("you can't hear me");
 
-    // The persisted mirror serves snapshots (works without a live session).
+    // A live, IGN-seeded session serves its own state to snapshots — no
+    // sink-queue race.
+    const live = await connectClient();
+    await live.hello(token);
+    const liveSnapshot = await live.subscribe(identityId);
+    expect(liveSnapshot.d.self.ignores).toEqual(["Nyx Firemane"]);
+
+    // The persisted mirror serves snapshots without a live session (the add
+    // ack must have reached the DB, not just session state).
     await app.history.flush();
+    app.sessions.stop(identityId, "test: mirror path");
     const late = await connectClient();
     await late.hello(token);
     const snapshot = await late.subscribe(identityId);
     expect(snapshot.d.self.ignores).toEqual(["Nyx Firemane"]);
 
+    // Reconnect: the sim replays IGN init (full replacement) and the remove
+    // ack must also persist through to the mirror. The init fans out its own
+    // ignore.updated — consume it so the remove assertion sees the right one.
+    const restarted = await startSession(identityId);
+    const reseeded = await client.nextEvent("ignore.updated");
+    expect(eventPayload<{ characters: string[] }>(reseeded).characters).toEqual(
+      ["Nyx Firemane"],
+    );
+    expect(restarted.state.isIgnored("Nyx Firemane")).toBe(true);
     client.send({
       t: "cmd",
       id: 2,
@@ -916,6 +934,12 @@ describe("gateway fan-out", () => {
     expect(eventPayload<{ characters: string[] }>(removed).characters).toEqual(
       [],
     );
+    await app.history.flush();
+    app.sessions.stop(identityId, "test: mirror path");
+    const after = await connectClient();
+    await after.hello(token);
+    const cleared = await after.subscribe(identityId);
+    expect(cleared.d.self.ignores).toEqual([]);
   });
 
   it("a rail reorder fans out as identities.reordered", async () => {

@@ -735,6 +735,12 @@ describe("FchatSession against fchat-sim", () => {
     });
     session.start();
     await waitForStatus(session, "online");
+    // "online" fires at IDN — wait for our own NLN so the roster holds us
+    // before the synthetic STA tries to fold into it.
+    await waitForCommand(
+      session,
+      (c) => c.cmd === "NLN" && c.payload.identity === CHARACTER,
+    );
 
     // setStatus emits a synthetic self-STA so clients converge even if the
     // server never echoes; the sim's broadcast is the idempotent duplicate.
@@ -742,8 +748,14 @@ describe("FchatSession against fchat-sim", () => {
       session,
       (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
     );
-    session.setStatus("away", "brb tea");
+    await session.setStatus("away", "brb tea");
     await echo;
+    // The synthetic echo also folds into the roster — member lists show the
+    // new status without waiting for the server's own broadcast.
+    expect(session.state.characters.get(CHARACTER)).toMatchObject({
+      status: "away",
+      statusmsg: "brb tea",
+    });
     expect(session.ownStatus).toEqual({ status: "away", statusmsg: "brb tea" });
 
     // A fresh connection resets F-Chat to plain "online" — the session
@@ -773,7 +785,7 @@ describe("FchatSession against fchat-sim", () => {
       session,
       (c) => c.cmd === "IGN" && c.payload.action === "add",
     );
-    session.ignore("Cindral");
+    await session.ignore("Cindral");
     await acked;
     expect(session.state.isIgnored("cindral")).toBe(true); // case-insensitive
 
@@ -840,6 +852,22 @@ describe("FchatSession against fchat-sim", () => {
     // (IgnoredByRecipient) to Cindral.
     const err = await rawWaitFor("ERR");
     expect(JSON.parse(err.slice(4))).toMatchObject({ number: 20 });
+
+    // A second PM from the same sender still reaches the bus but triggers no
+    // second notify: one courtesy frame per sender per connection, so an
+    // ignored sender cannot pace our outbound traffic with their PMs.
+    const again = waitForCommand(session, (c) => c.cmd === "PRI");
+    socket.send(
+      serializeClientCommand({
+        cmd: "PRI",
+        payload: { recipient: CHARACTER, message: "hello??" },
+      }),
+    );
+    await again;
+    // A repeat notify would ride the IGN gate class (msg_flood 0.5s + the
+    // 100ms margin) — wait out the window before asserting silence.
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(frames.filter((raw) => raw.startsWith("ERR"))).toEqual([]);
   });
 
   it("drops a rejected ticket and identifies with a fresh one", async () => {

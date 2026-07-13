@@ -171,6 +171,9 @@ export class FchatSession {
    * resets a fresh connection to plain "online"). */
   #desiredStatus:
     { status: ClientSettableStatus; statusmsg: string } | undefined;
+  /** Ignored senders (lowercased) already sent an IGN notify on this
+   * connection — one courtesy frame per sender, not one per message. */
+  readonly #notifiedIgnored = new Set<string>();
 
   constructor(options: FchatSessionOptions) {
     this.character = options.character;
@@ -273,35 +276,58 @@ export class FchatSession {
 
   /** Adds a character to the server-side ignore list (IGN add). State and
    * persistence follow the server's acknowledgement, not the send. */
-  ignore(character: string): void {
+  async ignore(character: string): Promise<void> {
     this.#assertOnline();
-    if (!this.#send({ cmd: "IGN", payload: { action: "add", character } })) {
-      throw new SessionNotOnlineError(this.#status);
-    }
+    await this.#rateGate.schedule("IGN", () => {
+      if (!this.#send({ cmd: "IGN", payload: { action: "add", character } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
   }
 
-  unignore(character: string): void {
+  async unignore(character: string): Promise<void> {
     this.#assertOnline();
-    if (!this.#send({ cmd: "IGN", payload: { action: "delete", character } })) {
-      throw new SessionNotOnlineError(this.#status);
-    }
+    await this.#rateGate.schedule("IGN", () => {
+      if (
+        !this.#send({ cmd: "IGN", payload: { action: "delete", character } })
+      ) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
   }
 
   /**
    * Sets the character's status (STA). Remembered and re-sent after every
-   * reconnect. A synthetic self-STA is emitted on the event bus so every
-   * subscribed client converges immediately — the live server's own echo (if
-   * any) is an idempotent overwrite of the same state.
+   * reconnect.
    */
-  setStatus(status: ClientSettableStatus, statusmsg: string): void {
+  async setStatus(
+    status: ClientSettableStatus,
+    statusmsg: string,
+  ): Promise<void> {
     this.#assertOnline();
-    this.#desiredStatus = { status, statusmsg };
-    if (!this.#send({ cmd: "STA", payload: { status, statusmsg } })) {
-      throw new SessionNotOnlineError(this.#status);
-    }
-    this.events.emit("command", {
-      cmd: "STA",
-      payload: { character: this.character, status, statusmsg },
+    await this.#pushStatus(status, statusmsg);
+  }
+
+  /**
+   * Puts an STA on the wire and folds a synthetic self-echo into state and
+   * onto the event bus, so every subscribed client (and later snapshots of
+   * the member roster) converge without depending on the live server echoing
+   * our own STA back — its echo, if any, is an idempotent overwrite.
+   * #desiredStatus only moves once the frame was actually sent: a refused
+   * send must not come back from the dead at the next reconnect.
+   */
+  #pushStatus(status: ClientSettableStatus, statusmsg: string): Promise<void> {
+    return this.#rateGate.schedule("STA", () => {
+      if (!this.#send({ cmd: "STA", payload: { status, statusmsg } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+      this.#desiredStatus = { status, statusmsg };
+      const echo = {
+        cmd: "STA",
+        payload: { character: this.character, status, statusmsg },
+      } as const;
+      this.state.apply(echo);
+      this.events.emit("command", echo);
     });
   }
 
@@ -435,11 +461,16 @@ export class FchatSession {
           this.#unconfirmedJoins.set(channel, attempts + 1);
           this.#send({ cmd: "JCH", payload: { channel } });
         }
-        // A fresh connection is plain "online" — restore the chosen status.
-        if (this.#desiredStatus) {
-          this.#send({ cmd: "STA", payload: this.#desiredStatus });
-        }
         this.events.emit("command", command);
+        // A fresh connection is plain "online" — restore the chosen status
+        // (after the IDN event, so subscribers see the synthetic self-STA in
+        // wire order).
+        if (this.#desiredStatus) {
+          const { status, statusmsg } = this.#desiredStatus;
+          this.#pushStatus(status, statusmsg).catch((error: unknown) => {
+            this.#log.warn({ err: error }, "status restore failed");
+          });
+        }
         return;
       }
       case "ERR":
@@ -449,12 +480,25 @@ export class FchatSession {
       case "PRI":
         // Ignoring is the client's responsibility (developer policy): tell
         // the server so it informs the sender. The message still flows to
-        // the sink — history keeps it, clients hide it from render.
+        // the sink — history keeps it, clients hide it from render. Once per
+        // sender per connection, through the gate: an ignored sender must
+        // not be able to pace our outbound traffic 1:1 with their PMs.
         if (this.state.isIgnored(command.payload.character)) {
-          this.#send({
-            cmd: "IGN",
-            payload: { action: "notify", character: command.payload.character },
-          });
+          const sender = command.payload.character.toLowerCase();
+          if (!this.#notifiedIgnored.has(sender)) {
+            this.#notifiedIgnored.add(sender);
+            const character = command.payload.character;
+            this.#rateGate
+              .schedule("IGN", () => {
+                this.#send({
+                  cmd: "IGN",
+                  payload: { action: "notify", character },
+                });
+              })
+              .catch(() => {
+                // Best-effort courtesy frame; a cleared/full gate drops it.
+              });
+          }
         }
         this.state.apply(command);
         this.events.emit("command", command);
@@ -563,6 +607,7 @@ export class FchatSession {
       this.#watchdogTimer = undefined;
     }
     this.#rateGate.clear();
+    this.#notifiedIgnored.clear();
     this.state.resetVolatile();
     const socket = this.#socket;
     if (socket) {

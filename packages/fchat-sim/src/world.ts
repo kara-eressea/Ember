@@ -76,6 +76,15 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Talk about third-party clients here.",
       npcs: ["Tally Marsh"],
     },
+    // Reserved for the rail E2E: chat.spec asserts exact Frontpage member
+    // counts, so parallel specs must not wander in — channel isolation
+    // follows the same rule as character isolation.
+    {
+      name: "Gardening",
+      mode: "chat",
+      description: "Seeds, cuttings, and quiet company.",
+      npcs: ["Tally Marsh"],
+    },
     {
       name: "ADH-1a2b3c4d5e6f7a8b9c0d",
       title: "Ember Lounge",

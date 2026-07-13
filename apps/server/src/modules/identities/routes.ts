@@ -2,7 +2,7 @@
 // character on one of the user's accounts; the IdentityPicker creates them
 // and the gateway connects them.
 
-import { and, eq, max } from "drizzle-orm";
+import { and, count, eq, max } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -31,6 +31,14 @@ const identityResponse = z.object({
 });
 
 const errorResponse = z.object({ error: z.string() });
+
+/**
+ * Rail-wide bound, spanning the user's accounts. Keeps the per-hello badge
+ * aggregation (one capped count query per identity) and the reorder payload
+ * bounded — the reorder body's max mirrors it, so every real rail stays
+ * reorderable.
+ */
+export const MAX_IDENTITIES_PER_USER = 64;
 
 const createBody = z.object({
   flistAccountId: z.uuid(),
@@ -146,13 +154,18 @@ export async function identitiesRoutes(
       // spans accounts); a concurrent create may tie, which the stable
       // (sortOrder, createdAt) read order resolves.
       const [tail] = await db
-        .select({ max: max(identities.sortOrder) })
+        .select({ max: max(identities.sortOrder), count: count() })
         .from(identities)
         .innerJoin(
           flistAccounts,
           eq(identities.flistAccountId, flistAccounts.id),
         )
         .where(eq(flistAccounts.userId, request.user.sub));
+      if ((tail?.count ?? 0) >= MAX_IDENTITIES_PER_USER) {
+        return reply.code(422).send({
+          error: `At most ${String(MAX_IDENTITIES_PER_USER)} identities per user`,
+        });
+      }
       try {
         const [identity] = await db
           .insert(identities)
@@ -184,7 +197,9 @@ export async function identitiesRoutes(
     "/order",
     {
       schema: {
-        body: z.object({ ids: z.array(z.uuid()).min(1).max(64) }),
+        body: z.object({
+          ids: z.array(z.uuid()).min(1).max(MAX_IDENTITIES_PER_USER),
+        }),
         response: { 204: z.null(), 422: errorResponse },
       },
     },
@@ -208,8 +223,14 @@ export async function identitiesRoutes(
           .code(422)
           .send({ error: "ids must list every identity exactly once" });
       }
+      // Rows update in a canonical order (sorted by id), not payload order:
+      // two tabs reordering simultaneously would otherwise lock the same
+      // rows in opposite orders and deadlock.
+      const ranked = ids
+        .map((id, index) => ({ id, index }))
+        .sort((a, b) => a.id.localeCompare(b.id));
       await db.transaction(async (tx) => {
-        for (const [index, id] of ids.entries()) {
+        for (const { id, index } of ranked) {
           await tx
             .update(identities)
             .set({ sortOrder: index })

@@ -4,7 +4,13 @@
 // badges; the active one never does. Right-click opens the identity menu:
 // set status / connect–log off / move up–down (persisted rail order).
 
-import { useEffect, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { Link } from "react-router";
 import {
   CLIENT_SETTABLE_STATUSES,
@@ -52,10 +58,15 @@ export function IdentityRail({ activeId }: { activeId: string }) {
           active={identity.id === activeId}
           onMenu={(event) => {
             event.preventDefault();
+            // Keyboard-invoked (Menu key / Shift+F10) contextmenu events
+            // carry 0,0 coordinates — anchor to the item instead of the
+            // viewport corner.
+            const keyboard = event.clientX === 0 && event.clientY === 0;
+            const rect = event.currentTarget.getBoundingClientRect();
             setMenu({
               identityId: identity.id,
-              x: event.clientX,
-              y: event.clientY,
+              x: keyboard ? rect.right : event.clientX,
+              y: keyboard ? rect.top : event.clientY,
             });
           }}
         />
@@ -100,13 +111,22 @@ function RailItem({
   );
   const base = identityPath(identity.name);
   const to = lastConv !== undefined ? `${base}/${lastConv}` : base;
+  // The label overrides the link's content for assistive tech, so the badge
+  // has to travel inside it — a visual-only badge would be silent.
+  const label = active
+    ? identity.name
+    : badge.mentions > 0
+      ? `${identity.name}, ${String(badge.mentions)} mentions, ${String(badge.unread)} unread`
+      : badge.unread > 0
+        ? `${identity.name}, ${String(badge.unread)} unread`
+        : identity.name;
 
   return (
     <Link
       className={`${styles.railItem} ${active ? (styles.railActive ?? "") : ""}`}
       to={to}
       title={identity.name}
-      aria-label={identity.name}
+      aria-label={label}
       aria-current={active ? "page" : undefined}
       data-testid="rail-item"
       onContextMenu={onMenu}
@@ -156,6 +176,7 @@ function RailMenu({
     slice.sessionStatus !== "offline" &&
     slice.sessionStatus !== "stopped";
   const index = identities.findIndex((i) => i.id === identity.id);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -168,6 +189,28 @@ function RailMenu({
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
+
+  // Menus move focus into themselves; arrow keys walk the enabled items.
+  useEffect(() => {
+    enabledItems(menuRef.current)[0]?.focus();
+  }, []);
+
+  function onMenuKeyDown(event: ReactKeyboardEvent) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+      return;
+    }
+    event.preventDefault();
+    const items = enabledItems(menuRef.current);
+    if (items.length === 0) {
+      return;
+    }
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? (current + 1) % items.length
+        : (current - 1 + items.length) % items.length;
+    items[next]?.focus();
+  }
 
   function setStatus(status: ClientSettableStatus) {
     void gateway
@@ -215,11 +258,22 @@ function RailMenu({
     if (index === -1 || target < 0 || target >= identities.length) {
       return;
     }
-    const order = identities.map((i) => i.id);
+    const previous = identities.map((i) => i.id);
+    const order = [...previous];
     [order[index], order[target]] = [order[target]!, order[index]!];
     useSessionsStore.getState().applyIdentityOrder(order);
     void api.reorderIdentities(order).catch(() => {
-      // A stale list (create/delete raced us) — the next ready re-syncs.
+      // A stale list (create/delete raced us). Revert — `ready` only comes
+      // with a socket reconnect, so an optimistic order left standing would
+      // diverge from the server and every other tab indefinitely.
+      useSessionsStore.getState().applyIdentityOrder(previous);
+      useSessionsStore
+        .getState()
+        .applyNotice(
+          identity.id,
+          "error",
+          "Could not reorder — the identity list changed; try again",
+        );
     });
     onClose();
   }
@@ -235,10 +289,12 @@ function RailMenu({
         }}
       />
       <div
+        ref={menuRef}
         className={styles.railMenu}
         role="menu"
         aria-label={`${identity.name} menu`}
         style={{ left: position.x, top: position.y }}
+        onKeyDown={onMenuKeyDown}
       >
         <div className={styles.railMenuName}>{identity.name}</div>
         <div className={styles.railMenuSection}>Status</div>
@@ -291,4 +347,14 @@ function RailMenu({
       </div>
     </>
   );
+}
+
+function enabledItems(root: HTMLDivElement | null): HTMLButtonElement[] {
+  return root
+    ? [
+        ...root.querySelectorAll<HTMLButtonElement>(
+          'button[role="menuitem"]:not(:disabled)',
+        ),
+      ]
+    : [];
 }
