@@ -8,8 +8,8 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 |---|---|---|---|---|
 | 1 | Thin vertical slice | done | — | [milestone-1-thin-vertical-slice.md](milestone-1-thin-vertical-slice.md) |
 | 2 | Always-online bouncer + catch-up | done | M1 | [milestone-2-always-online-bouncer.md](milestone-2-always-online-bouncer.md) |
-| 3 | Multi-identity | done (on `staging`; awaiting sign-off to `main`) | M2 | [milestone-3-multi-identity.md](milestone-3-multi-identity.md) |
-| 4 | Markdown layer + delayed send | not started | M1 (parallel with M3) | [milestone-4-markdown-delayed-send.md](milestone-4-markdown-delayed-send.md) |
+| 3 | Multi-identity | done | M2 | [milestone-3-multi-identity.md](milestone-3-multi-identity.md) |
+| 4 | Markdown layer + delayed send | in progress | M1 (parallel with M3) | [milestone-4-markdown-delayed-send.md](milestone-4-markdown-delayed-send.md) |
 | 5 | Highlights + preferences | not started | M3, M4 | [milestone-5-highlights-preferences.md](milestone-5-highlights-preferences.md) |
 | 6 | Channel browser + channel ops | not started | M1 (benefits from M3) | [milestone-6-channel-browser-ops.md](milestone-6-channel-browser-ops.md) |
 | 7 | Public-service hardening | not started | M1–M2 min., realistically M1–M6 | [milestone-7-public-service-hardening.md](milestone-7-public-service-hardening.md) |
@@ -51,11 +51,11 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 
 ## Milestone 3 step checklist
 
-> **Branching exception (active):** M3 is being built on a temporary `staging`
-> integration branch (the M2 pattern, at the user's request): feature branches
-> squash-merge into `staging` once CI is green; `staging` merges to `main` only
-> with the user's explicit sign-off. CI push trigger extended to `staging` for
-> the duration.
+> **Branching exception (concluded 2026-07-13):** M3 was built on a temporary
+> `staging` integration branch (the M2 pattern): feature PRs #30–#38
+> squash-merged into `staging` once CI was green; after the milestone audit and
+> the user's sign-off, `staging` merged to `main` (PR #39), v0.2.0 was tagged,
+> and the branch was deleted.
 
 A code audit against the milestone scope shows the server is already multi-identity-native: `SessionRegistry` holds N concurrent sessions per user, the per-account `TicketManager` coalesces ticket fetches (both covered by existing tests — the milestone's headline integration test essentially exists), one gateway socket carries per-identity subscriptions, and the web store/socket client are keyed by identityId. The steps below cover the actual gaps.
 
@@ -66,6 +66,25 @@ A code audit against the milestone scope shows the server is already multi-ident
 - [x] 5. Ignore lists end-to-end (IGN): fchat-protocol IGN schemas, session ignore state + `ignores` table persistence (table exists, nothing touches it), gateway `ignore.add/remove` + snapshot carry, client-side filtering (hidden from render, still persisted) + `IGN notify` on ignored PRI, fchat-sim IGN support
 - [x] 6. Human-readable URLs: `/app/<character>/c/<channel>` + `/app/<character>/dm/<partner>` (names as keys, case-insensitive, canonical casing restored), `@me` alias → last-active identity, old UUID routes redirect
 - [x] 7. Milestone verification suite: E2E rail switch swaps sidebar/log/members/me-bar + background identity accumulates a badge while another is active; integration two-identities-one-ticket (extend existing); IGN state-transition units + filtered-but-persisted proof
+
+## Milestone 4 step checklist
+
+> **Branching exception (active):** M4 is being built on a temporary `staging`
+> integration branch (the M2/M3 pattern, per the user's "continue work on next
+> milestone"): feature PRs squash-merge into `staging` once CI is green;
+> `staging` merges to `main` only with the user's explicit sign-off. CI push
+> trigger stays extended to `staging` for the duration.
+
+A kickoff audit against the milestone scope: `packages/markdown-bbcode` is an empty scaffold (everything to build); the web renders all BBCode raw (message bodies, system lines, CDS descriptions, statusmsg — the M1-UAT `[b]…[/b]` bug); the composer has Enter/Shift+Enter + byte counter but no preview/toggle/chrome; `outbox_messages` and `messages.sourceMarkdown` columns already exist in the schema but nothing writes them, and there is no `user_preferences` table; TPN is fully plumbed inbound (typing indicator renders) but nothing sends it; avatars provide the URL-builder + lazy fixed-size image pattern eicons will reuse.
+
+- [ ] 1. `markdown-bbcode` package: BBCode AST (parse/serialize) + `sanitize()` (strip everything outside `b i u s sup sub color url user icon eicon noparse`) + `mdToBBCode()` whose output provably never leaves the subset; property-style tests per milestone-4.md
+- [ ] 2. Web render pipeline: shared sanitize → tokenizer → component path (COMPONENTS.md §7 — bold/italic/code/@name/#channel/links, fenced blocks as the §6 CodeBlock row) wired into message bodies, system lines, channel descriptions (CDS), DM header statusmsg; `/me` emote rendering (italic, `Name does…`, no nick separator) both directions
+- [ ] 3. Inline eicon/icon rendering (decisions.md §8): URL builder, fixed ~60px box with explicit dimensions + lazy load (stable virtualized rows), literal `[eicon]name[/eicon]` passes the Markdown layer untouched
+- [ ] 4. Composer per COMPONENTS.md §8: input-bar chrome (+ / format hints / ☺ insert-by-name), live preview panel above the input through the step-2 tokenizer, `Ⓜ Markdown` toggle, MD→BBCode before send, `/me` recognition, `icon_blacklist` warning
+- [ ] 5. Server-side outbox: `user_preferences` table (send delay, 0 = immediate), `msg.send` → `outbox_messages` with `release_at`, restart-safe release worker (translate at release, hand to the session rate-gate), `outbox.recall` cmd + pending-state gateway events keeping all devices in sync
+- [ ] 6. Web pending affordance + ArrowUp recall: pending messages render immediately with "sending in Ns" (local echo reconciled on the released round-trip); ArrowUp within the window recalls to the composer
+- [ ] 7. Outbound TPN for PMs: debounced `session.sendTyping`, `typing.set` gateway cmd, composer wiring (typing/paused/clear)
+- [ ] 8. Milestone verification suite per milestone-4.md: subset-invariant property tests; outbox release-ordering/restart-survival/recall integration; E2E preview-matches-render, 10s-delay ArrowUp recall, close-tab-mid-delay still sends, eicon rows stay stable while images load
 
 ## Standing to-dos (not milestone-gated)
 
@@ -92,6 +111,8 @@ A code audit against the milestone scope shows the server is already multi-ident
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | **M4 started on a new `staging` branch** (the M2/M3 pattern, per the user's post-audit "merge into main, then continue work on next milestone"). Kickoff audit: `markdown-bbcode` is an empty scaffold; all BBCode renders raw in the web app; the schema already carries `outbox_messages` + `messages.sourceMarkdown` (nothing writes them) but no `user_preferences` table; TPN inbound is fully plumbed, outbound absent; the avatar URL-builder/lazy-image pattern is the eicon template. 8-step checklist above covers the gaps. |
+| 2026-07-13 | **M3 signed off and merged to `main` (PR #39); v0.2.0 tagged + released; `staging` deleted.** The user's sign-off came mid-audit, conditional on audit issues being closed or logged — all HIGH/MEDIUMs were fixed (#38), remaining LOWs live in the M3 audit backlog. `main` now carries M1–M3. |
 | 2026-07-13 | **M3 audit** (three adversarial reviews: security, correctness, quality — the M1/M2 pattern) and fix pass. HIGH: AppShell subscribed to the whole sessions map for its connect loop, so every message/presence event for **any** identity re-rendered the entire shell — amplified by M3's own subscribe-all; the loop now watches a derived key of just the fields it reads. MEDIUMs: STA/IGN commands went straight to the wire with no flood gate — `setStatus`/`ignore`/`unignore` now ride the RateGate (msg_flood pace, new STA/IGN classes) and the ignored-PRI `IGN notify` is once per sender per connection (an ignored sender could otherwise pace our outbound 1:1); the reconnect status-restore now uses the same synthetic-echo path as `setStatus` (state fold + bus emit — restore previously depended on the live server echoing our own STA; also `#desiredStatus` no longer advances on a refused send); identities cap at 64/user (`MAX_IDENTITIES_PER_USER`, matches the reorder body bound; hello badge aggregation and the reorder payload are now both bounded); a failed rail reorder reverts the optimistic order + notices (was silently divergent until the next reconnect) and the server updates rows in canonical id order (two concurrent reorders could deadlock); snapshot `self.ignores` prefers live session state once IGN init seeded it (`ignoresSeeded`), the sink's init is transactional (no observable wiped midpoint, no half-applied replacement) and add acks replace differently-cased leftovers (case-sensitive PK); RailMenu got keyboard support (anchored on keyboard invocation, focus moves in, arrows walk items) and rail badges joined the links' accessible names. LOWs fixed: status editor Escape/click-outside, ignore chip on the `danger` token (was accent), popover shadows per spec, dead route-helper exports, ghost session slice after identity delete, sink IGN payload typed from the protocol. New coverage: reorder 422s (duplicate/foreign), identity cap, notify dedup, status roster-fold + restore, ignore mirror add/init/delete persistence via snapshots, rail-menu E2E (status set + persisted move-down). Deferred LOWs → M3 audit backlog; connect/hello rate-gate → M7 hardening backlog. Server 130, web 54, sim 38, E2E 8. |
 | 2026-07-13 | **M3 complete** (on `staging`; merges to `main` with the user's sign-off). Step 7 verification, mapped to milestone-3.md: ① rail switch swaps the entire context + a background identity accumulates a rail badge while another is active + reading clears it + `@me` lands on the last-active identity — new Playwright `rail.spec.ts` (rowan@example.test + Bramble Thorn sender added to the sim world; specs never share characters); ② two identities on one account connect simultaneously → **exactly one ticket fetch** — registry test now spies `getApiTicket` (both-online alone did not prove coalescing); ③ IGN state transitions unit-tested on `SessionState` (init replaces, add/delete adjust case-insensitively, unknown actions swallowed, reset clears); filtered-but-persisted was proven in step 5. The rail E2E caught a real bug, fixed here: an identity created *after* the gateway hello did not exist for that tab until a socket reconnect (`ready` is the list's only carrier) — the picker's REST create/delete now upserts/removes in the store mirror (cross-*device* creates still wait for the next connect — noted in the M2 audit backlog's TOCTOU family). auth.spec's picker waits widened to 15s (the known 1 req/s throttle queueing, aggravated by a 4th parallel spec). Server 129, web 54, sim 38, E2E 8. |
 | 2026-07-13 | M3 step 6 (human-readable URLs) done: routes are now `/app/<Character>` + `/c/<channelKey>` or `/dm/<partner>` (spaces encoded, F-List profile-URL precedent) — all resolution client-side in `lib/routes.ts` (unit-tested): names case-insensitive, channels by key (public names / ADH- ids), `@me` → last-active identity (localStorage, first identity as fallback), legacy UUID routes still land and redirect. The shell restores the canonical URL by replace-navigation (casing, @me, UUIDs); an unresolved `/c/<x>` keeps the typed target and canonicalizes the moment the conversation exists (e.g. right after joining). All link builders (sidebar rows, rail switch-back, join/DM forms, picker Open) emit name paths; the rail's last-conversation memory now stores the path suffix. E2E asserts the shape (`/app/Cindral/c/Frontpage`). Web 54 (+7). |
