@@ -54,6 +54,7 @@ function snapshot(): ServerFrame {
           members: [member("Amber Vale"), member("Nyx Firemane")],
           joined: true,
           unread: 3,
+          mentions: 1,
           lastReadMessageId: 10,
         },
       ],
@@ -95,6 +96,7 @@ describe("snapshot", () => {
     expect(s.character).toBe("Amber Vale");
     expect(s.sessionStatus).toBe("online");
     expect(s.channels["Frontpage"]?.unread).toBe(3);
+    expect(s.channels["Frontpage"]?.mentions).toBe(1);
     expect(s.channelByConvId[CONV_CHANNEL]).toBe("Frontpage");
     expect(s.dms[CONV_DM]?.partner).toBe("Nyx Firemane");
   });

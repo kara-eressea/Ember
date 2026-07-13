@@ -26,6 +26,8 @@ export interface ChannelView {
   members: MemberDto[];
   joined: boolean;
   unread: number;
+  /** Unread messages naming this identity (server-counted at snapshot). */
+  mentions: number;
   lastReadMessageId: number | null;
 }
 
@@ -185,6 +187,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         members: [],
         joined: false,
         unread: 0,
+        mentions: 0,
         lastReadMessageId: null,
       };
       return {
@@ -283,6 +286,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 members: [],
                 joined: conversation.joined,
                 unread: 0,
+                mentions: 0,
                 lastReadMessageId: conversation.lastReadMessageId,
               };
           // The read cursor moved (this tab's ack or another's): drop the
