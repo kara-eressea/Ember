@@ -19,6 +19,7 @@ import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
+import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
 import { SessionRegistry } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
@@ -75,7 +76,15 @@ export async function buildApp({
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
+  const retention = new RetentionJob({
+    db,
+    policy: config.RETENTION_POLICY,
+    sweepIntervalMs: config.RETENTION_SWEEP_INTERVAL_MS,
+    logger: app.log,
+  });
+  retention.start();
   app.addHook("onClose", () => {
+    retention.stop();
     sessions.stopAll();
   });
 
