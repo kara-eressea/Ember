@@ -389,7 +389,12 @@ export class GatewayConnection {
     this.#ctx.hub.subscribe(identityId, this);
 
     const session = this.#ctx.sessions.get(identityId);
-    const snapshot = await buildSnapshot(this.#ctx.db, identityId, session);
+    const snapshot = await buildSnapshot(
+      this.#ctx.db,
+      identityId,
+      identity.character,
+      session,
+    );
     this.#send({
       t: "snapshot",
       d: {

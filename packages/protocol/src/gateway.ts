@@ -178,6 +178,11 @@ export interface SnapshotChannel {
   members: MemberDto[];
   joined: boolean;
   unread: number;
+  /** Unread inbound messages matching the identity's character name (word
+   * boundary, case-insensitive; M5 highlight rules extend this). Counted
+   * within the same capped window as `unread`. DMs carry no mention count —
+   * every DM is already directed at the user. */
+  mentions: number;
   lastReadMessageId: number | null;
 }
 

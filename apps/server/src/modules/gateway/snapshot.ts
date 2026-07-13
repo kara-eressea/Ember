@@ -3,7 +3,7 @@
 // sub; durable state (messages) resumes via per-conversation messages.id
 // cursors read straight from the messages table — it *is* the resume log.
 
-import { and, asc, count, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type {
   MemberDto,
   MessageDto,
@@ -18,6 +18,59 @@ import type { SessionState } from "../session-engine/session-state.js";
 
 /** Unread counts are capped server-side; the client renders 99 as "99+". */
 export const UNREAD_CAP = 99;
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Per-conversation unread + mention counts past the read cursor, computed in
+ * one pass. The inner LIMIT caps the rows *scanned* per conversation at
+ * UNREAD_CAP (walking the (conversation_id, id) index and stopping early) —
+ * a busy channel with 40k unread costs the same as one with 99. Mentions are
+ * counted within that same window: a word-boundary, case-insensitive match
+ * of the identity's character name in inbound channel messages (M5 highlight
+ * rules will extend the matcher). DMs carry no mention count — every DM is
+ * already directed at the user.
+ */
+async function conversationCounts(
+  db: Db,
+  identityId: string,
+  character: string,
+): Promise<Map<string, { unread: number; mentions: number }>> {
+  // \m and \M are Postgres word boundaries, so "Amber Vale" never matches
+  // inside "Amber Valery".
+  const pattern = `\\m${escapeRegex(character)}\\M`;
+  const result = await db.execute(sql`
+    select c.id as conv_id,
+           u.unread::int as unread,
+           u.mentions::int as mentions
+    from conversations c
+    cross join lateral (
+      select count(*) as unread,
+             count(*) filter (where t.mention) as mentions
+      from (
+        select (m.kind = 'msg' and not m.sent_by_us and m.bbcode ~* ${pattern}) as mention
+        from messages m
+        where m.conversation_id = c.id
+          and m.id > coalesce(c.last_read_message_id, 0)
+        limit ${UNREAD_CAP}
+      ) t
+    ) u
+    where c.identity_id = ${identityId}
+  `);
+  const rows = result.rows as {
+    conv_id: string;
+    unread: number;
+    mentions: number;
+  }[];
+  return new Map(
+    rows.map((row) => [
+      row.conv_id,
+      { unread: row.unread, mentions: row.mentions },
+    ]),
+  );
+}
 
 export interface SnapshotData {
   channels: SnapshotChannel[];
@@ -48,6 +101,7 @@ export function messageDto(row: MessageRow): MessageDto {
 export async function buildSnapshot(
   db: Db,
   identityId: string,
+  character: string,
   session: FchatSession | undefined,
 ): Promise<SnapshotData> {
   const rows = await db
@@ -56,20 +110,7 @@ export async function buildSnapshot(
     .where(eq(conversations.identityId, identityId))
     .orderBy(conversations.createdAt);
 
-  const unreadRows = await db
-    .select({ convId: messages.conversationId, unread: count() })
-    .from(messages)
-    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-    .where(
-      and(
-        eq(conversations.identityId, identityId),
-        gt(messages.id, sql`coalesce(${conversations.lastReadMessageId}, 0)`),
-      ),
-    )
-    .groupBy(messages.conversationId);
-  const unread = new Map(
-    unreadRows.map((r) => [r.convId, Math.min(r.unread, UNREAD_CAP)]),
-  );
+  const counts = await conversationCounts(db, identityId, character);
 
   const channels: SnapshotChannel[] = [];
   const dms: SnapshotDm[] = [];
@@ -90,7 +131,8 @@ export async function buildSnapshot(
             ? [...live.members].map((name) => memberDto(state, name))
             : [],
         joined: row.joined,
-        unread: unread.get(row.id) ?? 0,
+        unread: counts.get(row.id)?.unread ?? 0,
+        mentions: counts.get(row.id)?.mentions ?? 0,
         lastReadMessageId: row.lastReadMessageId,
       });
     } else {
@@ -103,7 +145,7 @@ export async function buildSnapshot(
         online: presence !== undefined,
         status: presence?.status ?? "",
         statusmsg: presence?.statusmsg ?? "",
-        unread: unread.get(row.id) ?? 0,
+        unread: counts.get(row.id)?.unread ?? 0,
         lastReadMessageId: row.lastReadMessageId,
       });
     }

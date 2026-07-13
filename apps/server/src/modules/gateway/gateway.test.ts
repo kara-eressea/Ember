@@ -589,19 +589,49 @@ describe("gateway fan-out", () => {
     });
   });
 
-  it("snapshots live channel state with unread counts", async () => {
+  it("snapshots live channel state with unread and mention counts", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
     await joinAndSettle(session, "Development");
+    const say = (message: string) =>
+      inject(session, {
+        cmd: "MSG",
+        payload: { character: "Nyx Firemane", message, channel: "Development" },
+      });
+    await say("unread me");
+    await say(`hey ${CHARACTER}, look at this`); // mention
+    await say("Amber Valery is someone else"); // word boundary: no match
     await inject(session, {
-      cmd: "MSG",
-      payload: {
-        character: "Nyx Firemane",
-        message: "unread me",
-        channel: "Development",
-      },
-    });
+      cmd: "SYS",
+      payload: { message: `${CHARACTER} joined`, channel: "Development" },
+    }); // sys rows never count as mentions
+    // Our own send names us but never counts as a mention (it does count
+    // toward unread, like every row past the read cursor — the ack on view
+    // clears it).
+    await session.sendChannelMessage(
+      "Development",
+      `I, ${CHARACTER}, speak of myself`,
+    );
     await app.history.flush();
+
+    // A conversation with more unread than the cap: counting stops at 99.
+    const [flooded] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Flooded",
+        title: "Flooded",
+      })
+      .returning();
+    await db.insert(messages).values(
+      Array.from({ length: 120 }, (_, i) => ({
+        conversationId: flooded!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `spam ${String(i + 1)}`,
+      })),
+    );
 
     const client = await connectClient();
     await client.hello(token);
@@ -610,15 +640,19 @@ describe("gateway fan-out", () => {
       character: CHARACTER,
       sessionStatus: "online",
     });
-    expect(snapshot.d.channels).toHaveLength(1);
-    const channel = snapshot.d.channels[0]!;
+    expect(snapshot.d.channels).toHaveLength(2);
+    const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
     expect(channel).toMatchObject({
       key: "Development",
       joined: true,
-      unread: 1,
+      unread: 5,
+      mentions: 1,
     });
     expect(channel.members.map((m) => m.character)).toContain(CHARACTER);
     expect(channel.description).not.toBe("");
+
+    const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
+    expect(capped).toMatchObject({ unread: 99, mentions: 0 });
   });
 
   it("replays missed messages via catchup, then streams live without duplicates", async () => {
