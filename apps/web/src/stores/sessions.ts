@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 import type {
+  OutboxItemDto,
   ConversationDto,
   GatewaySessionStatus,
   MemberDto,
@@ -60,6 +61,12 @@ export interface IdentitySession {
   ignores: string[];
   /** Live server VARs (bytes) from the snapshot — composer limits. */
   limits: { chatMax: number; privMax: number };
+  /** Channels where the server disallows [icon]/[eicon] (icon_blacklist). */
+  iconBlacklist: string[];
+  /** The user's delayed-send window (per-user; mirrored per slice). */
+  sendDelaySeconds: number;
+  /** Messages waiting in the server-side outbox for this identity. */
+  outbox: OutboxItemDto[];
   /** Keyed by channel key (events address channels by key). */
   channels: Record<string, ChannelView>;
   /** Keyed by conversation id. */
@@ -111,10 +118,16 @@ interface SessionsState {
       statusmsg: string;
       ignores: string[];
       limits: { chatMax: number; privMax: number };
+      iconBlacklist: string[];
+      sendDelaySeconds: number;
+      outbox: OutboxItemDto[];
     };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
   }): void;
+  /** Full pending-outbox overwrite (outbox.updated / snapshot). */
+  applyOutbox(identityId: string, items: OutboxItemDto[]): void;
+  applySendDelay(identityId: string, sendDelaySeconds: number): void;
   /** Full ignore-list overwrite (ignore.updated / snapshot). */
   applyIgnores(identityId: string, characters: string[]): void;
   applySessionStatus(
@@ -180,6 +193,9 @@ function emptySession(identityId: string): IdentitySession {
     ignores: [],
     // Placeholder until the snapshot delivers the live VARs.
     limits: { chatMax: 4096, privMax: 50000 },
+    iconBlacklist: [],
+    sendDelaySeconds: 0,
+    outbox: [],
     channels: {},
     dms: {},
     channelByConvId: {},
@@ -327,11 +343,22 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ownStatusmsg: d.self.statusmsg,
         ignores: [...d.self.ignores],
         limits: d.self.limits,
+        iconBlacklist: [...d.self.iconBlacklist],
+        sendDelaySeconds: d.self.sendDelaySeconds,
+        outbox: [...d.self.outbox],
         channels,
         dms,
         channelByConvId,
         synced: true,
       }));
+    },
+
+    applyOutbox(identityId, items) {
+      patch(identityId, (session) => ({ ...session, outbox: [...items] }));
+    },
+
+    applySendDelay(identityId, sendDelaySeconds) {
+      patch(identityId, (session) => ({ ...session, sendDelaySeconds }));
     },
 
     applyIgnores(identityId, characters) {

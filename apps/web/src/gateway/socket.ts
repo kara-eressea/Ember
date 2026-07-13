@@ -29,6 +29,8 @@ export interface AckResult {
   ok: boolean;
   error?: string;
   conversation?: ConversationDto;
+  /** outbox.recall: the typed source, back to the composer. */
+  markdown?: string;
 }
 
 interface PendingAck {

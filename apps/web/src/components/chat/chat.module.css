@@ -632,3 +632,36 @@
   font-size: 12px;
   font-weight: 700;
 }
+
+/* Delayed sends parked in the server outbox (local echo, M4). */
+.pendingBlock {
+  padding: 2px 16px 6px;
+}
+
+.pendingLine {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  opacity: 0.65;
+}
+
+.pendingMeta {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.blacklistWarning {
+  align-self: center;
+  font-size: 11px;
+  color: var(--eb-warn);
+}
+
+.delaySelect {
+  border: 0;
+  background: none;
+  color: var(--eb-faint);
+  font-size: 11px;
+  cursor: pointer;
+}

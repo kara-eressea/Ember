@@ -42,6 +42,9 @@ function session(): IdentitySession {
     ownStatusmsg: "",
     ignores: [],
     limits: { chatMax: 4096, privMax: 50000 },
+    iconBlacklist: [],
+    sendDelaySeconds: 0,
+    outbox: [],
     channels: {
       Frontpage: {
         convId: "c-1",

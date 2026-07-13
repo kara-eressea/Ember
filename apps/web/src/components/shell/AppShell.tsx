@@ -243,6 +243,7 @@ export function AppShell() {
             <Composer
               session={session}
               convId={convId}
+              channelKey={channel?.key}
               placeholder={
                 conversation.kind === "channel"
                   ? `Message #${conversation.channel.title}`

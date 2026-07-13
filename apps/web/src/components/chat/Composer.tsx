@@ -8,7 +8,10 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
-import type { IdentitySession } from "../../stores/sessions.js";
+import {
+  useSessionsStore,
+  type IdentitySession,
+} from "../../stores/sessions.js";
 import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
@@ -30,6 +33,8 @@ function savedMarkdownMode(): boolean {
 export interface ComposerProps {
   session: IdentitySession;
   convId: string;
+  /** Channel key when the conversation is a channel (icon_blacklist check). */
+  channelKey?: string;
   /** Channel key when the conversation is a channel we are not live in. */
   rejoinKey?: string;
   placeholder: string;
@@ -40,6 +45,7 @@ export interface ComposerProps {
 export function Composer({
   session,
   convId,
+  channelKey,
   rejoinKey,
   placeholder,
   maxBytes,
@@ -55,6 +61,9 @@ export function Composer({
   // What actually goes on the wire — and what the server's limit measures.
   const wire = markdown ? mdToBBCode(text) : text;
   const bytes = utf8.encode(wire).length;
+  const pending = session.outbox.filter((item) => item.convId === convId);
+  const iconsBlacklisted =
+    channelKey !== undefined && session.iconBlacklist.includes(channelKey);
 
   function autogrow() {
     const el = inputRef.current;
@@ -113,7 +122,11 @@ export function Composer({
     const ack = await gateway.cmd({
       identityId: session.identityId,
       action: "msg.send",
-      d: { convId, bbcode: body },
+      // The typed source rides along: a delayed send must recall to what
+      // the user wrote, not the translated wire form.
+      d: markdown
+        ? { convId, bbcode: body, markdown: text.trim() }
+        : { convId, bbcode: body },
     });
     setBusy(false);
     if (!ack.ok) {
@@ -128,7 +141,38 @@ export function Composer({
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send();
+      return;
     }
+    // ArrowUp in an empty composer recalls the newest pending send — the
+    // outbox row dies and what the user typed comes back for editing.
+    if (event.key === "ArrowUp" && text === "" && pending.length > 0) {
+      event.preventDefault();
+      void recall(pending[pending.length - 1]!.id);
+    }
+  }
+
+  async function recall(outboxId: string) {
+    const ack = await gateway.cmd({
+      identityId: session.identityId,
+      action: "outbox.recall",
+      d: { outboxId },
+    });
+    if (ack.ok && ack.markdown !== undefined) {
+      setText(ack.markdown);
+      requestAnimationFrame(autogrow);
+    }
+  }
+
+  function setDelay(sendDelaySeconds: number) {
+    // Optimistic: prefs.updated converges every other tab.
+    useSessionsStore
+      .getState()
+      .applySendDelay(session.identityId, sendDelaySeconds);
+    void gateway.cmd({
+      identityId: session.identityId,
+      action: "prefs.set",
+      d: { sendDelaySeconds },
+    });
   }
 
   if (rejoinKey !== undefined) {
@@ -196,6 +240,11 @@ export function Composer({
           <button className={styles.miniButton} type="submit">
             Insert
           </button>
+          {iconsBlacklisted && (
+            <span className={styles.blacklistWarning} role="alert">
+              This channel disallows icons — the server will reject it.
+            </span>
+          )}
         </form>
       )}
       <div className={styles.inputBar}>
@@ -267,6 +316,20 @@ export function Composer({
         >
           Ⓜ Markdown
         </button>
+        <select
+          className={styles.delaySelect}
+          value={session.sendDelaySeconds}
+          aria-label="Send delay"
+          title="Hold sends in the server outbox — ArrowUp recalls"
+          onChange={(e) => {
+            setDelay(Number(e.target.value));
+          }}
+        >
+          <option value={0}>instant</option>
+          <option value={10}>10s delay</option>
+          <option value={30}>30s delay</option>
+          <option value={60}>60s delay</option>
+        </select>
         <span>Enter to send · Shift+Enter for newline</span>
         <span
           className={`${styles.charCounter} ${bytes > maxBytes ? (styles.charCounterOver ?? "") : ""}`}

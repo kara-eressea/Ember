@@ -111,6 +111,12 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "identities.reordered":
       sessions.applyIdentityOrder(event.d.order);
       return;
+    case "outbox.updated":
+      sessions.applyOutbox(identityId, event.d.items);
+      return;
+    case "prefs.updated":
+      sessions.applySendDelay(identityId, event.d.sendDelaySeconds);
+      return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);
       return;
