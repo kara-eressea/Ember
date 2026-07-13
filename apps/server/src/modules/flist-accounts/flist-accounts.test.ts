@@ -10,7 +10,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import { FchatSim } from "@emberline/fchat-sim";
+import { FchatSim } from "@emberchat/fchat-sim";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";

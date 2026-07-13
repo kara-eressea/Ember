@@ -5,7 +5,7 @@ import {
   parseServerCommand,
   serializeClientCommand,
   type ClientCommand,
-} from "@emberline/fchat-protocol";
+} from "@emberchat/fchat-protocol";
 import { FchatSim, rawDataToString } from "./sim-server.js";
 
 class TestClient {
@@ -111,7 +111,7 @@ function idn(
       account,
       ticket,
       character,
-      cname: "Emberline",
+      cname: "EmberChat",
       cversion: "0.0.0",
     },
   };
@@ -342,7 +342,7 @@ describe("login handshake", () => {
     const sim = await startSim();
     const client = await TestClient.connect(sim);
     client.sendRaw(
-      'IDN {"method":"apiKey","account":"amber@example.test","ticket":"x","character":"Amber Vale","cname":"Emberline","cversion":"0.0.0"}',
+      'IDN {"method":"apiKey","account":"amber@example.test","ticket":"x","character":"Amber Vale","cname":"EmberChat","cversion":"0.0.0"}',
     );
     expect(parseServerCommand(await client.next())).toMatchObject({
       cmd: "ERR",

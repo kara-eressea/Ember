@@ -12,7 +12,7 @@ let root: string;
 let app: FastifyInstance;
 
 beforeAll(async () => {
-  root = await mkdtemp(path.join(tmpdir(), "emberline-webdist-"));
+  root = await mkdtemp(path.join(tmpdir(), "emberchat-webdist-"));
   await writeFile(
     path.join(root, "index.html"),
     "<!doctype html><html><head><title>x</title></head><body></body></html>",

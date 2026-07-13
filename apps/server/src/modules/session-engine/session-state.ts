@@ -8,7 +8,7 @@ import {
   DEFAULT_SERVER_VARS,
   type ServerCommand,
   type ServerVars,
-} from "@emberline/fchat-protocol";
+} from "@emberchat/fchat-protocol";
 
 export type SessionStatus =
   | "idle"

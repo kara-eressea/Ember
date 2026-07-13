@@ -9,7 +9,7 @@
       "dependsOn": ["^build"]
     },
     "e2e": {
-      "dependsOn": ["^build", "@emberline/server#build"],
+      "dependsOn": ["^build", "@emberchat/server#build"],
       "cache": false
     }
   }

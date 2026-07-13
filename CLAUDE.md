@@ -1,4 +1,4 @@
-# Emberline
+# EmberChat
 
 A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat system of F-List.net. The server holds one F-Chat connection per character identity — even when no browser is attached — and browsers are synchronized views onto those server-held sessions. Headline features over the official client: staying online when the app closes, catch-up on missed history, Markdown composing (translated to F-Chat's BBCode subset on the wire), delayed-send "editing", multi-device login, granular highlight rules.
 
@@ -36,14 +36,14 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 - **F-List credentials are session-only, in memory ("bouncer-lite")** — never persisted. The in-memory vault lets sessions re-ticket and auto-reconnect while the server process lives; a server restart logs everyone out of F-Chat until passwords are re-entered. At-rest storage is a possible future opt-in (see `design/decisions.md` §3).
 - **Postgres + Drizzle ORM**, Docker deployment on a VPS (docker-compose).
 - **Public open-source repo (MIT)** — strict secrets hygiene: env files gitignored, `.env.example` only, no real credentials in fixtures.
-- **"Emberline" is a working title** — keep product name and domains as config/tokens (including the IDN `cname`), never scattered string literals.
+- **"EmberChat" is a working title** — keep product name and domains as config/tokens (including the IDN `cname`), never scattered string literals.
 - **Workflow:** `main` always shippable; short-lived `feat/`/`fix/`/`chore/`/`docs/` branches; Conventional Commits; everything via squash-merged PRs gated by CI; no develop/integration branches (see `design/decisions.md` §7).
 - **Code style: idiomatic, current-generation stack.** Write idiomatic TypeScript/React/SQL — follow each tool's own conventions rather than inventing house patterns. Adopt recent stable versions at scaffold time (e.g. TypeScript 7, Postgres 18, current Node LTS) and pin majors; prefer upgrading dependencies over pinning old ones.
 - UI follows `design/ui/COMPONENTS.md` exactly — style against CSS custom-property tokens, never hard-coded hex; accents are user-swappable.
 
 ## Non-negotiable protocol constraints (F-List developer policy)
 
-- Identify with a unique `cname`/`cversion` (`Emberline/<semver>`) in `IDN` before anything else.
+- Identify with a unique `cname`/`cversion` (`EmberChat/<semver>`) in `IDN` before anything else.
 - Reply to `PIN` (never send more than one per 10s); reconnect backoff **≥ 10 seconds**; respect `VAR` flood/length limits at runtime (never hardcode them).
 - Send only well-structured BBCode from the supported chat subset (`b i u s sup sub color url user icon eicon noparse`).
 - Never crash on unknown commands — log and swallow.

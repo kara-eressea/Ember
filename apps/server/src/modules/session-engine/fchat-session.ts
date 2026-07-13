@@ -19,7 +19,7 @@ import {
   parseServerCommand,
   serializeClientCommand,
   type ClientCommand,
-} from "@emberline/fchat-protocol";
+} from "@emberchat/fchat-protocol";
 import {
   AccountLockedError,
   FlistAuthError,

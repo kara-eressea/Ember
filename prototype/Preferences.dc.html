@@ -124,7 +124,7 @@ class Component extends DCLogic {
       this.field('Clear away when I return','Send back-from-away as soon as you type or move.',this.toggle(true)),
       this.groupLabel('Chat logs'),
       this.field('Log conversations to disk','Stored locally, per channel and DM.',this.toggle(true)),
-      this.field('Storage location',null,this.input('~/emberline/logs',true)),
+      this.field('Storage location',null,this.input('~/emberchat/logs',true)),
       this.field('Export logs','Save a copy of your history.',this.h('div',{display:'flex',alignItems:'center',gap:'8px'},this.seg([{label:'.txt',mono:true},{label:'.html',mono:true},{label:'.json',mono:true}],0),this.btn('Export…',false))),
       this.field('Retention',null,this.seg(['30d','90d','1yr','Forever'],2)));
   }

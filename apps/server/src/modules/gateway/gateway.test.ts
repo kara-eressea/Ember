@@ -20,15 +20,15 @@ import {
   it,
   vi,
 } from "vitest";
-import { FchatSim } from "@emberline/fchat-sim";
-import { serializeServerCommand } from "@emberline/fchat-protocol";
+import { FchatSim } from "@emberchat/fchat-sim";
+import { serializeServerCommand } from "@emberchat/fchat-protocol";
 import {
   GATEWAY_CLOSE,
   PROTOCOL_VERSION,
   type ClientFrame,
   type ResumeCursors,
   type ServerFrame,
-} from "@emberline/protocol";
+} from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";

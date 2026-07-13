@@ -5,7 +5,7 @@
 // throws is logged and skipped — a broken consumer must not take the F-Chat
 // connection down with it.
 
-import type { ServerCommand } from "@emberline/fchat-protocol";
+import type { ServerCommand } from "@emberchat/fchat-protocol";
 import type { SessionStatus } from "./session-state.js";
 
 /** An outbound message that actually went onto the wire. The server never

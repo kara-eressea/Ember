@@ -47,7 +47,7 @@ const refreshBody = z.object({ refreshToken: z.string().min(1) });
 
 // Verified against when the email is unknown, so login latency does not
 // reveal whether an account exists.
-const dummyHash = await argon2.hash("emberline-timing-equalizer");
+const dummyHash = await argon2.hash("emberchat-timing-equalizer");
 
 export interface AuthRoutesOptions {
   db: Db;

@@ -12,7 +12,7 @@ import type {
   MemberDto,
   SnapshotChannel,
   SnapshotDm,
-} from "@emberline/protocol";
+} from "@emberchat/protocol";
 
 export interface ChannelView {
   convId: string;

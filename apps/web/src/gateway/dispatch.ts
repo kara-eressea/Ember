@@ -4,7 +4,7 @@
 // operations (gateway contract) — the sessions store applies them as
 // overwrites / set add-remove; only message.new is exactly-once.
 
-import type { GatewayEvent, ServerFrame } from "@emberline/protocol";
+import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";

@@ -3,7 +3,7 @@
 // so there is no Offline group. Avatars are the real F-List images,
 // lazy-loaded with the initial-on-color fallback (decisions.md §6).
 
-import type { MemberDto } from "@emberline/protocol";
+import type { MemberDto } from "@emberchat/protocol";
 import { presenceDot } from "../../lib/presence.js";
 import type { ChannelView } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";

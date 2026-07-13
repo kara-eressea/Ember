@@ -19,7 +19,7 @@ import {
   type GatewayEvent,
   type ResumeCursors,
   type ServerFrame,
-} from "@emberline/protocol";
+} from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { conversations, flistAccounts, identities } from "../../db/schema.js";
 import {

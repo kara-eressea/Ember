@@ -1,4 +1,4 @@
-// Smoke test against a running Emberline instance pointed at fchat-sim
+// Smoke test against a running EmberChat instance pointed at fchat-sim
 // (M1 step 11: "docker compose up → usable app against sim"). Walks the full
 // slice over the public surface: statics with injected config, register,
 // F-List account vaulting (ticket flow server↔sim), identity creation, and a

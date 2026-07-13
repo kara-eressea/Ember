@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApiTicketResponse } from "@emberline/fchat-protocol";
+import type { ApiTicketResponse } from "@emberchat/fchat-protocol";
 import type { GetApiTicketParams } from "./api-client.js";
 import {
   AccountLockedError,

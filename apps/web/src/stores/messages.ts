@@ -5,7 +5,7 @@
 // conversation doubles as the gateway resume cursor.
 
 import { create } from "zustand";
-import type { MessageDto } from "@emberline/protocol";
+import type { MessageDto } from "@emberchat/protocol";
 import { api } from "../lib/api.js";
 
 /** Keep at most this many rows per conversation; older rows re-load via REST. */

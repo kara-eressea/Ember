@@ -21,7 +21,7 @@ const configSchema = z.object({
     .url({ protocol: /^wss?$/ })
     .default("wss://chat.f-list.net/chat2"),
   FLIST_API_URL: z.url().default("https://www.f-list.net"),
-  APP_NAME: z.string().default("Emberline"),
+  APP_NAME: z.string().default("EmberChat"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
   /**
    * Absolute path to the built web app (apps/web/dist). When set, the server
@@ -29,7 +29,7 @@ const configSchema = z.object({
    * Unset in development, where Vite serves the web app itself.
    */
   WEB_DIST: z.string().optional(),
-  CLIENT_NAME: z.string().default("Emberline"),
+  CLIENT_NAME: z.string().default("EmberChat"),
   CLIENT_VERSION: z.string().default("0.0.0"),
   /** Comma-separated browser origins allowed by CORS. */
   CORS_ORIGIN: z.string().optional(),

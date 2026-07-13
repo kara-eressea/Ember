@@ -35,10 +35,10 @@ importers:
 
   apps/server:
     dependencies:
-      '@emberline/fchat-protocol':
+      '@emberchat/fchat-protocol':
         specifier: workspace:*
         version: link:../../packages/fchat-protocol
-      '@emberline/protocol':
+      '@emberchat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       '@fastify/cors':
@@ -81,7 +81,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@emberline/fchat-sim':
+      '@emberchat/fchat-sim':
         specifier: workspace:*
         version: link:../../packages/fchat-sim
       '@testcontainers/postgresql':
@@ -111,7 +111,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@emberline/protocol':
+      '@emberchat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       '@fontsource/ibm-plex-mono':
@@ -136,7 +136,7 @@ importers:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)
     devDependencies:
-      '@emberline/fchat-sim':
+      '@emberchat/fchat-sim':
         specifier: workspace:*
         version: link:../../packages/fchat-sim
       '@playwright/test':
@@ -182,7 +182,7 @@ importers:
 
   packages/fchat-sim:
     dependencies:
-      '@emberline/fchat-protocol':
+      '@emberchat/fchat-protocol':
         specifier: workspace:*
         version: link:../fchat-protocol
       ws:

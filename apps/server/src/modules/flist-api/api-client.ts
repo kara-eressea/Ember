@@ -6,7 +6,7 @@ import {
   API_TICKET_PATH,
   apiTicketResponseSchema,
   type ApiTicketResponse,
-} from "@emberline/fchat-protocol";
+} from "@emberchat/fchat-protocol";
 
 export interface GetApiTicketParams {
   account: string;

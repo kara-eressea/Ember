@@ -1,5 +1,5 @@
 # Dev-only services. Apps run on the host (HMR); this provides Postgres.
-# fchat-sim runs on the host too for now (`pnpm --filter @emberline/fchat-sim start`);
+# fchat-sim runs on the host too for now (`pnpm --filter @emberchat/fchat-sim start`);
 # it joins this file when the prod image exists (M1 step 11).
 #
 # Credentials below are local-dev fixtures, never used in production.
@@ -7,16 +7,16 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: emberline
-      POSTGRES_PASSWORD: emberline
-      POSTGRES_DB: emberline
+      POSTGRES_USER: emberchat
+      POSTGRES_PASSWORD: emberchat
+      POSTGRES_DB: emberchat
     ports:
       - "5432:5432"
     volumes:
       # postgres:18 images moved the volume mount up to /var/lib/postgresql
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U emberline"]
+      test: ["CMD-SHELL", "pg_isready -U emberchat"]
       interval: 5s
       timeout: 3s
       retries: 10

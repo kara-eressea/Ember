@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { MessageDto } from "@emberline/protocol";
+import type { MessageDto } from "@emberchat/protocol";
 import { dayKey, dayLabel, formatTime } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { nickColor } from "../../theme/tokens.js";

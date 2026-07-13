@@ -2,7 +2,7 @@
 // as re-loadable, and resume cursors.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { MessageDto } from "@emberline/protocol";
+import type { MessageDto } from "@emberchat/protocol";
 import {
   BUFFER_WINDOW,
   resumeCursorsFor,

@@ -9,7 +9,7 @@ import type {
   MessageDto,
   SnapshotChannel,
   SnapshotDm,
-} from "@emberline/protocol";
+} from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { conversations, messages } from "../../db/schema.js";
 import type { MessageRow } from "../history/sink.js";

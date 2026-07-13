@@ -4,7 +4,7 @@
 // duplicate joins, FLN as a global leave, unread convergence.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { MessageDto, ServerFrame } from "@emberline/protocol";
+import type { MessageDto, ServerFrame } from "@emberchat/protocol";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";

@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { FchatSim } from "@emberline/fchat-sim";
+import { FchatSim } from "@emberchat/fchat-sim";
 import { API_PORT } from "../playwright.config.js";
 
 const SERVER_ENTRY = fileURLToPath(

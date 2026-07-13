@@ -15,12 +15,12 @@ describe("serializeClientCommand", () => {
         account: "user@example.com",
         ticket: "fct_abc123",
         character: "Hexxy",
-        cname: "Emberline",
+        cname: "EmberChat",
         cversion: "0.1.0",
       },
     };
     expect(serializeClientCommand(command)).toBe(
-      'IDN {"method":"ticket","account":"user@example.com","ticket":"fct_abc123","character":"Hexxy","cname":"Emberline","cversion":"0.1.0"}',
+      'IDN {"method":"ticket","account":"user@example.com","ticket":"fct_abc123","character":"Hexxy","cname":"EmberChat","cversion":"0.1.0"}',
     );
   });
 
@@ -48,7 +48,7 @@ describe("parseClientCommand", () => {
         account: "user@example.com",
         ticket: "fct_abc123",
         character: "Hexxy",
-        cname: "Emberline",
+        cname: "EmberChat",
         cversion: "0.1.0",
       },
     },

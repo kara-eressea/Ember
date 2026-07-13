@@ -23,7 +23,7 @@
 - Exact expected rendering/etiquette for LRP ads and RLL results in third-party clients.
 - How fresh are ORS room counts, and how long is it acceptable to cache the channel directory?
 - Test-server access turnaround time — file the helpdesk ticket at project start.
-- **Final product name + domain** — "emberline" is a working title (decisions.md §5). Needed before public launch: domain registration, Brevo sender domain/DKIM, and the `cname` client identification.
+- **Final product name + domain** — "emberchat" is a working title (decisions.md §5). Needed before public launch: domain registration, Brevo sender domain/DKIM, and the `cname` client identification.
 
 ## Resolved
 

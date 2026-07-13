@@ -2,7 +2,7 @@
 // are "online" without a socket behind them. Everything here is fixture data
 // — never real F-List credentials.
 
-import type { ChannelMode } from "@emberline/fchat-protocol";
+import type { ChannelMode } from "@emberchat/fchat-protocol";
 
 export interface SimAccount {
   readonly password: string;

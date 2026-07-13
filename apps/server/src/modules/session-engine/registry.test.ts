@@ -3,7 +3,7 @@
 // TicketManager, so starting both must not churn tickets).
 
 import { afterEach, describe, expect, it } from "vitest";
-import { FchatSim } from "@emberline/fchat-sim";
+import { FchatSim } from "@emberchat/fchat-sim";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
 import { CredentialVault } from "../flist-accounts/vault.js";
@@ -38,7 +38,7 @@ async function makeRegistry(): Promise<{
   const registry = new SessionRegistry({
     tickets,
     wsUrl: sim.wsUrl,
-    clientName: "Emberline-test",
+    clientName: "EmberChat-test",
     clientVersion: "0.0.0",
   });
   cleanups.push(() => {
