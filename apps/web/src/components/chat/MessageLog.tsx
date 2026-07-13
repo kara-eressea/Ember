@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { MessageDto } from "@emberchat/protocol";
+import type { MessageDto, OutboxItemDto } from "@emberchat/protocol";
 import { formatTime } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { useSessionsStore } from "../../stores/sessions.js";
@@ -18,6 +18,7 @@ import styles from "./chat.module.css";
 
 const EMPTY: MessageDto[] = [];
 const EMPTY_IGNORES: string[] = [];
+const EMPTY_OUTBOX: OutboxItemDto[] = [];
 /** Scroll-up distance that triggers the next history page. */
 const LOAD_OLDER_THRESHOLD_PX = 120;
 /** Within this of the bottom still counts as "at the bottom". */
@@ -43,6 +44,10 @@ export function MessageLog({
   const ignores = useSessionsStore(
     (s) => s.sessions[identityId]?.ignores ?? EMPTY_IGNORES,
   );
+  const outbox = useSessionsStore(
+    (s) => s.sessions[identityId]?.outbox ?? EMPTY_OUTBOX,
+  );
+  const pending = outbox.filter((item) => item.convId === convId);
   const rows = useMemo(
     () => buildRows(messages, newSinceId, ignores),
     [messages, newSinceId, ignores],
@@ -186,6 +191,47 @@ export function MessageLog({
           );
         })}
       </div>
+      {pending.length > 0 && (
+        <div className={styles.pendingBlock}>
+          {pending.map((item) => (
+            <PendingLine key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A message still parked in the server-side outbox: the local echo of a
+ * delayed send. It reconciles for free — release clears it via
+ * outbox.updated and the real message arrives as message.new. ArrowUp in
+ * the empty composer recalls the newest one.
+ */
+function PendingLine({ item }: { item: OutboxItemDto }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
+  const seconds = Math.max(
+    0,
+    Math.ceil((new Date(item.releaseAt).getTime() - now) / 1000),
+  );
+  return (
+    <div className={styles.pendingLine} data-testid="pending-send">
+      <span className={styles.body}>
+        <RichText bbcode={item.bbcode} />
+      </span>
+      <span className={styles.pendingMeta}>
+        {item.state === "failed"
+          ? "could not send — ArrowUp to recall"
+          : `sending in ${String(seconds)}s`}
+      </span>
     </div>
   );
 }
