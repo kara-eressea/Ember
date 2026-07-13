@@ -21,7 +21,10 @@ import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
-import { SessionRegistry } from "./modules/session-engine/registry.js";
+import {
+  SessionRegistry,
+  type SessionTuning,
+} from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
 import { webStatic } from "./plugins/web-static.js";
 
@@ -38,6 +41,8 @@ export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
   /** Injectable for tests (e.g. a client with no request throttle). */
   flistApiClient?: FlistApiClient;
+  /** Test-only session timing knobs; production always runs policy defaults. */
+  sessionTuning?: SessionTuning;
 }
 
 export async function buildApp({
@@ -45,6 +50,7 @@ export async function buildApp({
   db,
   logger = true,
   flistApiClient,
+  sessionTuning,
 }: BuildAppOptions): Promise<FastifyInstance> {
   // Without the right trustProxy, every client behind a reverse proxy shares
   // the proxy's IP and the per-IP rate limits become one global bucket.
@@ -67,6 +73,7 @@ export async function buildApp({
     clientName: config.CLIENT_NAME,
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
+    tuning: sessionTuning,
     onSessionStarted: (identityId, session) => {
       // History first: message.new fan-out happens post-persistence via the
       // sink's bus, so the sink must see every command the hub translates.
