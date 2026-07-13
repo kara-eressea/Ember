@@ -111,22 +111,57 @@ export async function buildSnapshot(
   return { channels, dms };
 }
 
-/** The identity's conversation ids among `convIds` — resume cursors for
- * anything else (foreign or deleted conversations) are silently dropped. */
-export async function ownedConversationIds(
+export interface CatchupPlanEntry {
+  convId: string;
+  /** Replay strictly-after this messages.id. */
+  afterId: number;
+}
+
+/**
+ * Which conversations to replay on sub, and from where. Two regimes:
+ *
+ * - The client sent a cursor: it holds a contiguous buffer up to that id, so
+ *   replay everything past it — this is the headline catch-up path. Cursors
+ *   for foreign or deleted conversations are silently dropped (the plan is
+ *   built from the identity's own rows).
+ * - No cursor (conversation created or first seen while this client was
+ *   detached, or a fresh device): replay only the unread tail — from
+ *   lastReadMessageId, floored at `maxId - batchSize`. Ids are global across
+ *   conversations, so that floor is an id-space bound: at most `batchSize`
+ *   rows, usually fewer. A fully-read conversation replays nothing, and deep
+ *   history stays with REST backfill on open; replaying from id 0 would
+ *   stream entire histories to every new device.
+ */
+export async function catchupPlan(
   db: Db,
   identityId: string,
-  convIds: string[],
-): Promise<Set<string>> {
-  if (convIds.length === 0) {
-    return new Set();
-  }
+  cursors: Record<string, number>,
+  batchSize: number,
+): Promise<CatchupPlanEntry[]> {
   const rows = await db
-    .select({ id: conversations.id })
+    .select({
+      id: conversations.id,
+      lastRead: conversations.lastReadMessageId,
+      maxId: sql<number>`coalesce(max(${messages.id}), 0)`,
+    })
     .from(conversations)
-    .where(eq(conversations.identityId, identityId));
-  const owned = new Set(rows.map((r) => r.id));
-  return new Set(convIds.filter((id) => owned.has(id)));
+    .leftJoin(messages, eq(messages.conversationId, conversations.id))
+    .where(eq(conversations.identityId, identityId))
+    .groupBy(conversations.id);
+
+  const plan: CatchupPlanEntry[] = [];
+  for (const row of rows) {
+    const cursor = cursors[row.id];
+    if (cursor !== undefined) {
+      plan.push({ convId: row.id, afterId: cursor });
+      continue;
+    }
+    const afterId = Math.max(row.lastRead ?? 0, row.maxId - batchSize);
+    if (afterId < row.maxId) {
+      plan.push({ convId: row.id, afterId });
+    }
+  }
+  return plan;
 }
 
 /** One ascending catchup batch: messages strictly after the cursor. */
