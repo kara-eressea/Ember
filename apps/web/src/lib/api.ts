@@ -54,7 +54,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
   /** Attach the bearer token and retry once through a refresh on 401. */
   auth?: boolean;
@@ -199,6 +199,14 @@ export const api = {
   deleteIdentity(id: string) {
     return apiRequest<undefined>(`/identities/${id}`, {
       method: "DELETE",
+      auth: true,
+    });
+  },
+  /** Full rail order — must list every identity exactly once. */
+  reorderIdentities(ids: string[]) {
+    return apiRequest<undefined>("/identities/order", {
+      method: "PUT",
+      body: { ids },
       auth: true,
     });
   },

@@ -864,6 +864,23 @@ describe("gateway fan-out", () => {
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
   });
 
+  it("a rail reorder fans out as identities.reordered", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/identities/order",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [identityId] },
+    });
+    expect(response.statusCode).toBe(204);
+    const evt = await client.nextEvent("identities.reordered");
+    expect(eventPayload<{ order: string[] }>(evt).order).toEqual([identityId]);
+  });
+
   it("status.set fans out as presence and lands in the next snapshot's self", async () => {
     const { identityId, token } = await createIdentity();
     await startSession(identityId);

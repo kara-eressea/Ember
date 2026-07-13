@@ -2,7 +2,7 @@
 // character on one of the user's accounts; the IdentityPicker creates them
 // and the gateway connects them.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -142,6 +142,17 @@ export async function identitiesRoutes(
         }
         throw error;
       }
+      // New identities join the end of the rail. Computed per user (the rail
+      // spans accounts); a concurrent create may tie, which the stable
+      // (sortOrder, createdAt) read order resolves.
+      const [tail] = await db
+        .select({ max: max(identities.sortOrder) })
+        .from(identities)
+        .innerJoin(
+          flistAccounts,
+          eq(identities.flistAccountId, flistAccounts.id),
+        )
+        .where(eq(flistAccounts.userId, request.user.sub));
       try {
         const [identity] = await db
           .insert(identities)
@@ -151,6 +162,7 @@ export async function identitiesRoutes(
             // A freshly picked identity's intent is to be online: it counts
             // for unlock auto-connect until an explicit disconnect clears it.
             autoConnect: true,
+            sortOrder: (tail?.max ?? -1) + 1,
           })
           .returning();
         return await reply
@@ -162,6 +174,57 @@ export async function identitiesRoutes(
         }
         throw error;
       }
+    },
+  );
+
+  // Rail reorder: the full identity order in one idempotent replacement.
+  // Requires an exact permutation — a stale tab reordering a list that just
+  // gained or lost an identity should fail loudly, not scramble sortOrder.
+  app.put(
+    "/order",
+    {
+      schema: {
+        body: z.object({ ids: z.array(z.uuid()).min(1).max(64) }),
+        response: { 204: z.null(), 422: errorResponse },
+      },
+    },
+    async (request, reply) => {
+      const rows = await db
+        .select({ id: identities.id })
+        .from(identities)
+        .innerJoin(
+          flistAccounts,
+          eq(identities.flistAccountId, flistAccounts.id),
+        )
+        .where(eq(flistAccounts.userId, request.user.sub));
+      const owned = new Set(rows.map((row) => row.id));
+      const { ids } = request.body;
+      if (
+        ids.length !== owned.size ||
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => !owned.has(id))
+      ) {
+        return reply
+          .code(422)
+          .send({ error: "ids must list every identity exactly once" });
+      }
+      await db.transaction(async (tx) => {
+        for (const [index, id] of ids.entries()) {
+          await tx
+            .update(identities)
+            .set({ sortOrder: index })
+            .where(eq(identities.id, id));
+        }
+      });
+      // Every tab re-sorts its rail; duplicates (one per subscribed
+      // identity) are idempotent.
+      for (const id of ids) {
+        hub.broadcast(id, {
+          kind: "identities.reordered",
+          d: { order: ids },
+        });
+      }
+      return reply.code(204).send(null);
     },
   );
 

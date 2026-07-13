@@ -90,6 +90,9 @@ interface SessionsState {
 
   applyReady(identities: IdentitySummary[]): void;
   setAutoConnect(identityId: string, value: boolean): void;
+  /** Re-sorts the rail; ids missing from `order` keep their relative place
+   * at the end (a create racing the reorder must not vanish). */
+  applyIdentityOrder(order: string[]): void;
   applySnapshot(d: {
     identityId: string;
     self: {
@@ -242,6 +245,20 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             : identity,
         ),
       }));
+    },
+
+    applyIdentityOrder(order) {
+      set((state) => {
+        if (!state.identities) {
+          return {};
+        }
+        const rank = new Map(order.map((id, index) => [id, index]));
+        const identities = [...state.identities].sort(
+          (a, b) =>
+            (rank.get(a.id) ?? order.length) - (rank.get(b.id) ?? order.length),
+        );
+        return { identities };
+      });
     },
 
     applySnapshot(d) {

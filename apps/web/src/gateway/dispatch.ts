@@ -108,6 +108,9 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // could silently reconnect an identity logged off in another tab.
       sessions.setAutoConnect(identityId, event.d.autoConnect);
       return;
+    case "identities.reordered":
+      sessions.applyIdentityOrder(event.d.order);
+      return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;
