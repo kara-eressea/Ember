@@ -49,6 +49,9 @@ function snapshot(): ServerFrame {
         statusmsg: "",
         ignores: [],
         limits: { chatMax: 4096, privMax: 50000 },
+        iconBlacklist: [],
+        sendDelaySeconds: 0,
+        outbox: [],
       },
       channels: [
         {

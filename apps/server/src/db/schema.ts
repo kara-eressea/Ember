@@ -146,21 +146,39 @@ export const messages = pgTable(
   ],
 );
 
-// Delayed-send queue — used from M4, but the table exists from day one.
-export const outboxMessages = pgTable("outbox_messages", {
-  id: uuid().primaryKey().default(uuidv7),
-  identityId: uuid()
-    .notNull()
-    .references(() => identities.id, { onDelete: "cascade" }),
-  conversationId: uuid()
-    .notNull()
-    .references(() => conversations.id, { onDelete: "cascade" }),
-  markdown: text().notNull(),
-  bbcode: text().notNull(),
-  releaseAt: timestamp({ withTimezone: true }).notNull(),
-  /** Value set finalized in M4; plain text until then. */
-  state: text().notNull().default("scheduled"),
-  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+// Delayed-send queue. Rows live only while pending: released and recalled
+// messages are deleted (the messages table holds what actually went out).
+// A row that could not be sent at release keeps state="failed" so the user
+// can see what never left.
+export const outboxMessages = pgTable(
+  "outbox_messages",
+  {
+    id: uuid().primaryKey().default(uuidv7),
+    identityId: uuid()
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    conversationId: uuid()
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    markdown: text().notNull(),
+    bbcode: text().notNull(),
+    releaseAt: timestamp({ withTimezone: true }).notNull(),
+    /** "scheduled" | "failed" (release send refused). */
+    state: text().notNull().default("scheduled"),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  // The release worker's poll: due scheduled rows in release order.
+  (t) => [index("outbox_release_idx").on(t.state, t.releaseAt)],
+);
+
+// Per-user behavior preferences (M4+). Absent row = all defaults.
+export const userPreferences = pgTable("user_preferences", {
+  userId: uuid()
+    .primaryKey()
+    .references(() => appUsers.id, { onDelete: "cascade" }),
+  /** Delayed-send window in seconds; 0 sends immediately. */
+  sendDelaySeconds: integer().notNull().default(0),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
 export const ignores = pgTable(
