@@ -846,6 +846,7 @@ describe("gateway fan-out", () => {
       sessionStatus: "online",
       status: "online",
       statusmsg: "",
+      ignores: [],
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000 },
     });
@@ -862,6 +863,59 @@ describe("gateway fan-out", () => {
 
     const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("ignore.add/remove drive IGN, fan out the list, persist the mirror, and keep messages", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "ignore.add", d: { character: "Nyx Firemane" } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    // The server's IGN ack fans the whole list out.
+    const updated = await client.nextEvent("ignore.updated");
+    expect(eventPayload<{ characters: string[] }>(updated).characters).toEqual([
+      "Nyx Firemane",
+    ]);
+
+    // An inbound PRI from the ignored character is still persisted and
+    // fanned out — hiding is the render's job, history keeps everything.
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "you can't hear me" },
+    });
+    const msg = await client.nextEvent("message.new");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(msg).message.bbcode,
+    ).toBe("you can't hear me");
+
+    // The persisted mirror serves snapshots (works without a live session).
+    await app.history.flush();
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self.ignores).toEqual(["Nyx Firemane"]);
+
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "ignore.remove",
+        d: { character: "Nyx Firemane" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    const removed = await client.nextEvent("ignore.updated");
+    expect(eventPayload<{ characters: string[] }>(removed).characters).toEqual(
+      [],
+    );
   });
 
   it("a rail reorder fans out as identities.reordered", async () => {

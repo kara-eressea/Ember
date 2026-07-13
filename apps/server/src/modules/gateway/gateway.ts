@@ -197,6 +197,14 @@ function translateCommand(
           oplist: [...command.payload.oplist],
         },
       };
+    case "IGN":
+      // Any list change (init at login, add/delete acks) fans the whole
+      // list out — session state already folded this command in, so the
+      // map holds the post-change truth.
+      return {
+        kind: "ignore.updated",
+        d: { characters: [...session.state.ignores.values()] },
+      };
     case "LIS":
       // The already-online roster streams in batches after identify; a
       // client whose snapshot raced it would otherwise show everyone

@@ -53,3 +53,22 @@ describe("buildRows new-since divider", () => {
     expect(shape(rows)).toEqual(["divider", "new", "m5", "m6"]);
   });
 });
+
+describe("buildRows ignore filtering", () => {
+  it("hides ignored senders case-insensitively but never our own sends", () => {
+    const rows = buildRows([msg(1), msg(2, true), msg(3)], null, [
+      "NYX FIREMANE",
+    ]);
+    expect(shape(rows)).toEqual(["divider", "m2"]);
+  });
+
+  it("drops the day divider when a day is entirely ignored", () => {
+    const rows = buildRows([msg(1), msg(2)], null, ["Nyx Firemane"]);
+    expect(shape(rows)).toEqual([]);
+  });
+
+  it("an empty ignore list changes nothing", () => {
+    const rows = buildRows([msg(1), msg(2)], 1, []);
+    expect(shape(rows)).toEqual(["divider", "m1", "new", "m2"]);
+  });
+});

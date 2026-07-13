@@ -22,6 +22,7 @@ function slice(overrides: Partial<IdentitySession>): IdentitySession {
     sessionStatus: "online",
     ownStatus: "online",
     ownStatusmsg: "",
+    ignores: [],
     limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
     dms: {},

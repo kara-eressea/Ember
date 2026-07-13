@@ -47,6 +47,7 @@ function snapshot(): ServerFrame {
         sessionStatus: "online",
         status: "online",
         statusmsg: "",
+        ignores: [],
         limits: { chatMax: 4096, privMax: 50000 },
       },
       channels: [
@@ -268,6 +269,17 @@ describe("presence", () => {
     expect(dm?.statusmsg).toBe("Open!");
     // The snapshot carried the live limits too.
     expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000 });
+  });
+
+  it("ignore.updated overwrites the ignore list", () => {
+    dispatchFrame(snapshot());
+    expect(session().ignores).toEqual([]);
+    dispatchFrame(
+      event("ignore.updated", { characters: ["Nyx Firemane", "Tally Marsh"] }),
+    );
+    expect(session().ignores).toEqual(["Nyx Firemane", "Tally Marsh"]);
+    dispatchFrame(event("ignore.updated", { characters: [] }));
+    expect(session().ignores).toEqual([]);
   });
 
   it("our own STA converges the MeBar/rail status", () => {

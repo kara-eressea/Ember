@@ -58,10 +58,20 @@ const resumeSchema = z
   });
 
 /**
- * Gateway commands (M1 core + M2 `conv.pin` + M3 `status.set`). `typing.set`
- * and `ignore.add/remove` join in their milestones.
+ * Gateway commands (M1 core + M2 `conv.pin` + M3 `status.set`,
+ * `ignore.add/remove`). `typing.set` joins in its milestone.
  */
 const cmdSchema = z.discriminatedUnion("action", [
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("ignore.add"),
+    d: z.object({ character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("ignore.remove"),
+    d: z.object({ character: characterName }),
+  }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("status.set"),
@@ -274,6 +284,12 @@ export type GatewayEvent =
     }
   | { kind: "identity.updated"; d: { autoConnect: boolean } }
   | {
+      kind: "ignore.updated";
+      /** The full ignore list after a change (IGN init/add/delete) — an
+       * idempotent overwrite like every other volatile event. */
+      d: { characters: string[] };
+    }
+  | {
       kind: "identities.reordered";
       /** The user's full identity order (rail order). Broadcast to every
        * identity's subscribers, so a tab subscribed to all of them applies
@@ -319,6 +335,10 @@ export type ServerFrame =
            * across reconnects). "online"/"" while no session is live. */
           status: string;
           statusmsg: string;
+          /** The identity's ignore list (persisted mirror — served with or
+           * without a live session). Messages from these characters are
+           * hidden from render client-side but still persisted. */
+          ignores: string[];
           /** Live server VARs (bytes) — composer limits, never hardcoded. */
           limits: { chatMax: number; privMax: number };
         };
