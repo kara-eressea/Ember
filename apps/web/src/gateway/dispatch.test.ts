@@ -42,7 +42,11 @@ function snapshot(): ServerFrame {
     t: "snapshot",
     d: {
       identityId: IDENTITY,
-      self: { character: "Amber Vale", sessionStatus: "online" },
+      self: {
+        character: "Amber Vale",
+        sessionStatus: "online",
+        limits: { chatMax: 4096, privMax: 50000 },
+      },
       channels: [
         {
           convId: CONV_CHANNEL,
@@ -240,6 +244,28 @@ describe("presence", () => {
       }),
     );
     expect(session().dms[CONV_DM]?.status).toBe("busy");
+  });
+
+  it("presence.bulk (LIS roster) brings DM partners online, case-insensitively", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    expect(session().dms[CONV_DM]?.online).toBe(false);
+    dispatchFrame(
+      event("presence.bulk", {
+        characters: [
+          ["Somebody Else", "None", "online", ""],
+          ["NYX FIREMANE", "Female", "looking", "Open!"],
+        ],
+      }),
+    );
+    const dm = session().dms[CONV_DM];
+    expect(dm?.online).toBe(true);
+    expect(dm?.status).toBe("looking");
+    expect(dm?.statusmsg).toBe("Open!");
+    // The snapshot carried the live limits too.
+    expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000 });
   });
 });
 

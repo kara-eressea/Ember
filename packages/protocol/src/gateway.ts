@@ -243,6 +243,14 @@ export type GatewayEvent =
         statusmsg?: string;
       };
     }
+  | {
+      kind: "presence.bulk";
+      /** One LIS roster batch ([name, gender, status, statusmsg]) — the
+       * already-online world streams in AFTER identify, so a snapshot taken
+       * while it streams would otherwise show everyone offline until their
+       * next status change. */
+      d: { characters: [string, string, string, string][] };
+    }
   | { kind: "typing"; d: { character: string; status: string } }
   | {
       kind: "session.status";
@@ -273,7 +281,12 @@ export type ServerFrame =
       t: "snapshot";
       d: {
         identityId: string;
-        self: { character: string; sessionStatus: GatewaySessionStatus };
+        self: {
+          character: string;
+          sessionStatus: GatewaySessionStatus;
+          /** Live server VARs (bytes) — composer limits, never hardcoded. */
+          limits: { chatMax: number; privMax: number };
+        };
         channels: SnapshotChannel[];
         dms: SnapshotDm[];
       };

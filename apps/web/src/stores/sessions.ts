@@ -52,6 +52,8 @@ export interface IdentitySession {
   character: string;
   sessionStatus: GatewaySessionStatus;
   statusReason?: string;
+  /** Live server VARs (bytes) from the snapshot — composer limits. */
+  limits: { chatMax: number; privMax: number };
   /** Keyed by channel key (events address channels by key). */
   channels: Record<string, ChannelView>;
   /** Keyed by conversation id. */
@@ -82,7 +84,11 @@ interface SessionsState {
   setAutoConnect(identityId: string, value: boolean): void;
   applySnapshot(d: {
     identityId: string;
-    self: { character: string; sessionStatus: GatewaySessionStatus };
+    self: {
+      character: string;
+      sessionStatus: GatewaySessionStatus;
+      limits: { chatMax: number; privMax: number };
+    };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
   }): void;
@@ -126,6 +132,11 @@ interface SessionsState {
       statusmsg?: string;
     },
   ): void;
+  /** One LIS roster batch — [name, gender, status, statusmsg]. */
+  applyPresenceBulk(
+    identityId: string,
+    characters: [string, string, string, string][],
+  ): void;
   applyTyping(identityId: string, character: string, status: string): void;
   applyNotice(identityId: string, kind: "sys" | "error", text: string): void;
   clearNotice(identityId: string): void;
@@ -139,6 +150,8 @@ function emptySession(identityId: string): IdentitySession {
     identityId,
     character: "",
     sessionStatus: "offline",
+    // Placeholder until the snapshot delivers the live VARs.
+    limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
     dms: {},
     channelByConvId: {},
@@ -240,6 +253,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ...session,
         character: d.self.character,
         sessionStatus: d.self.sessionStatus,
+        limits: d.self.limits,
         channels,
         dms,
         channelByConvId,
@@ -434,6 +448,34 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           ]),
         );
         return { ...session, channels, dms };
+      });
+    },
+
+    applyPresenceBulk(identityId, characters) {
+      patch(identityId, (session) => {
+        const byLower = new Map(
+          characters.map(([name, gender, status, statusmsg]) => [
+            name.toLowerCase(),
+            { gender, status, statusmsg },
+          ]),
+        );
+        const dms = Object.fromEntries(
+          Object.entries(session.dms).map(([convId, dm]) => {
+            const presence = byLower.get(dm.partner.toLowerCase());
+            return [
+              convId,
+              presence
+                ? {
+                    ...dm,
+                    online: true,
+                    status: presence.status,
+                    statusmsg: presence.statusmsg,
+                  }
+                : dm,
+            ];
+          }),
+        );
+        return { ...session, dms };
       });
     },
 

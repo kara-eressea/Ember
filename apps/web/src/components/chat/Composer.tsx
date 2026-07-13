@@ -2,10 +2,15 @@
 // format is BBCode and raw text passes through untouched; the Markdown layer
 // with live preview is M4. Enter sends, Shift+Enter breaks the line.
 
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { gateway } from "../../gateway/socket.js";
 import type { IdentitySession } from "../../stores/sessions.js";
 import styles from "./chat.module.css";
+
+/** The textarea grows with its content up to this, then scrolls. */
+const MAX_INPUT_HEIGHT_PX = 160;
+
+const utf8 = new TextEncoder();
 
 export interface ComposerProps {
   session: IdentitySession;
@@ -13,6 +18,8 @@ export interface ComposerProps {
   /** Channel key when the conversation is a channel we are not live in. */
   rejoinKey?: string;
   placeholder: string;
+  /** Byte limit for this conversation kind (live server VAR). */
+  maxBytes: number;
 }
 
 export function Composer({
@@ -20,11 +27,23 @@ export function Composer({
   convId,
   rejoinKey,
   placeholder,
+  maxBytes,
 }: ComposerProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
+  // The server measures the limit in UTF-8 bytes, so count what it counts.
+  const bytes = utf8.encode(text).length;
+
+  function autogrow() {
+    const el = inputRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${String(Math.min(el.scrollHeight, MAX_INPUT_HEIGHT_PX))}px`;
+    }
+  }
 
   async function send() {
     const bbcode = text.trim();
@@ -44,6 +63,7 @@ export function Composer({
       return;
     }
     setText("");
+    requestAnimationFrame(autogrow);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -85,11 +105,13 @@ export function Composer({
       )}
       <div className={styles.inputBar}>
         <textarea
+          ref={inputRef}
           className={styles.composerInput}
           rows={1}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            autogrow();
           }}
           onKeyDown={onKeyDown}
           placeholder={online ? placeholder : "Session is not connected"}
@@ -98,7 +120,12 @@ export function Composer({
         />
       </div>
       <div className={styles.composerFooter}>
-        Enter to send · Shift+Enter for newline
+        <span>Enter to send · Shift+Enter for newline</span>
+        <span
+          className={`${styles.charCounter} ${bytes > maxBytes ? (styles.charCounterOver ?? "") : ""}`}
+        >
+          {bytes}/{maxBytes}
+        </span>
       </div>
     </div>
   );

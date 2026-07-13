@@ -202,7 +202,10 @@
 .composerInput {
   flex: 1;
   min-width: 0;
-  max-height: 120px;
+  /* Grows with content via the component (same cap), then scrolls. */
+  max-height: 160px;
+  overflow-y: auto;
+  resize: none;
   border: none;
   background: none;
   color: var(--eb-text);
@@ -218,7 +221,8 @@
 
 .composerFooter {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   padding: 5px 2px 0;
   color: var(--eb-faint);
   font-size: 11px;
@@ -393,4 +397,15 @@
 .pinChipActive {
   color: var(--eb-accent);
   border-color: var(--eb-accent-med);
+}
+
+/* Byte counter against the live server limit (never hardcoded). */
+.charCounter {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+}
+
+.charCounterOver {
+  color: var(--eb-danger);
+  font-weight: 700;
 }

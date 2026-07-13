@@ -119,6 +119,19 @@ export async function buildSnapshot(
 
   const counts = await conversationCounts(db, identityId, character);
 
+  // F-Chat resolves names case-insensitively, and a DM row keeps the casing
+  // of whoever created it — a typed lowercase partner must still find its
+  // presence entry.
+  const presenceByLower = new Map<
+    string,
+    { gender: string; status: string; statusmsg: string }
+  >();
+  if (session) {
+    for (const [name, presence] of session.state.characters) {
+      presenceByLower.set(name.toLowerCase(), presence);
+    }
+  }
+
   const channels: SnapshotChannel[] = [];
   const dms: SnapshotDm[] = [];
   for (const row of rows) {
@@ -145,7 +158,7 @@ export async function buildSnapshot(
       });
     } else {
       const partner = row.partnerCharacter ?? "";
-      const presence = session?.state.characters.get(partner);
+      const presence = presenceByLower.get(partner.toLowerCase());
       dms.push({
         convId: row.id,
         partner,

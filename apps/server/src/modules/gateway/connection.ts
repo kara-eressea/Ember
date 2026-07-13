@@ -9,6 +9,7 @@
 
 import type WebSocket from "ws";
 import { and, eq } from "drizzle-orm";
+import { DEFAULT_SERVER_VARS } from "@emberchat/fchat-protocol";
 import {
   clientFrameSchema,
   GATEWAY_CLOSE,
@@ -396,6 +397,7 @@ export class GatewayConnection {
       identity.character,
       session,
     );
+    const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
     this.#send({
       t: "snapshot",
       d: {
@@ -403,6 +405,7 @@ export class GatewayConnection {
         self: {
           character: identity.character,
           sessionStatus: session?.status ?? "offline",
+          limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
         },
         channels: snapshot.channels,
         dms: snapshot.dms,
