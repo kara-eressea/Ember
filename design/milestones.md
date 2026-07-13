@@ -8,7 +8,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 |---|---|---|---|---|
 | 1 | Thin vertical slice | done | — | [milestone-1-thin-vertical-slice.md](milestone-1-thin-vertical-slice.md) |
 | 2 | Always-online bouncer + catch-up | done | M1 | [milestone-2-always-online-bouncer.md](milestone-2-always-online-bouncer.md) |
-| 3 | Multi-identity | not started | M2 | [milestone-3-multi-identity.md](milestone-3-multi-identity.md) |
+| 3 | Multi-identity | in progress | M2 | [milestone-3-multi-identity.md](milestone-3-multi-identity.md) |
 | 4 | Markdown layer + delayed send | not started | M1 (parallel with M3) | [milestone-4-markdown-delayed-send.md](milestone-4-markdown-delayed-send.md) |
 | 5 | Highlights + preferences | not started | M3, M4 | [milestone-5-highlights-preferences.md](milestone-5-highlights-preferences.md) |
 | 6 | Channel browser + channel ops | not started | M1 (benefits from M3) | [milestone-6-channel-browser-ops.md](milestone-6-channel-browser-ops.md) |
@@ -49,6 +49,24 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 - [x] 7. Retention job scaffold (`history/retention.ts`, `RETENTION_*` config, default "Forever")
 - [x] 8. Milestone verification suite: detach/reattach exact catchup (no gaps/dupes); sim-drop → re-ticket + rejoin; restart → re-auth report → one unlock reconnects; two-device unread-badge convergence E2E
 
+## Milestone 3 step checklist
+
+> **Branching exception (active):** M3 is being built on a temporary `staging`
+> integration branch (the M2 pattern, at the user's request): feature branches
+> squash-merge into `staging` once CI is green; `staging` merges to `main` only
+> with the user's explicit sign-off. CI push trigger extended to `staging` for
+> the duration.
+
+A code audit against the milestone scope shows the server is already multi-identity-native: `SessionRegistry` holds N concurrent sessions per user, the per-account `TicketManager` coalesces ticket fetches (both covered by existing tests — the milestone's headline integration test essentially exists), one gateway socket carries per-identity subscriptions, and the web store/socket client are keyed by identityId. The steps below cover the actual gaps.
+
+- [ ] 1. Per-identity badge totals (server): aggregate unread/mention counts per identity in the `ready` payload (rail badges must paint before/without a sub), plus whatever live signal background identities need
+- [ ] 2. IdentityRail + full context swap (web): rail grid column + component per COMPONENTS.md §1 (avatar squircle/circle, presence dot, `@n`/unread badges, `+` add); AppShell subscribes **all** connected identities (today only the routed one — background badges never grow otherwise); click = route change = full context swap from the store slice
+- [ ] 3. Status setting end-to-end (STA): `FchatSession.setStatus`, gateway `status.set` cmd, MeBar status control (protocol schemas + sim STA already exist)
+- [ ] 4. Rail context menu + ordering: right-click menu (set status / reconnect / disconnect / reorder); `sortOrder` reorder endpoint + assignment on identity creation (column + read-ordering already wired)
+- [ ] 5. Ignore lists end-to-end (IGN): fchat-protocol IGN schemas, session ignore state + `ignores` table persistence (table exists, nothing touches it), gateway `ignore.add/remove` + snapshot carry, client-side filtering (hidden from render, still persisted) + `IGN notify` on ignored PRI, fchat-sim IGN support
+- [ ] 6. Human-readable URLs: `/app/<character>/c/<channel>` + `/app/<character>/dm/<partner>` (names as keys, case-insensitive, canonical casing restored), `@me` alias → last-active identity, old UUID routes redirect
+- [ ] 7. Milestone verification suite: E2E rail switch swaps sidebar/log/members/me-bar + background identity accumulates a badge while another is active; integration two-identities-one-ticket (extend existing); IGN state-transition units + filtered-but-persisted proof
+
 ## Standing to-dos (not milestone-gated)
 
 - [ ] Decide final product name + register domain (working title "emberchat"; gates Brevo DKIM and public launch — see `decisions.md` §5)
@@ -72,6 +90,7 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | **M3 started on a new `staging` branch** (the M2 pattern, per the user: feature PRs squash-merge into `staging` when green; `staging`→`main` needs explicit sign-off). Kickoff audit found the server already multi-identity-native (concurrent sessions, coalesced tickets, per-identity gateway subs — all tested); the 7-step checklist covers the real gaps: rail + context swap, per-identity badge totals, STA, reorder, IGN, human-readable URLs, verification. CI push trigger extended to `staging`. |
 | 2026-07-13 | **M1 signed off; M1 + M2 merged to `main`; v0.1.0 tagged.** Step 11's supervised pass ran against production F-Chat during the UAT session: register → identity → join channels → PMs both directions with the official client on the other side; PIN discipline held; the session survived tab closes (the bouncer property, observed live). Every UAT finding was fixed on `staging` (picker management, live-only LIS presence bug, composer growth + byte counter, padding) or scoped into its milestone (M3 URLs, M4 /me + BBCode surfaces, M5 aligned columns). `staging` merged back to `main` and deleted; CI push trigger back to `main` only. Next up: M3 (multi-identity) and/or M4 (Markdown layer) — independent, can run in parallel. |
 | 2026-07-13 | **Live UAT feedback round 2** (chat against production F-Chat confirmed working, first live conversation!). Fixed: DM presence was dead on live — the LIS roster streams *after* identify and produced no gateway events, so clients that raced it saw everyone offline until the next status change (sim world too small to catch it); LIS now fans out as `presence.bulk` and the snapshot's partner lookup is case-insensitive. Composer: auto-growing input (caps at 160px then scrolls) and a byte counter (`n/4096`) against the **live** chat_max/priv_max VARs, now carried in the snapshot (`self.limits`) — never hardcoded, danger-styled when over. Noted for later: `/me` slash-command + emote rendering → M4 scope; aligned-columns message layout → M5 Appearance prefs. Server 121, web 37. |
 | 2026-07-13 | **Identity/account management on the picker** (M1 UAT findings: no way to remove identities or accounts, the locked sim-era account bricked the read-only add form, no way to log a character off from the picker). Identity rows now show live session status with Disconnect (session live) / Connect / two-step Remove; the add flow gained an account chooser (unlock, remove, "use a different account", Manage accounts from the character grid) — the pre-M3 dead-end backlog item resolved early. New REST: `POST /identities/:id/connect` + `/disconnect` (the picker is REST-driven), sharing the §9 scenario logic with the gateway cmd via the extracted `connectIdentity` service (also resolves the audit's connect-duplication note); `GET /identities` carries `sessionStatus`. Server fix: deleting an F-List account now stops its identities' running sessions before the FK cascade orphans them (zombie sessions). E2E: picker connect→disconnect→remove flow + account chooser removal; MeBar log-off joined the M1-gate spec. Server 120, E2E 6 (one spec extended). |
