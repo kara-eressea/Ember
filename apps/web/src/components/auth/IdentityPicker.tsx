@@ -10,6 +10,7 @@ import {
   type FlistAccountDto,
   type IdentityDto,
 } from "../../lib/api.js";
+import { identityPath } from "../../lib/routes.js";
 import { useAuthStore } from "../../stores/auth.js";
 import { Avatar } from "../common/Avatar.js";
 import { AuthCard } from "./AuthCard.js";
@@ -110,7 +111,8 @@ export function IdentityPicker() {
             <button
               className={styles.connectButton}
               onClick={() => {
-                const open = () => navigate(`/app/${identity.id}`);
+                const open = () =>
+                  navigate(identityPath(identity.characterName));
                 if (live) {
                   void open();
                   return;

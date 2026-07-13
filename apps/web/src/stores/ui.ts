@@ -9,7 +9,8 @@ export type GatewayConnectionStatus = "connecting" | "online" | "offline";
 interface UiState {
   activeIdentityId: string | undefined;
   activeConvId: string | undefined;
-  /** Last conversation visited per identity — the rail returns there on
+  /** Last conversation visited per identity, as its canonical path suffix
+   * ("c/Frontpage", "dm/Nyx%20Firemane") — the rail returns there on
    * switch-back (Discord-style), instead of the empty landing pane. */
   lastConvByIdentity: Record<string, string>;
   /** The browser↔server socket, not the F-Chat session. */
@@ -21,6 +22,7 @@ interface UiState {
     identityId: string | undefined,
     convId: string | undefined,
   ) => void;
+  setLastConv: (identityId: string, suffix: string) => void;
   setGatewayStatus: (status: GatewayConnectionStatus) => void;
   toggleMembers: () => void;
 }
@@ -33,13 +35,14 @@ export const useUiStore = create<UiState>()((set) => ({
   membersOpen: true,
 
   setActive(identityId, convId) {
+    set({ activeIdentityId: identityId, activeConvId: convId });
+  },
+  setLastConv(identityId, suffix) {
     set((state) => ({
-      activeIdentityId: identityId,
-      activeConvId: convId,
-      lastConvByIdentity:
-        identityId !== undefined && convId !== undefined
-          ? { ...state.lastConvByIdentity, [identityId]: convId }
-          : state.lastConvByIdentity,
+      lastConvByIdentity: {
+        ...state.lastConvByIdentity,
+        [identityId]: suffix,
+      },
     }));
   },
   setGatewayStatus(status) {

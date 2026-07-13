@@ -47,8 +47,36 @@ export function AppRouter() {
             </RequireAuth>
           }
         />
+        {/* Human-readable app routes (M3): identity by character name (or
+            @me / a legacy UUID), conversation by channel key or DM partner.
+            The two-segment form catches old UUID conversation links, which
+            AppShell redirects to their canonical name-based path. */}
         <Route
-          path="/app/:identityId/:convId?"
+          path="/app/:identity"
+          element={
+            <RequireAuth>
+              <AppShell />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/:identity/c/:channel"
+          element={
+            <RequireAuth>
+              <AppShell />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/:identity/dm/:partner"
+          element={
+            <RequireAuth>
+              <AppShell />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/:identity/:legacyConvId"
           element={
             <RequireAuth>
               <AppShell />

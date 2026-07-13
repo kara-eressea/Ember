@@ -1,14 +1,22 @@
 // AppShell (COMPONENTS.md §Layout): rail · sidebar · main · members grid,
-// driven by /app/:identityId/:convId?. Owns the gateway lifecycle for the
-// tab: connect the socket, subscribe every identity (background identities
-// must stream so their rail badges stay live), connect F-Chat sessions where
-// the autoConnect intent says so (sessions themselves outlive every tab —
-// the bouncer property), and advance the read cursor for whatever
-// conversation is on screen.
+// driven by the human-readable routes /app/<Character>[/c/<channel>|/dm/
+// <partner>] (lib/routes.ts — case-insensitive, @me alias, legacy UUID
+// redirects). Owns the gateway lifecycle for the tab: connect the socket,
+// subscribe every identity (background identities must stream so their rail
+// badges stay live), connect F-Chat sessions where the autoConnect intent
+// says so (sessions themselves outlive every tab — the bouncer property),
+// and advance the read cursor for whatever conversation is on screen.
 
 import { useEffect, useRef } from "react";
-import { Link, useParams } from "react-router";
+import { Link, Navigate, useLocation, useParams } from "react-router";
 import { gateway } from "../../gateway/socket.js";
+import {
+  identityPath,
+  rememberLastIdentity,
+  resolveConv,
+  resolveIdentity,
+  type ConvRef,
+} from "../../lib/routes.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import {
   useSessionsStore,
@@ -26,12 +34,38 @@ import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
 
 export function AppShell() {
-  const { identityId, convId } = useParams();
+  const {
+    identity: slug,
+    channel: channelParam,
+    partner: partnerParam,
+    legacyConvId,
+  } = useParams();
+  const location = useLocation();
+  const identities = useSessionsStore((s) => s.identities);
+  const resolved =
+    slug === undefined || identities === undefined
+      ? undefined
+      : resolveIdentity(identities, slug);
+  const identityId = resolved?.id;
   const session = useSessionsStore((s) =>
     identityId === undefined ? undefined : s.sessions[identityId],
   );
-  const identities = useSessionsStore((s) => s.identities);
   const membersOpen = useUiStore((s) => s.membersOpen);
+
+  const ref: ConvRef | undefined =
+    channelParam !== undefined
+      ? { kind: "c", target: channelParam }
+      : partnerParam !== undefined
+        ? { kind: "dm", target: partnerParam }
+        : legacyConvId !== undefined
+          ? { kind: "legacy", convId: legacyConvId }
+          : undefined;
+  const conv =
+    session?.synced && ref !== undefined
+      ? resolveConv(session, ref)
+      : undefined;
+  const convId = conv?.convId;
+  const convSuffix = conv?.suffix;
 
   useEffect(() => {
     gateway.connect();
@@ -56,10 +90,16 @@ export function AppShell() {
 
   useEffect(() => {
     useUiStore.getState().setActive(identityId, convId);
+    if (identityId !== undefined) {
+      rememberLastIdentity(identityId); // the @me alias points here
+      if (convSuffix !== undefined) {
+        useUiStore.getState().setLastConv(identityId, convSuffix);
+      }
+    }
     return () => {
       useUiStore.getState().setActive(undefined, undefined);
     };
-  }, [identityId, convId]);
+  }, [identityId, convId, convSuffix]);
 
   // Start F-Chat sessions on demand — once per identity per shell visit, so
   // a stop (locked vault, auth failure) surfaces its reason instead of
@@ -100,13 +140,10 @@ export function AppShell() {
     }
   }, [identityId, convId, newestId]);
 
-  if (identityId === undefined) {
+  if (slug === undefined) {
     return null;
   }
-  if (
-    identities !== undefined &&
-    !identities.some((i) => i.id === identityId)
-  ) {
+  if (identities !== undefined && resolved === undefined) {
     return (
       <div className={styles.centerNote} style={{ paddingTop: 80 }}>
         <p>This identity does not exist (anymore).</p>
@@ -114,7 +151,7 @@ export function AppShell() {
       </div>
     );
   }
-  if (!session?.synced) {
+  if (resolved === undefined || !session?.synced) {
     return (
       <div className={styles.centerNote} style={{ paddingTop: 80 }}>
         Connecting…
@@ -122,6 +159,22 @@ export function AppShell() {
     );
   }
 
+  // Restore the canonical URL: @me and UUID slugs become the character name,
+  // casing is fixed, and legacy conversation ids become their name path.
+  // Unresolved c/dm targets keep the typed form — they canonicalize the
+  // moment the conversation exists (e.g. right after joining).
+  const canonical =
+    identityPath(resolved.name) +
+    (conv !== undefined
+      ? `/${conv.suffix}`
+      : ref !== undefined && ref.kind !== "legacy"
+        ? `/${ref.kind}/${encodeURIComponent(ref.target)}`
+        : "");
+  if (canonical !== location.pathname) {
+    return <Navigate to={canonical} replace />;
+  }
+
+  const activeId = resolved.id;
   const conversation =
     convId === undefined ? undefined : findConversation(session, convId);
   const channel =
@@ -132,7 +185,7 @@ export function AppShell() {
     <div
       className={`${styles.shell} ${showMembers ? "" : (styles.membersClosed ?? "")}`}
     >
-      <IdentityRail activeId={identityId} />
+      <IdentityRail activeId={activeId} />
       <Sidebar session={session} activeConvId={convId} />
       <main className={styles.main}>
         {session.notice && (
@@ -144,7 +197,7 @@ export function AppShell() {
             <button
               className={styles.noticeDismiss}
               onClick={() => {
-                useSessionsStore.getState().clearNotice(identityId);
+                useSessionsStore.getState().clearNotice(activeId);
               }}
               aria-label="Dismiss"
             >
@@ -160,15 +213,15 @@ export function AppShell() {
           <>
             {conversation.kind === "channel" ? (
               <ChannelHeader
-                identityId={identityId}
+                identityId={activeId}
                 channel={conversation.channel}
               />
             ) : (
-              <DmHeader identityId={identityId} dm={conversation.dm} />
+              <DmHeader identityId={activeId} dm={conversation.dm} />
             )}
             <MessageLog
               key={convId}
-              identityId={identityId}
+              identityId={activeId}
               convId={convId}
               readCursorAtAttach={
                 conversation.kind === "channel"
