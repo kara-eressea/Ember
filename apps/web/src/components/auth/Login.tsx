@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { ApiError } from "../../lib/api.js";
 import { useAuthStore } from "../../stores/auth.js";
 import { AuthCard } from "./AuthCard.js";
@@ -8,6 +8,7 @@ import styles from "./auth.module.css";
 export function Login() {
   const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
@@ -20,7 +21,9 @@ export function Login() {
     setError(undefined);
     try {
       await login({ email, password, remember });
-      await navigate("/identities");
+      // A deep link bounced through RequireAuth resumes where it pointed.
+      const from = (location.state as { from?: string } | null)?.from;
+      await navigate(from ?? "/identities");
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Login failed");
     } finally {

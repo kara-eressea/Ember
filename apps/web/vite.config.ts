@@ -8,6 +8,10 @@ export default defineConfig({
       // Same-origin /api in dev; production serves web + API from one
       // Fastify (M1 step 11). The E2E harness points this at its server.
       "/api": process.env["EMBERLINE_API_PROXY"] ?? "http://127.0.0.1:3000",
+      "/gateway": {
+        target: process.env["EMBERLINE_API_PROXY"] ?? "http://127.0.0.1:3000",
+        ws: true,
+      },
     },
   },
   test: {

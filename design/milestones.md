@@ -28,7 +28,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [x] 7. History sink + REST pagination
 - [x] 8. Gateway (hello/sub/snapshot/event/cmd/ack)
 - [x] 9. Web auth flows + theme system
-- [ ] 10. App shell + live chat (full slice E2E)
+- [x] 10. App shell + live chat (full slice E2E)
 - [ ] 11. Docker + supervised test-server pass
 
 ## Standing to-dos (not milestone-gated)
@@ -40,7 +40,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [ ] **Before building opt-in at-rest credential storage** (eventual goal, under M7): decide on F-List outreach vs. disclosure-only (see `risks-and-open-questions.md`)
 - [ ] **Server hardening backlog** (deferred from the step-6 audit; natural timing M7): periodic cleanup of expired `auth_sessions` rows + per-user session cap; `@fastify/helmet` response headers; register endpoint reveals email/username existence (fold into email-verification flow); rate-gate uses `Date.now()` (not NTP-step-proof — switch to a monotonic clock if it ever matters); session-state ICH/COL/CDS assume the JCH echo arrives first (matches sim/docs/official client — make create-on-miss if the live server ever disagrees)
 
-- [ ] **Post-step-9 audit backlog** (deferred from the 2026-07-13 audit; HIGHs/most MEDIUMs were fixed immediately): shard the HistorySink write queue per identity before M2 always-on scale (single global chain is a throughput ceiling); push the unread-count 99-cap into SQL (LATERAL + LIMIT) instead of full COUNT per conversation at snapshot; cross-tab refresh coordination is best-effort (localStorage re-read + storage event) — consider a BroadcastChannel leader or server-side reuse grace window (M7); IdentityPicker add-flow dead-ends with multiple F-List accounts (needs an account chooser — natural timing M3); deep links dropped through the login redirect (step 10 routing); `register()` persists the refresh token without a "keep me signed in" choice; gateway catchup only replays cursor'd conversations — new conversations rely on REST backfill (decide in M2); hello-timeout and slow-consumer closes untested (need injectable timeouts); E2E ports are fixed (concurrent local runs collide).
+- [ ] **Post-step-9 audit backlog** (deferred from the 2026-07-13 audit; HIGHs/most MEDIUMs were fixed immediately): shard the HistorySink write queue per identity before M2 always-on scale (single global chain is a throughput ceiling); push the unread-count 99-cap into SQL (LATERAL + LIMIT) instead of full COUNT per conversation at snapshot; cross-tab refresh coordination is best-effort (localStorage re-read + storage event) — consider a BroadcastChannel leader or server-side reuse grace window (M7); IdentityPicker add-flow dead-ends with multiple F-List accounts (needs an account chooser — natural timing M3); `register()` persists the refresh token without a "keep me signed in" choice; gateway catchup only replays cursor'd conversations — new conversations rely on REST backfill (decide in M2); hello-timeout and slow-consumer closes untested (need injectable timeouts); E2E ports are fixed (concurrent local runs collide).
 
 - [ ] **fchat-sim fidelity backlog** (deferred from the step-3 review): NPCs are online in LIS but PRI to them returns ERR 6 (make them accept-and-drop or document); sim tickets never expire (real: 30 min — relevant to M1 step 5); add a guard test for the schema-table invariant behind the `as ServerCommand`/`as ClientCommand` casts (every schema is either always-bare or never-bare)
 
@@ -52,6 +52,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | M1 step 10 (app shell + live chat) done: gateway browser client (hello/resume cursors, cmd acks by request id, read acks, keepalive, reconnect backoff with one-refresh-then-retry on 4401), pure dispatch layer into Zustand stores (sessions: idempotent volatile-event semantics incl. the ICH/CDS-beats-conversation-row join race; messages: windowed buffers + REST backfill/scroll-up pagination; ui), AppShell grid + Sidebar (join-by-name, new-DM, MeBar) + ChannelHeader + virtualized MessageLog (@tanstack/react-virtual, date dividers, stick-to-bottom, anchor-preserving infinite scroll up) + Composer (Enter-to-send raw text) + grouped MemberList with lazy avatars; deep links preserved through the login redirect. Full-slice Playwright E2E: connect → join → chat both ways against a raw sim client → live member updates → PMs with unread badge → 70-message seed → reload (session stays online) → scroll-up history. Web 28 unit tests, E2E 5. |
 | 2026-07-12 | Plan finalized; all milestones defined, none started. |
 | 2026-07-12 | Credential model revised to **bouncer-lite**: session-only in-memory credentials, no at-rest storage; server restart requires password re-entry. See `decisions.md` §3. |
 | 2026-07-12 | Deployment context settled: VPS + docker-compose, friends-first scale (~tens), Brevo SMTP for M7 email. See `decisions.md` §5. |

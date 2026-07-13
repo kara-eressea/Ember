@@ -33,6 +33,8 @@ export function themeVariables(accent: AccentId): Record<string, string> {
     "--eb-accent": accentHex,
     "--eb-accent-soft": mix(accentHex, bg, 0.84),
     "--eb-accent-med": mix(accentHex, bg, 0.5),
+    // Role system (COMPONENTS.md): the admin `@` glyph color.
+    "--eb-admin": mix(accentHex, text, 0.4),
     "--eb-codebg": mix(text, bg, 0.9),
     "--eb-hover-main": mix(text, bg, 0.95),
     "--eb-hover": mix(text, side, 0.93),

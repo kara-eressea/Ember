@@ -1,0 +1,97 @@
+// Server frames → store mutations. Pure fan-in: no socket state here, so the
+// whole protocol surface is unit-testable by feeding frames through
+// dispatchFrame(). Volatile events are at-least-once idempotent state
+// operations (gateway contract) — the sessions store applies them as
+// overwrites / set add-remove; only message.new is exactly-once.
+
+import type { GatewayEvent, ServerFrame } from "@emberline/protocol";
+import { useMessagesStore } from "../stores/messages.js";
+import { useSessionsStore } from "../stores/sessions.js";
+import { useUiStore } from "../stores/ui.js";
+
+export function dispatchFrame(frame: ServerFrame): void {
+  const sessions = useSessionsStore.getState();
+  switch (frame.t) {
+    case "ready":
+      sessions.applyReady(
+        frame.d.identities.map(({ id, name }) => ({ id, name })),
+      );
+      for (const identity of frame.d.identities) {
+        sessions.applySessionStatus(identity.id, identity.sessionStatus);
+      }
+      return;
+    case "snapshot":
+      sessions.applySnapshot(frame.d);
+      return;
+    case "catchup":
+      // Missed-while-away history; snapshot unread counts already include
+      // these rows (both derive from lastReadMessageId), so no bump.
+      useMessagesStore.getState().appendMany(frame.d.convId, frame.d.messages);
+      return;
+    case "event":
+      dispatchEvent(frame.d.identityId, frame.d);
+      return;
+    case "ack":
+    case "pong":
+      return; // correlated in the socket layer
+    case "error":
+      // Protocol-level complaint (e.g. malformed frame) — a client bug.
+      console.error("gateway protocol error:", frame.d.message);
+      return;
+  }
+}
+
+function dispatchEvent(identityId: string, event: GatewayEvent): void {
+  const sessions = useSessionsStore.getState();
+  switch (event.kind) {
+    case "message.new": {
+      useMessagesStore.getState().appendLive(event.d.convId, event.d.message);
+      const ui = useUiStore.getState();
+      const active =
+        ui.activeIdentityId === identityId &&
+        ui.activeConvId === event.d.convId;
+      if (!event.d.message.sentByUs && !active) {
+        sessions.bumpUnread(identityId, event.d.convId);
+      }
+      return;
+    }
+    case "conversation.updated":
+      sessions.applyConversation(identityId, event.d.conversation);
+      return;
+    case "member.join":
+      sessions.applyMemberJoin(identityId, event.d.channelKey, event.d.member);
+      return;
+    case "member.leave":
+      sessions.applyMemberLeave(
+        identityId,
+        event.d.channelKey,
+        event.d.character,
+      );
+      return;
+    case "channel.members":
+      sessions.applyChannelMembers(identityId, event.d);
+      return;
+    case "channel.info":
+      sessions.applyChannelInfo(identityId, event.d);
+      return;
+    case "presence":
+      sessions.applyPresence(identityId, event.d);
+      return;
+    case "typing":
+      sessions.applyTyping(identityId, event.d.character, event.d.status);
+      return;
+    case "session.status":
+      sessions.applySessionStatus(identityId, event.d.status, event.d.reason);
+      return;
+    case "sys":
+      sessions.applyNotice(identityId, "sys", event.d.message);
+      return;
+    case "error":
+      sessions.applyNotice(
+        identityId,
+        "error",
+        `${event.d.message} (${String(event.d.number)})`,
+      );
+      return;
+  }
+}

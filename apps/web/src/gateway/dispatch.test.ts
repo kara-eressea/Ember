@@ -1,0 +1,337 @@
+// The protocol surface, exercised the way the socket does it: server frames
+// through dispatchFrame() into the stores. Volatile events are at-least-once
+// (gateway contract), so the interesting cases are the idempotent ones —
+// duplicate joins, FLN as a global leave, unread convergence.
+
+import { beforeEach, describe, expect, it } from "vitest";
+import type { MessageDto, ServerFrame } from "@emberline/protocol";
+import { useMessagesStore } from "../stores/messages.js";
+import { useSessionsStore } from "../stores/sessions.js";
+import { useUiStore } from "../stores/ui.js";
+import { dispatchFrame } from "./dispatch.js";
+
+const IDENTITY = "11111111-1111-7111-8111-111111111111";
+const CONV_CHANNEL = "22222222-2222-7222-8222-222222222222";
+const CONV_DM = "33333333-3333-7333-8333-333333333333";
+
+function member(character: string, status = "online") {
+  return { character, gender: "None", status, statusmsg: "" };
+}
+
+function message(id: number, overrides: Partial<MessageDto> = {}): MessageDto {
+  return {
+    id,
+    senderCharacter: "Nyx Firemane",
+    kind: "msg",
+    bbcode: `message ${String(id)}`,
+    sentByUs: false,
+    createdAt: "2026-07-13T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function event(kind: string, d: unknown): ServerFrame {
+  return {
+    t: "event",
+    d: { identityId: IDENTITY, kind, d },
+  } as ServerFrame;
+}
+
+function snapshot(): ServerFrame {
+  return {
+    t: "snapshot",
+    d: {
+      identityId: IDENTITY,
+      self: { character: "Amber Vale", sessionStatus: "online" },
+      channels: [
+        {
+          convId: CONV_CHANNEL,
+          key: "Frontpage",
+          title: "Frontpage",
+          description: "The hangout.",
+          mode: "chat",
+          oplist: ["", "Nyx Firemane"],
+          members: [member("Amber Vale"), member("Nyx Firemane")],
+          joined: true,
+          unread: 3,
+          lastReadMessageId: 10,
+        },
+      ],
+      dms: [
+        {
+          convId: CONV_DM,
+          partner: "Nyx Firemane",
+          title: "Nyx Firemane",
+          online: true,
+          status: "online",
+          statusmsg: "",
+          unread: 0,
+          lastReadMessageId: null,
+        },
+      ],
+    },
+  };
+}
+
+beforeEach(() => {
+  useSessionsStore.getState().reset();
+  useMessagesStore.getState().reset();
+  useUiStore.getState().setActive(undefined, undefined);
+});
+
+function session() {
+  const state = useSessionsStore.getState().sessions[IDENTITY];
+  if (!state) {
+    throw new Error("no session in store");
+  }
+  return state;
+}
+
+describe("snapshot", () => {
+  it("populates channels, dms and self", () => {
+    dispatchFrame(snapshot());
+    const s = session();
+    expect(s.synced).toBe(true);
+    expect(s.character).toBe("Amber Vale");
+    expect(s.sessionStatus).toBe("online");
+    expect(s.channels["Frontpage"]?.unread).toBe(3);
+    expect(s.channelByConvId[CONV_CHANNEL]).toBe("Frontpage");
+    expect(s.dms[CONV_DM]?.partner).toBe("Nyx Firemane");
+  });
+
+  it("replaces volatile state wholesale on re-sub", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("member.join", {
+        channelKey: "Frontpage",
+        member: member("Tally Marsh"),
+      }),
+    );
+    expect(session().channels["Frontpage"]?.members).toHaveLength(3);
+    dispatchFrame(snapshot());
+    expect(session().channels["Frontpage"]?.members).toHaveLength(2);
+  });
+});
+
+describe("member events", () => {
+  it("treats member lists as sets — duplicate joins are no-ops", () => {
+    dispatchFrame(snapshot());
+    const join = event("member.join", {
+      channelKey: "Frontpage",
+      member: member("Tally Marsh"),
+    });
+    dispatchFrame(join);
+    dispatchFrame(join); // at-least-once replay around a snapshot
+    expect(
+      session().channels["Frontpage"]?.members.filter(
+        (m) => m.character === "Tally Marsh",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("removes a leaver; our own leave clears the live list", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("member.leave", {
+        channelKey: "Frontpage",
+        character: "Nyx Firemane",
+      }),
+    );
+    expect(
+      session().channels["Frontpage"]?.members.map((m) => m.character),
+    ).toEqual(["Amber Vale"]);
+    dispatchFrame(
+      event("member.leave", {
+        channelKey: "Frontpage",
+        character: "Amber Vale",
+      }),
+    );
+    expect(session().channels["Frontpage"]?.members).toEqual([]);
+  });
+
+  it("applies ICH as a full overwrite", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("channel.members", {
+        key: "Frontpage",
+        mode: "both",
+        members: [member("Old Greywhisker")],
+      }),
+    );
+    const channel = session().channels["Frontpage"];
+    expect(channel?.mode).toBe("both");
+    expect(channel?.members.map((m) => m.character)).toEqual([
+      "Old Greywhisker",
+    ]);
+  });
+
+  it("keeps volatile events that beat the conversation row (join race)", () => {
+    // ICH/CDS fan out from the session bus while the sink is still writing
+    // the conversation — they must create the channel, not be dropped.
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("channel.members", {
+        key: "Development",
+        mode: "both",
+        members: [member("Amber Vale"), member("Tally Marsh")],
+      }),
+    );
+    dispatchFrame(
+      event("channel.info", {
+        key: "Development",
+        description: "Talk about third-party clients here.",
+      }),
+    );
+    const placeholder = session().channels["Development"];
+    expect(placeholder?.convId).toBe("");
+    expect(placeholder?.members).toHaveLength(2);
+
+    const convId = "55555555-5555-7555-8555-555555555555";
+    dispatchFrame(
+      event("conversation.updated", {
+        conversation: {
+          id: convId,
+          kind: "channel",
+          channelKey: "Development",
+          partnerCharacter: null,
+          title: "Development",
+          pinned: false,
+          joined: true,
+          lastReadMessageId: null,
+        },
+      }),
+    );
+    const channel = session().channels["Development"];
+    expect(channel?.convId).toBe(convId);
+    expect(channel?.joined).toBe(true);
+    expect(channel?.description).toBe("Talk about third-party clients here.");
+    expect(channel?.members).toHaveLength(2);
+    expect(session().channelByConvId[convId]).toBe("Development");
+  });
+});
+
+describe("presence", () => {
+  it("FLN is a global leave and flips the DM row offline", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    const s = session();
+    expect(
+      s.channels["Frontpage"]?.members.some(
+        (m) => m.character === "Nyx Firemane",
+      ),
+    ).toBe(false);
+    expect(s.dms[CONV_DM]?.online).toBe(false);
+  });
+
+  it("matches DM partners case-insensitively (PM merge semantics)", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("presence", {
+        character: "NYX FIREMANE",
+        online: true,
+        status: "busy",
+        statusmsg: "Lurking.",
+      }),
+    );
+    expect(session().dms[CONV_DM]?.status).toBe("busy");
+  });
+});
+
+describe("message.new and unread", () => {
+  it("appends to the buffer and bumps unread for inactive conversations", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(11) }),
+    );
+    expect(
+      useMessagesStore.getState().buffers[CONV_CHANNEL]?.messages,
+    ).toHaveLength(1);
+    expect(session().channels["Frontpage"]?.unread).toBe(4);
+  });
+
+  it("does not bump unread for the active conversation or our own sends", () => {
+    dispatchFrame(snapshot());
+    useUiStore.getState().setActive(IDENTITY, CONV_CHANNEL);
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(11) }),
+    );
+    expect(session().channels["Frontpage"]?.unread).toBe(3);
+
+    useUiStore.getState().setActive(undefined, undefined);
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(12, { sentByUs: true }),
+      }),
+    );
+    expect(session().channels["Frontpage"]?.unread).toBe(3);
+  });
+
+  it("an advanced read cursor (any tab's ack) zeroes the badge", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("conversation.updated", {
+        conversation: {
+          id: CONV_CHANNEL,
+          kind: "channel",
+          channelKey: "Frontpage",
+          partnerCharacter: null,
+          title: "Frontpage",
+          pinned: false,
+          joined: true,
+          lastReadMessageId: 13,
+        },
+      }),
+    );
+    expect(session().channels["Frontpage"]?.unread).toBe(0);
+  });
+
+  it("a pm conversation row materializes from its creation event", () => {
+    dispatchFrame(snapshot());
+    const convId = "44444444-4444-7444-8444-444444444444";
+    dispatchFrame(
+      event("conversation.updated", {
+        conversation: {
+          id: convId,
+          kind: "pm",
+          channelKey: null,
+          partnerCharacter: "Birch Rowan",
+          title: "Birch Rowan",
+          pinned: false,
+          joined: false,
+          lastReadMessageId: null,
+        },
+      }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId,
+        message: message(20, { kind: "pm", senderCharacter: "Birch Rowan" }),
+      }),
+    );
+    const dm = session().dms[convId];
+    expect(dm?.partner).toBe("Birch Rowan");
+    expect(dm?.unread).toBe(1);
+  });
+});
+
+describe("catchup", () => {
+  it("appends without touching unread (snapshot already counted it)", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame({
+      t: "catchup",
+      d: {
+        identityId: IDENTITY,
+        convId: CONV_CHANNEL,
+        messages: [message(11), message(12)],
+        done: true,
+      },
+    });
+    expect(
+      useMessagesStore.getState().buffers[CONV_CHANNEL]?.messages,
+    ).toHaveLength(2);
+    expect(session().channels["Frontpage"]?.unread).toBe(3);
+  });
+});
