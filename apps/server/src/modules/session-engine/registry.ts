@@ -4,7 +4,18 @@
 // `session.disconnect`, identity deletion, or server shutdown.
 
 import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
-import { FchatSession, type SessionLogger } from "./fchat-session.js";
+import {
+  FchatSession,
+  type FchatSessionOptions,
+  type SessionLogger,
+} from "./fchat-session.js";
+
+/** Test-only timing knobs (integration tests can't wait out the 10s policy
+ * floor). Never wired to config — production always runs policy defaults. */
+export type SessionTuning = Pick<
+  FchatSessionOptions,
+  "backoffFloorMs" | "backoffCapMs" | "watchdogMs" | "random"
+>;
 
 export interface SessionRegistryOptions {
   readonly tickets: TicketManagerRegistry;
@@ -13,6 +24,7 @@ export interface SessionRegistryOptions {
   readonly clientName: string;
   readonly clientVersion: string;
   readonly logger?: SessionLogger;
+  readonly tuning?: SessionTuning;
   /**
    * Invoked for every newly created session BEFORE it starts connecting, so
    * subscribers (history sink, gateway) never miss an event.
@@ -55,6 +67,7 @@ export class SessionRegistry {
       clientName: this.#options.clientName,
       clientVersion: this.#options.clientVersion,
       logger: this.#options.logger,
+      ...this.#options.tuning,
     });
     this.#sessions.set(params.identityId, session);
     this.#options.onSessionStarted?.(params.identityId, session);

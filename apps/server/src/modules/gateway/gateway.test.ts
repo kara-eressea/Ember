@@ -76,6 +76,8 @@ beforeAll(async () => {
       baseUrl: sim.httpUrl,
       minRequestIntervalMs: 0,
     }),
+    // The reconnect scenario can't wait out the 10s policy floor.
+    sessionTuning: { backoffFloorMs: 200, backoffCapMs: 400 },
   });
   const address = await app.listen({ port: 0, host: "127.0.0.1" });
   gatewayUrl = `${address.replace(/^http/, "ws")}/gateway`;
@@ -447,6 +449,36 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     expect((await client.nextOfType("ack")).d.ok).toBe(true);
     expect(app.sessions.get(identityId)).toBe(fresh);
     expect(fresh!.state.channels.has("Frontpage")).toBe(false);
+  });
+
+  it("recovers an F-Chat drop with no user interaction: re-tickets from the vault, rejoins channels (M2 verification)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Invalidate the server's cached ticket account-wide (a newer ticket
+    // always does), then drop the connection: the reconnect must survive the
+    // stale-ticket rejection by re-fetching through the vaulted password —
+    // the full "re-ticket from the vault" path, not the ticket cache.
+    sim.issueTicketFor(ACCOUNT);
+    sim.disconnect(CHARACTER);
+
+    // Subscribed browsers watch the outage and recovery as status events.
+    for (;;) {
+      const frame = await client.nextEvent("session.status", 15_000);
+      if (eventPayload<{ status: string }>(frame).status === "online") {
+        break;
+      }
+    }
+    await vi.waitFor(() => {
+      expect(
+        session.state.channels.get("Frontpage")?.members.has(CHARACTER),
+      ).toBe(true);
+    });
   });
 
   it("session.connect and session.disconnect maintain the autoConnect intent flag", async () => {

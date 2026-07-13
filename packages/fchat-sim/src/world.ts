@@ -45,6 +45,12 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Birch Rowan"],
     },
+    // Reserved for the M2 bouncer E2E — spec files run in parallel and a
+    // character can hold only one sim connection, so specs never share one.
+    "willow@example.test": {
+      password: "hunter2",
+      characters: ["Willow Reed", "Fern Ashwood"],
+    },
   },
   channels: [
     {
