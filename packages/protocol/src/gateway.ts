@@ -86,6 +86,11 @@ const cmdSchema = z.discriminatedUnion("action", [
     action: z.literal("pm.open"),
     d: z.object({ character: characterName }),
   }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("conv.pin"),
+    d: z.object({ convId: z.uuid(), pinned: z.boolean() }),
+  }),
 ]);
 
 export const clientFrameSchema = z.discriminatedUnion("t", [

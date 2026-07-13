@@ -7,7 +7,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
@@ -32,7 +32,7 @@ import {
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
-import { authSessions, identities } from "../../db/schema.js";
+import { authSessions, conversations, identities } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
@@ -356,6 +356,94 @@ async function nextConversationUpdate<
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+describe("channel rejoin semantics (decisions.md §9)", () => {
+  it("pins over the gateway; an explicit reconnect rejoins pinned channels only", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+    await joinAndSettle(session, "Development");
+    await app.history.flush();
+
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const frontpage = snapshot.d.channels.find((c) => c.key === "Frontpage");
+    expect(frontpage).toBeDefined();
+
+    // conv.pin: ack carries the updated conversation, and the update fans out.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "conv.pin",
+        d: { convId: frontpage!.convId, pinned: true },
+      },
+    });
+    const pinAck = await client.nextOfType("ack");
+    expect(pinAck.d).toMatchObject({
+      ok: true,
+      conversation: { id: frontpage!.convId, pinned: true },
+    });
+    await nextConversationUpdate<{
+      id: string;
+      lastReadMessageId: number | null;
+      pinned: boolean;
+    }>(client, (c) => c.id === frontpage!.convId && c.pinned);
+
+    // Explicit disconnect, then connect: the user chose to log off, so only
+    // the pinned channel comes back and the casual one reconciles to
+    // joined = false.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "session.disconnect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+
+    const fresh = app.sessions.get(identityId);
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(session);
+    await waitForOnline(fresh!);
+    await vi.waitFor(() => {
+      expect(fresh!.state.channels.has("Frontpage")).toBe(true);
+    });
+    expect(fresh!.state.channels.has("Development")).toBe(false);
+
+    const [devRow] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Development"),
+        ),
+      );
+    expect(devRow?.joined).toBe(false);
+
+    // A second connect while the session is live must not reseed anything —
+    // leave Frontpage, reconnect from another tab, still left.
+    fresh!.leaveChannel("Frontpage");
+    await vi.waitFor(() => {
+      expect(fresh!.state.channels.has("Frontpage")).toBe(false);
+    });
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(app.sessions.get(identityId)).toBe(fresh);
+    expect(fresh!.state.channels.has("Frontpage")).toBe(false);
+  });
+});
 
 describe("gateway handshake", () => {
   it("answers hello with ready and lists the user's identities", async () => {

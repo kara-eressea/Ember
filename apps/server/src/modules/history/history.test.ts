@@ -21,7 +21,11 @@ import { conversations, identities, messages } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { SessionEventBus } from "../session-engine/event-bus.js";
-import { ConversationLimitError, HistorySink } from "./sink.js";
+import {
+  ConversationLimitError,
+  HistorySink,
+  type ConversationRow,
+} from "./sink.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
@@ -348,6 +352,93 @@ describe("history sink", () => {
     // Still monotonic: a stale ack never regresses the cursor.
     const stale = await app.history.markRead(identityId, conv!.id, 1);
     expect(stale?.lastReadMessageId).toBe(message!.id);
+  });
+
+  it("pins conversations and seeds connect/resume channel sets (decisions.md §9)", async () => {
+    const { identityId } = await startIdentity();
+    const insertChannel = async (
+      key: string,
+      flags: { pinned: boolean; joined: boolean },
+    ) => {
+      const [row] = await db
+        .insert(conversations)
+        .values({
+          identityId,
+          kind: "channel",
+          channelKey: key,
+          title: key,
+          ...flags,
+        })
+        .returning();
+      return row!;
+    };
+    const pinnedJoined = await insertChannel("Pinned Joined", {
+      pinned: true,
+      joined: true,
+    });
+    const casual = await insertChannel("Casual", {
+      pinned: false,
+      joined: true,
+    });
+    await insertChannel("Pinned Left", { pinned: true, joined: false });
+    // A joined PM row must never leak into channel seeds.
+    await db.insert(conversations).values({
+      identityId,
+      kind: "pm",
+      partnerCharacter: "Nyx Firemane",
+      title: "Nyx Firemane",
+      joined: true,
+    });
+
+    const events: ConversationRow[] = [];
+    const off = app.history.events.on("conversation", (event) => {
+      if (event.identityId === identityId) {
+        events.push(event.conversation);
+      }
+    });
+
+    // Restart recovery: exactly the channels the identity was in.
+    expect((await app.history.channelsForResume(identityId)).sort()).toEqual([
+      "Casual",
+      "Pinned Joined",
+    ]);
+
+    // Explicit connect: pinned only, and the casually joined row is
+    // reconciled to joined = false (with a fan-out event).
+    expect((await app.history.channelsForConnect(identityId)).sort()).toEqual([
+      "Pinned Joined",
+      "Pinned Left",
+    ]);
+    const [casualAfter] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, casual.id));
+    expect(casualAfter?.joined).toBe(false);
+    expect(events.some((c) => c.id === casual.id && !c.joined)).toBe(true);
+
+    // A later restart recovery no longer resurrects the reconciled channel.
+    expect(await app.history.channelsForResume(identityId)).toEqual([
+      "Pinned Joined",
+    ]);
+
+    // Pin round trip: persists, emits, scoped to the owning identity.
+    const unpinned = await app.history.setPinned(
+      identityId,
+      pinnedJoined.id,
+      false,
+    );
+    expect(unpinned?.pinned).toBe(false);
+    expect(events.some((c) => c.id === pinnedJoined.id && !c.pinned)).toBe(
+      true,
+    );
+    expect(
+      await app.history.setPinned(
+        identityId,
+        "00000000-0000-7000-8000-000000000000",
+        true,
+      ),
+    ).toBeUndefined();
+    off();
   });
 
   it("shards the write queue per identity — one identity's stalled write never blocks another's", async () => {

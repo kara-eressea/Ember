@@ -239,6 +239,91 @@ export class HistorySink {
     return row;
   }
 
+  /**
+   * Pins/unpins a conversation (gateway `conv.pin`). Pinned channels are the
+   * ones an explicit connect rejoins (decisions.md §9). Emits the updated row
+   * so every tab converges.
+   */
+  async setPinned(
+    identityId: string,
+    conversationId: string,
+    pinned: boolean,
+  ): Promise<ConversationRow | undefined> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({ pinned })
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.identityId, identityId),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
+    }
+    return row;
+  }
+
+  /**
+   * Channel seed for an explicit connect (decisions.md §9 scenario 3): the
+   * user chose to log off earlier, so only pinned channels come back. Rows
+   * that were still flagged joined but aren't pinned are reconciled to
+   * joined = false — otherwise a later restart recovery would resurrect
+   * channels the user deliberately left behind.
+   */
+  async channelsForConnect(identityId: string): Promise<string[]> {
+    const dropped = await this.#db
+      .update(conversations)
+      .set({ joined: false })
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+          eq(conversations.joined, true),
+          eq(conversations.pinned, false),
+        ),
+      )
+      .returning();
+    for (const row of dropped) {
+      this.events.emit("conversation", { identityId, conversation: row });
+    }
+    const rows = await this.#db
+      .select({ channelKey: conversations.channelKey })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+          eq(conversations.pinned, true),
+        ),
+      );
+    return rows.flatMap((row) =>
+      row.channelKey === null ? [] : [row.channelKey],
+    );
+  }
+
+  /**
+   * Channel seed for restart recovery (decisions.md §9 scenario 2): the user
+   * never chose to leave, so the session resumes exactly the channels it was
+   * in — the joined flags the sink itself maintained.
+   */
+  async channelsForResume(identityId: string): Promise<string[]> {
+    const rows = await this.#db
+      .select({ channelKey: conversations.channelKey })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+          eq(conversations.joined, true),
+        ),
+      );
+    return rows.flatMap((row) =>
+      row.channelKey === null ? [] : [row.channelKey],
+    );
+  }
+
   #channelTarget(session: FchatSession, key: string): ConversationTarget {
     return {
       kind: "channel",

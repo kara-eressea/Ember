@@ -467,15 +467,27 @@ export class GatewayConnection {
       return;
     }
     switch (cmd.action) {
-      case "session.connect":
-        this.#ctx.sessions.start({
+      case "session.connect": {
+        // An explicit connect on a fresh session rejoins pinned channels
+        // only (decisions.md §9); a connect while the session already runs
+        // (second tab, reattach) must not reseed a live channel set.
+        const existing = this.#ctx.sessions.get(identity.id);
+        const fresh = !existing || existing.status === "stopped";
+        const seed = fresh
+          ? await this.#ctx.history.channelsForConnect(identity.id)
+          : [];
+        const session = this.#ctx.sessions.start({
           identityId: identity.id,
           character: identity.character,
           accountId: identity.accountId,
           accountName: identity.accountName,
         });
+        for (const key of seed) {
+          session.joinChannel(key);
+        }
         this.#ack(id, { ok: true });
         return;
+      }
       case "session.disconnect":
         this.#ctx.sessions.stop(identity.id, "disconnected by user");
         this.#ack(id, { ok: true });
@@ -509,6 +521,19 @@ export class GatewayConnection {
             return;
           }
           throw error;
+        }
+        return;
+      }
+      case "conv.pin": {
+        const row = await this.#ctx.history.setPinned(
+          identity.id,
+          cmd.d.convId,
+          cmd.d.pinned,
+        );
+        if (row) {
+          this.#ack(id, { ok: true, conversation: conversationDto(row) });
+        } else {
+          this.#ack(id, { ok: false, error: "conversation not found" });
         }
         return;
       }

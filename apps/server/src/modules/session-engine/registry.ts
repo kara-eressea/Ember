@@ -1,6 +1,7 @@
-// One FchatSession per identity. In milestone 1 sessions are started and
-// stopped by the gateway on browser attach/detach; milestone 2 keeps them
-// alive independently (always-online bouncer).
+// One FchatSession per identity. Session life is independent of any browser
+// connection (always-online bouncer): sessions start on explicit
+// `session.connect` (or unlock auto-connect) and stop only on explicit
+// `session.disconnect`, identity deletion, or server shutdown.
 
 import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
 import { FchatSession, type SessionLogger } from "./fchat-session.js";
