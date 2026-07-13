@@ -14,6 +14,7 @@ import {
   FlistAuthError,
   type TicketManagerRegistry,
 } from "../flist-api/ticket-manager.js";
+import type { GatewayHub } from "../gateway/gateway.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 
 const identityResponse = z.object({
@@ -36,6 +37,7 @@ export interface IdentitiesRoutesOptions {
   db: Db;
   sessions: SessionRegistry;
   tickets: TicketManagerRegistry;
+  hub: GatewayHub;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -44,7 +46,7 @@ export async function identitiesRoutes(
   options: IdentitiesRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, sessions, tickets } = options;
+  const { db, sessions, tickets, hub } = options;
 
   app.addHook("preHandler", app.authenticate);
 
@@ -172,8 +174,10 @@ export async function identitiesRoutes(
         return reply.code(404).send({ error: "Identity not found" });
       }
       // Deleting cascades to conversations/messages; the F-Chat session (if
-      // any) goes first.
+      // any) goes first, and gateway connections drop their caches so a
+      // stale row can't resurrect the identity.
       sessions.stop(row.id, "identity deleted");
+      hub.identityDeleted(row.id);
       await db.delete(identities).where(eq(identities.id, row.id));
       return reply.code(204).send(null);
     },

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FLOOD_MARGIN_MS,
+  MAX_QUEUE_LENGTH,
   RateGate,
   RateGateClearedError,
+  RateGateFullError,
 } from "./rate-gate.js";
 
 beforeEach(() => {
@@ -27,6 +29,23 @@ describe("RateGate", () => {
     expect(sentAt).toHaveLength(3);
     expect(sentAt[1]! - sentAt[0]!).toBeGreaterThanOrEqual(500);
     expect(sentAt[2]! - sentAt[1]!).toBeGreaterThanOrEqual(500);
+  });
+
+  it("rejects sends beyond the backlog cap instead of queueing forever", async () => {
+    const gate = new RateGate(() => 10, { maxQueueLength: 2 });
+    const sent: number[] = [];
+    const first = gate.schedule("MSG", () => sent.push(1)); // sent immediately
+    const queued = gate.schedule("MSG", () => sent.push(2));
+    const alsoQueued = gate.schedule("MSG", () => sent.push(3));
+    await expect(gate.schedule("MSG", () => sent.push(4))).rejects.toThrow(
+      RateGateFullError,
+    );
+    // The cap is per class: PRI still has room.
+    const pri = gate.schedule("PRI", () => sent.push(5));
+    await vi.advanceTimersByTimeAsync(3 * (10_000 + FLOOD_MARGIN_MS));
+    await Promise.all([first, queued, alsoQueued, pri]);
+    expect(sent).toEqual([1, 5, 2, 3]);
+    expect(MAX_QUEUE_LENGTH).toBeGreaterThan(0);
   });
 
   it("keeps MSG and PRI on independent timelines", async () => {

@@ -113,11 +113,15 @@ export const conversations = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("conversations_identity_target_uniq").on(
-      t.identityId,
-      t.kind,
-      sql`coalesce(${t.channelKey}, ${t.partnerCharacter})`,
-    ),
+    // Channel keys are exact (ADH ids are case-sensitive); PM partners are
+    // case-insensitive — F-Chat resolves PRI recipients regardless of casing,
+    // so "nyx" and "Nyx" must be one thread.
+    uniqueIndex("conversations_identity_channel_uniq")
+      .on(t.identityId, t.channelKey)
+      .where(sql`kind = 'channel'`),
+    uniqueIndex("conversations_identity_partner_uniq")
+      .on(t.identityId, sql`lower(${t.partnerCharacter})`)
+      .where(sql`kind = 'pm'`),
   ],
 );
 

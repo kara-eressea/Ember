@@ -78,6 +78,31 @@ describe("clientFrameSchema", () => {
         },
       },
       { t: "ack", d: { identityId: IDENTITY, convId: CONV, messageId: 0 } },
+      // Abuse bounds: pm.open names are capped and charset-checked.
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "pm.open",
+          d: { character: "x".repeat(65) },
+        },
+      },
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "pm.open",
+          d: { character: "Nyx<script>" },
+        },
+      },
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "channel.join",
+          d: { key: "x".repeat(129) },
+        },
+      },
       { t: "yolo" },
       "not an object",
     ];

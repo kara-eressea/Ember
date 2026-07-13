@@ -32,9 +32,10 @@ import {
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
-import { identities } from "../../db/schema.js";
+import { authSessions, identities } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
+import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
@@ -676,6 +677,61 @@ describe("gateway commands", () => {
       (c) => c.id === conversation.id && c.lastReadMessageId !== null,
     );
     expect(converged.lastReadMessageId).toBe(message.id);
+  });
+
+  it("cuts a live connection when its auth session is revoked", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+
+    const client = await connectClient();
+    const ready = await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Logout/expiry: the auth session rows disappear. The next frame's
+    // re-verification must cut the socket — REST 401s immediately and the
+    // gateway must not be the survivor.
+    await db
+      .delete(authSessions)
+      .where(eq(authSessions.userId, ready.d.userId));
+    client.send({ t: "sub", d: { identityId } });
+    expect((await client.waitForClose()).code).toBe(GATEWAY_CLOSE.unauthorized);
+  });
+
+  it("does not resurrect a deleted identity from the ownership cache", async () => {
+    const { identityId, token } = await createIdentity();
+
+    const client = await connectClient();
+    await client.hello(token); // ready caches ownership of the identity
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/identities/${identityId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(deleted.statusCode).toBe(204);
+
+    // A stale cache hit here would log the character into F-Chat as an
+    // orphaned session no client could ever see or stop.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: false, error: "identity not found" },
+    });
+    expect(app.sessions.get(identityId)).toBeUndefined();
+  });
+
+  it("disconnects a connection that floods frames", async () => {
+    const token = await registerUser();
+    const client = await connectClient();
+    await client.hello(token);
+    for (let i = 0; i <= MAX_FRAMES_PER_MINUTE; i += 1) {
+      client.send({ t: "ping" });
+    }
+    expect((await client.waitForClose()).code).toBe(GATEWAY_CLOSE.rateLimited);
   });
 
   it("denies access to another user's identity", async () => {

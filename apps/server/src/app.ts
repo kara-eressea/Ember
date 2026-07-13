@@ -101,8 +101,13 @@ export async function buildApp({
     db,
     sessions,
     tickets,
+    hub,
   });
-  await app.register(fastifyWebsocket);
+  // Gateway frames are tiny; without a cap the ws default (100 MiB) lets a
+  // pre-hello client force huge buffers + JSON.parse work.
+  await app.register(fastifyWebsocket, {
+    options: { maxPayload: 128 * 1024 },
+  });
   await app.register(gatewayRoutes, { db, sessions, history, hub });
 
   app.get("/healthz", () => ({ status: "ok" }));

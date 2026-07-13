@@ -22,15 +22,34 @@ export const GATEWAY_CLOSE = {
   versionMismatch: 4426,
   /** Send buffer overflow — the client cannot keep up with the fan-out. */
   slowConsumer: 4429,
+  /** Inbound frame quota exceeded. */
+  rateLimited: 4430,
 } as const;
+
+/** Matches the F-List character-name charset (see chat3client avatarURL). */
+const characterName = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9_\-\s]+$/);
 
 // ── Client → server ──────────────────────────────────────────────────────────
 
 /** Per-identity durable-resume cursors: conversationId → last seen messages.id. */
-const resumeSchema = z.record(
-  z.uuid(),
-  z.object({ convCursors: z.record(z.uuid(), z.number().int().positive()) }),
-);
+const resumeSchema = z
+  .record(
+    z.uuid(),
+    z
+      .object({
+        convCursors: z.record(z.uuid(), z.number().int().positive()),
+      })
+      .refine((entry) => Object.keys(entry.convCursors).length <= 1024, {
+        message: "too many conversation cursors",
+      }),
+  )
+  .refine((resume) => Object.keys(resume).length <= 64, {
+    message: "too many identities",
+  });
 
 /**
  * Gateway commands, M1 subset. `status.set`, `typing.set` and
@@ -48,22 +67,24 @@ const cmdSchema = z.discriminatedUnion("action", [
   z.object({
     identityId: z.uuid(),
     action: z.literal("channel.join"),
-    d: z.object({ key: z.string().min(1) }),
+    d: z.object({ key: z.string().min(1).max(128) }),
   }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("channel.leave"),
-    d: z.object({ key: z.string().min(1) }),
+    d: z.object({ key: z.string().min(1).max(128) }),
   }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("msg.send"),
-    d: z.object({ convId: z.uuid(), bbcode: z.string().min(1) }),
+    // The live chat_max/priv_max VARs are enforced by the session at send
+    // time; this is only an anti-abuse ceiling, far above any real limit.
+    d: z.object({ convId: z.uuid(), bbcode: z.string().min(1).max(65_536) }),
   }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("pm.open"),
-    d: z.object({ character: z.string().min(1) }),
+    d: z.object({ character: characterName }),
   }),
 ]);
 
@@ -168,7 +189,16 @@ export interface SnapshotDm {
 
 // ── Server → client ──────────────────────────────────────────────────────────
 
-/** Volatile per-identity events fanned out from the live session. */
+/**
+ * Volatile per-identity events fanned out from the live session.
+ *
+ * Delivery is at-least-once around a `snapshot`: events that land while the
+ * snapshot is being built are already reflected in it AND replayed after it.
+ * Every volatile kind is therefore an idempotent state operation — presence,
+ * channel.info and channel.members are full-state overwrites; member.join /
+ * member.leave are set add/remove (clients MUST treat member lists as sets).
+ * Only message.new is exactly-once (deduped server-side by messages.id).
+ */
 export type GatewayEvent =
   | {
       kind: "message.new";

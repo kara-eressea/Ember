@@ -1,9 +1,16 @@
 // App-account session (Zustand). Access token lives in memory; the refresh
 // token (and user) persist to localStorage only when "keep me signed in" was
 // checked, so a shared machine can stay clean.
+//
+// Refresh tokens are single-use server-side (rotation), so refreshing is
+// guarded three ways: a single-flight promise (concurrent 401s from parallel
+// requests must not race each other), re-reading localStorage first (another
+// tab may have rotated already — adopt its token instead of burning it), and
+// only destroying local state when the server actually rejected the token —
+// a network blip must never log out a persisted session.
 
 import { create } from "zustand";
-import { api, type UserDto } from "../lib/api.js";
+import { api, ApiError, type UserDto } from "../lib/api.js";
 
 const STORAGE_KEY = "eb.auth";
 
@@ -61,6 +68,9 @@ function persist(state: {
   }
 }
 
+/** Single-flight guard: all concurrent callers await one rotation. */
+let refreshInFlight: Promise<boolean> | undefined;
+
 export const useAuthStore = create<AuthState>()((set, get) => ({
   user: undefined,
   accessToken: undefined,
@@ -111,29 +121,41 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   async refreshSession() {
-    const { refreshToken } = get();
-    if (!refreshToken) {
-      return false;
-    }
-    try {
-      const rotated = await api.refresh(refreshToken);
-      set({
-        accessToken: rotated.accessToken,
-        refreshToken: rotated.refreshToken,
-        status: "authenticated",
-      });
-      persist(get());
-      return true;
-    } catch {
-      set({
-        user: undefined,
-        accessToken: undefined,
-        refreshToken: undefined,
-        status: "anonymous",
-      });
-      localStorage.removeItem(STORAGE_KEY);
-      return false;
-    }
+    refreshInFlight ??= (async () => {
+      // Another tab may have rotated the token since we loaded ours — using
+      // the stale one would burn the session, so adopt the persisted one.
+      const persisted = loadPersisted();
+      const refreshToken = persisted?.refreshToken ?? get().refreshToken;
+      if (!refreshToken) {
+        return false;
+      }
+      try {
+        const rotated = await api.refresh(refreshToken);
+        set({
+          accessToken: rotated.accessToken,
+          refreshToken: rotated.refreshToken,
+          status: "authenticated",
+        });
+        persist(get());
+        return true;
+      } catch (cause) {
+        if (cause instanceof ApiError) {
+          // The server rejected the token — the session really is gone.
+          set({
+            user: undefined,
+            accessToken: undefined,
+            refreshToken: undefined,
+            status: "anonymous",
+          });
+          localStorage.removeItem(STORAGE_KEY);
+        }
+        // Network failure: keep the persisted session; a later call retries.
+        return false;
+      }
+    })().finally(() => {
+      refreshInFlight = undefined;
+    });
+    return refreshInFlight;
   },
 
   async restore() {
@@ -153,3 +175,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 }));
+
+// A rotation done in another tab replaces the persisted token; adopt it so
+// this tab's next refresh doesn't burn the session with the stale one.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== STORAGE_KEY) {
+      return;
+    }
+    const persisted = loadPersisted();
+    if (persisted && useAuthStore.getState().status === "authenticated") {
+      useAuthStore.setState({ refreshToken: persisted.refreshToken });
+    }
+  });
+}

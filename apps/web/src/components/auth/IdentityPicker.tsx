@@ -33,6 +33,7 @@ export function IdentityPicker() {
       ]);
       setIdentities(identityList.identities);
       setAccounts(accountList.accounts);
+      setError(undefined);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Failed to load");
     }

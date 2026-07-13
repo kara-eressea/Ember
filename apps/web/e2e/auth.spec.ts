@@ -102,6 +102,26 @@ test("login round trip sees the persisted identity again", async ({ page }) => {
   await expect(page.getByText("Cindral", { exact: true })).toBeVisible();
 });
 
+test("a persisted session survives a reload", async ({ page }) => {
+  const creds = credentials();
+  await page.goto("/register");
+  await page.getByLabel("Username").fill(creds.username);
+  await page.getByLabel("Email").fill(creds.email);
+  await page.getByLabel("Password").fill(creds.password);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page).toHaveURL(/\/identities$/);
+
+  // Reload: restore() revalidates the persisted refresh token (rotating it)
+  // and the picker renders without a login round trip.
+  await page.reload();
+  await expect(page.getByText(`${creds.email} · app account`)).toBeVisible();
+
+  // And again — proving the rotated token was persisted correctly.
+  await page.reload();
+  await expect(page.getByText(`${creds.email} · app account`)).toBeVisible();
+});
+
 test("login with a wrong password is rejected", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("nobody@example.test");
