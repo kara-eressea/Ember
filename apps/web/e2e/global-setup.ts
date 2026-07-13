@@ -58,8 +58,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   };
 
   try {
-    sim = new FchatSim();
+    // A tiny flood window lets the chat spec seed history quickly; the
+    // server's rate gate follows the live VAR, so it speeds up equally.
+    sim = new FchatSim({ serverVars: { msg_flood: 0.05 } });
     await sim.start();
+    // Specs drive a second character straight against the sim (the "other
+    // side" of the relay); Playwright forwards process.env to workers.
+    process.env["FCHAT_SIM_WS_URL"] = sim.wsUrl;
+    process.env["FCHAT_SIM_TICKET_URL"] = sim.ticketUrl;
     container = await new PostgreSqlContainer("postgres:18-alpine").start();
     server = spawn(process.execPath, [SERVER_ENTRY], {
       env: {

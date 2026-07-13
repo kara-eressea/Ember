@@ -32,6 +32,15 @@ export interface IdentityDto {
   createdAt: string;
 }
 
+export interface HistoryMessageDto {
+  id: number;
+  senderCharacter: string;
+  kind: "msg" | "lrp" | "rll" | "sys" | "pm";
+  bbcode: string;
+  sentByUs: boolean;
+  createdAt: string;
+}
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -184,5 +193,25 @@ export const api = {
       method: "DELETE",
       auth: true,
     });
+  },
+
+  /** One page of history, ascending; `before` walks toward older messages. */
+  listMessages(
+    identityId: string,
+    conversationId: string,
+    options: { before?: number; limit?: number } = {},
+  ) {
+    const query = new URLSearchParams();
+    if (options.before !== undefined) {
+      query.set("before", String(options.before));
+    }
+    if (options.limit !== undefined) {
+      query.set("limit", String(options.limit));
+    }
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return apiRequest<{ messages: HistoryMessageDto[]; hasMore: boolean }>(
+      `/identities/${identityId}/conversations/${conversationId}/messages${suffix}`,
+      { auth: true },
+    );
   },
 };
