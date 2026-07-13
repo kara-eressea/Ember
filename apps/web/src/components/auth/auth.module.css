@@ -206,12 +206,19 @@
   min-width: 0;
 }
 
+/* Name over "email · app account", stacked like the MeBar meta — as inline
+   spans they render glued together on one line. */
 .accountName {
+  display: block;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .accountSub {
+  display: block;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10.5px;
   color: var(--eb-faint);
