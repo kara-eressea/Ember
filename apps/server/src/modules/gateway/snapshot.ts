@@ -25,22 +25,27 @@ function escapeRegex(text: string): string {
 
 /**
  * Per-conversation unread + mention counts past the read cursor, computed in
- * one pass. The inner LIMIT caps the rows *scanned* per conversation at
- * UNREAD_CAP (walking the (conversation_id, id) index and stopping early) —
- * a busy channel with 40k unread costs the same as one with 99. Mentions are
- * counted within that same window: a word-boundary, case-insensitive match
- * of the identity's character name in inbound channel messages (M5 highlight
- * rules will extend the matcher). DMs carry no mention count — every DM is
- * already directed at the user.
+ * one pass. The inner ORDER BY + LIMIT caps the rows *scanned* per
+ * conversation at UNREAD_CAP, newest first (a deterministic window walking
+ * the (conversation_id, id desc) index and stopping early) — a busy channel
+ * with 40k unread costs the same as one with 99. Own sends never count as
+ * unread (matching the client's live bump). Mentions are counted within the
+ * same window: a word-boundary, case-insensitive match of the identity's
+ * character name in inbound channel messages (M5 highlight rules will
+ * extend the matcher). DMs carry no mention count — every DM is already
+ * directed at the user.
  */
 async function conversationCounts(
   db: Db,
   identityId: string,
   character: string,
 ): Promise<Map<string, { unread: number; mentions: number }>> {
-  // \m and \M are Postgres word boundaries, so "Amber Vale" never matches
-  // inside "Amber Valery".
-  const pattern = `\\m${escapeRegex(character)}\\M`;
+  // Explicit ASCII word-boundary classes, NOT Postgres \m/\M: it keeps the
+  // semantics byte-identical with the client matcher (lib/mention.ts, JS \w
+  // is ASCII) and works for names with leading/trailing hyphens, which have
+  // no \m/\M boundary at all. "Amber Vale" still never matches inside
+  // "Amber Valery".
+  const pattern = `(^|[^a-zA-Z0-9_])${escapeRegex(character)}([^a-zA-Z0-9_]|$)`;
   const result = await db.execute(sql`
     select c.id as conv_id,
            u.unread::int as unread,
@@ -50,10 +55,12 @@ async function conversationCounts(
       select count(*) as unread,
              count(*) filter (where t.mention) as mentions
       from (
-        select (m.kind = 'msg' and not m.sent_by_us and m.bbcode ~* ${pattern}) as mention
+        select (m.kind = 'msg' and m.bbcode ~* ${pattern}) as mention
         from messages m
         where m.conversation_id = c.id
           and m.id > coalesce(c.last_read_message_id, 0)
+          and not m.sent_by_us
+        order by m.id desc
         limit ${UNREAD_CAP}
       ) t
     ) u
@@ -182,16 +189,23 @@ export async function catchupPlan(
   cursors: Record<string, number>,
   batchSize: number,
 ): Promise<CatchupPlanEntry[]> {
+  // Correlated max, not a join+groupBy: O(1) per conversation via the
+  // (conversation_id, id desc) index instead of aggregating every message
+  // row the identity owns on each sub. Static identifiers on purpose —
+  // drizzle renders interpolated columns in selected fields unqualified,
+  // which mis-scopes the correlated outer reference. mapWith(Number)
+  // because max(bigint) comes back from node-postgres as a string.
   const rows = await db
     .select({
       id: conversations.id,
       lastRead: conversations.lastReadMessageId,
-      maxId: sql<number>`coalesce(max(${messages.id}), 0)`,
+      maxId:
+        sql<number>`(select coalesce(max(m.id), 0) from messages m where m.conversation_id = conversations.id)`.mapWith(
+          Number,
+        ),
     })
     .from(conversations)
-    .leftJoin(messages, eq(messages.conversationId, conversations.id))
-    .where(eq(conversations.identityId, identityId))
-    .groupBy(conversations.id);
+    .where(eq(conversations.identityId, identityId));
 
   const plan: CatchupPlanEntry[] = [];
   for (const row of rows) {

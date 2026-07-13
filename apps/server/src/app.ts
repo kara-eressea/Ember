@@ -73,7 +73,9 @@ export async function buildApp({
     clientName: config.CLIENT_NAME,
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
-    tuning: sessionTuning,
+    // Hard gate, not just wiring discipline: the 10s backoff floor is
+    // developer policy, so timing knobs are inert outside the test runner.
+    tuning: process.env.NODE_ENV === "test" ? sessionTuning : undefined,
     onSessionStarted: (identityId, session) => {
       // History first: message.new fan-out happens post-persistence via the
       // sink's bus, so the sink must see every command the hub translates.
@@ -113,6 +115,9 @@ export async function buildApp({
     tickets,
     sessions,
     history,
+    // Same knob as the auth endpoints: these routes hold F-List credentials
+    // and consume the process-wide F-List API throttle.
+    rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
   await app.register(identitiesRoutes, {

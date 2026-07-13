@@ -424,6 +424,8 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     });
     expect(fresh!.state.channels.has("Development")).toBe(false);
 
+    // The reconcile runs once the session is online, through the sink queue.
+    await app.history.flush();
     const [devRow] = await db
       .select()
       .from(conversations)
@@ -481,10 +483,11 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     });
   });
 
-  it("session.connect and session.disconnect maintain the autoConnect intent flag", async () => {
+  it("session.connect and session.disconnect maintain the autoConnect intent flag and fan it out", async () => {
     const { identityId, token } = await createIdentity();
     const client = await connectClient();
     await client.hello(token);
+    await client.subscribe(identityId); // identity.updated arrives via fan-out
 
     const flag = async () => {
       const [row] = await db
@@ -502,6 +505,11 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     });
     expect((await client.nextOfType("ack")).d.ok).toBe(true);
     expect(await flag()).toBe(true);
+    expect(
+      eventPayload<{ autoConnect: boolean }>(
+        await client.nextEvent("identity.updated"),
+      ).autoConnect,
+    ).toBe(true);
 
     client.send({
       t: "cmd",
@@ -510,6 +518,120 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     });
     expect((await client.nextOfType("ack")).d.ok).toBe(true);
     expect(await flag()).toBe(false);
+    expect(
+      eventPayload<{ autoConnect: boolean }>(
+        await client.nextEvent("identity.updated"),
+      ).autoConnect,
+    ).toBe(false);
+  });
+
+  it("a connect while autoConnect is set is a recovery: exact channels, no reconcile", async () => {
+    const { identityId, token } = await createIdentity();
+    // Persisted state from "before the outage": flagged for auto-connect,
+    // one casually joined channel, one pinned-but-left channel.
+    await db
+      .update(identities)
+      .set({ autoConnect: true })
+      .where(eq(identities.id, identityId));
+    await db.insert(conversations).values([
+      {
+        identityId,
+        kind: "channel",
+        channelKey: "Frontpage",
+        title: "Frontpage",
+        joined: true,
+        pinned: false,
+      },
+      {
+        identityId,
+        kind: "channel",
+        channelKey: "Development",
+        title: "Development",
+        joined: false,
+        pinned: true,
+      },
+    ]);
+
+    const client = await connectClient();
+    await client.hello(token);
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+
+    const session = app.sessions.get(identityId);
+    expect(session).toBeDefined();
+    await waitForOnline(session!);
+    await vi.waitFor(() => {
+      expect(session!.state.channels.has("Frontpage")).toBe(true);
+    });
+    // Recovery restores the joined set, not the pinned set.
+    expect(session!.state.channels.has("Development")).toBe(false);
+
+    // And it never reconciles: the casual row keeps its joined flag.
+    await app.history.flush();
+    const [row] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Frontpage"),
+        ),
+      );
+    expect(row?.joined).toBe(true);
+  });
+
+  it("an explicit connect that never reaches online leaves the recovery set intact", async () => {
+    const { identityId, token } = await createIdentity(); // autoConnect false
+    // A character no longer on the account: identify is rejected until the
+    // session gives up — it never reaches online.
+    await db
+      .update(identities)
+      .set({ characterName: "Nobody Real" })
+      .where(eq(identities.id, identityId));
+    await db.insert(conversations).values({
+      identityId,
+      kind: "channel",
+      channelKey: "Frontpage",
+      title: "Frontpage",
+      joined: true,
+      pinned: false,
+    });
+
+    const client = await connectClient();
+    await client.hello(token);
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+
+    const session = app.sessions.get(identityId);
+    expect(session).toBeDefined();
+    await vi.waitFor(
+      () => {
+        expect(session!.status).toBe("stopped");
+      },
+      { timeout: 10_000 },
+    );
+
+    // The destructive scenario-3 reconcile never ran — after re-auth, a
+    // recovery still finds the channel set intact.
+    await app.history.flush();
+    const [row] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Frontpage"),
+        ),
+      );
+    expect(row?.joined).toBe(true);
   });
 });
 
@@ -637,9 +759,8 @@ describe("gateway fan-out", () => {
       cmd: "SYS",
       payload: { message: `${CHARACTER} joined`, channel: "Development" },
     }); // sys rows never count as mentions
-    // Our own send names us but never counts as a mention (it does count
-    // toward unread, like every row past the read cursor — the ack on view
-    // clears it).
+    // Our own send counts as neither unread nor mention — matching the
+    // client's live behavior.
     await session.sendChannelMessage(
       "Development",
       `I, ${CHARACTER}, speak of myself`,
@@ -677,7 +798,7 @@ describe("gateway fan-out", () => {
     expect(channel).toMatchObject({
       key: "Development",
       joined: true,
-      unread: 5,
+      unread: 4,
       mentions: 1,
     });
     expect(channel.members.map((m) => m.character)).toContain(CHARACTER);

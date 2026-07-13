@@ -2,7 +2,7 @@
 // tests), unique app credentials, and a bare F-Chat client speaking straight
 // to fchat-sim for the "other side" of relays.
 
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -26,6 +26,38 @@ export function credentials() {
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The standard journey into the shell: register a fresh app user, add the
+ * F-List account, pick the character, connect — resolves once the
+ * server-held session is online. Returns the credentials (for logging the
+ * same account in elsewhere). auth.spec keeps its own copy on purpose: this
+ * flow is its test subject, not its setup.
+ */
+export async function registerAndConnect(
+  page: Page,
+  account: string,
+  character: string,
+) {
+  const creds = credentials();
+  await page.goto("/register");
+  await page.getByLabel("Username").fill(creds.username);
+  await page.getByLabel("Email").fill(creds.email);
+  await page.getByLabel("Password").fill(creds.password);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Add a server identity" }).click();
+  await page.getByLabel("F-List account name").fill(account);
+  await page.getByLabel("F-List password").fill("hunter2");
+  await page.getByRole("button", { name: "Verify account" }).click();
+  await page.getByRole("listitem").filter({ hasText: character }).click();
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page).toHaveURL(/\/app\//);
+  await expect(page.getByText(`${character} · online`)).toBeVisible({
+    timeout: 15_000,
+  });
+  return creds;
 }
 
 /** A bare F-Chat client speaking straight to fchat-sim. */

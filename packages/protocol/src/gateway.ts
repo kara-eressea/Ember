@@ -52,8 +52,8 @@ const resumeSchema = z
   });
 
 /**
- * Gateway commands, M1 subset. `status.set`, `typing.set` and
- * `ignore.add/remove` join in their milestones.
+ * Gateway commands (M1 core + M2 `conv.pin`). `status.set`, `typing.set`
+ * and `ignore.add/remove` join in their milestones.
  */
 const cmdSchema = z.discriminatedUnion("action", [
   z.object({
@@ -248,6 +248,7 @@ export type GatewayEvent =
       kind: "session.status";
       d: { status: GatewaySessionStatus; reason?: string };
     }
+  | { kind: "identity.updated"; d: { autoConnect: boolean } }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
 
@@ -293,7 +294,7 @@ export type ServerFrame =
       d: {
         ok: boolean;
         error?: string;
-        /** pm.open result: the found-or-created conversation. */
+        /** pm.open / conv.pin result: the affected conversation row. */
         conversation?: ConversationDto;
       };
     }

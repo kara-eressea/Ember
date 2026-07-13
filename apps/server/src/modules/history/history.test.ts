@@ -403,12 +403,21 @@ describe("history sink", () => {
       "Pinned Joined",
     ]);
 
-    // Explicit connect: pinned only, and the casually joined row is
-    // reconciled to joined = false (with a fan-out event).
-    expect((await app.history.channelsForConnect(identityId)).sort()).toEqual([
+    // Explicit return from a log-off: the pinned seed is a pure read…
+    expect((await app.history.pinnedChannelKeys(identityId)).sort()).toEqual([
       "Pinned Joined",
       "Pinned Left",
     ]);
+    const [casualBefore] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, casual.id));
+    expect(casualBefore?.joined).toBe(true);
+
+    // …and the destructive reconcile is a separate, queued step that flips
+    // the casually joined row to joined = false (with a fan-out event).
+    app.history.reconcileJoinedForConnect(identityId);
+    await app.history.flush();
     const [casualAfter] = await db
       .select()
       .from(conversations)

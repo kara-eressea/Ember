@@ -49,6 +49,10 @@ function PinChip({
         useSessionsStore
           .getState()
           .applyConversation(identityId, ack.conversation);
+      } else if (!ack.ok) {
+        useSessionsStore
+          .getState()
+          .applyNotice(identityId, "error", ack.error ?? "Could not pin");
       }
     } finally {
       setBusy(false);

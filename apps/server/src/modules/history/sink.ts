@@ -266,49 +266,57 @@ export class HistorySink {
   }
 
   /**
-   * Channel seed for an explicit connect (decisions.md §9 scenario 3): the
-   * user chose to log off earlier, so only pinned channels come back. Rows
-   * that were still flagged joined but aren't pinned are reconciled to
-   * joined = false — otherwise a later restart recovery would resurrect
-   * channels the user deliberately left behind.
+   * Channel seed for an explicit return from a log-off (decisions.md §9
+   * scenario 3): only pinned channels come back. Read-only — the joined-flag
+   * reconcile is a separate, deliberately deferred step
+   * (reconcileJoinedForConnect).
    */
-  async channelsForConnect(identityId: string): Promise<string[]> {
-    const dropped = await this.#db
-      .update(conversations)
-      .set({ joined: false })
-      .where(
-        and(
-          eq(conversations.identityId, identityId),
-          eq(conversations.kind, "channel"),
-          eq(conversations.joined, true),
-          eq(conversations.pinned, false),
-        ),
-      )
-      .returning();
-    for (const row of dropped) {
-      this.events.emit("conversation", { identityId, conversation: row });
-    }
-    const rows = await this.#db
-      .select({ channelKey: conversations.channelKey })
-      .from(conversations)
-      .where(
-        and(
-          eq(conversations.identityId, identityId),
-          eq(conversations.kind, "channel"),
-          eq(conversations.pinned, true),
-        ),
-      );
-    return rows.flatMap((row) =>
-      row.channelKey === null ? [] : [row.channelKey],
-    );
+  pinnedChannelKeys(identityId: string): Promise<string[]> {
+    return this.#channelKeys(identityId, eq(conversations.pinned, true));
   }
 
   /**
-   * Channel seed for restart recovery (decisions.md §9 scenario 2): the user
-   * never chose to leave, so the session resumes exactly the channels it was
-   * in — the joined flags the sink itself maintained.
+   * Channel seed for recovery (decisions.md §9 scenario 2 — restart, outage:
+   * the user never chose to leave): exactly the channels the identity was
+   * in, per the joined flags the sink itself maintains.
    */
-  async channelsForResume(identityId: string): Promise<string[]> {
+  channelsForResume(identityId: string): Promise<string[]> {
+    return this.#channelKeys(identityId, eq(conversations.joined, true));
+  }
+
+  /**
+   * Scenario-3 reconcile: rows still flagged joined but not pinned flip to
+   * joined = false, so a later restart recovery doesn't resurrect channels
+   * the user deliberately left behind. Destructive — callers must run it
+   * only once the explicitly connected session actually reaches online
+   * (a failed connect must leave the recovery set intact). Enqueued on the
+   * identity's write queue so it serializes behind any joined-flag writes
+   * still draining from the previous session.
+   */
+  reconcileJoinedForConnect(identityId: string): void {
+    this.#enqueue(identityId, async () => {
+      const dropped = await this.#db
+        .update(conversations)
+        .set({ joined: false })
+        .where(
+          and(
+            eq(conversations.identityId, identityId),
+            eq(conversations.kind, "channel"),
+            eq(conversations.joined, true),
+            eq(conversations.pinned, false),
+          ),
+        )
+        .returning();
+      for (const row of dropped) {
+        this.events.emit("conversation", { identityId, conversation: row });
+      }
+    });
+  }
+
+  async #channelKeys(
+    identityId: string,
+    extraFilter: ReturnType<typeof eq>,
+  ): Promise<string[]> {
     const rows = await this.#db
       .select({ channelKey: conversations.channelKey })
       .from(conversations)
@@ -316,7 +324,7 @@ export class HistorySink {
         and(
           eq(conversations.identityId, identityId),
           eq(conversations.kind, "channel"),
-          eq(conversations.joined, true),
+          extraFilter,
         ),
       );
     return rows.flatMap((row) =>

@@ -481,22 +481,48 @@ export class GatewayConnection {
     }
     switch (cmd.action) {
       case "session.connect": {
-        // An explicit connect on a fresh session rejoins pinned channels
-        // only (decisions.md §9); a connect while the session already runs
-        // (second tab, reattach) must not reseed a live channel set.
+        // Which decisions.md §9 scenario this connect is depends on the
+        // autoConnect flag at the moment of connecting: true means the user
+        // never logged this identity off — the stopped session is an outage
+        // or restart, so restore the exact channels (scenario 2); false
+        // means they explicitly logged off earlier and this is the
+        // deliberate return — pinned channels only (scenario 3). A connect
+        // while the session already runs never reseeds a live channel set
+        // (the registry ignores the seed then).
         const existing = this.#ctx.sessions.get(identity.id);
         const fresh = !existing || existing.status === "stopped";
-        const seed = fresh
-          ? await this.#ctx.history.channelsForConnect(identity.id)
-          : [];
+        let explicitReturn = false;
+        let seed: string[] = [];
+        if (fresh) {
+          const [row] = await this.#ctx.db
+            .select({ autoConnect: identities.autoConnect })
+            .from(identities)
+            .where(eq(identities.id, identity.id));
+          explicitReturn = row?.autoConnect === false;
+          seed = explicitReturn
+            ? await this.#ctx.history.pinnedChannelKeys(identity.id)
+            : await this.#ctx.history.channelsForResume(identity.id);
+        }
         const session = this.#ctx.sessions.start({
           identityId: identity.id,
           character: identity.character,
           accountId: identity.accountId,
           accountName: identity.accountName,
+          seedChannels: seed,
         });
-        for (const key of seed) {
-          session.joinChannel(key);
+        if (fresh && explicitReturn) {
+          // The scenario-3 reconcile (casual joined flags → false) is
+          // destructive, so it runs only once the session actually reaches
+          // online — a connect that dies on a locked vault or bad password
+          // must leave the recovery set intact.
+          const off = session.events.on("status", (event) => {
+            if (event.status === "online") {
+              off();
+              this.#ctx.history.reconcileJoinedForConnect(identity.id);
+            } else if (event.status === "stopped") {
+              off();
+            }
+          });
         }
         await this.#setAutoConnect(identity.id, true);
         this.#ack(id, { ok: true });
@@ -608,13 +634,19 @@ export class GatewayConnection {
    * autoConnect mirrors the user's connect intent: an explicit connect sets
    * it, an explicit disconnect clears it — so after a restart, "identities
    * that need re-auth" is exactly the autoConnect set, and one unlock brings
-   * them all back (milestone-2 §Scope).
+   * them all back (milestone-2 §Scope). Fanned out so every tab's mirror
+   * converges — a stale mirror could silently reconnect an identity the
+   * user just logged off elsewhere.
    */
   async #setAutoConnect(identityId: string, value: boolean): Promise<void> {
     await this.#ctx.db
       .update(identities)
       .set({ autoConnect: value })
       .where(eq(identities.id, identityId));
+    this.#ctx.hub.broadcast(identityId, {
+      kind: "identity.updated",
+      d: { autoConnect: value },
+    });
   }
 
   #requireSession(

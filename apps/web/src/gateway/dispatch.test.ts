@@ -303,6 +303,28 @@ describe("message.new and unread", () => {
     expect(channel?.unread).toBe(5);
   });
 
+  it("identity.updated converges the autoConnect mirror across tabs", () => {
+    dispatchFrame({
+      t: "ready",
+      d: {
+        userId: "user-1",
+        identities: [
+          {
+            id: IDENTITY,
+            name: "Amber Vale",
+            sessionStatus: "online",
+            autoConnect: true,
+          },
+        ],
+      },
+    });
+    dispatchFrame(event("identity.updated", { autoConnect: false }));
+    expect(
+      useSessionsStore.getState().identities?.find((i) => i.id === IDENTITY)
+        ?.autoConnect,
+    ).toBe(false);
+  });
+
   it("an advanced read cursor (any tab's ack) zeroes the badge", () => {
     dispatchFrame(snapshot());
     dispatchFrame(

@@ -185,6 +185,10 @@ export async function identitiesRoutes(
       sessions.stop(row.id, "identity deleted");
       hub.identityDeleted(row.id);
       await db.delete(identities).where(eq(identities.id, row.id));
+      // A connect/unlock racing this delete may have started a session
+      // between the stop above and the row vanishing — stop again now that
+      // no route can find the identity anymore.
+      sessions.stop(row.id, "identity deleted");
       return reply.code(204).send(null);
     },
   );

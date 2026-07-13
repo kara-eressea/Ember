@@ -96,6 +96,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "session.status":
       sessions.applySessionStatus(identityId, event.d.status, event.d.reason);
       return;
+    case "identity.updated":
+      // Keeps every tab's connect-intent mirror honest — a stale mirror
+      // could silently reconnect an identity logged off in another tab.
+      sessions.setAutoConnect(identityId, event.d.autoConnect);
+      return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;
