@@ -20,6 +20,8 @@ function slice(overrides: Partial<IdentitySession>): IdentitySession {
     identityId: "id-1",
     character: "Amber Vale",
     sessionStatus: "online",
+    ownStatus: "online",
+    ownStatusmsg: "",
     limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
     dms: {},
@@ -86,9 +88,9 @@ describe("railBadge", () => {
 
 describe("railDot", () => {
   it("maps our session lifecycle onto the three dot kinds", () => {
-    expect(railDot("online")).toBe("ok");
-    expect(railDot("offline")).toBe("faint");
-    expect(railDot("stopped")).toBe("faint");
+    expect(railDot("online", "online")).toBe("ok");
+    expect(railDot("offline", "online")).toBe("faint");
+    expect(railDot("stopped", "online")).toBe("faint");
     for (const inFlight of [
       "idle",
       "acquiring_ticket",
@@ -96,7 +98,16 @@ describe("railDot", () => {
       "identifying",
       "backoff",
     ] as const) {
-      expect(railDot(inFlight)).toBe("warn");
+      expect(railDot(inFlight, "online")).toBe("warn");
     }
+  });
+
+  it("an online session reads as the character's own F-Chat status", () => {
+    expect(railDot("online", "looking")).toBe("ok");
+    expect(railDot("online", "away")).toBe("warn");
+    expect(railDot("online", "dnd")).toBe("warn");
+    // Lifecycle short of online wins regardless of the remembered status.
+    expect(railDot("backoff", "away")).toBe("warn");
+    expect(railDot("stopped", "away")).toBe("faint");
   });
 });

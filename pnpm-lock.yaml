@@ -213,6 +213,9 @@ importers:
 
   packages/protocol:
     dependencies:
+      '@emberchat/fchat-protocol':
+        specifier: workspace:*
+        version: link:../fchat-protocol
       zod:
         specifier: ^4.4.3
         version: 4.4.3

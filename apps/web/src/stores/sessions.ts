@@ -52,6 +52,9 @@ export interface IdentitySession {
   character: string;
   sessionStatus: GatewaySessionStatus;
   statusReason?: string;
+  /** Our own F-Chat status (STA) — distinct from the session lifecycle. */
+  ownStatus: string;
+  ownStatusmsg: string;
   /** Live server VARs (bytes) from the snapshot — composer limits. */
   limits: { chatMax: number; privMax: number };
   /** Keyed by channel key (events address channels by key). */
@@ -92,6 +95,8 @@ interface SessionsState {
     self: {
       character: string;
       sessionStatus: GatewaySessionStatus;
+      status: string;
+      statusmsg: string;
       limits: { chatMax: number; privMax: number };
     };
     channels: SnapshotChannel[];
@@ -155,6 +160,8 @@ function emptySession(identityId: string): IdentitySession {
     identityId,
     character: "",
     sessionStatus: "offline",
+    ownStatus: "online",
+    ownStatusmsg: "",
     // Placeholder until the snapshot delivers the live VARs.
     limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
@@ -258,6 +265,8 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ...session,
         character: d.self.character,
         sessionStatus: d.self.sessionStatus,
+        ownStatus: d.self.status,
+        ownStatusmsg: d.self.statusmsg,
         limits: d.self.limits,
         channels,
         dms,
@@ -452,7 +461,16 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               : dm,
           ]),
         );
-        return { ...session, channels, dms };
+        // Our own STA (set from any tab, or restored after a reconnect)
+        // converges the MeBar/rail status everywhere.
+        const own =
+          d.online && sameCharacter(d.character, session.character)
+            ? {
+                ownStatus: d.status ?? session.ownStatus,
+                ownStatusmsg: d.statusmsg ?? session.ownStatusmsg,
+              }
+            : {};
+        return { ...session, channels, dms, ...own };
       });
     },
 

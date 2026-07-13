@@ -844,6 +844,8 @@ describe("gateway fan-out", () => {
     expect(snapshot.d.self).toEqual({
       character: CHARACTER,
       sessionStatus: "online",
+      status: "online",
+      statusmsg: "",
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000 },
     });
@@ -860,6 +862,56 @@ describe("gateway fan-out", () => {
 
     const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("status.set fans out as presence and lands in the next snapshot's self", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "status.set",
+        d: { status: "busy", statusmsg: "plotting" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    // Our own STA converges every subscribed tab via the presence fan-out.
+    await client.next(
+      (frame): frame is Extract<ServerFrame, { t: "event" }> =>
+        frame.t === "event" &&
+        frame.d.kind === "presence" &&
+        frame.d.d.character === CHARACTER &&
+        frame.d.d.status === "busy",
+    );
+
+    // A fresh sub reads the status straight from the session (self block).
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self).toMatchObject({
+      status: "busy",
+      statusmsg: "plotting",
+    });
+
+    // Short of online there is nothing to set: the ack must say so.
+    app.sessions.stop(identityId);
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "status.set",
+        d: { status: "away", statusmsg: "" },
+      },
+    });
+    const refused = await client.nextOfType("ack");
+    expect(refused.d.ok).toBe(false);
   });
 
   it("resolves DM presence case-insensitively and fans the LIS roster out as presence.bulk", async () => {

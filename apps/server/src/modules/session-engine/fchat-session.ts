@@ -19,6 +19,7 @@ import {
   parseServerCommand,
   serializeClientCommand,
   type ClientCommand,
+  type ClientSettableStatus,
 } from "@emberchat/fchat-protocol";
 import {
   AccountLockedError,
@@ -166,6 +167,10 @@ export class FchatSession {
    * clobber the desired set, which a quick leave→rejoin may have re-added to.
    */
   readonly #pendingLeaves = new Map<string, number>();
+  /** The user's chosen status — restored after every reconnect (F-Chat
+   * resets a fresh connection to plain "online"). */
+  #desiredStatus:
+    { status: ClientSettableStatus; statusmsg: string } | undefined;
 
   constructor(options: FchatSessionOptions) {
     this.character = options.character;
@@ -258,6 +263,29 @@ export class FchatSession {
         throw new SessionNotOnlineError(this.#status);
       }
       this.events.emit("sent", { kind: "pm", recipient, message });
+    });
+  }
+
+  /** What the character's status should read as right now. */
+  get ownStatus(): { status: ClientSettableStatus; statusmsg: string } {
+    return this.#desiredStatus ?? { status: "online", statusmsg: "" };
+  }
+
+  /**
+   * Sets the character's status (STA). Remembered and re-sent after every
+   * reconnect. A synthetic self-STA is emitted on the event bus so every
+   * subscribed client converges immediately — the live server's own echo (if
+   * any) is an idempotent overwrite of the same state.
+   */
+  setStatus(status: ClientSettableStatus, statusmsg: string): void {
+    this.#assertOnline();
+    this.#desiredStatus = { status, statusmsg };
+    if (!this.#send({ cmd: "STA", payload: { status, statusmsg } })) {
+      throw new SessionNotOnlineError(this.#status);
+    }
+    this.events.emit("command", {
+      cmd: "STA",
+      payload: { character: this.character, status, statusmsg },
     });
   }
 
@@ -390,6 +418,10 @@ export class FchatSession {
           }
           this.#unconfirmedJoins.set(channel, attempts + 1);
           this.#send({ cmd: "JCH", payload: { channel } });
+        }
+        // A fresh connection is plain "online" — restore the chosen status.
+        if (this.#desiredStatus) {
+          this.#send({ cmd: "STA", payload: this.#desiredStatus });
         }
         this.events.emit("command", command);
         return;

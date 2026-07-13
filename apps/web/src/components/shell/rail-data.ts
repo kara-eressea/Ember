@@ -2,7 +2,7 @@
 // component so badge/presence semantics are unit-testable.
 
 import type { GatewaySessionStatus } from "@emberchat/protocol";
-import type { DotKind } from "../../lib/presence.js";
+import { presenceDot, type DotKind } from "../../lib/presence.js";
 import type {
   IdentitySession,
   IdentitySummary,
@@ -38,10 +38,18 @@ export function railBadge(
   return { unread, mentions };
 }
 
-/** Presence dot for a rail item: our own session's lifecycle state. */
-export function railDot(status: GatewaySessionStatus): DotKind {
+/**
+ * Presence dot for a rail item. An online session reads as the character's
+ * own F-Chat status (looking = ok, away/busy/dnd/idle = warn — the same
+ * mapping as everyone else's dots); anything short of online falls back to
+ * the session lifecycle.
+ */
+export function railDot(
+  status: GatewaySessionStatus,
+  ownStatus: string,
+): DotKind {
   if (status === "online") {
-    return "ok";
+    return presenceDot(true, ownStatus);
   }
   if (status === "offline" || status === "stopped") {
     return "faint";

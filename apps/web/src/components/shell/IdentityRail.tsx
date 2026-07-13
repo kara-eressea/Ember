@@ -56,7 +56,10 @@ function RailItem({
   const slice = useSessionsStore((s) => s.sessions[identity.id]);
   const lastConv = useUiStore((s) => s.lastConvByIdentity[identity.id]);
   const badge = railBadge(identity, slice);
-  const dot = railDot(slice?.sessionStatus ?? "offline");
+  const dot = railDot(
+    slice?.sessionStatus ?? "offline",
+    slice?.ownStatus ?? "online",
+  );
   const to =
     lastConv !== undefined
       ? `/app/${identity.id}/${lastConv}`
