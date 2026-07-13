@@ -115,6 +115,7 @@ export async function buildApp({
     tickets,
     sessions,
     history,
+    hub,
     // Same knob as the auth endpoints: these routes hold F-List credentials
     // and consume the process-wide F-List API throttle.
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
@@ -126,6 +127,7 @@ export async function buildApp({
     sessions,
     tickets,
     hub,
+    history,
   });
   // Gateway frames are tiny; without a cap the ws default (100 MiB) lets a
   // pre-hello client force huge buffers + JSON.parse work.

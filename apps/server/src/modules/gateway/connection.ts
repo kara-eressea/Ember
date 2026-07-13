@@ -27,6 +27,7 @@ import {
   type ConversationRow,
   type HistorySink,
 } from "../history/sink.js";
+import { connectIdentity } from "../session-engine/connect-identity.js";
 import type {
   FchatSession,
   SessionLogger,
@@ -480,57 +481,27 @@ export class GatewayConnection {
       return;
     }
     switch (cmd.action) {
-      case "session.connect": {
-        // Which decisions.md §9 scenario this connect is depends on the
-        // autoConnect flag at the moment of connecting: true means the user
-        // never logged this identity off — the stopped session is an outage
-        // or restart, so restore the exact channels (scenario 2); false
-        // means they explicitly logged off earlier and this is the
-        // deliberate return — pinned channels only (scenario 3). A connect
-        // while the session already runs never reseeds a live channel set
-        // (the registry ignores the seed then).
-        const existing = this.#ctx.sessions.get(identity.id);
-        const fresh = !existing || existing.status === "stopped";
-        let explicitReturn = false;
-        let seed: string[] = [];
-        if (fresh) {
-          const [row] = await this.#ctx.db
-            .select({ autoConnect: identities.autoConnect })
-            .from(identities)
-            .where(eq(identities.id, identity.id));
-          explicitReturn = row?.autoConnect === false;
-          seed = explicitReturn
-            ? await this.#ctx.history.pinnedChannelKeys(identity.id)
-            : await this.#ctx.history.channelsForResume(identity.id);
-        }
-        const session = this.#ctx.sessions.start({
+      case "session.connect":
+        // Scenario selection, seeding and the deferred reconcile live in
+        // connectIdentity (shared with the REST connect route).
+        await connectIdentity(this.#ctx, {
           identityId: identity.id,
           character: identity.character,
           accountId: identity.accountId,
           accountName: identity.accountName,
-          seedChannels: seed,
         });
-        if (fresh && explicitReturn) {
-          // The scenario-3 reconcile (casual joined flags → false) is
-          // destructive, so it runs only once the session actually reaches
-          // online — a connect that dies on a locked vault or bad password
-          // must leave the recovery set intact.
-          const off = session.events.on("status", (event) => {
-            if (event.status === "online") {
-              off();
-              this.#ctx.history.reconcileJoinedForConnect(identity.id);
-            } else if (event.status === "stopped") {
-              off();
-            }
-          });
-        }
-        await this.#setAutoConnect(identity.id, true);
+        this.#ctx.hub.broadcast(identity.id, {
+          kind: "identity.updated",
+          d: { autoConnect: true },
+        });
         this.#ack(id, { ok: true });
         return;
-      }
       case "session.disconnect":
-        this.#ctx.sessions.stop(identity.id, "disconnected by user");
+        // Flag first, stop second: clients react to the stopped status
+        // event, and a tab whose autoConnect mirror still says true would
+        // auto-resurrect the session the user just logged off.
         await this.#setAutoConnect(identity.id, false);
+        this.#ctx.sessions.stop(identity.id, "disconnected by user");
         this.#ack(id, { ok: true });
         return;
       case "channel.join": {

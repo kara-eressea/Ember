@@ -319,6 +319,37 @@ describe("restart + unlock", () => {
 });
 
 describe("delete", () => {
+  it("stops the account's running sessions before the cascade deletes their identities", async () => {
+    const token = await registerUser();
+    const { account } = await addAccount(token);
+    const [identity] = await db
+      .insert(identities)
+      .values({ flistAccountId: account.id, characterName: "Amber Vale" })
+      .returning();
+    const session = app.sessions.start({
+      identityId: identity!.id,
+      character: "Amber Vale",
+      accountId: account.id,
+      accountName: "amber@example.test",
+    });
+    await vi.waitFor(
+      () => {
+        expect(session.status).toBe("online");
+      },
+      { timeout: 10_000 },
+    );
+
+    const del = await app.inject({
+      method: "DELETE",
+      url: `/api/flist-accounts/${account.id}`,
+      headers: authed(token),
+    });
+    expect(del.statusCode).toBe(204);
+    // No zombie F-Chat session may outlive its cascade-deleted identity.
+    expect(session.status).toBe("stopped");
+    expect(app.sessions.get(identity!.id)).toBeUndefined();
+  });
+
   it("removes the account and locks it out", async () => {
     const token = await registerUser();
     const { account } = await addAccount(token);
