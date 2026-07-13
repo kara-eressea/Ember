@@ -12,6 +12,8 @@ import { useMessagesStore } from "../../stores/messages.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { nickColor } from "../../theme/tokens.js";
 import { buildRows } from "./log-rows.js";
+import { parseEmote } from "./rich-text.js";
+import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
 const EMPTY: MessageDto[] = [];
@@ -189,6 +191,7 @@ export function MessageLog({
 }
 
 function MessageLine({ message }: { message: MessageDto }) {
+  const emote = parseEmote(message.bbcode);
   return (
     <div className={styles.messageLine}>
       <span className={styles.time}>{formatTime(message.createdAt)}</span>
@@ -198,7 +201,16 @@ function MessageLine({ message }: { message: MessageDto }) {
       >
         {message.senderCharacter}
       </span>
-      <span className={styles.body}>{message.bbcode}</span>
+      {emote ? (
+        // /me: italic action running straight off the name, no separator.
+        <span className={`${styles.body} ${styles.emoteBody ?? ""}`}>
+          <RichText bbcode={emote.action} />
+        </span>
+      ) : (
+        <span className={styles.body}>
+          <RichText bbcode={message.bbcode} />
+        </span>
+      )}
     </div>
   );
 }
@@ -207,7 +219,9 @@ function SystemLine({ message }: { message: MessageDto }) {
   return (
     <div className={styles.systemLine}>
       <span className={styles.time}>{formatTime(message.createdAt)}</span>
-      <span>{message.bbcode}</span>
+      <span>
+        <RichText bbcode={message.bbcode} />
+      </span>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   type DmView,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
 const DESCRIPTION_CLAMP = 140;
@@ -170,7 +171,7 @@ export function ChannelHeader({
         <div
           className={`${styles.description} ${expanded ? "" : (styles.descriptionClamped ?? "")}`}
         >
-          {description}{" "}
+          <RichText bbcode={description} />{" "}
           {clampable && expanded && (
             <button
               className={styles.showMore}
@@ -233,9 +234,19 @@ export function DmHeader({
       </div>
       {(dm.statusmsg || dm.status) && (
         <div className={styles.description}>
-          {dm.online
-            ? `${dm.status}${dm.statusmsg ? ` — ${dm.statusmsg}` : ""}`
-            : "offline"}
+          {dm.online ? (
+            <>
+              {dm.status}
+              {dm.statusmsg ? (
+                <>
+                  {" — "}
+                  <RichText bbcode={dm.statusmsg} />
+                </>
+              ) : null}
+            </>
+          ) : (
+            "offline"
+          )}
         </div>
       )}
     </header>
