@@ -1,6 +1,7 @@
-// AppShell (COMPONENTS.md §Layout): sidebar · main · members grid, driven by
-// /app/:identityId/:convId?. Owns the gateway lifecycle for the tab: connect
-// the socket, subscribe the routed identity, connect its F-Chat session when
+// AppShell (COMPONENTS.md §Layout): rail · sidebar · main · members grid,
+// driven by /app/:identityId/:convId?. Owns the gateway lifecycle for the
+// tab: connect the socket, subscribe every identity (background identities
+// must stream so their rail badges stay live), connect F-Chat sessions where
 // the autoConnect intent says so (sessions themselves outlive every tab —
 // the bouncer property), and advance the read cursor for whatever
 // conversation is on screen.
@@ -20,6 +21,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
+import { IdentityRail } from "./IdentityRail.js";
 import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
 
@@ -35,11 +37,22 @@ export function AppShell() {
     gateway.connect();
   }, []);
 
+  // The routed identity subscribes immediately (its snapshot should win the
+  // race); the rest follow once ready lists them, so background badges and
+  // catch-up stream for every identity, not just the visible one.
   useEffect(() => {
     if (identityId !== undefined) {
       gateway.sub(identityId);
     }
   }, [identityId]);
+  const identityIdsKey = identities?.map((i) => i.id).join(",") ?? "";
+  useEffect(() => {
+    for (const id of identityIdsKey.split(",")) {
+      if (id !== "") {
+        gateway.sub(id);
+      }
+    }
+  }, [identityIdsKey]);
 
   useEffect(() => {
     useUiStore.getState().setActive(identityId, convId);
@@ -48,28 +61,30 @@ export function AppShell() {
     };
   }, [identityId, convId]);
 
-  // Start the F-Chat session on demand — once per identity per shell visit,
-  // so a stop (locked vault, auth failure) surfaces its reason instead of
+  // Start F-Chat sessions on demand — once per identity per shell visit, so
+  // a stop (locked vault, auth failure) surfaces its reason instead of
   // looping. Gated on the autoConnect intent flag: an identity the user
   // explicitly disconnected stays offline until they explicitly connect it
   // again (the MeBar power control), never because a tab happened to open.
-  const connectAttemptedFor = useRef<string>(undefined);
-  const sessionStatus = session?.sessionStatus;
-  const synced = session?.synced ?? false;
-  const autoConnect = identities?.find((i) => i.id === identityId)?.autoConnect;
+  // All identities, not just the routed one — the rail promises background
+  // identities stay online.
+  const sessions = useSessionsStore((s) => s.sessions);
+  const connectAttempted = useRef(new Set<string>());
   useEffect(() => {
-    if (
-      identityId === undefined ||
-      !synced ||
-      autoConnect !== true ||
-      connectAttemptedFor.current === identityId ||
-      (sessionStatus !== "offline" && sessionStatus !== "stopped")
-    ) {
-      return;
+    for (const identity of identities ?? []) {
+      const slice = sessions[identity.id];
+      if (
+        !slice?.synced ||
+        identity.autoConnect !== true ||
+        connectAttempted.current.has(identity.id) ||
+        (slice.sessionStatus !== "offline" && slice.sessionStatus !== "stopped")
+      ) {
+        continue;
+      }
+      connectAttempted.current.add(identity.id);
+      void gateway.cmd({ identityId: identity.id, action: "session.connect" });
     }
-    connectAttemptedFor.current = identityId;
-    void gateway.cmd({ identityId, action: "session.connect" });
-  }, [identityId, synced, sessionStatus, autoConnect]);
+  }, [identities, sessions]);
 
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.
@@ -117,6 +132,7 @@ export function AppShell() {
     <div
       className={`${styles.shell} ${showMembers ? "" : (styles.membersClosed ?? "")}`}
     >
+      <IdentityRail activeId={identityId} />
       <Sidebar session={session} activeConvId={convId} />
       <main className={styles.main}>
         {session.notice && (
