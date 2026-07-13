@@ -1,2 +1,15 @@
 // Markdown → BBCode translation, BBCode AST parser + sanitizer (M4).
-export {};
+
+export {
+  BB_COLORS,
+  BB_NAME_TAGS,
+  BB_WRAPPER_TAGS,
+  parseBBCode,
+  sanitizeBBCode,
+  serializeBBCode,
+  type BBColor,
+  type BBNameTag,
+  type BBNode,
+  type BBWrapperTag,
+} from "./bbcode.js";
+export { mdToBBCode } from "./markdown.js";
