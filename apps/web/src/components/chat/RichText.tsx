@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
+import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
 import { textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
 
@@ -69,10 +70,7 @@ function renderNode(node: BBNode, key: string): ReactNode {
           {node.name}
         </a>
       ) : (
-        // icon/eicon: a name chip until M4 step 3 renders inline images.
-        <span key={key} className={styles.bodyCode} title={`[${node.tag}]`}>
-          {node.name}
-        </span>
+        <InlineIcon key={key} tag={node.tag} name={node.name} />
       );
     case "noparse":
       return (
@@ -115,4 +113,44 @@ function renderText(text: string, keyBase: string): ReactNode[] {
         );
     }
   });
+}
+
+/**
+ * Inline [icon]/[eicon] (decisions.md §8): fixed 60px box with explicit
+ * dimensions so virtualized rows measure right before the image loads;
+ * hotlinked + lazy like avatars. [icon] is the character's avatar and links
+ * to their profile. A name outside the safe charset falls back to a chip.
+ * Display-mode/animation preferences arrive in M5.
+ */
+function InlineIcon({ tag, name }: { tag: "icon" | "eicon"; name: string }) {
+  const src = tag === "eicon" ? eiconUrl(name) : avatarUrl(name);
+  if (src === undefined) {
+    return (
+      <span className={styles.bodyCode} title={`[${tag}]`}>
+        {name}
+      </span>
+    );
+  }
+  const img = (
+    <img
+      className={styles.bodyEicon}
+      src={src}
+      alt={name}
+      title={name}
+      width={60}
+      height={60}
+      loading="lazy"
+    />
+  );
+  return tag === "icon" ? (
+    <a
+      href={`https://www.f-list.net/c/${encodeURIComponent(name)}`}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      {img}
+    </a>
+  ) : (
+    img
+  );
 }
