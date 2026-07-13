@@ -12,6 +12,7 @@ import {
 import { gateway } from "../../gateway/socket.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
+import { channelPath, dmPath } from "../../lib/routes.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -80,7 +81,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   const channelRow = (channel: ChannelView, pinned: boolean) => (
     <NavRow
       key={`c:${channel.key}`}
-      to={`/app/${session.identityId}/${channel.convId}`}
+      to={channelPath(session.character, channel.key)}
       active={channel.convId === activeConvId}
       unread={channel.unread}
       mentions={channel.mentions}
@@ -92,7 +93,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   const dmRow = (dm: DmView, pinned: boolean) => (
     <NavRow
       key={`d:${dm.convId}`}
-      to={`/app/${session.identityId}/${dm.convId}`}
+      to={dmPath(session.character, dm.partner)}
       active={dm.convId === activeConvId}
       unread={dm.unread}
       pinned={pinned}
@@ -430,7 +431,7 @@ function JoinChannelForm({ session }: { session: IdentitySession }) {
         return;
       }
       setKey("");
-      void navigate(`/app/${session.identityId}/${channel.convId}`);
+      void navigate(channelPath(session.character, channel.key));
     } finally {
       setBusy(false);
     }
@@ -500,7 +501,9 @@ function NewDmForm({ session }: { session: IdentitySession }) {
       .getState()
       .applyConversation(session.identityId, ack.conversation);
     setName("");
-    void navigate(`/app/${session.identityId}/${ack.conversation.id}`);
+    void navigate(
+      dmPath(session.character, ack.conversation.partnerCharacter ?? ""),
+    );
   }
 
   return (

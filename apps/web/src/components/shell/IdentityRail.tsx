@@ -13,6 +13,7 @@ import {
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
 import { presenceDot } from "../../lib/presence.js";
+import { identityPath } from "../../lib/routes.js";
 import {
   useSessionsStore,
   type IdentitySummary,
@@ -97,10 +98,8 @@ function RailItem({
     slice?.sessionStatus ?? "offline",
     slice?.ownStatus ?? "online",
   );
-  const to =
-    lastConv !== undefined
-      ? `/app/${identity.id}/${lastConv}`
-      : `/app/${identity.id}`;
+  const base = identityPath(identity.name);
+  const to = lastConv !== undefined ? `${base}/${lastConv}` : base;
 
   return (
     <Link
