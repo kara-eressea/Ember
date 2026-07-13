@@ -15,6 +15,13 @@ export type RateGateClass = "MSG" | "PRI";
  */
 export const FLOOD_MARGIN_MS = 100;
 
+/**
+ * Per-class backlog bound. The gate only *delays* — without a cap, a client
+ * bursting sends would queue hours of messages that keep going out as the
+ * character long after it disconnected, with memory to match.
+ */
+export const MAX_QUEUE_LENGTH = 32;
+
 interface Pending {
   readonly send: () => void;
   readonly resolve: () => void;
@@ -34,20 +41,40 @@ export class RateGateClearedError extends Error {
   }
 }
 
+export class RateGateFullError extends Error {
+  constructor(limit: number) {
+    super(`Send queue is full (${String(limit)} pending) — slow down`);
+    this.name = "RateGateFullError";
+  }
+}
+
+export interface RateGateOptions {
+  readonly maxQueueLength?: number;
+}
+
 export class RateGate {
   readonly #intervalSecondsFor: (cls: RateGateClass) => number;
   readonly #classes = new Map<RateGateClass, ClassState>();
+  readonly #maxQueueLength: number;
 
-  constructor(intervalSecondsFor: (cls: RateGateClass) => number) {
+  constructor(
+    intervalSecondsFor: (cls: RateGateClass) => number,
+    options: RateGateOptions = {},
+  ) {
     this.#intervalSecondsFor = intervalSecondsFor;
+    this.#maxQueueLength = options.maxQueueLength ?? MAX_QUEUE_LENGTH;
   }
 
   /**
    * Queues `send` behind the class's flood window; resolves once it ran.
-   * FIFO per class; classes never delay each other.
+   * FIFO per class; classes never delay each other. Rejects immediately when
+   * the class backlog is at capacity.
    */
   schedule(cls: RateGateClass, send: () => void): Promise<void> {
     const state = this.#stateFor(cls);
+    if (state.queue.length >= this.#maxQueueLength) {
+      return Promise.reject(new RateGateFullError(this.#maxQueueLength));
+    }
     return new Promise<void>((resolve, reject) => {
       state.queue.push({ send, resolve, reject });
       this.#pump(cls, state);

@@ -52,7 +52,9 @@ export function applyTheme(accent: AccentId): void {
 
 export function savedAccent(): AccentId {
   const stored = localStorage.getItem(ACCENT_STORAGE_KEY);
-  return stored !== null && stored in ACCENTS
+  // Object.hasOwn, not `in`: a poisoned key like "toString" would pass the
+  // prototype-chain check and brick the app at boot.
+  return stored !== null && Object.hasOwn(ACCENTS, stored)
     ? (stored as AccentId)
     : DEFAULT_ACCENT;
 }

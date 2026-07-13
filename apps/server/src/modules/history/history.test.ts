@@ -20,6 +20,7 @@ import { createDb, type Db } from "../../db/index.js";
 import { conversations, identities, messages } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
+import { ConversationLimitError, HistorySink } from "./sink.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
@@ -272,6 +273,80 @@ describe("history sink", () => {
       bbcode: "shipping it",
       sentByUs: true,
     });
+  });
+
+  it("merges PM threads case-insensitively (F-Chat resolves recipients regardless of casing)", async () => {
+    const { identityId, session } = await startIdentity();
+
+    // Outbound to a lowercased name, then the reply arrives with the
+    // canonical casing — one thread, not two.
+    const opened = await app.history.ensurePmConversation(
+      identityId,
+      "nyx firemane",
+    );
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "one thread" },
+    });
+    await app.history.flush();
+
+    const convs = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.identityId, identityId));
+    expect(convs).toHaveLength(1);
+    expect(convs[0]!.id).toBe(opened.id);
+
+    const again = await app.history.ensurePmConversation(
+      identityId,
+      "NYX FIREMANE",
+    );
+    expect(again.id).toBe(opened.id);
+  });
+
+  it("caps client-initiated conversation creation per identity", async () => {
+    const { identityId } = await startIdentity();
+    const cappedSink = new HistorySink(db, undefined, {
+      maxConversationsPerIdentity: 2,
+    });
+    await cappedSink.ensurePmConversation(identityId, "Partner One");
+    await cappedSink.ensurePmConversation(identityId, "Partner Two");
+    await expect(
+      cappedSink.ensurePmConversation(identityId, "Partner Three"),
+    ).rejects.toThrow(ConversationLimitError);
+    // Existing conversations still resolve under the cap.
+    await expect(
+      cappedSink.ensurePmConversation(identityId, "partner one"),
+    ).resolves.toMatchObject({ partnerCharacter: "Partner One" });
+  });
+
+  it("clamps read-cursor acks to the conversation's real newest message", async () => {
+    const { identityId, session } = await startIdentity();
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "clamp me" },
+    });
+    await app.history.flush();
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.identityId, identityId));
+    const [message] = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conv!.id));
+
+    // A bogus huge ack must not pin the cursor above future messages.
+    const row = await app.history.markRead(
+      identityId,
+      conv!.id,
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(row?.lastReadMessageId).toBe(message!.id);
+
+    // Still monotonic: a stale ack never regresses the cursor.
+    const stale = await app.history.markRead(identityId, conv!.id, 1);
+    expect(stale?.lastReadMessageId).toBe(message!.id);
   });
 
   it("tracks the joined flag across join and leave", async () => {

@@ -23,12 +23,15 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
     return config;
   }
   try {
-    const response = await fetch("/config.json");
+    // Bounded: boot must not hang on a stalled config fetch.
+    const response = await fetch("/config.json", {
+      signal: AbortSignal.timeout(3000),
+    });
     if (response.ok) {
       config = { ...FALLBACK, ...((await response.json()) as RuntimeConfig) };
     }
   } catch {
-    // Dev server without a config endpoint — the fallback stands.
+    // Dev server without a config endpoint (or a timeout) — fallback stands.
   }
   return config;
 }

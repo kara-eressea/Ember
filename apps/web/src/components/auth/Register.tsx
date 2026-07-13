@@ -70,6 +70,7 @@ export function Register() {
             autoComplete="username"
             required
             minLength={3}
+            maxLength={32}
           />
         </label>
         <label className={styles.field}>
@@ -98,6 +99,7 @@ export function Register() {
               autoComplete="new-password"
               required
               minLength={8}
+              maxLength={128}
             />
             <button
               type="button"

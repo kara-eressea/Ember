@@ -73,10 +73,13 @@ async function rawRequest(
 async function toError(response: Response): Promise<ApiError> {
   let message = `Request failed (${String(response.status)})`;
   try {
-    const body = (await response.json()) as { error?: string };
-    if (body.error) {
-      message = body.error;
-    }
+    // Our routes put the text in `error`; fastify's own errors (validation,
+    // rate limit) put the useful part in `message`.
+    const body = (await response.json()) as {
+      error?: string;
+      message?: string;
+    };
+    message = body.error ?? body.message ?? message;
   } catch {
     // Non-JSON error body — keep the generic message.
   }
@@ -129,7 +132,8 @@ export const api = {
     );
   },
   logout(refreshToken: string) {
-    return apiRequest<{ ok: boolean }>("/auth/logout", {
+    // 204 — no body.
+    return apiRequest<undefined>("/auth/logout", {
       method: "POST",
       body: { refreshToken },
     });

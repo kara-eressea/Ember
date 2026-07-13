@@ -34,39 +34,56 @@ async function waitForHealthy(url: string, child: ChildProcess): Promise<void> {
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
-  const sim = new FchatSim();
-  await sim.start();
+  let sim: FchatSim | undefined;
+  let container: Awaited<ReturnType<PostgreSqlContainer["start"]>> | undefined;
+  let server: ChildProcess | undefined;
 
-  const container = await new PostgreSqlContainer("postgres:18-alpine").start();
-
-  const server = spawn(process.execPath, [SERVER_ENTRY], {
-    env: {
-      ...process.env,
-      HOST: "127.0.0.1",
-      PORT: String(API_PORT),
-      DATABASE_URL: container.getConnectionUri(),
-      AUTH_SECRET: "e2e-test-secret-0123456789abcdefghijklmn",
-      AUTH_RATE_LIMIT_MAX: "1000",
-      FCHAT_URL: sim.wsUrl,
-      FLIST_API_URL: sim.httpUrl,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-
-  await waitForHealthy(`http://127.0.0.1:${String(API_PORT)}/healthz`, server);
-
-  return async () => {
-    server.kill("SIGTERM");
-    await new Promise<void>((resolve) => {
-      server.once("exit", () => {
-        resolve();
+  const teardown = async () => {
+    if (server) {
+      const child = server;
+      child.kill("SIGTERM");
+      await new Promise<void>((resolve) => {
+        const killTimer = setTimeout(() => {
+          child.kill("SIGKILL");
+          resolve();
+        }, 5000);
+        child.once("exit", () => {
+          clearTimeout(killTimer);
+          resolve();
+        });
       });
-      setTimeout(() => {
-        server.kill("SIGKILL");
-        resolve();
-      }, 5000);
-    });
-    await container.stop();
-    await sim.stop();
+    }
+    await container?.stop();
+    await sim?.stop();
   };
+
+  try {
+    sim = new FchatSim();
+    await sim.start();
+    container = await new PostgreSqlContainer("postgres:18-alpine").start();
+    server = spawn(process.execPath, [SERVER_ENTRY], {
+      env: {
+        ...process.env,
+        HOST: "127.0.0.1",
+        PORT: String(API_PORT),
+        DATABASE_URL: container.getConnectionUri(),
+        AUTH_SECRET: "e2e-test-secret-0123456789abcdefghijklmn",
+        AUTH_RATE_LIMIT_MAX: "1000",
+        FCHAT_URL: sim.wsUrl,
+        FLIST_API_URL: sim.httpUrl,
+      },
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    await waitForHealthy(
+      `http://127.0.0.1:${String(API_PORT)}/healthz`,
+      server,
+    );
+  } catch (error) {
+    // Partial-failure hygiene: a leaked server child would keep the API port
+    // bound and fail every subsequent run's health wait.
+    await teardown();
+    throw error;
+  }
+
+  return teardown;
 }

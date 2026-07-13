@@ -22,7 +22,11 @@ import {
 } from "@emberline/protocol";
 import type { Db } from "../../db/index.js";
 import { conversations, flistAccounts, identities } from "../../db/schema.js";
-import type { ConversationRow, HistorySink } from "../history/sink.js";
+import {
+  ConversationLimitError,
+  type ConversationRow,
+  type HistorySink,
+} from "../history/sink.js";
 import type {
   FchatSession,
   SessionLogger,
@@ -42,6 +46,14 @@ export const HELLO_TIMEOUT_MS = 10_000;
 export const MAX_BUFFERED_BYTES = 1024 * 1024;
 /** Messages per catchup frame. */
 export const CATCHUP_BATCH_SIZE = 200;
+/**
+ * Idle re-verification interval: a read-only listener sends no frames, so
+ * without this a revoked session would keep receiving fan-out forever.
+ * (Frames re-verify on every sub/cmd/ack, like REST does per request.)
+ */
+export const AUTH_RECHECK_MS = 30_000;
+/** Inbound frame quota — generous for humans, a wall for loops. */
+export const MAX_FRAMES_PER_MINUTE = 600;
 
 export interface GatewayConnectionContext {
   readonly db: Db;
@@ -50,7 +62,9 @@ export interface GatewayConnectionContext {
   readonly hub: GatewayHub;
   readonly verifyToken: (
     token: string,
-  ) => Promise<{ userId: string } | undefined>;
+  ) => Promise<{ userId: string; sid: string } | undefined>;
+  /** True while the auth session row exists and is unexpired. */
+  readonly sessionAlive: (sid: string) => Promise<boolean>;
   readonly log: SessionLogger;
 }
 
@@ -77,13 +91,17 @@ export class GatewayConnection {
   readonly #log: SessionLogger;
 
   #userId: string | undefined;
+  #sid: string | undefined;
   #resume: ResumeCursors = {};
-  /** Ownership cache: identityId → identity row (or null = checked, foreign). */
-  readonly #owned = new Map<string, OwnedIdentity | null>();
+  /** Ownership cache — positive entries only; misses always re-query. */
+  readonly #owned = new Map<string, OwnedIdentity>();
   readonly #subscriptions = new Map<string, Subscription>();
   /** Serial inbound queue — frames are handled in arrival order. */
   #inbound: Promise<void> = Promise.resolve();
   #helloTimer: NodeJS.Timeout | undefined;
+  #authTimer: NodeJS.Timeout | undefined;
+  #frameWindowStart = 0;
+  #framesInWindow = 0;
 
   constructor(socket: WebSocket, ctx: GatewayConnectionContext) {
     this.#socket = socket;
@@ -146,7 +164,22 @@ export class GatewayConnection {
     });
   }
 
+  /** Sliding one-minute frame quota; loops get cut, humans never notice. */
+  #withinFrameQuota(): boolean {
+    const now = Date.now();
+    if (now - this.#frameWindowStart >= 60_000) {
+      this.#frameWindowStart = now;
+      this.#framesInWindow = 0;
+    }
+    this.#framesInWindow += 1;
+    return this.#framesInWindow <= MAX_FRAMES_PER_MINUTE;
+  }
+
   async #handleRaw(data: WebSocket.RawData): Promise<void> {
+    if (!this.#withinFrameQuota()) {
+      this.#close(GATEWAY_CLOSE.rateLimited, "frame quota exceeded");
+      return;
+    }
     let json: unknown;
     try {
       // eslint-disable-next-line @typescript-eslint/no-base-to-string -- ws RawData is Buffer/ArrayBuffer, toString is the decode
@@ -184,6 +217,9 @@ export class GatewayConnection {
     if (this.#userId === undefined) {
       this.#close(GATEWAY_CLOSE.unauthorized, "hello first");
       return;
+    }
+    if (!(await this.#authStillValid())) {
+      return; // #authStillValid already closed the socket
     }
     switch (frame.t) {
       case "sub":
@@ -233,6 +269,12 @@ export class GatewayConnection {
       this.#helloTimer = undefined;
     }
     this.#userId = auth.userId;
+    this.#sid = auth.sid;
+    // A read-only listener never sends frames, so the per-frame recheck
+    // alone would let a revoked session keep receiving fan-out forever.
+    this.#authTimer = setInterval(() => {
+      void this.#authStillValid();
+    }, AUTH_RECHECK_MS);
     this.#resume = d.resume ?? {};
 
     const rows = await this.#ctx.db
@@ -263,11 +305,38 @@ export class GatewayConnection {
     });
   }
 
-  /** The identity row, only if it belongs to this connection's user. */
-  async #ownedIdentity(identityId: string): Promise<OwnedIdentity | undefined> {
-    const cached = this.#owned.get(identityId);
-    if (cached !== undefined) {
-      return cached ?? undefined;
+  /**
+   * Re-verifies the auth session (one indexed query — the same cost REST
+   * pays per request, bounded here by the frame quota). Returns false after
+   * closing the socket when the session has been revoked — logout must cut
+   * gateway access, not just REST.
+   */
+  async #authStillValid(): Promise<boolean> {
+    if (this.#sid === undefined) {
+      return false;
+    }
+    if (await this.#ctx.sessionAlive(this.#sid)) {
+      return true;
+    }
+    this.#close(GATEWAY_CLOSE.unauthorized, "session revoked");
+    return false;
+  }
+
+  /**
+   * The identity row, only if it belongs to this connection's user. Only
+   * positive results are cached (a stream of random ids must not grow the
+   * map); pass `fresh` for mutating commands where a stale row would act on
+   * a deleted identity.
+   */
+  async #ownedIdentity(
+    identityId: string,
+    { fresh = false } = {},
+  ): Promise<OwnedIdentity | undefined> {
+    if (!fresh) {
+      const cached = this.#owned.get(identityId);
+      if (cached !== undefined) {
+        return cached;
+      }
     }
     const [row] = await this.#ctx.db
       .select({
@@ -285,8 +354,18 @@ export class GatewayConnection {
         ),
       )
       .limit(1);
-    this.#owned.set(identityId, row ?? null);
+    if (row) {
+      this.#owned.set(identityId, row);
+    } else {
+      this.#owned.delete(identityId);
+    }
     return row;
+  }
+
+  /** Hub callback when an identity is deleted: drop cache + subscription. */
+  dropIdentity(identityId: string): void {
+    this.#owned.delete(identityId);
+    this.#subscriptions.delete(identityId);
   }
 
   // ── sub: snapshot → catchup → live ─────────────────────────────────────────
@@ -377,7 +456,12 @@ export class GatewayConnection {
   // ── cmd dispatch ───────────────────────────────────────────────────────────
 
   async #handleCmd(cmd: GatewayCmd, id: number | undefined): Promise<void> {
-    const identity = await this.#ownedIdentity(cmd.identityId);
+    // session.connect bypasses the ownership cache: acting on a stale row
+    // would resurrect a just-deleted identity as an orphaned F-Chat session
+    // no client could ever see or stop.
+    const identity = await this.#ownedIdentity(cmd.identityId, {
+      fresh: cmd.action === "session.connect",
+    });
     if (!identity) {
       this.#ack(id, { ok: false, error: "identity not found" });
       return;
@@ -413,11 +497,19 @@ export class GatewayConnection {
         return;
       }
       case "pm.open": {
-        const row = await this.#ctx.history.ensurePmConversation(
-          identity.id,
-          cmd.d.character,
-        );
-        this.#ack(id, { ok: true, conversation: conversationDto(row) });
+        try {
+          const row = await this.#ctx.history.ensurePmConversation(
+            identity.id,
+            cmd.d.character,
+          );
+          this.#ack(id, { ok: true, conversation: conversationDto(row) });
+        } catch (error) {
+          if (error instanceof ConversationLimitError) {
+            this.#ack(id, { ok: false, error: error.message });
+            return;
+          }
+          throw error;
+        }
         return;
       }
       case "msg.send":
@@ -533,6 +625,10 @@ export class GatewayConnection {
     if (this.#helloTimer) {
       clearTimeout(this.#helloTimer);
       this.#helloTimer = undefined;
+    }
+    if (this.#authTimer) {
+      clearInterval(this.#authTimer);
+      this.#authTimer = undefined;
     }
     this.#subscriptions.clear();
     this.#ctx.hub.dropConnection(this);

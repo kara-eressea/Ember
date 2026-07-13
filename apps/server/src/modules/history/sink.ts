@@ -7,7 +7,7 @@
 // `message.new` events must carry the persisted messages.id, so live fan-out
 // happens after (and in the same order as) persistence, never before.
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
 import { conversations, messages } from "../../db/schema.js";
@@ -34,8 +34,10 @@ export interface HistoryEvents {
 
 interface ConversationTarget {
   readonly kind: ConversationKind;
-  /** Channel key or PM partner — the coalesce() side of the unique index. */
+  /** Channel key or PM partner (the per-kind unique-index column). */
   readonly key: string;
+  /** Cache key when it differs from `key` (lowercased PM partners). */
+  readonly cacheKey?: string;
   readonly title: string;
 }
 
@@ -46,19 +48,40 @@ const NOOP_LOGGER: SessionLogger = {
   error: () => {},
 };
 
+/**
+ * Ceiling on conversations per identity for *client-initiated* creation
+ * (pm.open). Inbound traffic is not capped — F-Chat itself is the throttle
+ * there — but a browser looping pm.open must not bloat the table.
+ */
+export const MAX_CONVERSATIONS_PER_IDENTITY = 1000;
+
+export class ConversationLimitError extends Error {
+  constructor() {
+    super("Too many conversations for this identity");
+    this.name = "ConversationLimitError";
+  }
+}
+
 export class HistorySink {
   readonly events: TypedEventBus<HistoryEvents>;
 
   readonly #db: Db;
   readonly #log: SessionLogger;
+  readonly #maxConversationsPerIdentity: number;
   /** Serial write queue: message ids must reflect arrival order. */
   #queue: Promise<void> = Promise.resolve();
   /** conversation-row cache, keyed `${identityId}:${kind}:${key}`. */
   readonly #conversationIds = new Map<string, string>();
 
-  constructor(db: Db, logger?: SessionLogger) {
+  constructor(
+    db: Db,
+    logger?: SessionLogger,
+    options: { maxConversationsPerIdentity?: number } = {},
+  ) {
     this.#db = db;
     this.#log = logger ?? NOOP_LOGGER;
+    this.#maxConversationsPerIdentity =
+      options.maxConversationsPerIdentity ?? MAX_CONVERSATIONS_PER_IDENTITY;
     this.events = new TypedEventBus<HistoryEvents>(this.#log);
   }
 
@@ -159,7 +182,18 @@ export class HistorySink {
     identityId: string,
     partner: string,
   ): Promise<ConversationRow> {
-    const id = await this.#conversationId(identityId, pmTarget(partner));
+    const target = pmTarget(partner);
+    const existing = await this.#findConversation(identityId, target);
+    if (!existing) {
+      const [row] = await this.#db
+        .select({ total: count() })
+        .from(conversations)
+        .where(eq(conversations.identityId, identityId));
+      if ((row?.total ?? 0) >= this.#maxConversationsPerIdentity) {
+        throw new ConversationLimitError();
+      }
+    }
+    const id = await this.#conversationId(identityId, target);
     const [row] = await this.#db
       .select()
       .from(conversations)
@@ -173,7 +207,9 @@ export class HistorySink {
 
   /**
    * Advances the read cursor (gateway `ack`), monotonically — a stale ack
-   * from a lagging tab never moves it backwards. Emits the updated row so
+   * from a lagging tab never moves it backwards — and clamped to the
+   * conversation's real newest message, so a bogus huge ack can't pin the
+   * cursor above all future messages forever. Emits the updated row so
    * unread counters sync across every attached client.
    */
   async markRead(
@@ -181,10 +217,11 @@ export class HistorySink {
     conversationId: string,
     messageId: number,
   ): Promise<ConversationRow | undefined> {
+    const maxId = sql`(select coalesce(max(${messages.id}), 0) from ${messages} where ${messages.conversationId} = ${conversations.id})`;
     const [row] = await this.#db
       .update(conversations)
       .set({
-        lastReadMessageId: sql`greatest(coalesce(${conversations.lastReadMessageId}, 0), ${messageId})`,
+        lastReadMessageId: sql`greatest(coalesce(${conversations.lastReadMessageId}, 0), least(${messageId}, ${maxId}))`,
       })
       .where(
         and(
@@ -268,7 +305,7 @@ export class HistorySink {
     identityId: string,
     target: ConversationTarget,
   ): Promise<string> {
-    const cacheKey = `${identityId}:${target.kind}:${target.key}`;
+    const cacheKey = `${identityId}:${target.kind}:${target.cacheKey ?? target.key}`;
     const cached = this.#conversationIds.get(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -322,7 +359,10 @@ export class HistorySink {
           eq(conversations.kind, target.kind),
           target.kind === "channel"
             ? eq(conversations.channelKey, target.key)
-            : eq(conversations.partnerCharacter, target.key),
+            : // PM partners match case-insensitively: F-Chat resolves PRI
+              // recipients regardless of casing, so "nyx" and "Nyx" are one
+              // thread (enforced by conversations_identity_partner_uniq).
+              sql`lower(${conversations.partnerCharacter}) = lower(${target.key})`,
         ),
       )
       .limit(1);
@@ -331,5 +371,12 @@ export class HistorySink {
 }
 
 function pmTarget(partner: string): ConversationTarget {
-  return { kind: "pm", key: partner, title: partner };
+  // Lowercased cache key so different casings hit the same entry; the row
+  // itself keeps the casing of whoever created the conversation.
+  return {
+    kind: "pm",
+    key: partner,
+    cacheKey: partner.toLowerCase(),
+    title: partner,
+  };
 }

@@ -114,6 +114,19 @@ export class GatewayHub {
     }
   }
 
+  /**
+   * Called by the identities DELETE route: subscribed connections drop their
+   * ownership cache and subscription so nothing acts on the dead identity.
+   * (session.connect additionally re-verifies ownership uncached.)
+   */
+  identityDeleted(identityId: string): void {
+    this.#sessionDetach.get(identityId)?.();
+    for (const connection of this.#subscribers.get(identityId) ?? []) {
+      connection.dropIdentity(identityId);
+    }
+    this.#subscribers.delete(identityId);
+  }
+
   broadcast(identityId: string, event: GatewayEvent): void {
     const set = this.#subscribers.get(identityId);
     if (!set) {
@@ -250,28 +263,33 @@ export async function gatewayRoutes(
 ): Promise<void> {
   const { db, sessions, history, hub } = options;
 
+  /** True while the auth session row exists and is unexpired. */
+  async function sessionAlive(sid: string): Promise<boolean> {
+    const [session] = await db
+      .select({ id: authSessions.id })
+      .from(authSessions)
+      .where(
+        and(eq(authSessions.id, sid), gt(authSessions.expiresAt, new Date())),
+      )
+      .limit(1);
+    return session !== undefined;
+  }
+
   /** Same trust chain as the REST `authenticate` guard: valid JWT whose sid
-   * still maps to a live auth session — logout kills gateway access too. */
+   * still maps to a live auth session. The connection re-checks the sid
+   * periodically, so logout kills gateway access too — not just at connect. */
   async function verifyToken(
     token: string,
-  ): Promise<{ userId: string } | undefined> {
+  ): Promise<{ userId: string; sid: string } | undefined> {
     let payload: { sub: string; sid: string };
     try {
       payload = instance.jwt.verify<{ sub: string; sid: string }>(token);
     } catch {
       return undefined;
     }
-    const [session] = await db
-      .select({ id: authSessions.id })
-      .from(authSessions)
-      .where(
-        and(
-          eq(authSessions.id, payload.sid),
-          gt(authSessions.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
-    return session ? { userId: payload.sub } : undefined;
+    return (await sessionAlive(payload.sid))
+      ? { userId: payload.sub, sid: payload.sid }
+      : undefined;
   }
 
   instance.get("/gateway", { websocket: true }, (socket: WebSocket) => {
@@ -281,6 +299,7 @@ export async function gatewayRoutes(
       history,
       hub,
       verifyToken,
+      sessionAlive,
       log: instance.log,
     });
   });
