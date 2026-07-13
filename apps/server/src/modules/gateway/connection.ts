@@ -39,6 +39,7 @@ import {
   buildSnapshot,
   catchupPlan,
   fetchMessagesAfter,
+  identityBadgeTotals,
   messageDto,
 } from "./snapshot.js";
 
@@ -299,16 +300,26 @@ export class GatewayConnection {
         accountName: row.accountName,
       });
     }
+    // Rail badges must paint from ready alone — a background identity may
+    // never be subscribed by this client. Each total walks capped
+    // per-conversation windows, so the cost is bounded per identity.
+    const totals = await Promise.all(
+      rows.map((row) =>
+        identityBadgeTotals(this.#ctx.db, row.id, row.character),
+      ),
+    );
     this.#send({
       t: "ready",
       d: {
         userId: auth.userId,
-        identities: rows.map((row) => ({
+        identities: rows.map((row, index) => ({
           id: row.id,
           name: row.character,
           sessionStatus:
             this.#ctx.sessions.get(row.id)?.status ?? ("offline" as const),
           autoConnect: row.autoConnect,
+          unread: totals[index]?.unread ?? 0,
+          mentions: totals[index]?.mentions ?? 0,
         })),
       },
     });

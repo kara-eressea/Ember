@@ -84,6 +84,27 @@ export interface SnapshotData {
   dms: SnapshotDm[];
 }
 
+/**
+ * Identity-level badge totals for the `ready` frame (rail badges paint before
+ * any sub). Sums the same capped per-conversation windows the snapshot uses,
+ * so a busy identity costs the same as a quiet one; the sum can exceed the
+ * per-conversation cap and the client clamps display.
+ */
+export async function identityBadgeTotals(
+  db: Db,
+  identityId: string,
+  character: string,
+): Promise<{ unread: number; mentions: number }> {
+  const counts = await conversationCounts(db, identityId, character);
+  let unread = 0;
+  let mentions = 0;
+  for (const count of counts.values()) {
+    unread += count.unread;
+    mentions += count.mentions;
+  }
+  return { unread, mentions };
+}
+
 export function memberDto(state: SessionState, character: string): MemberDto {
   const presence = state.characters.get(character);
   return {

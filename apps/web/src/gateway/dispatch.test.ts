@@ -340,10 +340,16 @@ describe("message.new and unread", () => {
             name: "Amber Vale",
             sessionStatus: "online",
             autoConnect: true,
+            unread: 3,
+            mentions: 1,
           },
         ],
       },
     });
+    // Ready-time badge totals land on the summary (the rail's initial paint).
+    expect(
+      useSessionsStore.getState().identities?.find((i) => i.id === IDENTITY),
+    ).toMatchObject({ unread: 3, mentions: 1 });
     dispatchFrame(event("identity.updated", { autoConnect: false }));
     expect(
       useSessionsStore.getState().identities?.find((i) => i.id === IDENTITY)

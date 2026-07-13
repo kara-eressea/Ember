@@ -650,11 +650,63 @@ describe("gateway handshake", () => {
         // Inserted directly by the test helper, so the API default (true)
         // does not apply.
         autoConnect: false,
+        unread: 0,
+        mentions: 0,
       },
     ]);
 
     client.send({ t: "ping" });
     await client.nextOfType("pong");
+  });
+
+  it("ready carries per-identity badge totals without a session or a sub", async () => {
+    const { identityId, token } = await createIdentity();
+    // No session started — the rail must paint badges for offline identities
+    // (their history persists regardless).
+    const [dev, lounge] = await db
+      .insert(conversations)
+      .values([
+        { identityId, kind: "channel", channelKey: "Dev", title: "Dev" },
+        { identityId, kind: "channel", channelKey: "Lounge", title: "Lounge" },
+      ])
+      .returning();
+    await db.insert(messages).values([
+      {
+        conversationId: dev!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: "unread one",
+      },
+      {
+        conversationId: dev!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `oi ${CHARACTER}!`, // mention
+      },
+      {
+        conversationId: lounge!.id,
+        senderCharacter: "Tally Marsh",
+        kind: "msg" as const,
+        bbcode: "unread two",
+      },
+      {
+        conversationId: lounge!.id,
+        senderCharacter: CHARACTER,
+        kind: "msg" as const,
+        bbcode: `I, ${CHARACTER}, sent this myself`,
+        sentByUs: true, // own sends count as neither
+      },
+    ]);
+
+    const client = await connectClient();
+    const ready = await client.hello(token);
+    // Totals aggregate across both conversations: 3 inbound unread, 1 mention.
+    expect(ready.d.identities[0]).toMatchObject({
+      id: identityId,
+      sessionStatus: "offline",
+      unread: 3,
+      mentions: 1,
+    });
   });
 
   it("rejects a bad token and a wrong protocol version", async () => {

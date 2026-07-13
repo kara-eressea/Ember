@@ -15,11 +15,15 @@ export function dispatchFrame(frame: ServerFrame): void {
   switch (frame.t) {
     case "ready":
       sessions.applyReady(
-        frame.d.identities.map(({ id, name, autoConnect }) => ({
-          id,
-          name,
-          autoConnect,
-        })),
+        frame.d.identities.map(
+          ({ id, name, autoConnect, unread, mentions }) => ({
+            id,
+            name,
+            autoConnect,
+            unread,
+            mentions,
+          }),
+        ),
       );
       for (const identity of frame.d.identities) {
         sessions.applySessionStatus(identity.id, identity.sessionStatus);
