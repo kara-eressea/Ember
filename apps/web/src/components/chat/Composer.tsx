@@ -5,7 +5,7 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
@@ -35,6 +35,8 @@ export interface ComposerProps {
   convId: string;
   /** Channel key when the conversation is a channel (icon_blacklist check). */
   channelKey?: string;
+  /** DM partner — enables outbound typing telemetry (TPN, PMs only). */
+  partner?: string;
   /** Channel key when the conversation is a channel we are not live in. */
   rejoinKey?: string;
   placeholder: string;
@@ -46,6 +48,7 @@ export function Composer({
   session,
   convId,
   channelKey,
+  partner,
   rejoinKey,
   placeholder,
   maxBytes,
@@ -72,6 +75,44 @@ export function Composer({
       el.style.height = `${String(Math.min(el.scrollHeight, MAX_INPUT_HEIGHT_PX))}px`;
     }
   }
+
+  // Outbound typing telemetry (PMs): "typing" while keys land, "paused"
+  // after 3s idle, "clear" when the input empties or the message sends.
+  // The session dedupes per recipient, so repeats never reach the wire.
+  const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function pushTyping(status: "clear" | "paused" | "typing") {
+    if (partner === undefined || !online) {
+      return;
+    }
+    void gateway.cmd({
+      identityId: session.identityId,
+      action: "typing.set",
+      d: { character: partner, status },
+    });
+  }
+
+  function onTextChange(value: string) {
+    setText(value);
+    autogrow();
+    if (partner === undefined) {
+      return;
+    }
+    clearTimeout(typingTimer.current);
+    if (value === "") {
+      pushTyping("clear");
+      return;
+    }
+    pushTyping("typing");
+    typingTimer.current = setTimeout(() => {
+      pushTyping("paused");
+    }, 3000);
+  }
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(typingTimer.current);
+    };
+  }, [convId]);
 
   function toggleMarkdown() {
     const next = !markdown;
@@ -134,6 +175,8 @@ export function Composer({
       return;
     }
     setText("");
+    clearTimeout(typingTimer.current);
+    pushTyping("clear");
     requestAnimationFrame(autogrow);
   }
 
@@ -257,8 +300,7 @@ export function Composer({
           rows={1}
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
-            autogrow();
+            onTextChange(e.target.value);
           }}
           onKeyDown={onKeyDown}
           placeholder={online ? placeholder : "Session is not connected"}

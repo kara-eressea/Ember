@@ -625,6 +625,14 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "typing.set": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          session.sendTyping(cmd.d.character, cmd.d.status);
+          this.#ack(id, { ok: true });
+        }
+        return;
+      }
       case "outbox.recall": {
         const recalled = await this.#ctx.outbox.recall(
           identity.id,

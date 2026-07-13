@@ -6,11 +6,14 @@
 // client trusts the server).
 
 import { z } from "zod";
-import { CLIENT_SETTABLE_STATUSES } from "@emberchat/fchat-protocol";
+import {
+  CLIENT_SETTABLE_STATUSES,
+  TYPING_STATUSES,
+} from "@emberchat/fchat-protocol";
 
 // Re-exported so gateway consumers (the web app) can render status pickers
 // without a direct fchat-protocol dependency.
-export { CLIENT_SETTABLE_STATUSES };
+export { CLIENT_SETTABLE_STATUSES, TYPING_STATUSES };
 export type { ClientSettableStatus } from "@emberchat/fchat-protocol";
 
 /** Exchanged in the hello handshake; bump on breaking protocol changes. */
@@ -58,8 +61,9 @@ const resumeSchema = z
   });
 
 /**
- * Gateway commands (M1 core + M2 `conv.pin` + M3 `status.set`,
- * `ignore.add/remove`). `typing.set` joins in its milestone.
+ * Gateway commands (M1 core + M2 `conv.pin` + M3 `status.set`/
+ * `ignore.add/remove` + M4 `msg.send` markdown, `outbox.recall`,
+ * `prefs.set`, `typing.set`).
  */
 const cmdSchema = z.discriminatedUnion("action", [
   z.object({
@@ -111,6 +115,15 @@ const cmdSchema = z.discriminatedUnion("action", [
       convId: z.uuid(),
       bbcode: z.string().min(1).max(65_536),
       markdown: z.string().max(65_536).optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // PM typing telemetry (TPN). Channels have no typing on F-Chat.
+    action: z.literal("typing.set"),
+    d: z.object({
+      character: characterName,
+      status: z.enum(TYPING_STATUSES),
     }),
   }),
   z.object({
