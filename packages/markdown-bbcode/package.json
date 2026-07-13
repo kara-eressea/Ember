@@ -1,5 +1,5 @@
 {
-  "name": "@emberline/markdown-bbcode",
+  "name": "@emberchat/markdown-bbcode",
   "version": "0.0.0",
   "private": true,
   "type": "module",

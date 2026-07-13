@@ -1,5 +1,5 @@
 {
-  "name": "@emberline/fchat-protocol",
+  "name": "@emberchat/fchat-protocol",
   "version": "0.0.0",
   "private": true,
   "type": "module",

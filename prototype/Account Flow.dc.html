@@ -29,12 +29,12 @@ body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-seri
         <div style="display:flex;gap:7px">
           <span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span>
         </div>
-        <div style="{{ s.urlbar }}">emberline.chat</div>
+        <div style="{{ s.urlbar }}">emberchat.chat</div>
         <div style="width:52px"></div>
       </div>
       <div style="{{ s.landing }}">
         <div style="{{ s.nav }}">
-          <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberline</div>
+          <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberchat</div>
           <div style="{{ s.navLinks }}"><span>Channels</span><span>About</span><span>Status</span></div>
           <div style="{{ s.navCtas }}"><span style="{{ s.ghostSm }}">Log in</span><span style="{{ s.primarySm }}">Create account</span></div>
         </div>
@@ -42,12 +42,12 @@ body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-seri
           <div style="{{ s.heroLeft }}">
             <div style="{{ s.eyebrow }}">IRC-NATIVE · BROWSER-FIRST</div>
             <h1 style="{{ s.h1 }}">Your IRC, always connected.</h1>
-            <p style="{{ s.lede }}">Emberline keeps a live session to your server from any browser — pinned channels, DMs, and highlights waiting the moment you open the tab. Nothing to install.</p>
+            <p style="{{ s.lede }}">EmberChat keeps a live session to your server from any browser — pinned channels, DMs, and highlights waiting the moment you open the tab. Nothing to install.</p>
             <div style="{{ s.heroCtas }}">
               <span style="{{ s.primary }}">Create account</span>
               <span style="{{ s.ghost }}">Log in ↗</span>
             </div>
-            <div style="{{ s.trust }}">Free · connects to any Emberline / IRC server · open protocol</div>
+            <div style="{{ s.trust }}">Free · connects to any EmberChat / IRC server · open protocol</div>
           </div>
           <div style="{{ s.heroRight }}">
             <div style="{{ s.previewCrop }}">
@@ -78,13 +78,13 @@ body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-seri
       <div style="{{ s.frame }}">
         <div style="{{ s.chrome }}">
           <div style="display:flex;gap:7px"><span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span></div>
-          <div style="{{ s.urlbar }}">emberline.chat/signup</div><div style="width:52px"></div>
+          <div style="{{ s.urlbar }}">emberchat.chat/signup</div><div style="width:52px"></div>
         </div>
         <div style="{{ s.authWrap }}">
           <div style="{{ s.authCard }}">
-            <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberline</div>
+            <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberchat</div>
             <div style="{{ s.authTitle }}">Create your account</div>
-            <div style="{{ s.authSub }}">This is your Emberline app login. You’ll connect server identities after you’re in.</div>
+            <div style="{{ s.authSub }}">This is your EmberChat app login. You’ll connect server identities after you’re in.</div>
 
             <div style="{{ s.fieldLabel }}">Username</div>
             <div style="{{ s.field }}"><span style="{{ s.fieldVal }}">dorn</span><span style="{{ s.avail }}">available ✓</span></div>
@@ -110,11 +110,11 @@ body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-seri
       <div style="{{ s.frame }}">
         <div style="{{ s.chrome }}">
           <div style="display:flex;gap:7px"><span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span></div>
-          <div style="{{ s.urlbar }}">emberline.chat/login</div><div style="width:52px"></div>
+          <div style="{{ s.urlbar }}">emberchat.chat/login</div><div style="width:52px"></div>
         </div>
         <div style="{{ s.authWrap }}">
           <div style="{{ s.authCard }}">
-            <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberline</div>
+            <div style="{{ s.brand }}"><span style="{{ s.logo }}"></span>emberchat</div>
             <div style="{{ s.authTitle }}">Welcome back</div>
             <div style="{{ s.authSub }}">Sign in to your app account, then pick a server identity.</div>
 
@@ -129,7 +129,7 @@ body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-seri
             <div style="{{ s.primaryFull }}">Log in</div>
             <div style="{{ s.sessionNote }}"><span style="{{ s.dotOk }}"></span>Next: choose which server identity to connect with.</div>
             <div style="{{ s.divider }}"><span style="{{ s.divLine }}"></span>or<span style="{{ s.divLine }}"></span></div>
-            <div style="{{ s.switchLine }}">New to emberline? <span style="{{ s.inlineLink }}">Create an account</span></div>
+            <div style="{{ s.switchLine }}">New to emberchat? <span style="{{ s.inlineLink }}">Create an account</span></div>
           </div>
         </div>
       </div>
@@ -140,7 +140,7 @@ body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-seri
       <div style="{{ s.frame }}">
         <div style="{{ s.chrome }}">
           <div style="display:flex;gap:7px"><span style="{{ s.tl1 }}"></span><span style="{{ s.tl2 }}"></span><span style="{{ s.tl3 }}"></span></div>
-          <div style="{{ s.urlbar }}">app.emberline.chat/connect</div><div style="width:52px"></div>
+          <div style="{{ s.urlbar }}">app.emberchat.chat/connect</div><div style="width:52px"></div>
         </div>
         <div style="{{ s.authWrap }}">
           <div style="{{ s.connectCard }}">
@@ -180,7 +180,7 @@ class Component extends DCLogic {
       mono:false,ui:'IBM Plex Sans',radius,overlay:'none',descExpanded:false,
       nick:['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']};
     const features=[
-      {glyph:'⚲',title:'Pin & auto-rejoin',body:'Pin channels or DMs — Emberline reconnects and rejoins them the moment you return.'},
+      {glyph:'⚲',title:'Pin & auto-rejoin',body:'Pin channels or DMs — EmberChat reconnects and rejoins them the moment you return.'},
       {glyph:'☆',title:'Friends & bookmarks',body:'Two tiers of people: close friends you track, and lightweight bookmarks for the rest.'},
       {glyph:'✦',title:'Highlights & away',body:'IRC-native highlight rules, idle auto-away, and local chat logs you can export.'},
     ];
@@ -277,7 +277,7 @@ class Component extends DCLogic {
         fontSize:'13px',fontWeight:600,color:dim,cursor:'pointer',marginTop:'2px'},
       addPlus:{width:'22px',height:'22px',borderRadius:'6px',background:bg,border:`1px solid ${border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',color:accent},
     };
-    const identConn={name:'Dorn Vael',initial:'D',meta:'irc.emberline.chat · admin · connected',state:'connected',isDefault:true};
+    const identConn={name:'Dorn Vael',initial:'D',meta:'irc.emberchat.chat · admin · connected',state:'connected',isDefault:true};
     const mkIdent=(o)=>{
       const connected=o.state==='connected';
       return {name:o.name,initial:o.initial,meta:o.meta,isDefault:!!o.isDefault,
@@ -291,8 +291,8 @@ class Component extends DCLogic {
         btn:connected?'● Connected':'Connect'};
     };
     const identities=[
-      mkIdent({name:'Dorn Vael',initial:'D',color:accent,meta:'irc.emberline.chat · admin · online',state:'connected',isDefault:true}),
-      mkIdent({name:'nightjar',initial:'N',color:'#8f9bc9',meta:'irc.emberline.chat · member',state:'idle'}),
+      mkIdent({name:'Dorn Vael',initial:'D',color:accent,meta:'irc.emberchat.chat · admin · online',state:'connected',isDefault:true}),
+      mkIdent({name:'nightjar',initial:'N',color:'#8f9bc9',meta:'irc.emberchat.chat · member',state:'idle'}),
       mkIdent({name:'ember_ops',initial:'E',color:'#a6bd94',meta:'irc.internal.dev · owner',state:'idle'}),
     ];
     return {s,features,preview,identities};

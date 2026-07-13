@@ -10,14 +10,14 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: emberline
+      POSTGRES_USER: emberchat
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
-      POSTGRES_DB: emberline
+      POSTGRES_DB: emberchat
     volumes:
       # postgres:18 images moved the volume mount up to /var/lib/postgresql
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U emberline"]
+      test: ["CMD-SHELL", "pg_isready -U emberchat"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -30,13 +30,13 @@ services:
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
     environment:
-      DATABASE_URL: postgres://emberline:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/emberline
+      DATABASE_URL: postgres://emberchat:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/emberchat
       AUTH_SECRET: ${AUTH_SECRET:?set in .env}
       FCHAT_URL: ${FCHAT_URL:-wss://chat.f-list.net/chat2}
       FLIST_API_URL: ${FLIST_API_URL:-https://www.f-list.net}
-      APP_NAME: ${APP_NAME:-Emberline}
+      APP_NAME: ${APP_NAME:-EmberChat}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
-      CLIENT_NAME: ${CLIENT_NAME:-Emberline}
+      CLIENT_NAME: ${CLIENT_NAME:-EmberChat}
       CLIENT_VERSION: ${CLIENT_VERSION:-0.0.0}
       TRUST_PROXY: ${TRUST_PROXY:-}
     depends_on:

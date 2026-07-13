@@ -9,8 +9,8 @@
 import { and, eq, gt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type WebSocket from "ws";
-import type { ServerCommand } from "@emberline/fchat-protocol";
-import type { GatewayEvent } from "@emberline/protocol";
+import type { ServerCommand } from "@emberchat/fchat-protocol";
+import type { GatewayEvent } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
 import type { HistorySink } from "../history/sink.js";

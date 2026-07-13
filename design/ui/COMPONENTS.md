@@ -1,4 +1,4 @@
-# Emberline — Component Cheat Sheet
+# EmberChat — Component Cheat Sheet
 
 Framework-agnostic build reference. Every value here is exact and taken from the design. Build components against **tokens**, never hard-coded hex, so the accent stays swappable.
 
@@ -112,7 +112,7 @@ Far-left vertical switch between connected server identities. Background `side2`
 ### 2. Sidebar (unified nav)
 Vertical flex on `side`. Top→bottom: ServerHead · Search · NavScroll (sections) · MeBar.
 
-**ServerHead** — padding 14px, bottom border. Left: 9px `ok` dot (glow), server name (14px/700) + mono sub-line (`irc.emberline.chat · connected`, 10.5px `faint`). Right: gear (`faint`).
+**ServerHead** — padding 14px, bottom border. Left: 9px `ok` dot (glow), server name (14px/700) + mono sub-line (`irc.emberchat.chat · connected`, 10.5px `faint`). Right: gear (`faint`).
 
 **Search** — 30px pill, `bg` fill, `border`, `⌕` + "Jump to…" placeholder (`faint`).
 
@@ -192,7 +192,7 @@ Right-click popover on a member. `side` fill, `border`, `radius+2`, popover shad
 
 ### 11. ChannelBrowser (dialog)
 620×588 modal, `side`, `radius+5`, modal shadow.
-- **Header:** "Browse channels" (17px/700) + mono sub ("emberline · irc.emberline.chat · 142 rooms", room count in `ok`); close `✕`.
+- **Header:** "Browse channels" (17px/700) + mono sub ("emberchat · irc.emberchat.chat · 142 rooms", room count in `ok`); close `✕`.
 - **Search** row (38px, `bg`, `border`): "Filter by name or topic…".
 - **Tabs:** **Official** and **Open rooms**, each with a mono count pill. Active tab: `bg` fill + `border`; count pill in `accentSoft`/`accent`.
   - *Official* = curated server channels. *Open rooms* = user-created public rooms. (Server returns these as two query types.)
@@ -220,7 +220,7 @@ Right-click popover on a member. `side` fill, `border`, `radius+2`, popover shad
 
 ### 13. Auth — AppAccount (create / login)
 Centered 400px card on a darkened (`mix(bg,#000,.35)`) backdrop. Card: `side`, `border`, 14px radius.
-- Brand lockup (logo chip + "emberline" mono), title (22px/800), sub.
+- Brand lockup (logo chip + "emberchat" mono), title (22px/800), sub.
 - **Fields** (44px, `bg`, `border`, focus = `accent` border + `0 0 0 3px accentSoft` ring): 
   - **Create:** Username (with "available ✓" in `ok`), Email, Password (dot mask + blinking accent caret + "show", plus a 4-segment strength meter), terms checkbox, **Create account** (full-width accent). *No display name, no home server — this is only the app login.*
   - **Login:** Username or email, Password (+ "Forgot?" link `accent`), "Keep me signed in" checkbox, **Log in**, then a note "Next: choose which server identity to connect with."

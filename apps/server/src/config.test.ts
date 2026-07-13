@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig, trustProxyValue } from "./config.js";
 
 const BASE_ENV = {
-  DATABASE_URL: "postgres://emberline:emberline@localhost:5432/emberline",
+  DATABASE_URL: "postgres://emberchat:emberchat@localhost:5432/emberchat",
   AUTH_SECRET: "unit-test-secret-0123456789abcdef-xyz",
 };
 

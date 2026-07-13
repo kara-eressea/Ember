@@ -7,17 +7,17 @@ See `decisions.md` for the rationale behind the stack choices. This document is 
 pnpm workspaces + Turborepo; root `tsconfig.base.json`, ESLint flat config, Prettier, Vitest everywhere.
 
 ```
-emberline/
+emberchat/
 ├── package.json                 # pnpm workspace root, turbo pipeline
 ├── turbo.json
 ├── docker-compose.yml           # prod-ish: server + postgres
 ├── docker-compose.dev.yml       # dev: postgres + fchat-sim; apps run on host with HMR
 ├── apps/
-│   ├── server/                  # @emberline/server — Fastify + ws, the bouncer
-│   └── web/                     # @emberline/web — Vite + React client
+│   ├── server/                  # @emberchat/server — Fastify + ws, the bouncer
+│   └── web/                     # @emberchat/web — Vite + React client
 ├── packages/
 │   ├── fchat-protocol/          # F-Chat wire types + codec
-│   ├── protocol/                # Emberline client↔server types (WS + REST DTOs)
+│   ├── protocol/                # EmberChat client↔server types (WS + REST DTOs)
 │   ├── markdown-bbcode/         # MD→BBCode + BBCode AST/sanitizer
 │   └── fchat-sim/               # local F-Chat mock server for dev/test
 └── design/, prototype/          # docs (unchanged)
@@ -35,7 +35,7 @@ Zero-dependency (except zod), isomorphic.
 
 ### packages/protocol
 
-The Emberline gateway envelope, event/command unions, REST DTOs, shared enums (presence, roles, conversation kinds). Versioned: `PROTOCOL_VERSION = 1` exchanged in the hello handshake.
+The EmberChat gateway envelope, event/command unions, REST DTOs, shared enums (presence, roles, conversation kinds). Versioned: `PROTOCOL_VERSION = 1` exchanged in the hello handshake.
 
 ### packages/markdown-bbcode
 

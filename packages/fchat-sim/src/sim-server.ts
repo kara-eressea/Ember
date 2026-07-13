@@ -27,7 +27,7 @@ import {
   type ClientCommandPayload,
   type ServerCommand,
   type ServerVars,
-} from "@emberline/fchat-protocol";
+} from "@emberchat/fchat-protocol";
 import { TicketService } from "./ticket-service.js";
 import { DEFAULT_WORLD, type SimWorld } from "./world.js";
 

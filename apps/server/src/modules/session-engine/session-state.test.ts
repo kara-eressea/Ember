@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SERVER_VARS } from "@emberline/fchat-protocol";
+import { DEFAULT_SERVER_VARS } from "@emberchat/fchat-protocol";
 import { SessionState } from "./session-state.js";
 
 describe("SessionState", () => {

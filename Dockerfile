@@ -2,7 +2,7 @@
 # which serves the API, the /gateway WebSocket, and the built web app
 # (WEB_DIST). Migrations run on boot. Build from the repo root:
 #
-#   docker build --target runtime -t emberline .
+#   docker build --target runtime -t emberchat .
 #
 # The `sim` target packages fchat-sim for the compose smoke profile — never
 # deploy it.
@@ -31,7 +31,7 @@ COPY packages/protocol/package.json packages/protocol/
 COPY packages/fchat-protocol/package.json packages/fchat-protocol/
 COPY packages/fchat-sim/package.json packages/fchat-sim/
 COPY packages/markdown-bbcode/package.json packages/markdown-bbcode/
-RUN pnpm install --prod --frozen-lockfile --filter @emberline/server...
+RUN pnpm install --prod --frozen-lockfile --filter @emberchat/server...
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:24-slim AS runtime

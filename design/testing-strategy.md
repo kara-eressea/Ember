@@ -34,5 +34,5 @@ Scenario scripts (JSON fixtures) cover: flood ERRs, mid-session disconnects, tic
 
 - Request **test-server access** via F-List helpdesk ticket at project start (lead time; gates nothing early).
 - Live-server contact limited to short, supervised manual verification passes — the developer policy discourages heavy live testing.
-- `cname`/`cversion` = `Emberline/<semver>` from day one, including on the test server.
+- `cname`/`cversion` = `EmberChat/<semver>` from day one, including on the test server.
 - Respect API budgets everywhere, including in scripts: ticket endpoint ≤1 req/s, character-data <200/hour.

@@ -12,7 +12,7 @@ import {
   type GatewayCmd,
   type ResumeCursors,
   type ServerFrame,
-} from "@emberline/protocol";
+} from "@emberchat/protocol";
 import { useAuthStore } from "../stores/auth.js";
 import { resumeCursorsFor } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";

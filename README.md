@@ -1,17 +1,17 @@
-# Emberline
+# EmberChat
 
 A third-party web client + server ("bouncer") for [F-Chat](https://www.f-list.net/), F-List's WebSocket chat system. The server holds F-Chat sessions open even when no browser is attached; browsers are synchronized views onto those server-held sessions.
 
 Headline features over the official client: staying online when the app closes, catch-up on missed history, Markdown composing, delayed-send "editing", multi-device login, and granular highlight rules.
 
-> "Emberline" is a working title. Status: **pre-alpha, under construction** — see [`design/milestones.md`](design/milestones.md).
+> "EmberChat" is a working title. Status: **pre-alpha, under construction** — see [`design/milestones.md`](design/milestones.md).
 
 ## Repository layout
 
 - `apps/server` — Fastify + ws bouncer server
 - `apps/web` — Vite + React client
 - `packages/fchat-protocol` — F-Chat wire types + codec
-- `packages/protocol` — Emberline client↔server protocol
+- `packages/protocol` — EmberChat client↔server protocol
 - `packages/markdown-bbcode` — Markdown → BBCode translation + BBCode AST
 - `packages/fchat-sim` — local F-Chat mock server for dev/test
 - `design/` — architecture, decisions, milestone plan, protocol reference

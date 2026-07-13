@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-const FALLBACK: RuntimeConfig = { appName: "Emberline" };
+const FALLBACK: RuntimeConfig = { appName: "EmberChat" };
 
 let config: RuntimeConfig = FALLBACK;
 

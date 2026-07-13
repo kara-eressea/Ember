@@ -1,4 +1,4 @@
-// Emberline gateway protocol (architecture.md §WebSocket /gateway).
+// EmberChat gateway protocol (architecture.md §WebSocket /gateway).
 //
 // Envelope both directions: `{ t, id?, d? }` — `id` is a client request id,
 // echoed in the server's ack. Client→server frames are zod-validated (the

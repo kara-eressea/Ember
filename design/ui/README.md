@@ -1,10 +1,10 @@
-# Handoff: Emberline — IRC-style chat client
+# Handoff: EmberChat — IRC-style chat client
 
 ## Overview
-Emberline is a **browser-based, IRC-native chat client** that keeps a live session to a central server. It is channel-first (IRC-style, *not* Discord guilds), supports DMs, two tiers of people (Friends + Bookmarks), pinning/auto-rejoin for both channels and DMs, a roles-based member list, and live Markdown preview while composing.
+EmberChat is a **browser-based, IRC-native chat client** that keeps a live session to a central server. It is channel-first (IRC-style, *not* Discord guilds), supports DMs, two tiers of people (Friends + Bookmarks), pinning/auto-rejoin for both channels and DMs, a roles-based member list, and live Markdown preview while composing.
 
 A distinguishing detail: there are **two login layers** (F-Chat / F-List model):
-1. **App account** — your Emberline web login (username + email + password). Nothing to do with the server.
+1. **App account** — your EmberChat web login (username + email + password). Nothing to do with the server.
 2. **Server identity** — after signing in, you *connect* one or more server identities ("characters"). Each connected identity is its own live session with its own presence, DMs, pinned channels and roles. Multiple identities are switched via a **far-left identity rail**.
 
 ## About the design files
@@ -27,7 +27,7 @@ The client is **theme-able**: the same layout was proven against several accent 
 ## Reference files in this bundle
 | File | What it shows |
 |---|---|
-| `Emberline Client.dc.html` | **The main client**, with the identity rail. Two states: work identity vs. social identity, proving the per-identity context swap. |
+| `EmberChat Client.dc.html` | **The main client**, with the identity rail. Two states: work identity vs. social identity, proving the per-identity context swap. |
 | `IRC Client Directions.dc.html` | The full client in the explored theme directions + accent variants (context menu, markdown preview, expanded description states). |
 | `Multi-Identity.dc.html` | The two multi-identity patterns compared (identity rail vs. top tabs). Rail was chosen. |
 | `Channel Browser.dc.html` | Channel browser dialog — Official / Open rooms tabs + join-hidden-by-name footer. |
@@ -39,7 +39,7 @@ The client is **theme-able**: the same layout was proven against several accent 
 1. **Landing page** — marketing entry (`Account Flow` card A)
 2. **Create app account** / **Log in** (`Account Flow` cards B, C)
 3. **Connect a server identity** — the second login (`Account Flow` card D)
-4. **Main client** — rail + unified sidebar + IRC chat + member list (`Emberline Client`)
+4. **Main client** — rail + unified sidebar + IRC chat + member list (`EmberChat Client`)
 5. **Channel browser** dialog
 6. **Preferences** window
 7. **Overlays** — member right-click context menu

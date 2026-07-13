@@ -11,12 +11,12 @@ import {
   serializeServerCommand,
   type ClientCommand,
   type ServerCommand,
-} from "@emberline/fchat-protocol";
+} from "@emberchat/fchat-protocol";
 import {
   FchatSim,
   rawDataToString,
   type FchatSimOptions,
-} from "@emberline/fchat-sim";
+} from "@emberchat/fchat-sim";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { FlistAuthError, TicketManager } from "../flist-api/ticket-manager.js";
 import {
@@ -75,7 +75,7 @@ function makeSession(
     accountName: ACCOUNT,
     tickets: stubTickets(sim),
     wsUrl: sim.wsUrl,
-    clientName: "Emberline-test",
+    clientName: "EmberChat-test",
     clientVersion: "0.0.0",
     backoffFloorMs: 50,
     backoffCapMs: 100,
@@ -193,7 +193,7 @@ class SimClient {
         account,
         ticket: sim.issueTicketFor(account),
         character,
-        cname: "Emberline-test-observer",
+        cname: "EmberChat-test-observer",
         cversion: "0.0.0",
       },
     });
@@ -573,7 +573,7 @@ describe("FchatSession against fchat-sim", () => {
       accountName: ACCOUNT,
       tickets: { getTicket: () => Promise.resolve("fct_x"), invalidate() {} },
       wsUrl: `ws://127.0.0.1:${String(port)}/chat2`,
-      clientName: "Emberline-test",
+      clientName: "EmberChat-test",
       clientVersion: "0.0.0",
       watchdogMs: 150,
       backoffFloorMs: 50,

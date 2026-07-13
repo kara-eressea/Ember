@@ -33,7 +33,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 
 ## Standing to-dos (not milestone-gated)
 
-- [ ] Decide final product name + register domain (working title "emberline"; gates Brevo DKIM and public launch — see `decisions.md` §5)
+- [ ] Decide final product name + register domain (working title "emberchat"; gates Brevo DKIM and public launch — see `decisions.md` §5)
 
 - [ ] File F-List helpdesk ticket for **test-server access** (lead time; needed by M1 step 11)
 - [ ] **Feature-parity audit vs. the official F-Chat 1.0 client** (source: https://github.com/f-list/chat3client) before declaring v1.0 — enumerate its features and check each is covered by a milestone. Known items already spotted: friend/bookmark actions via JSON API (added to M6), FKS character search, RTB note notifications. Natural timing: during M6.
@@ -52,6 +52,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | Working title renamed **Emberline → EmberChat** (repo-wide sweep: `@emberchat/*` package scope, config defaults, env prefix `EMBERCHAT_API_PROXY`, compose/db identifiers, docs and mockups; `eb.`/`--eb-` prefixes and the local folder name unchanged). Final-name/domain standing to-do stays open — the `emberchat.chat` domains in design files remain placeholders. Full gate + docker smoke green under the new name. |
 | 2026-07-13 | M1 step 11, Docker half done: multi-stage Dockerfile (build → filtered prod-deps → slim runtime as `node`; separate `sim` target), production `docker-compose.yml` (postgres + server with healthchecks; fchat-sim under an opt-in `sim` profile), root `.env.example`. Server gained `WEB_DIST` static mode: one Fastify serves API + gateway + built web app, SPA fallback, `window.__CONFIG__` injected into index.html at boot (branding stays runtime config), hashed assets cached immutable (+5 tests, server 103). `pnpm smoke` builds the image, boots the stack with the sim profile, and walks the slice end-to-end (statics/config injection, register, ticket vaulting against sim, identity, gateway session to "online") — green locally. Remaining for step 11: the supervised pass against the real F-Chat test server (helpdesk ticket still open). |
 | 2026-07-13 | M1 step 10 (app shell + live chat) done: gateway browser client (hello/resume cursors, cmd acks by request id, read acks, keepalive, reconnect backoff with one-refresh-then-retry on 4401), pure dispatch layer into Zustand stores (sessions: idempotent volatile-event semantics incl. the ICH/CDS-beats-conversation-row join race; messages: windowed buffers + REST backfill/scroll-up pagination; ui), AppShell grid + Sidebar (join-by-name, new-DM, MeBar) + ChannelHeader + virtualized MessageLog (@tanstack/react-virtual, date dividers, stick-to-bottom, anchor-preserving infinite scroll up) + Composer (Enter-to-send raw text) + grouped MemberList with lazy avatars; deep links preserved through the login redirect. Full-slice Playwright E2E: connect → join → chat both ways against a raw sim client → live member updates → PMs with unread badge → 70-message seed → reload (session stays online) → scroll-up history. Web 28 unit tests, E2E 5. |
 | 2026-07-12 | Plan finalized; all milestones defined, none started. |

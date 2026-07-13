@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PORT="${SMOKE_PORT:-3900}"
-PROJECT=emberline-smoke
+PROJECT=emberchat-smoke
 ENVFILE="$(mktemp)"
 
 cleanup() {

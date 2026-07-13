@@ -1,5 +1,5 @@
 {
-  "name": "@emberline/web",
+  "name": "@emberchat/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@emberline/protocol": "workspace:*",
+    "@emberchat/protocol": "workspace:*",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@tanstack/react-virtual": "^3.14.5",
@@ -21,7 +21,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@emberline/fchat-sim": "workspace:*",
+    "@emberchat/fchat-sim": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@testcontainers/postgresql": "^12.0.4",
     "@types/node": "^26.1.1",

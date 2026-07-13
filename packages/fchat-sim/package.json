@@ -1,5 +1,5 @@
 {
-  "name": "@emberline/fchat-sim",
+  "name": "@emberchat/fchat-sim",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -24,7 +24,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@emberline/fchat-protocol": "workspace:*",
+    "@emberchat/fchat-protocol": "workspace:*",
     "ws": "^8.21.0"
   }
 }

@@ -207,7 +207,7 @@
       <div style="{{ styles.profileBody }}">
         <div style="{{ styles.profileAvatar }}">k<span style="{{ styles.profileDot }}"></span></div>
         <div style="{{ styles.profileName }}">k0bra <span style="{{ styles.profileRole }}">@ admin</span></div>
-        <div style="{{ styles.profileHandle }}">k0bra@emberline.chat · idle</div>
+        <div style="{{ styles.profileHandle }}">k0bra@emberchat.chat · idle</div>
         <div style="{{ styles.profileStatus }}">“afk — back in 10”</div>
         <div style="{{ styles.profileMetaLabel }}">MUTUAL CHANNELS</div>
         <div style="{{ styles.profileChips }}">
@@ -275,9 +275,9 @@ class Component extends DCLogic {
     const S=this.styles(t);
     const overlay=t.overlay;
     // ---------- header ----------
-    const shortDesc='#dev-general is the primary coordination channel for the Emberline gateway team. Use it for build status, releases, and cross-team';
-    const fullDesc=shortDesc+' pings. Server rules: no force-pushes to main, keep secrets out of chat, and move long threads to #dev-backend. Office hours Tue/Thu 15:00 UTC. Bridged read-only to the legacy IRC network at irc.emberline.chat:6697 (+TLS).';
-    let header={host:'app.emberline.chat/#dev-general',server:'emberline',serverSub:'irc.emberline.chat · connected',
+    const shortDesc='#dev-general is the primary coordination channel for the EmberChat gateway team. Use it for build status, releases, and cross-team';
+    const fullDesc=shortDesc+' pings. Server rules: no force-pushes to main, keep secrets out of chat, and move long threads to #dev-backend. Office hours Tue/Thu 15:00 UTC. Bridged read-only to the legacy IRC network at irc.emberchat.chat:6697 (+TLS).';
+    let header={host:'app.emberchat.chat/#dev-general',server:'emberchat',serverSub:'irc.emberchat.chat · connected',
       channel:'dev-general',memberCount:'24',
       topic:'Ship the v2 gateway by Fri · no force-push to main · notes in #dev-backend',
       desc:(t.descExpanded?fullDesc:shortDesc+'…'),descToggle:(t.descExpanded?'Show less':'Show more')};
@@ -345,7 +345,7 @@ class Component extends DCLogic {
         fontFamily:t.bodyFont,fontSize:'13px',lineHeight:'1.5',color:t.text}});
     let rows=[
       {isDate:true,text:'Thursday, July 10'},
-      sys('09:58','→',t.ok,'mara (mara@emberline.chat) has joined #dev-general'),
+      sys('09:58','→',t.ok,'mara (mara@emberchat.chat) has joined #dev-general'),
       msg('10:02','lio','morning all — pushed the **gateway rewrite** to `feat/gw-v2`, review when you can'),
       msg('10:03','vega','nice. did you keep the `reconnect()` backoff?'),
       msg('10:03','lio','yeah, capped at 30s now. jitter is in `backoff.go`'),
@@ -353,10 +353,10 @@ class Component extends DCLogic {
       msg('10:07','quill','@vega the flaky test in `gateway_test.go` was a race — fixed, notes in #dev-backend'),
       msg('10:08','mara','@dorn can you sanity-check the ratelimit numbers before we tag?',{mention:true}),
       msg('10:09','vega','sure — here\'s what I\'m seeing on staging:',{block:'  GET  /gateway   120 req/min  (burst 20)\n  WS   /connect   30 conn/min  per-ip\n  → p99 handshake  842ms  ▲ needs work'}),
-      sys('10:11','→',t.ok,'sable (sable@emberline.chat) has joined #dev-general'),
+      sys('10:11','→',t.ok,'sable (sable@emberchat.chat) has joined #dev-general'),
       msg('10:12','sable','o/ finally got TLS sorted on the bridge'),
       msg('10:12','lio','welcome *back* sable'),
-      msg('10:14','k0bra','full spec is here if anyone needs it: https://emberline.chat/rfc/17'),
+      msg('10:14','k0bra','full spec is here if anyone needs it: https://emberchat.chat/rfc/17'),
     ];
     // ---------- members ----------
     const mk=(nk,role,presence,status)=>{
@@ -384,7 +384,7 @@ class Component extends DCLogic {
 
     // ---------- per-identity swap ----------
     if(t.persona==='nightjar'){
-      header={host:'app.emberline.chat/#the-tavern',server:'emberline',serverSub:'irc.emberline.chat · connected',
+      header={host:'app.emberchat.chat/#the-tavern',server:'emberchat',serverSub:'irc.emberchat.chat · connected',
         channel:'the-tavern',memberCount:'17',
         topic:'cozy hours · be kind · music requests in #jukebox',
         desc:(t.descExpanded
@@ -421,7 +421,7 @@ class Component extends DCLogic {
         msg('21:40','wisp','evening ✨ what\'s everyone listening to'),
         msg('21:41','juno','some *very* slow shoegaze, it\'s that kind of night'),
         msg('21:42','nightjar','put a request in #jukebox — `radiohead - nude`',{color:'#8f9bc9'}),
-        sys('21:44','→',t.ok,'moth (moth@emberline.chat) has joined #the-tavern'),
+        sys('21:44','→',t.ok,'moth (moth@emberchat.chat) has joined #the-tavern'),
         msg('21:45','moth','o/ finally off work'),
         msg('21:46','wisp','@nightjar did you finish that book you mentioned?',{mention:true}),
         msg('21:47','nightjar','almost — last chapter tonight. no spoilers 🙏',{color:'#8f9bc9'}),

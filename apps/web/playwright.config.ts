@@ -24,7 +24,7 @@ export default defineConfig({
     timeout: 300_000,
     reuseExistingServer: !process.env.CI,
     env: {
-      EMBERLINE_API_PROXY: `http://127.0.0.1:${String(API_PORT)}`,
+      EMBERCHAT_API_PROXY: `http://127.0.0.1:${String(API_PORT)}`,
     },
   },
 });

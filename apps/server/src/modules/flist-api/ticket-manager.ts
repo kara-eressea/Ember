@@ -6,7 +6,7 @@
 // credential vault via getPassword.
 
 import type { FlistApiClient, GetApiTicketParams } from "./api-client.js";
-import type { ApiTicketResponse } from "@emberline/fchat-protocol";
+import type { ApiTicketResponse } from "@emberchat/fchat-protocol";
 import type { CredentialVault } from "../flist-accounts/vault.js";
 
 /** The slice of FlistApiClient the manager needs (stubbed in unit tests). */

@@ -65,7 +65,7 @@ class SimClient {
           account,
           ticket,
           character,
-          cname: "emberline-e2e",
+          cname: "emberchat-e2e",
           cversion: "0.0.0",
         });
       });
