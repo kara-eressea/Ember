@@ -7,7 +7,7 @@ import {
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
@@ -158,6 +158,59 @@ describe("identities CRUD", () => {
     expect(foreignList.json<{ identities: unknown[] }>().identities).toEqual(
       [],
     );
+  });
+
+  it("REST connect/disconnect drive the session and the autoConnect flag", async () => {
+    const { token, accountId } = await setupUser();
+    const created = await createIdentity(token, accountId, "Amber Vale");
+    const identityId = created.json<{ identity: { id: string } }>().identity.id;
+
+    const connected = await app.inject({
+      method: "POST",
+      url: `/api/identities/${identityId}/connect`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(connected.statusCode).toBe(200);
+    const session = app.sessions.get(identityId);
+    expect(session).toBeDefined();
+    await vi.waitFor(
+      () => {
+        expect(session!.status).toBe("online");
+      },
+      { timeout: 10_000 },
+    );
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/identities",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(listed.json<{ identities: object[] }>().identities[0]).toMatchObject(
+      { sessionStatus: "online", autoConnect: true },
+    );
+
+    const disconnected = await app.inject({
+      method: "POST",
+      url: `/api/identities/${identityId}/disconnect`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(disconnected.statusCode).toBe(200);
+    expect(disconnected.json<{ identity: object }>().identity).toMatchObject({
+      autoConnect: false,
+      sessionStatus: "offline",
+    });
+    expect(app.sessions.get(identityId)).toBeUndefined();
+
+    // A stranger can neither connect nor disconnect it.
+    const { token: strangerToken } = await setupUser();
+    for (const action of ["connect", "disconnect"]) {
+      const foreign = await app.inject({
+        method: "POST",
+        url: `/api/identities/${identityId}/${action}`,
+        headers: { authorization: `Bearer ${strangerToken}` },
+      });
+      expect(foreign.statusCode).toBe(404);
+    }
   });
 
   it("deletes an identity and stops its running session", async () => {

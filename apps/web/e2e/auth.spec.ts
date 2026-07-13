@@ -76,6 +76,17 @@ test("register, connect an F-List account, and pick a character with avatars", a
   // Connect leads into the app route (shell arrives in step 10).
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page).toHaveURL(/\/app\//);
+
+  // Log the character off again (MeBar power control) — sessions outlive
+  // tabs, and a later test in this file connects Amber Vale itself; a
+  // character can hold only one sim connection.
+  await expect(page.getByText("Amber Vale · online")).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.getByRole("button", { name: "Log off F-Chat" }).click();
+  await expect(
+    page.getByText(/stopped — disconnected by user/).first(),
+  ).toBeVisible();
 });
 
 test("login round trip sees the persisted identity again", async ({ page }) => {
@@ -124,6 +135,76 @@ test("a persisted session survives a reload", async ({ page }) => {
   // And again — proving the rotated token was persisted correctly.
   await page.reload();
   await expect(page.getByText(`${creds.email} · app account`)).toBeVisible();
+});
+
+test("identities can be connected, disconnected and removed from the picker", async ({
+  page,
+}) => {
+  await interceptAvatars(page);
+  const creds = credentials();
+  await page.goto("/register");
+  await page.getByLabel("Username").fill(creds.username);
+  await page.getByLabel("Email").fill(creds.email);
+  await page.getByLabel("Password").fill(creds.password);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Add a server identity" }).click();
+  await page.getByLabel("F-List account name").fill("amber@example.test");
+  await page.getByLabel("F-List password").fill("hunter2");
+  await page.getByRole("button", { name: "Verify account" }).click();
+  await page.getByRole("listitem").filter({ hasText: "Amber Vale" }).click();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+
+  // Connect from the picker; the shell reports the session online.
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page).toHaveURL(/\/app\//);
+  await expect(page.getByText("Amber Vale · online")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // Back on the picker the live session is visible and can be logged off —
+  // the session outlives tabs (bouncer), so this is the deliberate way out.
+  await page.goto("/identities");
+  await expect(page.getByText(/amber@example\.test · online/)).toBeVisible();
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.getByText(/amber@example\.test · offline/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+
+  // Remove the identity: two-step confirm.
+  await page
+    .getByRole("button", { name: "Remove identity Amber Vale and its history" })
+    .click();
+  await page
+    .getByRole("button", { name: /Confirm removing identity Amber Vale/ })
+    .click();
+  await expect(page.getByRole("button", { name: "Connect" })).toHaveCount(0);
+
+  // The add flow fast-paths into the character grid, but Manage accounts
+  // reaches the chooser, where the account itself can be removed.
+  await page.getByRole("button", { name: "Add a server identity" }).click();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "Amber Vale" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Manage accounts" }).click();
+  await expect(
+    page
+      .getByText("locked", { exact: false })
+      .or(page.getByText("unlocked", { exact: true })),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /Remove account amber@example.test/ })
+    .click();
+  await page
+    .getByRole("button", {
+      name: /Confirm removing account amber@example.test/,
+    })
+    .click();
+
+  // Back to a blank, editable add form — no dead end.
+  const accountField = page.getByLabel("F-List account name");
+  await expect(accountField).toBeVisible();
+  await expect(accountField).toBeEnabled();
+  await expect(accountField).toHaveValue("");
 });
 
 test("login with a wrong password is rejected", async ({ page }) => {

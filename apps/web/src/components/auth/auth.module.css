@@ -330,3 +330,34 @@
   border-color: var(--eb-accent-med);
   background: var(--eb-accent-soft);
 }
+
+/* Two-step destructive remove: ghost ✕ that arms into a danger chip. */
+.removeButton {
+  flex: none;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--eb-radius);
+  color: var(--eb-faint);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.removeButton:hover {
+  color: var(--eb-danger);
+}
+
+.removeArmed {
+  border-color: var(--eb-danger);
+  color: var(--eb-danger);
+  font-weight: 600;
+}
+
+.linkButton {
+  display: block;
+  background: none;
+  border: none;
+  color: var(--eb-dim);
+  font-size: 12px;
+  padding: 8px 0 0;
+  text-decoration: underline;
+}

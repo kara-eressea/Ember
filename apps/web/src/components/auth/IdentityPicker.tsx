@@ -77,28 +77,62 @@ export function IdentityPicker() {
         </p>
       )}
 
-      {identities?.map((identity) => (
-        <div key={identity.id} className={styles.identityRow}>
-          <Avatar name={identity.characterName} size={38} />
-          <span className={styles.identityInfo}>
-            <span className={styles.identityName}>
-              {identity.characterName}
+      {identities?.map((identity) => {
+        const live =
+          identity.sessionStatus !== "offline" &&
+          identity.sessionStatus !== "stopped";
+        return (
+          <div key={identity.id} className={styles.identityRow}>
+            <Avatar name={identity.characterName} size={38} />
+            <span className={styles.identityInfo}>
+              <span className={styles.identityName}>
+                {identity.characterName}
+              </span>
+              <br />
+              <span className={styles.identityMeta}>
+                {accountName(identity.flistAccountId)} ·{" "}
+                {identity.sessionStatus.replace("_", " ")}
+              </span>
             </span>
-            <br />
-            <span className={styles.identityMeta}>
-              {accountName(identity.flistAccountId)}
-            </span>
-          </span>
-          <button
-            className={styles.connectButton}
-            onClick={() => {
-              void navigate(`/app/${identity.id}`);
-            }}
-          >
-            Connect
-          </button>
-        </div>
-      ))}
+            {live && (
+              <button
+                className={styles.signOut}
+                onClick={() => {
+                  void api
+                    .disconnectIdentity(identity.id)
+                    .then(reload)
+                    .catch(() => reload());
+                }}
+              >
+                Disconnect
+              </button>
+            )}
+            <button
+              className={styles.connectButton}
+              onClick={() => {
+                const open = () => navigate(`/app/${identity.id}`);
+                if (live) {
+                  void open();
+                  return;
+                }
+                // Connect explicitly (the shell's connect-on-visit ignores
+                // logged-off identities by design), then open — failures
+                // surface as session status in the shell.
+                void api.connectIdentity(identity.id).then(open, open);
+              }}
+            >
+              {live ? "Open" : "Connect"}
+            </button>
+            <RemoveButton
+              what={`identity ${identity.characterName} and its history`}
+              onConfirm={async () => {
+                await api.deleteIdentity(identity.id);
+                await reload();
+              }}
+            />
+          </div>
+        );
+      })}
 
       {adding ? (
         <AddIdentityFlow
@@ -126,39 +160,167 @@ export function IdentityPicker() {
   );
 }
 
+/** Two-step destructive action: first click arms it, second confirms. */
+function RemoveButton({
+  what,
+  onConfirm,
+}: {
+  what: string;
+  onConfirm: () => Promise<void>;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className={`${styles.removeButton} ${armed ? (styles.removeArmed ?? "") : ""}`}
+      disabled={busy}
+      title={armed ? `Click again to remove ${what}` : `Remove ${what}`}
+      aria-label={armed ? `Confirm removing ${what}` : `Remove ${what}`}
+      onClick={() => {
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
+        setBusy(true);
+        void onConfirm().finally(() => {
+          setBusy(false);
+          setArmed(false);
+        });
+      }}
+      onBlur={() => {
+        setArmed(false);
+      }}
+    >
+      {armed ? "Remove?" : "✕"}
+    </button>
+  );
+}
+
 interface AddIdentityFlowProps {
   accounts: FlistAccountDto[];
   onDone: () => void;
   onAccountsChanged: () => void;
 }
 
-/** Add flow: vault an account password if needed, then pick a character. */
+type FlowMode =
+  | { kind: "choose" }
+  | { kind: "add" }
+  | { kind: "unlock"; account: FlistAccountDto }
+  | { kind: "pick"; account: FlistAccountDto };
+
+/**
+ * Add flow: choose one of the known F-List accounts (unlock it if the vault
+ * lost its password), add a different one, then pick a character. A proper
+ * multi-account experience arrives with M3; this covers management basics —
+ * without them a dead account row bricked the add flow (M1 UAT finding).
+ */
 function AddIdentityFlow({
   accounts,
   onDone,
   onAccountsChanged,
 }: AddIdentityFlowProps) {
-  const unlockedAccount = accounts.find((a) => a.unlocked);
-  const lockedAccount = accounts.find((a) => !a.unlocked);
+  const [mode, setMode] = useState<FlowMode>(() => {
+    if (accounts.length === 0) {
+      return { kind: "add" };
+    }
+    // Fast path: exactly one account and it's usable — straight to characters.
+    if (accounts.length === 1 && accounts[0]!.unlocked) {
+      return { kind: "pick", account: accounts[0]! };
+    }
+    return { kind: "choose" };
+  });
 
-  if (unlockedAccount) {
-    return <CharacterPicker account={unlockedAccount} onDone={onDone} />;
+  // Removing the last account from the chooser leaves nothing to choose —
+  // fall through to the blank add form instead of an empty list.
+  const effective: FlowMode =
+    mode.kind === "choose" && accounts.length === 0 ? { kind: "add" } : mode;
+
+  if (effective.kind === "pick") {
+    return (
+      <CharacterPicker
+        account={effective.account}
+        onDone={onDone}
+        onManage={() => {
+          setMode({ kind: "choose" });
+        }}
+      />
+    );
+  }
+  if (effective.kind === "add" || effective.kind === "unlock") {
+    return (
+      <AccountForm
+        unlock={mode.kind === "unlock" ? mode.account : undefined}
+        onBack={
+          accounts.length > 0
+            ? () => {
+                setMode({ kind: "choose" });
+              }
+            : undefined
+        }
+        onReady={(account) => {
+          onAccountsChanged();
+          setMode({ kind: "pick", account });
+        }}
+      />
+    );
   }
   return (
-    <AccountForm lockedAccount={lockedAccount} onAdded={onAccountsChanged} />
+    <div>
+      <p className={styles.sectionLabel}>Pick an F-List account</p>
+      {accounts.map((account) => (
+        <div key={account.id} className={styles.identityRow}>
+          <span className={styles.identityInfo}>
+            <span className={styles.identityName}>{account.accountName}</span>
+            <br />
+            <span className={styles.identityMeta}>
+              {account.unlocked ? "unlocked" : "locked — password needed"}
+            </span>
+          </span>
+          <button
+            className={styles.connectButton}
+            onClick={() => {
+              setMode(
+                account.unlocked
+                  ? { kind: "pick", account }
+                  : { kind: "unlock", account },
+              );
+            }}
+          >
+            {account.unlocked ? "Pick character" : "Unlock…"}
+          </button>
+          <RemoveButton
+            what={`account ${account.accountName}, its identities and their history`}
+            onConfirm={async () => {
+              await api.deleteFlistAccount(account.id);
+              onAccountsChanged();
+            }}
+          />
+        </div>
+      ))}
+      <button
+        className={styles.addRow}
+        onClick={() => {
+          setMode({ kind: "add" });
+        }}
+      >
+        <span className={styles.addChip}>+</span>
+        Use a different F-List account
+      </button>
+    </div>
   );
 }
 
 function AccountForm({
-  lockedAccount,
-  onAdded,
+  unlock,
+  onBack,
+  onReady,
 }: {
-  lockedAccount: FlistAccountDto | undefined;
-  onAdded: () => void;
+  /** Set = re-enter the password for this known account (name fixed). */
+  unlock: FlistAccountDto | undefined;
+  onBack: (() => void) | undefined;
+  onReady: (account: FlistAccountDto) => void;
 }) {
-  const [accountName, setAccountName] = useState(
-    lockedAccount?.accountName ?? "",
-  );
+  const [accountName, setAccountName] = useState(unlock?.accountName ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -168,12 +330,10 @@ function AccountForm({
     setBusy(true);
     setError(undefined);
     try {
-      if (lockedAccount) {
-        await api.unlockFlistAccount(lockedAccount.id, password);
-      } else {
-        await api.addFlistAccount({ accountName, password });
-      }
-      onAdded();
+      const { account } = unlock
+        ? await api.unlockFlistAccount(unlock.id, password)
+        : await api.addFlistAccount({ accountName, password });
+      onReady(account);
     } catch (cause) {
       setError(
         cause instanceof ApiError ? cause.message : "Could not add account",
@@ -190,7 +350,7 @@ function AccountForm({
       }}
     >
       <p className={styles.sectionLabel}>
-        {lockedAccount ? "Unlock your F-List account" : "Your F-List account"}
+        {unlock ? "Unlock your F-List account" : "Your F-List account"}
       </p>
       {error && (
         <p className={styles.error} role="alert">
@@ -205,7 +365,7 @@ function AccountForm({
           onChange={(e) => {
             setAccountName(e.target.value);
           }}
-          disabled={lockedAccount !== undefined}
+          disabled={unlock !== undefined}
           required
         />
       </label>
@@ -223,8 +383,18 @@ function AccountForm({
         />
       </label>
       <button className={styles.primaryButton} type="submit" disabled={busy}>
-        {lockedAccount ? "Unlock" : "Verify account"}
+        {unlock ? "Unlock" : "Verify account"}
       </button>
+      {onBack && (
+        <button
+          type="button"
+          className={styles.linkButton}
+          onClick={onBack}
+          disabled={busy}
+        >
+          Back to your accounts
+        </button>
+      )}
       <p className={styles.footNote}>
         Your password is verified with F-List and kept only in server memory —
         never stored. A server restart will ask for it again.
@@ -236,9 +406,11 @@ function AccountForm({
 function CharacterPicker({
   account,
   onDone,
+  onManage,
 }: {
   account: FlistAccountDto;
   onDone: () => void;
+  onManage: () => void;
 }) {
   const [characters, setCharacters] = useState<string[]>();
   const [error, setError] = useState<string>();
@@ -308,6 +480,9 @@ function CharacterPicker({
           </button>
         ))}
       </div>
+      <button type="button" className={styles.linkButton} onClick={onManage}>
+        Manage accounts
+      </button>
     </div>
   );
 }

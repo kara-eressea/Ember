@@ -10,6 +10,7 @@ import {
   FlistAuthError,
   type TicketManagerRegistry,
 } from "../flist-api/ticket-manager.js";
+import type { GatewayHub } from "../gateway/gateway.js";
 import type { HistorySink } from "../history/sink.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 import type { CredentialVault } from "./vault.js";
@@ -41,6 +42,7 @@ export interface FlistAccountsRoutesOptions {
   tickets: TicketManagerRegistry;
   sessions: SessionRegistry;
   history: HistorySink;
+  hub: GatewayHub;
   /**
    * Per-route rate limit for the endpoints that consume a guaranteed slot
    * on the process-wide 1 req/s F-List throttle (add, unlock). Without it,
@@ -56,7 +58,7 @@ export async function flistAccountsRoutes(
   options: FlistAccountsRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, vault, tickets, sessions, history, rateLimitMax } = options;
+  const { db, vault, tickets, sessions, history, hub, rateLimitMax } = options;
   const flistRateLimit = {
     rateLimit: { max: rateLimitMax, timeWindow: "1 minute" },
   };
@@ -295,9 +297,25 @@ export async function flistAccountsRoutes(
       if (!row) {
         return reply.code(404).send({ error: "Account not found" });
       }
+      // The identities FK cascades, so their rows die with the account — the
+      // running F-Chat sessions would NOT (zombies until the next re-ticket
+      // fails). Stop them and drop the gateway caches first, like the
+      // per-identity delete route does.
+      const owned = await db
+        .select({ id: identities.id })
+        .from(identities)
+        .where(eq(identities.flistAccountId, row.id));
+      for (const identity of owned) {
+        sessions.stop(identity.id, "account removed");
+        hub.identityDeleted(identity.id);
+      }
       await db.delete(flistAccounts).where(eq(flistAccounts.id, row.id));
       vault.delete(row.id);
       tickets.drop(row.id);
+      // A connect/unlock racing the delete may have restarted one in between.
+      for (const identity of owned) {
+        sessions.stop(identity.id, "account removed");
+      }
       return reply.code(204).send(null);
     },
   );

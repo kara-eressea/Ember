@@ -49,7 +49,9 @@ test("two devices: unread badges converge; catch-up shows the new divider", asyn
     await pageB.getByLabel("Password").fill(creds.password);
     await pageB.getByRole("button", { name: "Log in" }).click();
     await expect(pageB).toHaveURL(/\/identities$/);
-    await pageB.getByRole("button", { name: "Connect" }).click();
+    // The session is already live (device A connected it), so B's picker
+    // offers Open — and "Connect" would substring-match "Disconnect".
+    await pageB.getByRole("button", { name: "Open", exact: true }).click();
     await expect(pageB).toHaveURL(/\/app\//);
     const navB = pageB.getByRole("navigation");
     const dmRowB = navB.getByRole("link", { name: /Fern Ashwood/ });
