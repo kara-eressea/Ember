@@ -283,13 +283,19 @@ export class GatewayConnection {
         character: identities.characterName,
         accountId: flistAccounts.id,
         accountName: flistAccounts.accountName,
+        autoConnect: identities.autoConnect,
       })
       .from(identities)
       .innerJoin(flistAccounts, eq(identities.flistAccountId, flistAccounts.id))
       .where(eq(flistAccounts.userId, auth.userId))
       .orderBy(identities.sortOrder, identities.createdAt);
     for (const row of rows) {
-      this.#owned.set(row.id, row);
+      this.#owned.set(row.id, {
+        id: row.id,
+        character: row.character,
+        accountId: row.accountId,
+        accountName: row.accountName,
+      });
     }
     this.#send({
       t: "ready",
@@ -300,6 +306,7 @@ export class GatewayConnection {
           name: row.character,
           sessionStatus:
             this.#ctx.sessions.get(row.id)?.status ?? ("offline" as const),
+          autoConnect: row.autoConnect,
         })),
       },
     });
@@ -485,11 +492,13 @@ export class GatewayConnection {
         for (const key of seed) {
           session.joinChannel(key);
         }
+        await this.#setAutoConnect(identity.id, true);
         this.#ack(id, { ok: true });
         return;
       }
       case "session.disconnect":
         this.#ctx.sessions.stop(identity.id, "disconnected by user");
+        await this.#setAutoConnect(identity.id, false);
         this.#ack(id, { ok: true });
         return;
       case "channel.join": {
@@ -587,6 +596,19 @@ export class GatewayConnection {
         });
       },
     );
+  }
+
+  /**
+   * autoConnect mirrors the user's connect intent: an explicit connect sets
+   * it, an explicit disconnect clears it — so after a restart, "identities
+   * that need re-auth" is exactly the autoConnect set, and one unlock brings
+   * them all back (milestone-2 §Scope).
+   */
+  async #setAutoConnect(identityId: string, value: boolean): Promise<void> {
+    await this.#ctx.db
+      .update(identities)
+      .set({ autoConnect: value })
+      .where(eq(identities.id, identityId));
   }
 
   #requireSession(

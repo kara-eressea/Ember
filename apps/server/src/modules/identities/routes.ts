@@ -135,7 +135,13 @@ export async function identitiesRoutes(
       try {
         const [identity] = await db
           .insert(identities)
-          .values({ flistAccountId: account.id, characterName })
+          .values({
+            flistAccountId: account.id,
+            characterName,
+            // A freshly picked identity's intent is to be online: it counts
+            // for unlock auto-connect until an explicit disconnect clears it.
+            autoConnect: true,
+          })
           .returning();
         return await reply.code(201).send({ identity: identity! });
       } catch (error) {

@@ -59,12 +59,22 @@ export interface IdentitySession {
   notice?: { kind: "sys" | "error"; text: string };
 }
 
+export interface IdentitySummary {
+  id: string;
+  name: string;
+  /** Connect intent — gates the shell's connect-on-visit. The server
+   * maintains it (connect sets, disconnect clears); mirrored locally when
+   * this tab issues the cmd, and re-synced by the next ready frame. */
+  autoConnect: boolean;
+}
+
 interface SessionsState {
   /** From the ready frame — everything the app account owns. */
-  identities: { id: string; name: string }[] | undefined;
+  identities: IdentitySummary[] | undefined;
   sessions: Record<string, IdentitySession>;
 
-  applyReady(identities: { id: string; name: string }[]): void;
+  applyReady(identities: IdentitySummary[]): void;
+  setAutoConnect(identityId: string, value: boolean): void;
   applySnapshot(d: {
     identityId: string;
     self: { character: string; sessionStatus: GatewaySessionStatus };
@@ -190,6 +200,16 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyReady(identities) {
       set({ identities });
+    },
+
+    setAutoConnect(identityId, value) {
+      set((state) => ({
+        identities: state.identities?.map((identity) =>
+          identity.id === identityId
+            ? { ...identity, autoConnect: value }
+            : identity,
+        ),
+      }));
     },
 
     applySnapshot(d) {

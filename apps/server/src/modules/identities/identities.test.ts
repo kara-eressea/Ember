@@ -100,7 +100,9 @@ describe("identities CRUD", () => {
     expect(identity).toMatchObject({
       flistAccountId: accountId,
       characterName: "Amber Vale",
-      autoConnect: false,
+      // A fresh identity's intent is to be online — it counts for unlock
+      // auto-connect until an explicit disconnect clears it.
+      autoConnect: true,
     });
 
     const second = await createIdentity(token, accountId, "Cindral");

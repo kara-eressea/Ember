@@ -11,10 +11,11 @@ import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { FchatSim } from "@emberchat/fchat-sim";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
+import { conversations, identities } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
@@ -32,6 +33,7 @@ async function makeApp(): Promise<FastifyInstance> {
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
     FLIST_API_URL: sim.httpUrl,
+    FCHAT_URL: sim.wsUrl,
   });
   return buildApp({
     config,
@@ -240,6 +242,76 @@ describe("restart + unlock", () => {
         headers: authed(token),
       });
       expect(characters.statusCode).toBe(200);
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it("one unlock reconnects every autoConnect identity with its channels (restart recovery)", async () => {
+    const token = await registerUser();
+    const { account } = await addAccount(token);
+    // One identity was online when the server went down (autoConnect), one
+    // the user had explicitly logged off.
+    const [wanted] = await db
+      .insert(identities)
+      .values({
+        flistAccountId: account.id,
+        characterName: "Amber Vale",
+        autoConnect: true,
+      })
+      .returning();
+    const [dormant] = await db
+      .insert(identities)
+      .values({
+        flistAccountId: account.id,
+        characterName: "Cindral",
+        autoConnect: false,
+      })
+      .returning();
+    // The joined flags the history sink had persisted before the restart.
+    await db.insert(conversations).values([
+      {
+        identityId: wanted!.id,
+        kind: "channel",
+        channelKey: "Frontpage",
+        title: "Frontpage",
+        joined: true,
+      },
+      {
+        identityId: wanted!.id,
+        kind: "channel",
+        channelKey: "Development",
+        title: "Development",
+        joined: false,
+      },
+    ]);
+
+    const restarted = await makeApp();
+    try {
+      const unlock = await restarted.inject({
+        method: "POST",
+        url: `/api/flist-accounts/${account.id}/unlock`,
+        headers: authed(token),
+        payload: { password: "hunter2" },
+      });
+      expect(unlock.statusCode).toBe(200);
+      expect(unlock.json<{ reconnected: string[] }>().reconnected).toEqual([
+        wanted!.id,
+      ]);
+
+      // The autoConnect identity comes back online in exactly the channels
+      // it was in (decisions.md §9 scenario 2); the logged-off one stays out.
+      const session = restarted.sessions.get(wanted!.id);
+      expect(session).toBeDefined();
+      expect(restarted.sessions.get(dormant!.id)).toBeUndefined();
+      await vi.waitFor(
+        () => {
+          expect(session!.status).toBe("online");
+          expect(session!.state.channels.has("Frontpage")).toBe(true);
+        },
+        { timeout: 10_000 },
+      );
+      expect(session!.state.channels.has("Development")).toBe(false);
     } finally {
       await restarted.close();
     }

@@ -32,7 +32,7 @@ Scenario scripts (JSON fixtures) cover: flood ERRs, mid-session disconnects, tic
 
 ## Live F-Chat testing — be a good citizen
 
-- Request **test-server access** via F-List helpdesk ticket at project start (lead time; gates nothing early).
-- Live-server contact limited to short, supervised manual verification passes — the developer policy discourages heavy live testing.
-- `cname`/`cversion` = `EmberChat/<semver>` from day one, including on the test server.
+- ~~Request **test-server access** via F-List helpdesk ticket~~ **Resolved 2026-07-13: the F-List test server is for bot development only** — client testing happens against the production server, which makes the rules below the whole story, not a fallback.
+- Live-server contact limited to short, supervised manual verification passes — the developer policy discourages heavy live testing. One account, quiet channels, minimal traffic, a human watching every frame log.
+- `cname`/`cversion` = `EmberChat/<semver>` from day one.
 - Respect API budgets everywhere, including in scripts: ticket endpoint ≤1 req/s, character-data <200/hour.

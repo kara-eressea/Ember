@@ -49,4 +49,4 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 - Never crash on unknown commands — log and swallow.
 - Ticket API: ≤ 1 request/sec; **each new ticket invalidates all previous tickets account-wide** → all ticket acquisition goes through the per-account TicketManager.
 - Message/command logs are allowed, but their location must be known and accessible to the user.
-- Heavy testing against the live server is discouraged — develop against `packages/fchat-sim`; use F-List's test server (access via helpdesk ticket) for supervised manual passes.
+- Heavy testing against the live server is discouraged — develop against `packages/fchat-sim`. The F-List test server is bot-development only (helpdesk, 2026-07-13), so manual verification passes run against the production server: short, supervised, single account, minimal traffic (see `design/testing-strategy.md`).
