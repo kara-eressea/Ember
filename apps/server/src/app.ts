@@ -95,6 +95,8 @@ export async function buildApp({
     db,
     vault,
     tickets,
+    sessions,
+    history,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
   await app.register(identitiesRoutes, {

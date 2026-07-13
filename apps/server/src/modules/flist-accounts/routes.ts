@@ -4,12 +4,14 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
-import { flistAccounts } from "../../db/schema.js";
+import { flistAccounts, identities } from "../../db/schema.js";
 import {
   AccountLockedError,
   FlistAuthError,
   type TicketManagerRegistry,
 } from "../flist-api/ticket-manager.js";
+import type { HistorySink } from "../history/sink.js";
+import type { SessionRegistry } from "../session-engine/registry.js";
 import type { CredentialVault } from "./vault.js";
 
 const accountResponse = z.object({
@@ -37,6 +39,8 @@ export interface FlistAccountsRoutesOptions {
   db: Db;
   vault: CredentialVault;
   tickets: TicketManagerRegistry;
+  sessions: SessionRegistry;
+  history: HistorySink;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -45,7 +49,7 @@ export async function flistAccountsRoutes(
   options: FlistAccountsRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, vault, tickets } = options;
+  const { db, vault, tickets, sessions, history } = options;
 
   app.addHook("preHandler", app.authenticate);
 
@@ -150,7 +154,11 @@ export async function flistAccountsRoutes(
         params: idParams,
         body: unlockBody,
         response: {
-          200: z.object({ account: accountResponse }),
+          200: z.object({
+            account: accountResponse,
+            /** Identities brought back online by this unlock. */
+            reconnected: z.array(z.string()),
+          }),
           401: errorResponse,
           404: errorResponse,
           502: errorResponse,
@@ -178,7 +186,39 @@ export async function flistAccountsRoutes(
         request.log.error({ err: error }, "unlock verification failed");
         return reply.code(502).send({ error: "Could not reach F-List" });
       }
-      return reply.send({ account: present(row) });
+      // One unlock brings every autoConnect identity back (restart recovery,
+      // decisions.md §9 scenario 2): resume exactly the channels each was in.
+      const wanted = await db
+        .select({
+          id: identities.id,
+          characterName: identities.characterName,
+        })
+        .from(identities)
+        .where(
+          and(
+            eq(identities.flistAccountId, row.id),
+            eq(identities.autoConnect, true),
+          ),
+        );
+      const reconnected: string[] = [];
+      for (const identity of wanted) {
+        const existing = sessions.get(identity.id);
+        if (existing && existing.status !== "stopped") {
+          continue; // already online — nothing to recover
+        }
+        const seed = await history.channelsForResume(identity.id);
+        const session = sessions.start({
+          identityId: identity.id,
+          character: identity.characterName,
+          accountId: row.id,
+          accountName: row.accountName,
+        });
+        for (const key of seed) {
+          session.joinChannel(key);
+        }
+        reconnected.push(identity.id);
+      }
+      return reply.send({ account: present(row), reconnected });
     },
   );
 

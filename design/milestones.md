@@ -29,7 +29,7 @@ Mirrors the ordered steps in [milestone-1-thin-vertical-slice.md](milestone-1-th
 - [x] 8. Gateway (hello/sub/snapshot/event/cmd/ack)
 - [x] 9. Web auth flows + theme system
 - [x] 10. App shell + live chat (full slice E2E)
-- [ ] 11. Docker + supervised test-server pass — **Docker/compose/smoke done**; remaining: one supervised manual pass against the real F-Chat test server (blocked on the helpdesk-ticket standing to-do)
+- [ ] 11. Docker + supervised live pass — **Docker/compose/smoke done**; remaining: one supervised manual pass against the **production** F-Chat server (the test server is bot-only per helpdesk 2026-07-13; follow `testing-strategy.md` §Live F-Chat testing)
 
 ## Milestone 2 step checklist
 
@@ -43,7 +43,7 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 
 - [x] 1. Shard the HistorySink write queue per identity (deferred audit item; pre-always-on scale)
 - [x] 2. Channel membership + rejoin semantics (server): `pinned` write path; seed desired channels on session start (explicit connect → pinned only + `joined` reconciliation; restart recovery → `joined` rows); kick/ban never auto-rejoined
-- [ ] 3. Unlock → auto-connect + re-auth UX: `autoConnect` toggle endpoint; unlock starts all of the account's auto-connect identities; web "re-enter password to reconnect" surface
+- [x] 3. Unlock → auto-connect + re-auth UX: `autoConnect` maintained implicitly (identity creation + explicit connect set it, explicit disconnect clears it — no separate toggle endpoint); unlock starts all of the account's auto-connect identities with resume seeding; web connect-on-visit gated on the flag + MeBar power control (the existing IdentityPicker unlock form is the re-auth surface)
 - [ ] 4. Catchup for cursor-less conversations (created while detached) — replay from id 0 instead of relying on REST backfill
 - [ ] 5. Unread 99-cap pushed into SQL (LATERAL + LIMIT) + mention counters (character-name match until M5 highlight rules) in snapshot/`conversation.updated`
 - [ ] 6. Web: "new since last visit" divider (attach-time read cursor, captured before the auto-ack advances it) + pin toggle UI (pinned sorts first)
@@ -54,7 +54,7 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 
 - [ ] Decide final product name + register domain (working title "emberchat"; gates Brevo DKIM and public launch — see `decisions.md` §5)
 
-- [ ] File F-List helpdesk ticket for **test-server access** (lead time; needed by M1 step 11)
+- [x] ~~File F-List helpdesk ticket for test-server access~~ — resolved 2026-07-13: the test server is **bot development only**; M1 step 11's supervised pass runs against production F-Chat instead (short, single-account, minimal traffic — `testing-strategy.md`)
 - [ ] **Feature-parity audit vs. the official F-Chat 1.0 client** (source: https://github.com/f-list/chat3client) before declaring v1.0 — enumerate its features and check each is covered by a milestone. Known items already spotted: friend/bookmark actions via JSON API (added to M6), FKS character search, RTB note notifications. Natural timing: during M6.
 - [ ] **Before building opt-in at-rest credential storage** (eventual goal, under M7): decide on F-List outreach vs. disclosure-only (see `risks-and-open-questions.md`)
 - [ ] **Server hardening backlog** (deferred from the step-6 audit; natural timing M7): periodic cleanup of expired `auth_sessions` rows + per-user session cap; `@fastify/helmet` response headers; register endpoint reveals email/username existence (fold into email-verification flow); rate-gate uses `Date.now()` (not NTP-step-proof — switch to a monotonic clock if it ever matters); session-state ICH/COL/CDS assume the JCH echo arrives first (matches sim/docs/official client — make create-on-miss if the live server ever disagrees)
@@ -71,6 +71,8 @@ An M1 audit showed much of M2's headline scope already works (sessions survive b
 
 | Date | Change |
 |---|---|
+| 2026-07-13 | **Test-server access resolved negatively**: F-List helpdesk says the test server is for bot development only. M1 step 11's supervised pass moves to the production F-Chat server under the responsible-live-testing rules (docs updated: `testing-strategy.md`, `CLAUDE.md`, step 11, standing to-do closed). |
+| 2026-07-13 | M2 step 3 (unlock → auto-connect + re-auth UX) done: `identities.autoConnect` is a self-maintaining intent flag — set on identity creation and explicit `session.connect`, cleared on explicit `session.disconnect` (no toggle endpoint); after a restart the flag set is exactly "identities needing re-auth". `POST /unlock` now reconnects every autoConnect identity on the account, seeding channels from the persisted `joined` flags (`channelsForResume`, decisions.md §9 scenario 2), and reports `reconnected: [ids]`. Gateway `ready` carries `autoConnect`; the web shell's connect-on-visit is gated on it (an explicitly logged-off identity stays off until the user reconnects), MeBar gained the explicit connect/log-off power control, local flag mirror keeps tabs honest. Tests: restart→unlock reconnects flagged identity into its channels while the logged-off one stays out; gateway flag maintenance; identity creation defaults. Server 109 tests. |
 | 2026-07-13 | M2 step 2 (rejoin semantics, server) done: gateway `conv.pin` cmd (protocol + sink `setPinned`, fan-out via `conversation.updated`); explicit `session.connect` on a fresh session seeds pinned channels and reconciles casual `joined` rows to false (`channelsForConnect`), while a connect on a live session never reseeds; `channelsForResume` (exact `joined` set) ready for step 3's unlock auto-connect. FchatSession tracks pending joins — a JCH that never echoed (banned/invite-only/deleted; ERR carries no channel ref) is dropped from the desired set at the next identify, so rejected joins get one attempt per connect instead of retrying forever (the ERR still fans out to the user). fchat-sim gained `rejectJoins`/`allowJoins`. +3 tests (server 107). |
 | 2026-07-13 | **M2 started on the `staging` branch** (main frozen for M1 UAT — see the branching exception above). Channel rejoin semantics decided and recorded as `decisions.md` §9: in-process drops and restart recovery rejoin the exact same channels; an explicit disconnect→connect rejoins pinned channels only; kick/ban is never auto-rejoined (also to minimize abuse reports against the app). M2 step checklist added from a code audit against the milestone scope. CI push trigger extended to `staging`. |
 | 2026-07-13 | Working title renamed **Emberline → EmberChat** (repo-wide sweep: `@emberchat/*` package scope, config defaults, env prefix `EMBERCHAT_API_PROXY`, compose/db identifiers, docs and mockups; `eb.`/`--eb-` prefixes and the local folder name unchanged). Final-name/domain standing to-do stays open — the `emberchat.chat` domains in design files remain placeholders. Full gate + docker smoke green under the new name. |

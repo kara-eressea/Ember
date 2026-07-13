@@ -49,13 +49,18 @@ export function AppShell() {
 
   // Start the F-Chat session on demand — once per shell visit, so a stop
   // (locked vault, auth failure) surfaces its reason instead of looping.
+  // Gated on the autoConnect intent flag: an identity the user explicitly
+  // disconnected stays offline until they explicitly connect it again
+  // (the MeBar power control), never because a tab happened to open.
   const connectAttempted = useRef(false);
   const sessionStatus = session?.sessionStatus;
   const synced = session?.synced ?? false;
+  const autoConnect = identities?.find((i) => i.id === identityId)?.autoConnect;
   useEffect(() => {
     if (
       identityId === undefined ||
       !synced ||
+      autoConnect !== true ||
       connectAttempted.current ||
       (sessionStatus !== "offline" && sessionStatus !== "stopped")
     ) {
@@ -63,7 +68,7 @@ export function AppShell() {
     }
     connectAttempted.current = true;
     void gateway.cmd({ identityId, action: "session.connect" });
-  }, [identityId, synced, sessionStatus]);
+  }, [identityId, synced, sessionStatus, autoConnect]);
 
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.

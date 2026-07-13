@@ -164,7 +164,7 @@ export const api = {
     });
   },
   unlockFlistAccount(id: string, password: string) {
-    return apiRequest<{ account: FlistAccountDto }>(
+    return apiRequest<{ account: FlistAccountDto; reconnected: string[] }>(
       `/flist-accounts/${id}/unlock`,
       { method: "POST", body: { password }, auth: true },
     );

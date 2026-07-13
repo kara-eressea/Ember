@@ -253,6 +253,11 @@ export type ServerFrame =
           id: string;
           name: string;
           sessionStatus: GatewaySessionStatus;
+          /** Intent flag: this identity should be online when possible.
+           * Maintained implicitly — set by identity creation and explicit
+           * session.connect, cleared by explicit session.disconnect. Unlock
+           * reconnects every autoConnect identity on the account. */
+          autoConnect: boolean;
         }[];
       };
     }

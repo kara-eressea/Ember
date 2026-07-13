@@ -124,6 +124,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             {sessionStatusLabel(session)}
           </div>
         </span>
+        <PowerButton session={session} />
         <Link
           className={styles.meGear}
           to="/identities"
@@ -133,6 +134,53 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         </Link>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Explicit connect/disconnect (M2: closing the tab never disconnects — this
+ * is the one deliberate way to log a character off the bouncer). The local
+ * autoConnect mirror keeps the shell from silently reconnecting an identity
+ * the user just logged off.
+ */
+function PowerButton({ session }: { session: IdentitySession }) {
+  const [busy, setBusy] = useState(false);
+  const connected =
+    session.sessionStatus !== "offline" && session.sessionStatus !== "stopped";
+
+  async function toggle() {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const action = connected ? "session.disconnect" : "session.connect";
+      const ack = await gateway.cmd({
+        identityId: session.identityId,
+        action,
+      });
+      if (ack.ok) {
+        useSessionsStore
+          .getState()
+          .setAutoConnect(session.identityId, !connected);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      className={styles.meGear}
+      onClick={() => {
+        void toggle();
+      }}
+      disabled={busy}
+      title={connected ? "Log off F-Chat" : "Connect to F-Chat"}
+      aria-label={connected ? "Log off F-Chat" : "Connect to F-Chat"}
+    >
+      ⏻
+    </button>
   );
 }
 

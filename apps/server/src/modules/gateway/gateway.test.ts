@@ -443,6 +443,37 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     expect(app.sessions.get(identityId)).toBe(fresh);
     expect(fresh!.state.channels.has("Frontpage")).toBe(false);
   });
+
+  it("session.connect and session.disconnect maintain the autoConnect intent flag", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+
+    const flag = async () => {
+      const [row] = await db
+        .select({ autoConnect: identities.autoConnect })
+        .from(identities)
+        .where(eq(identities.id, identityId));
+      return row?.autoConnect;
+    };
+    expect(await flag()).toBe(false); // direct insert bypasses the API default
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(await flag()).toBe(true);
+
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "session.disconnect" },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(await flag()).toBe(false);
+  });
 });
 
 describe("gateway handshake", () => {
@@ -453,7 +484,14 @@ describe("gateway handshake", () => {
     const client = await connectClient();
     const ready = await client.hello(token);
     expect(ready.d.identities).toEqual([
-      { id: identityId, name: CHARACTER, sessionStatus: "online" },
+      {
+        id: identityId,
+        name: CHARACTER,
+        sessionStatus: "online",
+        // Inserted directly by the test helper, so the API default (true)
+        // does not apply.
+        autoConnect: false,
+      },
     ]);
 
     client.send({ t: "ping" });
