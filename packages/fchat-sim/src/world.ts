@@ -51,6 +51,16 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Willow Reed", "Fern Ashwood"],
     },
+    // Reserved for the M3 multi-identity rail E2E (same parallelism rule);
+    // Bramble is its raw-SimClient "other side".
+    "rowan@example.test": {
+      password: "hunter2",
+      characters: ["Rowan Redleaf", "Petal Thorn"],
+    },
+    "thorn@example.test": {
+      password: "hunter2",
+      characters: ["Bramble Thorn"],
+    },
   },
   channels: [
     {

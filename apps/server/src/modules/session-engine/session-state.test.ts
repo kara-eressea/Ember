@@ -176,4 +176,44 @@ describe("SessionState", () => {
     // length checks between connects should use the last known values.
     expect(state.vars.chat_max).toBe(8192);
   });
+
+  it("walks the IGN transitions: init replaces, add/delete adjust, reset clears", () => {
+    const state = new SessionState();
+    state.apply({
+      cmd: "IGN",
+      payload: { action: "init", characters: ["Teal Deer", "Old Name"] },
+    });
+    expect(state.isIgnored("teal deer")).toBe(true); // case-insensitive
+    expect(state.isIgnored("TEAL DEER")).toBe(true);
+
+    // A later init is a full replacement (another client edited the list).
+    state.apply({
+      cmd: "IGN",
+      payload: { action: "init", characters: ["Teal Deer"] },
+    });
+    expect(state.isIgnored("Old Name")).toBe(false);
+
+    state.apply({
+      cmd: "IGN",
+      payload: { action: "add", character: "Nyx Firemane" },
+    });
+    expect(state.isIgnored("nyx firemane")).toBe(true);
+    expect([...state.ignores.values()].sort()).toEqual([
+      "Nyx Firemane",
+      "Teal Deer",
+    ]);
+
+    // Delete matches case-insensitively; unknown actions are swallowed.
+    state.apply({
+      cmd: "IGN",
+      payload: { action: "delete", character: "TEAL DEER" },
+    });
+    expect(state.isIgnored("Teal Deer")).toBe(false);
+    state.apply({ cmd: "IGN", payload: { action: "wat" } });
+    expect(state.isIgnored("Nyx Firemane")).toBe(true);
+
+    // Volatile: IGN init re-seeds on every identify.
+    state.resetVolatile();
+    expect(state.isIgnored("Nyx Firemane")).toBe(false);
+  });
 });

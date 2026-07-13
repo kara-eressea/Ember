@@ -12,6 +12,7 @@ import {
 } from "../../lib/api.js";
 import { identityPath } from "../../lib/routes.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { AuthCard } from "./AuthCard.js";
 import styles from "./auth.module.css";
@@ -129,6 +130,7 @@ export function IdentityPicker() {
               what={`identity ${identity.characterName} and its history`}
               onConfirm={async () => {
                 await api.deleteIdentity(identity.id);
+                useSessionsStore.getState().removeIdentity(identity.id);
                 await reload();
               }}
             />
@@ -437,9 +439,19 @@ function CharacterPicker({
     setBusy(true);
     setError(undefined);
     try {
-      await api.createIdentity({
+      const { identity } = await api.createIdentity({
         flistAccountId: account.id,
         characterName,
+      });
+      // Keep this tab's gateway mirror current: ready only lists identities
+      // known at socket connect, so without this the shell would refuse the
+      // fresh identity until a reconnect.
+      useSessionsStore.getState().upsertIdentity({
+        id: identity.id,
+        name: identity.characterName,
+        autoConnect: identity.autoConnect,
+        unread: 0,
+        mentions: 0,
       });
       onDone();
     } catch (cause) {

@@ -2,7 +2,7 @@
 // registry → FlistApiClient chain (two identities on one account share a
 // TicketManager, so starting both must not churn tickets).
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
@@ -24,6 +24,7 @@ afterEach(async () => {
 async function makeRegistry(): Promise<{
   sim: FchatSim;
   registry: SessionRegistry;
+  apiClient: FlistApiClient;
 }> {
   const sim = new FchatSim();
   await sim.start();
@@ -31,10 +32,11 @@ async function makeRegistry(): Promise<{
 
   const vault = new CredentialVault();
   vault.set("acc-1", "hunter2");
-  const tickets = new TicketManagerRegistry(
-    new FlistApiClient({ baseUrl: sim.httpUrl, minRequestIntervalMs: 0 }),
-    vault,
-  );
+  const apiClient = new FlistApiClient({
+    baseUrl: sim.httpUrl,
+    minRequestIntervalMs: 0,
+  });
+  const tickets = new TicketManagerRegistry(apiClient, vault);
   const registry = new SessionRegistry({
     tickets,
     wsUrl: sim.wsUrl,
@@ -44,7 +46,7 @@ async function makeRegistry(): Promise<{
   cleanups.push(() => {
     registry.stopAll();
   });
-  return { sim, registry };
+  return { sim, registry, apiClient };
 }
 
 function waitForStatus(
@@ -98,7 +100,8 @@ describe("SessionRegistry", () => {
   });
 
   it("runs two identities of one account through the shared ticket manager", async () => {
-    const { registry } = await makeRegistry();
+    const { registry, apiClient } = await makeRegistry();
+    const fetches = vi.spyOn(apiClient, "getApiTicket");
     const first = registry.start(amber);
     const second = registry.start(cindral);
     expect(second).not.toBe(first);
@@ -109,6 +112,10 @@ describe("SessionRegistry", () => {
     // Both are online — the coalesced/cached ticket did not get churned.
     expect(first.status).toBe("online");
     expect(second.status).toBe("online");
+    // The M3 headline invariant: two simultaneous connects on one account
+    // cost exactly ONE ticket fetch (each fetch invalidates all previous
+    // tickets account-wide, so a second one would have broken the sibling).
+    expect(fetches).toHaveBeenCalledTimes(1);
   });
 
   it("replaces a stopped session on the next start", async () => {
