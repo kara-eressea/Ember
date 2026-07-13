@@ -21,11 +21,23 @@ export type LogRow =
 export function buildRows(
   messages: MessageDto[],
   newSinceId: number | null,
+  ignores: readonly string[] = [],
 ): LogRow[] {
+  // Ignoring is render-side only (messages stay persisted; unignoring later
+  // brings them back). Own sends always show; names match case-insensitively.
+  const ignored = new Set(ignores.map((name) => name.toLowerCase()));
+  const visible =
+    ignored.size === 0
+      ? messages
+      : messages.filter(
+          (message) =>
+            message.sentByUs ||
+            !ignored.has(message.senderCharacter.toLowerCase()),
+        );
   const rows: LogRow[] = [];
   let lastDay: string | undefined;
   let newMarked = newSinceId === null;
-  for (const message of messages) {
+  for (const message of visible) {
     const day = dayKey(message.createdAt);
     if (day !== lastDay) {
       rows.push({

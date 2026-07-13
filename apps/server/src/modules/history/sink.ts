@@ -10,10 +10,10 @@
 // `message.new` events must carry the persisted messages.id, so live fan-out
 // happens after (and in the same order as) persistence, never before.
 
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
-import { conversations, messages } from "../../db/schema.js";
+import { conversations, ignores, messages } from "../../db/schema.js";
 import {
   TypedEventBus,
   type OutboundMessage,
@@ -22,6 +22,7 @@ import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
+import type { ServerCommandPayload } from "@emberchat/fchat-protocol";
 
 type ConversationKind = "channel" | "pm";
 
@@ -126,6 +127,11 @@ export class HistorySink {
           });
           return;
         }
+        case "IGN":
+          // Mirror of the server-authoritative ignore list, so snapshots can
+          // serve it without (or before) a live session.
+          this.#enqueueIgnores(identityId, command.payload);
+          return;
         case "JCH":
           if (command.payload.character.identity === session.character) {
             this.#enqueueJoinedFlag(
@@ -387,6 +393,72 @@ export class HistorySink {
         this.events.emit("conversation", { identityId, conversation: row });
       }
     });
+  }
+
+  /** The identity's persisted ignore list (snapshot self.ignores). */
+  async listIgnores(identityId: string): Promise<string[]> {
+    const rows = await this.#db
+      .select({ character: ignores.character })
+      .from(ignores)
+      .where(eq(ignores.identityId, identityId))
+      .orderBy(asc(ignores.character));
+    return rows.map((row) => row.character);
+  }
+
+  #enqueueIgnores(
+    identityId: string,
+    payload: ServerCommandPayload<"IGN">,
+  ): void {
+    const { action, character, characters } = payload;
+    if (action === "init") {
+      this.#enqueue(identityId, async () => {
+        // Full replacement: the login list is the truth (names may have
+        // been ignored/unignored from another client while we were away).
+        // One transaction: a concurrent snapshot read must never see the
+        // wiped midpoint, and a failed insert must not leave the mirror
+        // empty until the next reconnect.
+        await this.#db.transaction(async (tx) => {
+          await tx.delete(ignores).where(eq(ignores.identityId, identityId));
+          if (characters !== undefined && characters.length > 0) {
+            await tx
+              .insert(ignores)
+              .values(
+                characters.map((name) => ({ identityId, character: name })),
+              )
+              .onConflictDoNothing();
+          }
+        });
+      });
+    } else if (action === "add" && character !== undefined) {
+      this.#enqueue(identityId, async () => {
+        // Replace any differently-cased leftover (the PK is case-sensitive,
+        // F-Chat names are not) so the list never shows duplicates.
+        await this.#db.transaction(async (tx) => {
+          await tx
+            .delete(ignores)
+            .where(
+              and(
+                eq(ignores.identityId, identityId),
+                sql`lower(${ignores.character}) = lower(${character})`,
+              ),
+            );
+          await tx.insert(ignores).values({ identityId, character });
+        });
+      });
+    } else if (action === "delete" && character !== undefined) {
+      this.#enqueue(identityId, async () => {
+        // Case-insensitive: the ack echoes canonical casing, but rows from
+        // older inits may differ.
+        await this.#db
+          .delete(ignores)
+          .where(
+            and(
+              eq(ignores.identityId, identityId),
+              sql`lower(${ignores.character}) = lower(${character})`,
+            ),
+          );
+      });
+    }
   }
 
   #enqueue(identityId: string, task: () => Promise<void>): void {

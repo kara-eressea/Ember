@@ -42,6 +42,17 @@ export class SessionState {
   connectedCount = 0;
   readonly characters = new Map<string, CharacterPresence>();
   readonly channels = new Map<string, ChannelState>();
+  /** Ignore list, lowercased key → canonical casing (server-authoritative:
+   * seeded by IGN init at login, adjusted by add/delete acks). */
+  readonly ignores = new Map<string, string>();
+  /** True once this connection's IGN init arrived — before that, an empty
+   * `ignores` means "not seeded yet", not "nobody ignored". */
+  ignoresSeeded = false;
+
+  /** F-Chat resolves names case-insensitively. */
+  isIgnored(character: string): boolean {
+    return this.ignores.has(character.toLowerCase());
+  }
 
   /** Folds one inbound command into the roster. Ignores non-state commands. */
   apply(command: ServerCommand): void {
@@ -49,6 +60,21 @@ export class SessionState {
       case "IDN":
         this.ownCharacter = command.payload.character;
         return;
+      case "IGN": {
+        const { action, character, characters } = command.payload;
+        if (action === "init") {
+          this.ignores.clear();
+          this.ignoresSeeded = true;
+          for (const name of characters ?? []) {
+            this.ignores.set(name.toLowerCase(), name);
+          }
+        } else if (action === "add" && character !== undefined) {
+          this.ignores.set(character.toLowerCase(), character);
+        } else if (action === "delete" && character !== undefined) {
+          this.ignores.delete(character.toLowerCase());
+        }
+        return;
+      }
       case "VAR":
         this.vars = applyVar(this.vars, command.payload);
         return;
@@ -142,11 +168,14 @@ export class SessionState {
     }
   }
 
-  /** Called when the connection drops: per-connection state is void. */
+  /** Called when the connection drops: per-connection state is void. The
+   * ignore list is included — IGN init re-seeds it on every identify. */
   resetVolatile(): void {
     this.ownCharacter = undefined;
     this.connectedCount = 0;
     this.characters.clear();
     this.channels.clear();
+    this.ignores.clear();
+    this.ignoresSeeded = false;
   }
 }

@@ -182,7 +182,7 @@ describe("getApiTicket.php", () => {
 });
 
 describe("login handshake", () => {
-  it("walks IDN → HLO → VAR → CON → LIS → NLN in order", async () => {
+  it("walks IDN → HLO → VAR → CON → IGN → LIS → NLN in order", async () => {
     const sim = await startSim();
     const client = await TestClient.connect(sim);
     client.send(
@@ -219,6 +219,11 @@ describe("login handshake", () => {
     ]);
     const con = parseServerCommand(await client.next());
     expect(con).toEqual({ cmd: "CON", payload: { count: 4 } });
+    // The ignore list replays before the roster (real-server order).
+    expect(parseServerCommand(await client.next())).toEqual({
+      cmd: "IGN",
+      payload: { action: "init", characters: [] },
+    });
     const lis = parseServerCommand(await client.next());
     expect(lis.cmd).toBe("LIS");
     if (lis.cmd === "LIS" && "payload" in lis) {
@@ -243,7 +248,7 @@ describe("login handshake", () => {
         "Amber Vale",
       ),
     );
-    await client.waitFor("CON");
+    await client.waitFor("IGN"); // init sits between CON and the LIS batches
     const first = parseServerCommand(await client.next());
     const second = parseServerCommand(await client.next());
     expect(first).toMatchObject({ cmd: "LIS" });
@@ -406,6 +411,7 @@ describe("channels", () => {
         channels: [
           { name: "Frontpage", mode: "chat", characters: 3 },
           { name: "Development", mode: "both", characters: 1 },
+          { name: "Gardening", mode: "chat", characters: 1 },
         ],
       },
     });
@@ -757,6 +763,72 @@ describe("protocol discipline", () => {
     sim.dropPings = true;
     const client = await login(sim, "amber@example.test", "Amber Vale");
     await expect(client.next(300)).rejects.toThrow("timed out");
+  });
+});
+
+describe("ignore lists", () => {
+  it("stores IGN add/delete server-side, replays via init, and relays notify as ERR 20", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({
+      cmd: "IGN",
+      payload: { action: "add", character: "Cindral" },
+    });
+    expect(parseServerCommand(await amber.waitFor("IGN"))).toEqual({
+      cmd: "IGN",
+      payload: { action: "add", character: "Cindral" },
+    });
+
+    // The list is server-stored: a reconnect replays it via init.
+    amber.close();
+    await amber.closed;
+    const back = await TestClient.connect(sim);
+    back.send(
+      idn(
+        "amber@example.test",
+        sim.issueTicketFor("amber@example.test"),
+        "Amber Vale",
+      ),
+    );
+    expect(parseServerCommand(await back.waitFor("IGN"))).toEqual({
+      cmd: "IGN",
+      payload: { action: "init", characters: ["Cindral"] },
+    });
+    await back.waitFor("NLN");
+
+    // The sim never filters PRI — ignoring is the client's responsibility;
+    // the client's `notify` makes the sim tell the sender via ERR 20.
+    const cindral = await login(sim, "amber@example.test", "Cindral");
+    cindral.send({
+      cmd: "PRI",
+      payload: { recipient: "Amber Vale", message: "hello?" },
+    });
+    expect(parseServerCommand(await back.waitFor("PRI"))).toEqual({
+      cmd: "PRI",
+      payload: { character: "Cindral", message: "hello?" },
+    });
+    back.send({
+      cmd: "IGN",
+      payload: { action: "notify", character: "Cindral" },
+    });
+    expect(parseServerCommand(await cindral.waitFor("ERR"))).toMatchObject({
+      payload: { number: 20 },
+    });
+
+    // delete + list round-trip.
+    back.send({
+      cmd: "IGN",
+      payload: { action: "delete", character: "Cindral" },
+    });
+    expect(parseServerCommand(await back.waitFor("IGN"))).toEqual({
+      cmd: "IGN",
+      payload: { action: "delete", character: "Cindral" },
+    });
+    back.send({ cmd: "IGN", payload: { action: "list" } });
+    expect(parseServerCommand(await back.waitFor("IGN"))).toEqual({
+      cmd: "IGN",
+      payload: { action: "init", characters: [] },
+    });
   });
 });
 

@@ -39,6 +39,7 @@ import {
   buildSnapshot,
   catchupPlan,
   fetchMessagesAfter,
+  identityBadgeTotals,
   messageDto,
 } from "./snapshot.js";
 
@@ -299,16 +300,26 @@ export class GatewayConnection {
         accountName: row.accountName,
       });
     }
+    // Rail badges must paint from ready alone — a background identity may
+    // never be subscribed by this client. Each total walks capped
+    // per-conversation windows, so the cost is bounded per identity.
+    const totals = await Promise.all(
+      rows.map((row) =>
+        identityBadgeTotals(this.#ctx.db, row.id, row.character),
+      ),
+    );
     this.#send({
       t: "ready",
       d: {
         userId: auth.userId,
-        identities: rows.map((row) => ({
+        identities: rows.map((row, index) => ({
           id: row.id,
           name: row.character,
           sessionStatus:
             this.#ctx.sessions.get(row.id)?.status ?? ("offline" as const),
           autoConnect: row.autoConnect,
+          unread: totals[index]?.unread ?? 0,
+          mentions: totals[index]?.mentions ?? 0,
         })),
       },
     });
@@ -398,6 +409,13 @@ export class GatewayConnection {
       session,
     );
     const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
+    const ownStatus = session?.ownStatus ?? { status: "online", statusmsg: "" };
+    // Live session state once this connection's IGN init has seeded it —
+    // the DB mirror trails it by the sink's queue. The mirror covers the
+    // rest: no session, or a session still mid-handshake.
+    const ignores = session?.state.ignoresSeeded
+      ? [...session.state.ignores.values()].sort((a, b) => a.localeCompare(b))
+      : await this.#ctx.history.listIgnores(identityId);
     this.#send({
       t: "snapshot",
       d: {
@@ -405,6 +423,9 @@ export class GatewayConnection {
         self: {
           character: identity.character,
           sessionStatus: session?.status ?? "offline",
+          status: ownStatus.status,
+          statusmsg: ownStatus.statusmsg,
+          ignores,
           limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
         },
         channels: snapshot.channels,
@@ -536,6 +557,45 @@ export class GatewayConnection {
             return;
           }
           throw error;
+        }
+        return;
+      }
+      case "status.set": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            await session.setStatus(cmd.d.status, cmd.d.statusmsg);
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : "status set failed",
+            });
+          }
+        }
+        return;
+      }
+      case "ignore.add":
+      case "ignore.remove": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            // State, persistence and fan-out all follow the server's IGN
+            // acknowledgement — the cmd only puts the request on the wire.
+            if (cmd.action === "ignore.add") {
+              await session.ignore(cmd.d.character);
+            } else {
+              await session.unignore(cmd.d.character);
+            }
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : "ignore change failed",
+            });
+          }
         }
         return;
       }

@@ -32,6 +32,8 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await expect(page.getByRole("heading", { name: "Frontpage" })).toBeVisible({
     timeout: 10_000,
   });
+  // Human-readable URL scheme (M3): identity by character name, channel by key.
+  await expect(page).toHaveURL(/\/app\/Cindral\/c\/Frontpage$/);
   await expect(page.getByText("The sim's default hangout")).toBeVisible();
 
   // Member list: the three seeded NPCs plus us, grouped with role glyphs.

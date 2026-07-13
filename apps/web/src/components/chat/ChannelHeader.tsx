@@ -21,6 +21,68 @@ const DESCRIPTION_CLAMP = 140;
  * what an explicit reconnect rejoins (decisions.md §9), pinned DMs surface
  * under the sidebar's Pinned section.
  */
+/**
+ * DM-header ignore toggle (M3). Ignoring is server-stored (IGN) and
+ * render-side here: history keeps the messages, the log hides them. State
+ * follows the `ignore.updated` fan-out, so no optimistic flip is needed.
+ */
+function IgnoreChip({
+  identityId,
+  character,
+}: {
+  identityId: string;
+  character: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const ignored = useSessionsStore((s) =>
+    (s.sessions[identityId]?.ignores ?? []).some(
+      (name) => name.toLowerCase() === character.toLowerCase(),
+    ),
+  );
+
+  async function toggle() {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const ack = await gateway.cmd({
+        identityId,
+        action: ignored ? "ignore.remove" : "ignore.add",
+        d: { character },
+      });
+      if (!ack.ok) {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            identityId,
+            "error",
+            ack.error ?? "Could not update the ignore list",
+          );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      className={`${styles.pinChip} ${ignored ? (styles.ignoreChipActive ?? "") : ""}`}
+      onClick={() => {
+        void toggle();
+      }}
+      disabled={busy}
+      title={
+        ignored
+          ? "Unignore — show their messages again"
+          : "Ignore — hide their messages (history is kept)"
+      }
+    >
+      ⊘ {ignored ? "ignored" : "ignore"}
+    </button>
+  );
+}
+
 function PinChip({
   identityId,
   convId,
@@ -163,6 +225,7 @@ export function DmHeader({
           convId={dm.convId}
           pinned={dm.pinned}
         />
+        <IgnoreChip identityId={identityId} character={dm.partner} />
         {dm.typing === "typing" && (
           <span className={styles.typing}>is typing…</span>
         )}

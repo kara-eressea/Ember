@@ -650,11 +650,63 @@ describe("gateway handshake", () => {
         // Inserted directly by the test helper, so the API default (true)
         // does not apply.
         autoConnect: false,
+        unread: 0,
+        mentions: 0,
       },
     ]);
 
     client.send({ t: "ping" });
     await client.nextOfType("pong");
+  });
+
+  it("ready carries per-identity badge totals without a session or a sub", async () => {
+    const { identityId, token } = await createIdentity();
+    // No session started — the rail must paint badges for offline identities
+    // (their history persists regardless).
+    const [dev, lounge] = await db
+      .insert(conversations)
+      .values([
+        { identityId, kind: "channel", channelKey: "Dev", title: "Dev" },
+        { identityId, kind: "channel", channelKey: "Lounge", title: "Lounge" },
+      ])
+      .returning();
+    await db.insert(messages).values([
+      {
+        conversationId: dev!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: "unread one",
+      },
+      {
+        conversationId: dev!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `oi ${CHARACTER}!`, // mention
+      },
+      {
+        conversationId: lounge!.id,
+        senderCharacter: "Tally Marsh",
+        kind: "msg" as const,
+        bbcode: "unread two",
+      },
+      {
+        conversationId: lounge!.id,
+        senderCharacter: CHARACTER,
+        kind: "msg" as const,
+        bbcode: `I, ${CHARACTER}, sent this myself`,
+        sentByUs: true, // own sends count as neither
+      },
+    ]);
+
+    const client = await connectClient();
+    const ready = await client.hello(token);
+    // Totals aggregate across both conversations: 3 inbound unread, 1 mention.
+    expect(ready.d.identities[0]).toMatchObject({
+      id: identityId,
+      sessionStatus: "offline",
+      unread: 3,
+      mentions: 1,
+    });
   });
 
   it("rejects a bad token and a wrong protocol version", async () => {
@@ -792,6 +844,9 @@ describe("gateway fan-out", () => {
     expect(snapshot.d.self).toEqual({
       character: CHARACTER,
       sessionStatus: "online",
+      status: "online",
+      statusmsg: "",
+      ignores: [],
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000 },
     });
@@ -808,6 +863,150 @@ describe("gateway fan-out", () => {
 
     const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("ignore.add/remove drive IGN, fan out the list, persist the mirror, and keep messages", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "ignore.add", d: { character: "Nyx Firemane" } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    // The server's IGN ack fans the whole list out.
+    const updated = await client.nextEvent("ignore.updated");
+    expect(eventPayload<{ characters: string[] }>(updated).characters).toEqual([
+      "Nyx Firemane",
+    ]);
+
+    // An inbound PRI from the ignored character is still persisted and
+    // fanned out — hiding is the render's job, history keeps everything.
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "you can't hear me" },
+    });
+    const msg = await client.nextEvent("message.new");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(msg).message.bbcode,
+    ).toBe("you can't hear me");
+
+    // A live, IGN-seeded session serves its own state to snapshots — no
+    // sink-queue race.
+    const live = await connectClient();
+    await live.hello(token);
+    const liveSnapshot = await live.subscribe(identityId);
+    expect(liveSnapshot.d.self.ignores).toEqual(["Nyx Firemane"]);
+
+    // The persisted mirror serves snapshots without a live session (the add
+    // ack must have reached the DB, not just session state).
+    await app.history.flush();
+    app.sessions.stop(identityId, "test: mirror path");
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self.ignores).toEqual(["Nyx Firemane"]);
+
+    // Reconnect: the sim replays IGN init (full replacement) and the remove
+    // ack must also persist through to the mirror. The init fans out its own
+    // ignore.updated — consume it so the remove assertion sees the right one.
+    const restarted = await startSession(identityId);
+    const reseeded = await client.nextEvent("ignore.updated");
+    expect(eventPayload<{ characters: string[] }>(reseeded).characters).toEqual(
+      ["Nyx Firemane"],
+    );
+    expect(restarted.state.isIgnored("Nyx Firemane")).toBe(true);
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "ignore.remove",
+        d: { character: "Nyx Firemane" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    const removed = await client.nextEvent("ignore.updated");
+    expect(eventPayload<{ characters: string[] }>(removed).characters).toEqual(
+      [],
+    );
+    await app.history.flush();
+    app.sessions.stop(identityId, "test: mirror path");
+    const after = await connectClient();
+    await after.hello(token);
+    const cleared = await after.subscribe(identityId);
+    expect(cleared.d.self.ignores).toEqual([]);
+  });
+
+  it("a rail reorder fans out as identities.reordered", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/identities/order",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [identityId] },
+    });
+    expect(response.statusCode).toBe(204);
+    const evt = await client.nextEvent("identities.reordered");
+    expect(eventPayload<{ order: string[] }>(evt).order).toEqual([identityId]);
+  });
+
+  it("status.set fans out as presence and lands in the next snapshot's self", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "status.set",
+        d: { status: "busy", statusmsg: "plotting" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    // Our own STA converges every subscribed tab via the presence fan-out.
+    await client.next(
+      (frame): frame is Extract<ServerFrame, { t: "event" }> =>
+        frame.t === "event" &&
+        frame.d.kind === "presence" &&
+        frame.d.d.character === CHARACTER &&
+        frame.d.d.status === "busy",
+    );
+
+    // A fresh sub reads the status straight from the session (self block).
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self).toMatchObject({
+      status: "busy",
+      statusmsg: "plotting",
+    });
+
+    // Short of online there is nothing to set: the ack must say so.
+    app.sessions.stop(identityId);
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "status.set",
+        d: { status: "away", statusmsg: "" },
+      },
+    });
+    const refused = await client.nextOfType("ack");
+    expect(refused.d.ok).toBe(false);
   });
 
   it("resolves DM presence case-insensitively and fans the LIS roster out as presence.bulk", async () => {

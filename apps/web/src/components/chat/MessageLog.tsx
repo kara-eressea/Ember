@@ -9,11 +9,13 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { MessageDto } from "@emberchat/protocol";
 import { formatTime } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
+import { useSessionsStore } from "../../stores/sessions.js";
 import { nickColor } from "../../theme/tokens.js";
 import { buildRows } from "./log-rows.js";
 import styles from "./chat.module.css";
 
 const EMPTY: MessageDto[] = [];
+const EMPTY_IGNORES: string[] = [];
 /** Scroll-up distance that triggers the next history page. */
 const LOAD_OLDER_THRESHOLD_PX = 120;
 /** Within this of the bottom still counts as "at the bottom". */
@@ -36,9 +38,12 @@ export function MessageLog({
   const [newSinceId] = useState(readCursorAtAttach);
   const buffer = useMessagesStore((s) => s.buffers[convId]);
   const messages = buffer?.messages ?? EMPTY;
+  const ignores = useSessionsStore(
+    (s) => s.sessions[identityId]?.ignores ?? EMPTY_IGNORES,
+  );
   const rows = useMemo(
-    () => buildRows(messages, newSinceId),
-    [messages, newSinceId],
+    () => buildRows(messages, newSinceId, ignores),
+    [messages, newSinceId, ignores],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);

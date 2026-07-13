@@ -6,6 +6,12 @@
 // client trusts the server).
 
 import { z } from "zod";
+import { CLIENT_SETTABLE_STATUSES } from "@emberchat/fchat-protocol";
+
+// Re-exported so gateway consumers (the web app) can render status pickers
+// without a direct fchat-protocol dependency.
+export { CLIENT_SETTABLE_STATUSES };
+export type { ClientSettableStatus } from "@emberchat/fchat-protocol";
 
 /** Exchanged in the hello handshake; bump on breaking protocol changes. */
 export const PROTOCOL_VERSION = 1;
@@ -52,10 +58,30 @@ const resumeSchema = z
   });
 
 /**
- * Gateway commands (M1 core + M2 `conv.pin`). `status.set`, `typing.set`
- * and `ignore.add/remove` join in their milestones.
+ * Gateway commands (M1 core + M2 `conv.pin` + M3 `status.set`,
+ * `ignore.add/remove`). `typing.set` joins in its milestone.
  */
 const cmdSchema = z.discriminatedUnion("action", [
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("ignore.add"),
+    d: z.object({ character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("ignore.remove"),
+    d: z.object({ character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("status.set"),
+    // "crown" is server-set (RWD), deliberately not settable. The 255 cap is
+    // the official client's status-message limit (no VAR exists for it).
+    d: z.object({
+      status: z.enum(CLIENT_SETTABLE_STATUSES),
+      statusmsg: z.string().max(255),
+    }),
+  }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("session.connect"),
@@ -257,6 +283,19 @@ export type GatewayEvent =
       d: { status: GatewaySessionStatus; reason?: string };
     }
   | { kind: "identity.updated"; d: { autoConnect: boolean } }
+  | {
+      kind: "ignore.updated";
+      /** The full ignore list after a change (IGN init/add/delete) — an
+       * idempotent overwrite like every other volatile event. */
+      d: { characters: string[] };
+    }
+  | {
+      kind: "identities.reordered";
+      /** The user's full identity order (rail order). Broadcast to every
+       * identity's subscribers, so a tab subscribed to all of them applies
+       * the same order several times — idempotent by construction. */
+      d: { order: string[] };
+    }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
 
@@ -274,6 +313,14 @@ export type ServerFrame =
            * session.connect, cleared by explicit session.disconnect. Unlock
            * reconnects every autoConnect identity on the account. */
           autoConnect: boolean;
+          /** Badge totals across the identity's conversations, so the rail
+           * paints before (or without) a sub. Sums of the same capped
+           * per-conversation windows the snapshot counts — a signal, not an
+           * exact figure; the client clamps display at 99+. Kept live
+           * client-side by aggregating subscribed slices; these are the
+           * initial values. */
+          unread: number;
+          mentions: number;
         }[];
       };
     }
@@ -284,6 +331,14 @@ export type ServerFrame =
         self: {
           character: string;
           sessionStatus: GatewaySessionStatus;
+          /** Our own F-Chat status (the session's desired status — restored
+           * across reconnects). "online"/"" while no session is live. */
+          status: string;
+          statusmsg: string;
+          /** The identity's ignore list (persisted mirror — served with or
+           * without a live session). Messages from these characters are
+           * hidden from render client-side but still persisted. */
+          ignores: string[];
           /** Live server VARs (bytes) — composer limits, never hardcoded. */
           limits: { chatMax: number; privMax: number };
         };

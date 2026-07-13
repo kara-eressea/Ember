@@ -51,6 +51,16 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Willow Reed", "Fern Ashwood"],
     },
+    // Reserved for the M3 multi-identity rail E2E (same parallelism rule);
+    // Bramble is its raw-SimClient "other side".
+    "rowan@example.test": {
+      password: "hunter2",
+      characters: ["Rowan Redleaf", "Petal Thorn"],
+    },
+    "thorn@example.test": {
+      password: "hunter2",
+      characters: ["Bramble Thorn"],
+    },
   },
   channels: [
     {
@@ -64,6 +74,15 @@ export const DEFAULT_WORLD: SimWorld = {
       name: "Development",
       mode: "both",
       description: "Talk about third-party clients here.",
+      npcs: ["Tally Marsh"],
+    },
+    // Reserved for the rail E2E: chat.spec asserts exact Frontpage member
+    // counts, so parallel specs must not wander in — channel isolation
+    // follows the same rule as character isolation.
+    {
+      name: "Gardening",
+      mode: "chat",
+      description: "Seeds, cuttings, and quiet company.",
       npcs: ["Tally Marsh"],
     },
     {

@@ -15,11 +15,15 @@ export function dispatchFrame(frame: ServerFrame): void {
   switch (frame.t) {
     case "ready":
       sessions.applyReady(
-        frame.d.identities.map(({ id, name, autoConnect }) => ({
-          id,
-          name,
-          autoConnect,
-        })),
+        frame.d.identities.map(
+          ({ id, name, autoConnect, unread, mentions }) => ({
+            id,
+            name,
+            autoConnect,
+            unread,
+            mentions,
+          }),
+        ),
       );
       for (const identity of frame.d.identities) {
         sessions.applySessionStatus(identity.id, identity.sessionStatus);
@@ -103,6 +107,12 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // Keeps every tab's connect-intent mirror honest — a stale mirror
       // could silently reconnect an identity logged off in another tab.
       sessions.setAutoConnect(identityId, event.d.autoConnect);
+      return;
+    case "identities.reordered":
+      sessions.applyIdentityOrder(event.d.order);
+      return;
+    case "ignore.updated":
+      sessions.applyIgnores(identityId, event.d.characters);
       return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);

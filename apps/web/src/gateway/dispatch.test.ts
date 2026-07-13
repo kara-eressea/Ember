@@ -45,6 +45,9 @@ function snapshot(): ServerFrame {
       self: {
         character: "Amber Vale",
         sessionStatus: "online",
+        status: "online",
+        statusmsg: "",
+        ignores: [],
         limits: { chatMax: 4096, privMax: 50000 },
       },
       channels: [
@@ -267,6 +270,40 @@ describe("presence", () => {
     // The snapshot carried the live limits too.
     expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000 });
   });
+
+  it("ignore.updated overwrites the ignore list", () => {
+    dispatchFrame(snapshot());
+    expect(session().ignores).toEqual([]);
+    dispatchFrame(
+      event("ignore.updated", { characters: ["Nyx Firemane", "Tally Marsh"] }),
+    );
+    expect(session().ignores).toEqual(["Nyx Firemane", "Tally Marsh"]);
+    dispatchFrame(event("ignore.updated", { characters: [] }));
+    expect(session().ignores).toEqual([]);
+  });
+
+  it("our own STA converges the MeBar/rail status", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("presence", {
+        character: "AMBER VALE", // self, any casing
+        online: true,
+        status: "away",
+        statusmsg: "brb tea",
+      }),
+    );
+    expect(session().ownStatus).toBe("away");
+    expect(session().ownStatusmsg).toBe("brb tea");
+    // Someone else's presence never touches our own status.
+    dispatchFrame(
+      event("presence", {
+        character: "Nyx Firemane",
+        online: true,
+        status: "busy",
+      }),
+    );
+    expect(session().ownStatus).toBe("away");
+  });
 });
 
 describe("message.new and unread", () => {
@@ -340,15 +377,47 @@ describe("message.new and unread", () => {
             name: "Amber Vale",
             sessionStatus: "online",
             autoConnect: true,
+            unread: 3,
+            mentions: 1,
           },
         ],
       },
     });
+    // Ready-time badge totals land on the summary (the rail's initial paint).
+    expect(
+      useSessionsStore.getState().identities?.find((i) => i.id === IDENTITY),
+    ).toMatchObject({ unread: 3, mentions: 1 });
     dispatchFrame(event("identity.updated", { autoConnect: false }));
     expect(
       useSessionsStore.getState().identities?.find((i) => i.id === IDENTITY)
         ?.autoConnect,
     ).toBe(false);
+  });
+
+  it("identities.reordered re-sorts the rail, keeping unknown ids at the end", () => {
+    const summary = (id: string, name: string) => ({
+      id,
+      name,
+      sessionStatus: "online" as const,
+      autoConnect: true,
+      unread: 0,
+      mentions: 0,
+    });
+    dispatchFrame({
+      t: "ready",
+      d: {
+        userId: "user-1",
+        identities: [summary("a", "A"), summary("b", "B"), summary("c", "C")],
+      },
+    });
+    // Order from a tab that never saw "c" (created after its list) — the
+    // stragglers keep their place at the end instead of vanishing.
+    dispatchFrame(event("identities.reordered", { order: ["b", "a"] }));
+    expect(useSessionsStore.getState().identities?.map((i) => i.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
   });
 
   it("an advanced read cursor (any tab's ack) zeroes the badge", () => {

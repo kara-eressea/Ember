@@ -120,6 +120,9 @@ export class FchatSim {
   dropPings = false;
   /** Misbehavior control: channels whose JCH fails with the mapped ERR. */
   readonly #joinRejections = new Map<string, number>();
+  /** Server-stored ignore lists (character → ignored names), like the real
+   * server: they survive reconnects and are replayed via IGN init. */
+  readonly #ignores = new Map<string, Set<string>>();
   #port: number | undefined;
 
   constructor(options: FchatSimOptions = {}) {
@@ -407,6 +410,13 @@ export class FchatSim {
       cmd: "CON",
       payload: { count: this.#online.size },
     });
+    this.#send(connection, {
+      cmd: "IGN",
+      payload: {
+        action: "init",
+        characters: [...(this.#ignores.get(character) ?? [])],
+      },
+    });
     const roster = [...this.#online.entries()].map(
       ([name, state]): [string, string, string, string] => [
         name,
@@ -505,6 +515,9 @@ export class FchatSim {
         return;
       case "PRI":
         this.#handlePrivateMessage(connection, character, command.payload);
+        return;
+      case "IGN":
+        this.#handleIgnore(connection, character, command.payload);
         return;
       case "STA": {
         const state = this.#online.get(character);
@@ -680,6 +693,52 @@ export class FchatSim {
       cmd: "PRI",
       payload: { character, message: payload.message },
     });
+  }
+
+  #handleIgnore(
+    connection: Connection,
+    character: string,
+    payload: ClientCommandPayload<"IGN">,
+  ): void {
+    switch (payload.action) {
+      case "add": {
+        let set = this.#ignores.get(character);
+        if (!set) {
+          set = new Set();
+          this.#ignores.set(character, set);
+        }
+        set.add(payload.character);
+        this.#send(connection, {
+          cmd: "IGN",
+          payload: { action: "add", character: payload.character },
+        });
+        return;
+      }
+      case "delete":
+        this.#ignores.get(character)?.delete(payload.character);
+        this.#send(connection, {
+          cmd: "IGN",
+          payload: { action: "delete", character: payload.character },
+        });
+        return;
+      case "list":
+        this.#send(connection, {
+          cmd: "IGN",
+          payload: {
+            action: "init",
+            characters: [...(this.#ignores.get(character) ?? [])],
+          },
+        });
+        return;
+      case "notify": {
+        // The real server tells the ignored sender their PRI was dropped.
+        const sender = this.#online.get(payload.character)?.connection;
+        if (sender) {
+          this.#sendError(sender, FchatErrorCode.IgnoredByRecipient);
+        }
+        return;
+      }
+    }
   }
 
   // ── PIN cycle ─────────────────────────────────────────────────────────────

@@ -399,6 +399,12 @@
   border-color: var(--eb-accent-med);
 }
 
+/* Ignore is a danger action (COMPONENTS.md member menu), not an accent. */
+.ignoreChipActive {
+  color: var(--eb-danger);
+  border-color: color-mix(in srgb, var(--eb-danger) 50%, transparent);
+}
+
 /* Byte counter against the live server limit (never hardcoded). */
 .charCounter {
   font-family: "IBM Plex Mono", ui-monospace, monospace;

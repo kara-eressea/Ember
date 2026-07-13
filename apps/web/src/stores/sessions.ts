@@ -52,6 +52,12 @@ export interface IdentitySession {
   character: string;
   sessionStatus: GatewaySessionStatus;
   statusReason?: string;
+  /** Our own F-Chat status (STA) — distinct from the session lifecycle. */
+  ownStatus: string;
+  ownStatusmsg: string;
+  /** Ignore list (canonical casing). Messages from these characters stay
+   * persisted but are hidden from render. */
+  ignores: string[];
   /** Live server VARs (bytes) from the snapshot — composer limits. */
   limits: { chatMax: number; privMax: number };
   /** Keyed by channel key (events address channels by key). */
@@ -73,6 +79,11 @@ export interface IdentitySummary {
    * maintains it (connect sets, disconnect clears); mirrored locally when
    * this tab issues the cmd, and re-synced by the next ready frame. */
   autoConnect: boolean;
+  /** Ready-time badge totals across the identity's conversations. Initial
+   * paint only — once a slice is synced, the rail aggregates its live
+   * per-conversation counters instead. */
+  unread: number;
+  mentions: number;
 }
 
 interface SessionsState {
@@ -81,17 +92,31 @@ interface SessionsState {
   sessions: Record<string, IdentitySession>;
 
   applyReady(identities: IdentitySummary[]): void;
+  /** Local mirror maintenance for REST-driven identity CRUD (the picker):
+   * `ready` is the authority but arrives only at socket connect, so an
+   * identity created after the hello would otherwise not exist for this tab
+   * until a reconnect. */
+  upsertIdentity(identity: IdentitySummary): void;
+  removeIdentity(identityId: string): void;
   setAutoConnect(identityId: string, value: boolean): void;
+  /** Re-sorts the rail; ids missing from `order` keep their relative place
+   * at the end (a create racing the reorder must not vanish). */
+  applyIdentityOrder(order: string[]): void;
   applySnapshot(d: {
     identityId: string;
     self: {
       character: string;
       sessionStatus: GatewaySessionStatus;
+      status: string;
+      statusmsg: string;
+      ignores: string[];
       limits: { chatMax: number; privMax: number };
     };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
   }): void;
+  /** Full ignore-list overwrite (ignore.updated / snapshot). */
+  applyIgnores(identityId: string, characters: string[]): void;
   applySessionStatus(
     identityId: string,
     status: GatewaySessionStatus,
@@ -150,6 +175,9 @@ function emptySession(identityId: string): IdentitySession {
     identityId,
     character: "",
     sessionStatus: "offline",
+    ownStatus: "online",
+    ownStatusmsg: "",
+    ignores: [],
     // Placeholder until the snapshot delivers the live VARs.
     limits: { chatMax: 4096, privMax: 50000 },
     channels: {},
@@ -222,6 +250,34 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       set({ identities });
     },
 
+    upsertIdentity(identity) {
+      set((state) => {
+        const identities = state.identities ?? [];
+        const existing = identities.findIndex((i) => i.id === identity.id);
+        return {
+          identities:
+            existing === -1
+              ? [...identities, identity]
+              : identities.map((i, index) =>
+                  index === existing ? { ...i, ...identity } : i,
+                ),
+        };
+      });
+    },
+
+    removeIdentity(identityId) {
+      set((state) => {
+        // The session slice goes with the identity — a ghost slice would
+        // resurface stale state if the id were ever reused via upsert.
+        const sessions = { ...state.sessions };
+        delete sessions[identityId];
+        return {
+          identities: state.identities?.filter((i) => i.id !== identityId),
+          sessions,
+        };
+      });
+    },
+
     setAutoConnect(identityId, value) {
       set((state) => ({
         identities: state.identities?.map((identity) =>
@@ -230,6 +286,20 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             : identity,
         ),
       }));
+    },
+
+    applyIdentityOrder(order) {
+      set((state) => {
+        if (!state.identities) {
+          return {};
+        }
+        const rank = new Map(order.map((id, index) => [id, index]));
+        const identities = [...state.identities].sort(
+          (a, b) =>
+            (rank.get(a.id) ?? order.length) - (rank.get(b.id) ?? order.length),
+        );
+        return { identities };
+      });
     },
 
     applySnapshot(d) {
@@ -253,11 +323,21 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ...session,
         character: d.self.character,
         sessionStatus: d.self.sessionStatus,
+        ownStatus: d.self.status,
+        ownStatusmsg: d.self.statusmsg,
+        ignores: [...d.self.ignores],
         limits: d.self.limits,
         channels,
         dms,
         channelByConvId,
         synced: true,
+      }));
+    },
+
+    applyIgnores(identityId, characters) {
+      patch(identityId, (session) => ({
+        ...session,
+        ignores: [...characters],
       }));
     },
 
@@ -447,7 +527,16 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               : dm,
           ]),
         );
-        return { ...session, channels, dms };
+        // Our own STA (set from any tab, or restored after a reconnect)
+        // converges the MeBar/rail status everywhere.
+        const own =
+          d.online && sameCharacter(d.character, session.character)
+            ? {
+                ownStatus: d.status ?? session.ownStatus,
+                ownStatusmsg: d.statusmsg ?? session.ownStatusmsg,
+              }
+            : {};
+        return { ...session, channels, dms, ...own };
       });
     },
 

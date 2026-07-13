@@ -1,10 +1,10 @@
-/* AppShell + Sidebar (COMPONENTS.md §Layout, §2–4). The IdentityRail column
-   arrives with multi-identity in M3; until then the grid is sidebar/main/
-   members. All values against --eb-* tokens. */
+/* AppShell + IdentityRail + Sidebar (COMPONENTS.md §Layout, §1–4). The rail
+   is a persistent switch (the spec's "always" option) — it also hosts the +
+   add button. All values against --eb-* tokens. */
 
 .shell {
   display: grid;
-  grid-template-columns: 244px 1fr 232px;
+  grid-template-columns: 60px 244px 1fr 232px;
   /* The implicit row would auto-size to content, un-constraining every
      internal scroll region — pin it to the viewport instead. */
   grid-template-rows: minmax(0, 1fr);
@@ -13,7 +13,153 @@
 }
 
 .shell.membersClosed {
-  grid-template-columns: 244px 1fr;
+  grid-template-columns: 60px 244px 1fr;
+}
+
+/* ── IdentityRail (COMPONENTS.md §1) ─────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 10px 0;
+  background: var(--eb-side2);
+  border-right: 1px solid var(--eb-border);
+  overflow-y: auto;
+}
+
+.railItem {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  text-decoration: none;
+}
+
+.railItem:hover {
+  text-decoration: none;
+}
+
+.railActive {
+  box-shadow: inset 3px 0 0 var(--eb-accent);
+}
+
+.railAvatar {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+
+.railDot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 11px;
+  height: 11px;
+  border: 2.5px solid var(--eb-bg);
+  border-radius: 50%;
+}
+
+.railBadge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--eb-accent-med);
+  color: var(--eb-text);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.railBadgeMention {
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+}
+
+.railAdd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 4px auto 0;
+  border: 1px dashed var(--eb-faint);
+  border-radius: 50%;
+  color: var(--eb-faint);
+  font-size: 18px;
+  text-decoration: none;
+}
+
+.railAdd:hover {
+  color: var(--eb-dim);
+  border-color: var(--eb-dim);
+  text-decoration: none;
+}
+
+/* Rail context menu */
+
+.railMenuOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+}
+
+.railMenu {
+  position: fixed;
+  z-index: 30;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-side);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow (§tokens) */
+}
+
+.railMenuName {
+  padding: 4px 10px 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--eb-border);
+  margin-bottom: 4px;
+}
+
+.railMenuSection {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--eb-faint);
+}
+
+.railMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  border-radius: var(--eb-radius);
+  background: none;
+  color: var(--eb-dim);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.railMenuItem:not(:disabled):hover {
+  background: var(--eb-accent-soft);
+  color: var(--eb-text);
+}
+
+.railMenuItem:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .main {
@@ -250,12 +396,66 @@
 /* ── MeBar ───────────────────────────────────────────────────────────── */
 
 .meBar {
+  position: relative; /* anchors the status editor panel */
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 10px 12px;
   border-top: 1px solid var(--eb-border);
   background: var(--eb-side2);
+}
+
+.meStatusButton {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--eb-dim);
+  font-size: 11px;
+  text-align: left;
+}
+
+.meStatusButton:disabled {
+  cursor: default;
+}
+
+.meStatusButton:not(:disabled):hover .meStatusText {
+  color: var(--eb-text);
+}
+
+.meStatusButton .serverDot {
+  width: 7px;
+  height: 7px;
+}
+
+.meStatusText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.statusEditor {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-side);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow (§tokens) */
+  z-index: 10;
+}
+
+.statusEditor .miniError {
+  margin: 0;
 }
 
 .meMeta {
@@ -269,19 +469,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.meStatus {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--eb-dim);
-}
-
-.meStatus .serverDot {
-  width: 7px;
-  height: 7px;
 }
 
 .meGear {

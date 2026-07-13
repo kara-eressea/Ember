@@ -21,6 +21,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@emberchat/fchat-protocol": "workspace:*",
     "zod": "^4.4.3"
   }
 }
