@@ -4,7 +4,7 @@
 // satisfies the developer-policy requirement that the log location is known
 // and accessible to the user.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
 import { useSessionsStore } from "../../stores/sessions.js";
@@ -28,11 +28,15 @@ export function AwayLogsPane({ identityId }: { identityId: string }) {
   // with no edit would PUT a stale value back over another device's change.
   const [messageDraft, setMessageDraft] = useState(prefs.autoAwayMessage);
   const [messageDirty, setMessageDirty] = useState(false);
-  useEffect(() => {
+  // Render-time adjustment (React's "state from props" pattern): when the
+  // synced pref moves under a clean draft, follow it.
+  const [seenMessage, setSeenMessage] = useState(prefs.autoAwayMessage);
+  if (prefs.autoAwayMessage !== seenMessage) {
+    setSeenMessage(prefs.autoAwayMessage);
     if (!messageDirty) {
       setMessageDraft(prefs.autoAwayMessage);
     }
-  }, [prefs.autoAwayMessage, messageDirty]);
+  }
 
   function commitMessage() {
     if (!messageDirty) {
