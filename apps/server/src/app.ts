@@ -17,6 +17,8 @@ import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
+import { HighlightMatcher } from "./modules/highlights/matcher.js";
+import { highlightsRoutes } from "./modules/highlights/routes.js";
 import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
@@ -67,7 +69,8 @@ export async function buildApp({
   const flistApi =
     flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
   const tickets = new TicketManagerRegistry(flistApi, vault);
-  const history = new HistorySink(db, app.log);
+  const highlights = new HighlightMatcher(db, app.log);
+  const history = new HistorySink(db, app.log, { highlights });
   const hub = new GatewayHub({ history, logger: app.log });
   const sessions = new SessionRegistry({
     tickets,
@@ -127,6 +130,11 @@ export async function buildApp({
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(highlightsRoutes, {
+    prefix: "/api/highlight-rules",
+    db,
+    highlights,
+  });
   await app.register(identitiesRoutes, {
     prefix: "/api/identities",
     db,
@@ -140,7 +148,14 @@ export async function buildApp({
   await app.register(fastifyWebsocket, {
     options: { maxPayload: 128 * 1024 },
   });
-  await app.register(gatewayRoutes, { db, sessions, history, hub, outbox });
+  await app.register(gatewayRoutes, {
+    db,
+    sessions,
+    history,
+    hub,
+    outbox,
+    highlights,
+  });
 
   app.get("/healthz", () => ({ status: "ok" }));
 

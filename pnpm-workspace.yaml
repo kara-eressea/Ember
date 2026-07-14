@@ -4,6 +4,9 @@ packages:
 allowBuilds:
   # argon2 ships a native module; its install script resolves/builds the binding.
   argon2: true
+  # re2 (linear-time regex engine for highlight rules, decisions.md §10) —
+  # native module; install fetches a prebuilt binding or compiles one.
+  re2: true
   # drizzle-kit runs via the esbuild binary.
   esbuild: true
   # Optional testcontainers transitive deps (ssh tunnels) — not used; keep scripts off.

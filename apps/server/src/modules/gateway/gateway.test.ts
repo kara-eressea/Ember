@@ -684,7 +684,10 @@ describe("gateway handshake", () => {
         conversationId: dev!.id,
         senderCharacter: "Nyx Firemane",
         kind: "msg" as const,
-        bbcode: `oi ${CHARACTER}!`, // mention
+        bbcode: `oi ${CHARACTER}!`,
+        // Seeded directly, so the flag is set here; live traffic gets it
+        // stamped by the sink's highlight matcher at persist time (M5).
+        mention: true,
       },
       {
         conversationId: lounge!.id,
@@ -870,6 +873,108 @@ describe("gateway fan-out", () => {
 
     const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("highlight rules match at persist time and badge a detached identity", async () => {
+    const { identityId, token } = await createIdentity();
+    const auth = { authorization: `Bearer ${token}` };
+
+    // A pattern RE2 refuses is the client's 422 at PUT, never a silent skip.
+    const refused = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: { rules: [{ kind: "regex", pattern: "(?<=x)y" }] },
+    });
+    expect(refused.statusCode).toBe(422);
+    // Nick rules must be a valid character name (schema-level 400).
+    const badNick = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: { rules: [{ kind: "nick", pattern: "no/slashes" }] },
+    });
+    expect(badNick.statusCode).toBe(400);
+
+    // Full-list replacement dedupes payload-internal duplicates.
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: {
+        rules: [
+          { kind: "word", pattern: "dragonfruit" },
+          { kind: "regex", pattern: "lem+on" },
+          { kind: "word", pattern: "dragonfruit" },
+        ],
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json<{ rules: unknown[] }>().rules).toHaveLength(2);
+    const got = await app.inject({
+      method: "GET",
+      url: "/api/highlight-rules",
+      headers: auth,
+    });
+    expect(
+      got.json<{ rules: { pattern: string }[] }>().rules.map((r) => r.pattern),
+    ).toEqual(["dragonfruit", "lem+on"]);
+
+    // Traffic lands while NO gateway client is attached — the flags must be
+    // stamped at persist time, not computed for whoever happens to watch.
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Development");
+    const say = (message: string) =>
+      inject(session, {
+        cmd: "MSG",
+        payload: { character: "Nyx Firemane", message, channel: "Development" },
+      });
+    await say("fancy some DRAGONFRUIT tea?"); // word rule, case-insensitive
+    await say("dragonfruits are different"); // word boundary: no match
+    await say("lemmmon squash"); // regex rule
+    await say(`${CHARACTER}, hello`); // own nick (default on)
+    await app.history.flush();
+
+    // A fresh device's snapshot reads the stored flags.
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
+    expect(channel).toMatchObject({ unread: 4, mentions: 3 });
+
+    // highlightOwnNick off → prefs patch invalidates the matcher's cache.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "prefs.set",
+        d: { prefs: { highlightOwnNick: false } },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    await client.nextEvent("prefs.updated");
+    await say(`${CHARACTER}, again`);
+    expect(
+      eventPayload<{ message: { mention: boolean } }>(
+        await client.nextEvent("message.new"),
+      ).message.mention,
+    ).toBe(false);
+
+    // Replacing the rules invalidates the rules cache the same way.
+    const cleared = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: { rules: [] },
+    });
+    expect(cleared.statusCode).toBe(200);
+    await say("more dragonfruit!");
+    expect(
+      eventPayload<{ message: { mention: boolean } }>(
+        await client.nextEvent("message.new"),
+      ).message.mention,
+    ).toBe(false);
   });
 
   it("ignore.add/remove drive IGN, fan out the list, persist the mirror, and keep messages", async () => {

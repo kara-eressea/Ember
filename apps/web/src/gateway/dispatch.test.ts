@@ -30,6 +30,7 @@ function message(id: number, overrides: Partial<MessageDto> = {}): MessageDto {
     kind: "msg",
     bbcode: `message ${String(id)}`,
     sentByUs: false,
+    mention: false,
     createdAt: "2026-07-13T12:00:00.000Z",
     ...overrides,
   };
@@ -384,28 +385,33 @@ describe("message.new and unread", () => {
     expect(session().channels["Frontpage"]?.unread).toBe(3);
   });
 
-  it("bumps mentions when an inbound channel message names our character", () => {
+  it("bumps mentions from the server-stamped flag, never by re-matching", () => {
     dispatchFrame(snapshot());
+    // The persist-time verdict rides the message (M5) — the client trusts it.
     dispatchFrame(
       event("message.new", {
         convId: CONV_CHANNEL,
-        message: message(11, { bbcode: "ping Amber Vale, you around?" }),
+        message: message(11, {
+          bbcode: "ping Amber Vale, you around?",
+          mention: true,
+        }),
       }),
     );
-    // Word boundary: a longer name containing ours does not count.
+    // Naming us with mention:false stays a plain unread — no client matcher.
     dispatchFrame(
       event("message.new", {
         convId: CONV_CHANNEL,
-        message: message(12, { bbcode: "Amber Valery sends regards" }),
+        message: message(12, { bbcode: "Amber Vale sends regards" }),
       }),
     );
-    // Our own message naming ourselves does not count.
+    // Our own sends never bump, whatever the flag says.
     dispatchFrame(
       event("message.new", {
         convId: CONV_CHANNEL,
         message: message(13, {
           bbcode: "I am Amber Vale",
           sentByUs: true,
+          mention: true,
         }),
       }),
     );

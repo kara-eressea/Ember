@@ -22,6 +22,7 @@ import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
+import type { HighlightMatcher } from "../highlights/matcher.js";
 import type { ServerCommandPayload } from "@emberchat/fchat-protocol";
 
 type ConversationKind = "channel" | "pm";
@@ -72,6 +73,8 @@ export class HistorySink {
   readonly #db: Db;
   readonly #log: SessionLogger;
   readonly #maxConversationsPerIdentity: number;
+  /** Stamps messages.mention at persist time (M5); absent = never mention. */
+  readonly #highlights: Pick<HighlightMatcher, "mention"> | undefined;
   /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */
   readonly #queues = new Map<string, Promise<void>>();
   /** conversation-row cache, keyed `${identityId}:${kind}:${key}`. */
@@ -80,12 +83,16 @@ export class HistorySink {
   constructor(
     db: Db,
     logger?: SessionLogger,
-    options: { maxConversationsPerIdentity?: number } = {},
+    options: {
+      maxConversationsPerIdentity?: number;
+      highlights?: Pick<HighlightMatcher, "mention">;
+    } = {},
   ) {
     this.#db = db;
     this.#log = logger ?? NOOP_LOGGER;
     this.#maxConversationsPerIdentity =
       options.maxConversationsPerIdentity ?? MAX_CONVERSATIONS_PER_IDENTITY;
+    this.#highlights = options.highlights;
     this.events = new TypedEventBus<HistoryEvents>(this.#log);
   }
 
@@ -100,6 +107,9 @@ export class HistorySink {
             kind: "msg",
             bbcode: command.payload.message,
             sentByUs: false,
+            // Only inbound channel messages are highlight-matched — DMs are
+            // already directed at the user and carry no mention count.
+            ownCharacter: session.character,
           });
           return;
         case "PRI":
@@ -354,6 +364,8 @@ export class HistorySink {
       kind: "msg" | "pm" | "sys";
       bbcode: string;
       sentByUs: boolean;
+      /** Set for inbound channel messages: enables highlight matching. */
+      ownCharacter?: string;
     },
   ): void {
     this.#enqueue(identityId, async () => {
@@ -361,6 +373,17 @@ export class HistorySink {
         identityId,
         entry.target,
       );
+      // Matched inside the serial task, before the insert: the flag is part
+      // of the row (immutable, decisions.md §10), never a later update.
+      const mention =
+        entry.ownCharacter !== undefined &&
+        !entry.sentByUs &&
+        this.#highlights !== undefined &&
+        (await this.#highlights.mention(
+          identityId,
+          entry.ownCharacter,
+          entry.bbcode,
+        ));
       const [row] = await this.#db
         .insert(messages)
         .values({
@@ -369,6 +392,7 @@ export class HistorySink {
           kind: entry.kind,
           bbcode: entry.bbcode,
           sentByUs: entry.sentByUs,
+          mention,
         })
         .returning();
       if (row) {

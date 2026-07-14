@@ -24,6 +24,8 @@ export type AccentId = (typeof ACCENT_IDS)[number];
 const prefsShape = {
   /** UI accent (theme hue). */
   accent: z.enum(ACCENT_IDS),
+  /** Highlight messages that name the receiving identity's character. */
+  highlightOwnNick: z.boolean(),
 } as const;
 
 /** The full resolved prefs shape — every field present. */
@@ -42,6 +44,7 @@ export type UserPrefsPatch = z.infer<typeof userPrefsPatchSchema>;
 
 export const PREFS_DEFAULTS: UserPrefs = {
   accent: "dusk",
+  highlightOwnNick: true,
 };
 
 /**

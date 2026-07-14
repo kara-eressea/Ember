@@ -40,6 +40,8 @@ export interface HistoryMessageDto {
   kind: "msg" | "lrp" | "rll" | "sys" | "pm";
   bbcode: string;
   sentByUs: boolean;
+  /** Persist-time highlight verdict (M5) — same field as MessageDto. */
+  mention: boolean;
   createdAt: string;
 }
 
