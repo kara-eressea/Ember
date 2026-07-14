@@ -138,6 +138,9 @@ interface SessionsState {
     identityId: string,
     d: { sendDelaySeconds: number; prefs: UserPrefs },
   ): void;
+  /** Optimistic local prefs overwrite across every slice — prefs are per
+   * user, so a pane edit must not wait for the per-identity fan-out. */
+  applyPrefsLocal(prefs: UserPrefs): void;
   /** Full ignore-list overwrite (ignore.updated / snapshot). */
   applyIgnores(identityId: string, characters: string[]): void;
   applySessionStatus(
@@ -378,6 +381,17 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ...session,
         sendDelaySeconds,
         prefs,
+      }));
+    },
+
+    applyPrefsLocal(prefs) {
+      set((state) => ({
+        sessions: Object.fromEntries(
+          Object.entries(state.sessions).map(([id, session]) => [
+            id,
+            { ...session, prefs },
+          ]),
+        ),
       }));
     },
 

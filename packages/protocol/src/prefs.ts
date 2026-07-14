@@ -15,6 +15,16 @@ import { z } from "zod";
 export const ACCENT_IDS = ["amber", "clay", "dusk", "burnt", "moss"] as const;
 export type AccentId = (typeof ACCENT_IDS)[number];
 
+/** Base (neutral) themes — dark variants only in M5 (decisions.md §10);
+ * "slate" is the original Slate Cozy set, "charcoal" the dimmer near-black. */
+export const BASE_THEME_IDS = ["slate", "charcoal"] as const;
+export type BaseThemeId = (typeof BASE_THEME_IDS)[number];
+
+export const DENSITIES = ["cozy", "compact"] as const;
+export const FONT_SIZES = ["s", "m", "l"] as const;
+/** `[12:04]` · `[12:04:33]` · hidden. */
+export const TIMESTAMP_FORMATS = ["time", "seconds", "off"] as const;
+
 /**
  * Field validators — deliberately no `.default()` here: zod fires defaults
  * even through `.partial()`, which would turn a one-key patch into a
@@ -24,6 +34,19 @@ export type AccentId = (typeof ACCENT_IDS)[number];
 const prefsShape = {
   /** UI accent (theme hue). */
   accent: z.enum(ACCENT_IDS),
+  /** Base neutral palette. */
+  baseTheme: z.enum(BASE_THEME_IDS),
+  /** Message row spacing. */
+  density: z.enum(DENSITIES),
+  /** Message body font size. */
+  fontSize: z.enum(FONT_SIZES),
+  /** Timestamp rendering in the log. */
+  timestampFormat: z.enum(TIMESTAMP_FORMATS),
+  use24HourClock: z.boolean(),
+  /** Hide the sender on back-to-back messages from the same person. */
+  groupConsecutive: z.boolean(),
+  /** Fixed timestamp/name columns so message text lines up (M1 UAT). */
+  alignedColumns: z.boolean(),
   /** Highlight messages that name the receiving identity's character. */
   highlightOwnNick: z.boolean(),
 } as const;
@@ -44,6 +67,13 @@ export type UserPrefsPatch = z.infer<typeof userPrefsPatchSchema>;
 
 export const PREFS_DEFAULTS: UserPrefs = {
   accent: "dusk",
+  baseTheme: "slate",
+  density: "cozy",
+  fontSize: "m",
+  timestampFormat: "time",
+  use24HourClock: true,
+  groupConsecutive: false,
+  alignedColumns: false,
   highlightOwnNick: true,
 };
 

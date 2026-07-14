@@ -274,6 +274,7 @@ export function AppShell() {
       {showMembers && channel && <MemberList channel={channel} />}
       {prefsOpen && (
         <PreferencesWindow
+          identityId={activeId}
           onClose={() => {
             useUiStore.getState().setPrefsOpen(false);
           }}

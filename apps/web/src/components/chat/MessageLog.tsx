@@ -6,8 +6,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { MessageDto, OutboxItemDto } from "@emberchat/protocol";
-import { formatTime } from "../../lib/time.js";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
+import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
+import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { nickColor } from "../../theme/tokens.js";
@@ -15,6 +16,9 @@ import { buildRows } from "./log-rows.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
+
+/** Message body font size (Appearance pref) — the .body rule reads the var. */
+const FONT_SIZE_PX = { s: 12, m: 13, l: 14.5 } as const;
 
 const EMPTY: MessageDto[] = [];
 const EMPTY_IGNORES: string[] = [];
@@ -47,10 +51,16 @@ export function MessageLog({
   const outbox = useSessionsStore(
     (s) => s.sessions[identityId]?.outbox ?? EMPTY_OUTBOX,
   );
+  const prefs = useSessionsStore(
+    (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
+  );
   const pending = outbox.filter((item) => item.convId === convId);
   const rows = useMemo(
-    () => buildRows(messages, newSinceId, ignores),
-    [messages, newSinceId, ignores],
+    () =>
+      buildRows(messages, newSinceId, ignores, {
+        groupConsecutive: prefs.groupConsecutive,
+      }),
+    [messages, newSinceId, ignores, prefs.groupConsecutive],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -148,9 +158,22 @@ export function MessageLog({
     }
   }
 
+  const logClass = [
+    styles.log,
+    prefs.density === "compact" ? styles.logCompact : "",
+    prefs.alignedColumns ? styles.logAligned : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
-      className={styles.log}
+      className={logClass}
+      style={
+        {
+          "--eb-msg-font": `${String(FONT_SIZE_PX[prefs.fontSize])}px`,
+        } as React.CSSProperties
+      }
       ref={scrollRef}
       onScroll={onScroll}
       data-testid="message-log"
@@ -183,9 +206,13 @@ export function MessageLog({
                   new
                 </div>
               ) : row.message.kind === "sys" ? (
-                <SystemLine message={row.message} />
+                <SystemLine message={row.message} prefs={prefs} />
               ) : (
-                <MessageLine message={row.message} />
+                <MessageLine
+                  message={row.message}
+                  prefs={prefs}
+                  grouped={row.grouped === true}
+                />
               )}
             </div>
           );
@@ -239,14 +266,25 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
   );
 }
 
-function MessageLine({ message }: { message: MessageDto }) {
+function MessageLine({
+  message,
+  prefs,
+  grouped,
+}: {
+  message: MessageDto;
+  prefs: UserPrefs;
+  grouped: boolean;
+}) {
   const emote = parseEmote(message.bbcode);
+  const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
     <div className={styles.messageLine}>
-      <span className={styles.time}>{formatTime(message.createdAt)}</span>
+      {time !== "" && <span className={styles.time}>{time}</span>}
+      {/* Grouped rows keep an invisible nick so aligned columns stay put. */}
       <span
-        className={styles.nick}
+        className={`${styles.nick} ${grouped ? (styles.nickGrouped ?? "") : ""}`}
         style={{ color: nickColor(message.senderCharacter) }}
+        aria-hidden={grouped || undefined}
       >
         {message.senderCharacter}
       </span>
@@ -268,13 +306,27 @@ function MessageLine({ message }: { message: MessageDto }) {
   );
 }
 
-function SystemLine({ message }: { message: MessageDto }) {
+function SystemLine({
+  message,
+  prefs,
+}: {
+  message: MessageDto;
+  prefs: UserPrefs;
+}) {
+  const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
     <div className={styles.systemLine}>
-      <span className={styles.time}>{formatTime(message.createdAt)}</span>
+      {time !== "" && <span className={styles.time}>{time}</span>}
       <span>
         <RichText bbcode={message.bbcode} />
       </span>
     </div>
   );
+}
+
+function timeFormat(prefs: UserPrefs): TimeFormat {
+  return {
+    timestampFormat: prefs.timestampFormat,
+    use24HourClock: prefs.use24HourClock,
+  };
 }

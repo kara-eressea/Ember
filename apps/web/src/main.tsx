@@ -13,9 +13,9 @@ import "./styles/base.css";
 import { loadRuntimeConfig } from "./lib/config.js";
 import { AppRouter } from "./router.js";
 import { useAuthStore } from "./stores/auth.js";
-import { applyTheme, savedAccent } from "./theme/theme.js";
+import { applyTheme, savedAccent, savedBaseTheme } from "./theme/theme.js";
 
-applyTheme(savedAccent());
+applyTheme(savedAccent(), savedBaseTheme());
 const config = await loadRuntimeConfig();
 document.title = config.appName;
 void useAuthStore.getState().restore();
