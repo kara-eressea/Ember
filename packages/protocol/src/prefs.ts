@@ -85,6 +85,18 @@ const prefsShape = {
    * cleared on the next attach. Opt-in (decisions.md §10). */
   detachedAwayEnabled: z.boolean(),
   detachedAwayMinutes: z.number().int().min(1).max(1440),
+  /** Desktop notifications (M5 step 8) — off until the user opts in and
+   * grants the browser permission. */
+  desktopNotifyMentions: z.boolean(),
+  desktopNotifyPms: z.boolean(),
+  /** Off = notifications show the sender only, never the message body
+   * (privacy toggle, decisions.md §10). */
+  notifyShowContent: z.boolean(),
+  /** Mute overrides — alerts only (chime, title flash, desktop
+   * notifications); badges and tint still accrue (decisions.md §10).
+   * Patches replace the whole array. */
+  mutedIdentityIds: z.array(z.uuid()).max(64),
+  mutedConvIds: z.array(z.uuid()).max(500),
 } as const;
 
 /** The full resolved prefs shape — every field present. */
@@ -125,6 +137,11 @@ export const PREFS_DEFAULTS: UserPrefs = {
   autoAwayClearOnReturn: true,
   detachedAwayEnabled: false,
   detachedAwayMinutes: 30,
+  desktopNotifyMentions: false,
+  desktopNotifyPms: false,
+  notifyShowContent: true,
+  mutedIdentityIds: [],
+  mutedConvIds: [],
 };
 
 /**

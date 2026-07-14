@@ -9,6 +9,7 @@ import { Link } from "react-router";
 import { AppearancePane } from "./AppearancePane.js";
 import { AwayLogsPane } from "./AwayLogsPane.js";
 import { HighlightsPane } from "./HighlightsPane.js";
+import { NotificationsPane } from "./NotificationsPane.js";
 import styles from "./prefs.module.css";
 
 const PANES = [
@@ -147,11 +148,7 @@ function PaneContent({
     case "away":
       return <AwayLogsPane identityId={identityId} />;
     case "notifications":
-      return (
-        <p className={styles.stub}>
-          Desktop notifications and mutes arrive with M5 step 8.
-        </p>
-      );
+      return <NotificationsPane identityId={identityId} />;
     case "network":
       return (
         <p className={styles.stub}>
