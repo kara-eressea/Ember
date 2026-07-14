@@ -232,8 +232,11 @@ export interface OutboxItemDto {
   bbcode: string;
   /** ISO timestamp of the scheduled release. */
   releaseAt: string;
-  /** "scheduled" | "failed" (release send refused; kept for visibility). */
-  state: string;
+  /** ISO timestamp of the send — ArrowUp recalls the newest-created. */
+  createdAt: string;
+  state: "scheduled" | "failed";
+  /** Why a failed row failed, for the pending-row label. */
+  failureReason?: string;
 }
 
 export interface SnapshotChannel {

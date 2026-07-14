@@ -13,80 +13,84 @@
 //   [text](http://…)→ [url=http://…]text[/url]
 //   \* \` \~ \[ \\  → the literal character
 //
-// BBCode typed literally passes through untouched (milestone-4.md):
-// complete subset elements are copied verbatim — raw-body tags wholesale,
-// wrapper/color/url tags with their contents still Markdown-processed.
-// Anything ambiguous or unterminated stays literal text; this function
-// never throws.
+// Code spans bind tightest: emphasis closers and BBCode closers inside a
+// backtick span never match (the lookahead searches run over a masked copy
+// of the input). BBCode typed literally passes through untouched
+// (milestone-4.md): raw-body elements — [noparse], the name tags, and the
+// body-form [url]…[/url] — verbatim; wrapper/color/[url=…] elements keep
+// their contents Markdown-processed. Anything ambiguous or unterminated
+// stays literal text; this function never throws.
 
-import { BB_COLORS, BB_NAME_TAGS, BB_WRAPPER_TAGS } from "./bbcode.js";
+import {
+  makeCloserFinder,
+  readTagToken,
+  validHref,
+  BB_COLORS,
+} from "./bbcode.js";
 
 const ESCAPABLE = new Set(["*", "`", "~", "[", "]", "\\", "("]);
 
-function isWrapperTag(tag: string): boolean {
-  return (BB_WRAPPER_TAGS as readonly string[]).includes(tag);
-}
-
-function isRawBodyTag(tag: string): boolean {
-  return tag === "noparse" || (BB_NAME_TAGS as readonly string[]).includes(tag);
-}
-
-function validHref(href: string): boolean {
-  return /^https?:\/\/\S+$/i.test(href);
-}
-
-/** `[tag]` / `[/tag]` / `[tag=param]` at `input[at]`, or nothing. */
-function readBBToken(
-  input: string,
-  at: number,
-):
-  | { closing: boolean; tag: string; param?: string; length: number }
-  | undefined {
-  const match = /^\[(\/?)([a-zA-Z]+)(?:=([^\]\n]*))?\]/.exec(input.slice(at));
-  if (!match) {
-    return undefined;
-  }
-  return {
-    closing: match[1] === "/",
-    tag: match[2]!.toLowerCase(),
-    ...(match[3] !== undefined ? { param: match[3] } : {}),
-    length: match[0].length,
-  };
-}
+const WRAPPER_TAGS = new Set(["b", "i", "u", "s", "sup", "sub"]);
+/** Elements whose body is copied verbatim, never Markdown-processed. */
+const RAW_BODY_TAGS = new Set(["noparse", "user", "icon", "eicon"]);
 
 /**
- * Is this opener the start of a passthrough-able subset element? Returns
- * the position just past its `[/tag]`, or undefined.
+ * A copy of `input` with every complete backtick span (backticks included)
+ * replaced by NUL padding of the same length. Lookahead searches (emphasis
+ * closers, BBCode closers) run over this copy, so nothing inside a code
+ * span can ever terminate an outer construct — positions map 1:1 back to
+ * the original.
  */
-function bbElementEnd(
-  input: string,
-  at: number,
-  tag: string,
-): number | undefined {
-  const close = input.toLowerCase().indexOf(`[/${tag}]`, at);
-  return close === -1 ? undefined : close + `[/${tag}]`.length;
+function maskCodeSpans(input: string): string {
+  if (!input.includes("`")) {
+    return input;
+  }
+  let out = "";
+  let at = 0;
+  while (at < input.length) {
+    const open = input.indexOf("`", at);
+    if (open === -1) {
+      out += input.slice(at);
+      break;
+    }
+    const close = input.indexOf("`", open + 1);
+    if (close === -1 || close === open + 1) {
+      // Unterminated or empty: not a span, the backtick stays literal.
+      out += input.slice(at, open + 1);
+      at = open + 1;
+      continue;
+    }
+    out += input.slice(at, open) + "\0".repeat(close - open + 1);
+    at = close + 1;
+  }
+  return out;
 }
 
 /**
  * Finds the closing run of `delimiter` after `from` with CommonMark-ish
  * flanking: the opener must be followed by non-space, the closer preceded
- * by non-space. Returns the index of the closer, or undefined.
+ * by non-space. Runs over the masked string, so a closer inside a code
+ * span never matches. Returns the index of the closer, or undefined.
  */
 function findDelimiter(
-  input: string,
+  masked: string,
   from: number,
   delimiter: string,
 ): number | undefined {
-  if (from >= input.length || input[from] === " ") {
+  if (from >= masked.length || masked[from] === " ") {
     return undefined;
   }
   let at = from;
-  while (at < input.length) {
-    const index = input.indexOf(delimiter, at);
+  while (at < masked.length) {
+    const index = masked.indexOf(delimiter, at);
     if (index === -1) {
       return undefined;
     }
-    if (index > from && input[index - 1] !== " " && input[index - 1] !== "\\") {
+    if (
+      index > from &&
+      masked[index - 1] !== " " &&
+      masked[index - 1] !== "\\"
+    ) {
       return index;
     }
     at = index + 1;
@@ -106,6 +110,8 @@ export function mdToBBCode(markdown: string): string {
 function translate(input: string): string {
   let out = "";
   let at = 0;
+  const masked = maskCodeSpans(input);
+  const findClose = makeCloserFinder(masked.toLowerCase());
 
   while (at < input.length) {
     const ch = input[at]!;
@@ -119,19 +125,23 @@ function translate(input: string): string {
 
     // Literal BBCode passthrough.
     if (ch === "[") {
-      const token = readBBToken(input, at);
+      const token = readTagToken(input, at);
       if (token && !token.closing) {
         const bodyStart = at + token.length;
-        if (isRawBodyTag(token.tag) && token.param === undefined) {
-          const end = bbElementEnd(input, bodyStart, token.tag);
-          if (end !== undefined) {
+        const rawBody =
+          (RAW_BODY_TAGS.has(token.tag) || token.tag === "url") &&
+          token.param === undefined;
+        if (rawBody) {
+          const close = findClose(token.tag, bodyStart);
+          if (close !== -1) {
+            const end = close + `[/${token.tag}]`.length;
             out += input.slice(at, end); // verbatim, contents untouched
             at = end;
             continue;
           }
         }
         const nestable =
-          (isWrapperTag(token.tag) && token.param === undefined) ||
+          (WRAPPER_TAGS.has(token.tag) && token.param === undefined) ||
           (token.tag === "color" &&
             token.param !== undefined &&
             (BB_COLORS as readonly string[]).includes(
@@ -141,13 +151,13 @@ function translate(input: string): string {
             token.param !== undefined &&
             validHref(token.param.trim()));
         if (nestable) {
-          const end = bbElementEnd(input, bodyStart, token.tag);
-          if (end !== undefined) {
-            const closeLen = `[/${token.tag}]`.length;
+          const close = findClose(token.tag, bodyStart);
+          if (close !== -1) {
+            const end = close + `[/${token.tag}]`.length;
             out +=
               input.slice(at, bodyStart) +
-              translate(input.slice(bodyStart, end - closeLen)) +
-              input.slice(end - closeLen, end);
+              translate(input.slice(bodyStart, close)) +
+              input.slice(close, end);
             at = end;
             continue;
           }
@@ -181,7 +191,7 @@ function translate(input: string): string {
     }
 
     if (input.startsWith("**", at)) {
-      const close = findDelimiter(input, at + 2, "**");
+      const close = findDelimiter(masked, at + 2, "**");
       if (close !== undefined) {
         out += `[b]${translate(input.slice(at + 2, close))}[/b]`;
         at = close + 2;
@@ -193,8 +203,8 @@ function translate(input: string): string {
     }
 
     if (ch === "*") {
-      const close = findDelimiter(input, at + 1, "*");
-      if (close !== undefined && input[close + 1] !== "*") {
+      const close = findDelimiter(masked, at + 1, "*");
+      if (close !== undefined && masked[close + 1] !== "*") {
         out += `[i]${translate(input.slice(at + 1, close))}[/i]`;
         at = close + 1;
         continue;
@@ -205,7 +215,7 @@ function translate(input: string): string {
     }
 
     if (input.startsWith("~~", at)) {
-      const close = findDelimiter(input, at + 2, "~~");
+      const close = findDelimiter(masked, at + 2, "~~");
       if (close !== undefined) {
         out += `[s]${translate(input.slice(at + 2, close))}[/s]`;
         at = close + 2;

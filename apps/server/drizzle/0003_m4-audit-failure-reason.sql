@@ -1,0 +1,1 @@
+ALTER TABLE "outbox_messages" ADD COLUMN "failure_reason" text;

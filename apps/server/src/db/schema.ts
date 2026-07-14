@@ -163,8 +163,10 @@ export const outboxMessages = pgTable(
     markdown: text().notNull(),
     bbcode: text().notNull(),
     releaseAt: timestamp({ withTimezone: true }).notNull(),
-    /** "scheduled" | "failed" (release send refused). */
+    /** "scheduled" | "releasing" (claimed by the worker — no longer
+     * recallable) | "failed" (release refused; failureReason says why). */
     state: text().notNull().default("scheduled"),
+    failureReason: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   // The release worker's poll: due scheduled rows in release order.

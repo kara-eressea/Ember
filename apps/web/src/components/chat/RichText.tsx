@@ -5,14 +5,18 @@
 // token pass (links, @name, #channel). [icon]/[eicon] render as name chips
 // until step 3 brings inline images.
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
 import { textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
 
 export function RichText({ bbcode }: { bbcode: string }) {
-  return <>{renderNodes(parseBBCode(bbcode), "r")}</>;
+  // Memoized: the log re-renders far more often than messages change, and
+  // parsing every visible message per render is exactly the hot path a
+  // hostile long message would exploit (audit).
+  const nodes = useMemo(() => parseBBCode(bbcode), [bbcode]);
+  return <>{renderNodes(nodes, "r")}</>;
 }
 
 function renderNodes(nodes: readonly BBNode[], keyBase: string): ReactNode[] {

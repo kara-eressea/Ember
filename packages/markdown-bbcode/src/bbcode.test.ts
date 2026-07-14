@@ -85,6 +85,23 @@ describe("parseBBCode", () => {
     });
   });
 
+  it("a closer with a parameter literalizes instead of dropping it", () => {
+    // [/b=oops] is officially meaningless — the whole run stays visible.
+    expect(sanitizeBBCode("[b]x[/b=oops]")).toBe("[b]x[/b=oops]");
+    expect(parseBBCode("[b]x[/b=oops]").every((n) => n.type === "text")).toBe(
+      true,
+    );
+  });
+
+  it("body-form url hrefs containing ']' serialize back to body form", () => {
+    // Param position would truncate the href at the ']' and silently change
+    // the link target on re-parse (audit): the sanitize fixpoint must hold
+    // at the AST level, not just the string level.
+    const tricky = "[url]http://a.example]x[/url]";
+    expect(sanitizeBBCode(tricky)).toBe(tricky);
+    expect(parseBBCode(sanitizeBBCode(tricky))).toEqual(parseBBCode(tricky));
+  });
+
   it("noparse swallows tags literally", () => {
     expect(parseBBCode("[noparse][b]x[/b][/noparse]")).toEqual([
       { type: "noparse", text: "[b]x[/b]" },

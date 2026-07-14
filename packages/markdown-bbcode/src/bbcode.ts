@@ -54,11 +54,11 @@ export type BBNode =
 const NAME_RE = /^[a-zA-Z0-9 _.-]{1,64}$/;
 
 /** The wiki is explicit: the scheme is required or the URL "fails as bad". */
-function validHref(href: string): boolean {
+export function validHref(href: string): boolean {
   return /^https?:\/\/\S+$/i.test(href);
 }
 
-interface TagToken {
+export interface TagToken {
   readonly closing: boolean;
   readonly tag: string;
   readonly param: string | undefined;
@@ -67,10 +67,13 @@ interface TagToken {
   readonly length: number;
 }
 
-/** Matches `[tag]`, `[/tag]`, `[tag=param]` at `input[at]`, or nothing. */
-function readTagToken(input: string, at: number): TagToken | undefined {
+/** Matches `[tag]`, `[/tag]`, `[tag=param]` at `input[at]`, or nothing.
+ * Shared with the Markdown translator — one tag grammar, one place.
+ * A closer carrying a parameter (`[/b=x]`) is not a token: officially
+ * meaningless, so it must literalize rather than silently drop the param. */
+export function readTagToken(input: string, at: number): TagToken | undefined {
   const match = /^\[(\/?)([a-zA-Z]+)(?:=([^\]\n]*))?\]/.exec(input.slice(at));
-  if (!match) {
+  if (!match || (match[1] === "/" && match[3] !== undefined)) {
     return undefined;
   }
   return {
@@ -113,13 +116,41 @@ function pushText(children: BBNode[], text: string): void {
 }
 
 /**
- * Finds `[/tag]` (case-insensitive) from `from`; used for raw-body tags
- * (noparse, name tags, parameterless url) whose contents are never markup.
+ * Closer lookup over an already-lowercased input. Positions for each tag
+ * are collected in one scan and consumed through a monotonic cursor, so a
+ * hostile message (thousands of closer-less openers) costs O(n) total —
+ * naive per-opener indexOf misses re-scan the tail every time, which is
+ * quadratic and a denial of service on whoever renders the message.
+ * Callers' `from` values must be non-decreasing per tag (both scanners
+ * advance strictly left to right).
  */
-function findClose(input: string, from: number, tag: string): number {
-  const needle = `[/${tag}]`;
-  const index = input.toLowerCase().indexOf(needle, from);
-  return index;
+export function makeCloserFinder(
+  lower: string,
+): (tag: string, from: number) => number {
+  const positions = new Map<string, number[]>();
+  const cursors = new Map<string, number>();
+  return (tag, from) => {
+    let list = positions.get(tag);
+    if (!list) {
+      list = [];
+      const needle = `[/${tag}]`;
+      for (
+        let i = lower.indexOf(needle);
+        i !== -1;
+        i = lower.indexOf(needle, i + 1)
+      ) {
+        list.push(i);
+      }
+      positions.set(tag, list);
+      cursors.set(tag, 0);
+    }
+    let cursor = cursors.get(tag)!;
+    while (cursor < list.length && list[cursor]! < from) {
+      cursor += 1;
+    }
+    cursors.set(tag, cursor);
+    return cursor < list.length ? list[cursor]! : -1;
+  };
 }
 
 /**
@@ -134,6 +165,8 @@ export function parseBBCode(input: string): BBNode[] {
     children: [],
   };
   const stack: Frame[] = [root];
+  // One lowercase pass + indexed closer lookup (see makeCloserFinder).
+  const findClose = makeCloserFinder(input.toLowerCase());
   let at = 0;
 
   const top = (): Frame => stack[stack.length - 1]!;
@@ -170,7 +203,7 @@ export function parseBBCode(input: string): BBNode[] {
     // Raw-body tags: consume straight to their closer, no nesting.
     if (token.tag === "noparse" && token.param === undefined) {
       const bodyStart = at + token.length;
-      const close = findClose(input, bodyStart, "noparse");
+      const close = findClose("noparse", bodyStart);
       if (close === -1) {
         pushText(top().children, token.raw);
         at = bodyStart;
@@ -185,7 +218,7 @@ export function parseBBCode(input: string): BBNode[] {
     }
     if (isNameTag(token.tag) && token.param === undefined) {
       const bodyStart = at + token.length;
-      const close = findClose(input, bodyStart, token.tag);
+      const close = findClose(token.tag, bodyStart);
       const name = close === -1 ? undefined : input.slice(bodyStart, close);
       if (name === undefined || !NAME_RE.test(name)) {
         pushText(top().children, token.raw);
@@ -199,7 +232,7 @@ export function parseBBCode(input: string): BBNode[] {
     if (token.tag === "url" && token.param === undefined) {
       // [url]href[/url] — the body IS the link.
       const bodyStart = at + token.length;
-      const close = findClose(input, bodyStart, "url");
+      const close = findClose("url", bodyStart);
       const href = close === -1 ? undefined : input.slice(bodyStart, close);
       if (href === undefined || !validHref(href)) {
         pushText(top().children, token.raw);
@@ -296,7 +329,12 @@ export function serializeBBCode(nodes: readonly BBNode[]): string {
         out += `[color=${node.color}]${serializeBBCode(node.children)}[/color]`;
         break;
       case "url":
-        out += `[url=${node.href}]${serializeBBCode(node.children)}[/url]`;
+        // A `]` in the href would terminate the tag in param position and
+        // silently change the link target on re-parse — such hrefs only come
+        // from the body form, so they serialize back to it.
+        out += node.href.includes("]")
+          ? `[url]${node.href}[/url]`
+          : `[url=${node.href}]${serializeBBCode(node.children)}[/url]`;
         break;
       case "name":
         out += `[${node.tag}]${node.name}[/${node.tag}]`;
