@@ -2,9 +2,14 @@
 // style against the CSS custom properties written by applyTheme(), never
 // against these constants directly.
 
-import type { AccentId as PrefsAccentId } from "@emberchat/protocol";
+import type {
+  AccentId as PrefsAccentId,
+  BaseThemeId,
+} from "@emberchat/protocol";
 
-/** Neutrals are fixed across all themes. */
+export type { BaseThemeId };
+
+/** The original Slate Cozy neutral set (COMPONENTS.md tokens). */
 export const NEUTRALS = {
   /** Landing hero headings only (COMPONENTS.md §15). */
   heading: "#f4ecde",
@@ -17,6 +22,26 @@ export const NEUTRALS = {
   faint: "#726a5f",
   border: "#332f2b",
 } as const;
+
+/** Base themes — dark variants only in M5 (decisions.md §10). The
+ * `satisfies` pins the set to the prefs schema's enum, like ACCENTS. */
+export const BASE_THEMES = {
+  slate: NEUTRALS,
+  // Charcoal: the same warm hue family pulled toward black — for OLED and
+  // dim rooms. Text/dim/faint drop a touch with it to keep contrast ratios
+  // in the same band as slate.
+  charcoal: {
+    heading: "#f4ecde",
+    bg: "#121110",
+    side: "#171615",
+    side2: "#1c1a19",
+    head: "#141312",
+    text: "#e9e4dd",
+    dim: "#a49a8e",
+    faint: "#6e675d",
+    border: "#282520",
+  },
+} as const satisfies Record<BaseThemeId, Record<keyof typeof NEUTRALS, string>>;
 
 /** User-selectable accents; default is Dusk Purple. The `satisfies` pins
  * this palette to the prefs schema's accent enum — adding or renaming an

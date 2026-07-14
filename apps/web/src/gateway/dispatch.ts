@@ -8,7 +8,7 @@ import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
-import { hydrateAccent } from "../theme/theme.js";
+import { hydrateTheme } from "../theme/theme.js";
 
 export function dispatchFrame(frame: ServerFrame): void {
   const sessions = useSessionsStore.getState();
@@ -31,7 +31,7 @@ export function dispatchFrame(frame: ServerFrame): void {
       return;
     case "snapshot":
       sessions.applySnapshot(frame.d);
-      hydrateAccent(frame.d.self.prefs.accent);
+      hydrateTheme(frame.d.self.prefs);
       return;
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
@@ -115,7 +115,7 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       return;
     case "prefs.updated":
       sessions.applyPrefs(identityId, event.d);
-      hydrateAccent(event.d.prefs.accent);
+      hydrateTheme(event.d.prefs);
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);

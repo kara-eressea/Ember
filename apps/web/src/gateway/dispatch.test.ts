@@ -10,9 +10,9 @@ import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
 
-// Node environment — hydrateAccent writes to document/localStorage.
-vi.mock("../theme/theme.js", () => ({ hydrateAccent: vi.fn() }));
-import { hydrateAccent } from "../theme/theme.js";
+// Node environment — hydrateTheme writes to document/localStorage.
+vi.mock("../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+import { hydrateTheme } from "../theme/theme.js";
 import { dispatchFrame } from "./dispatch.js";
 
 const IDENTITY = "11111111-1111-7111-8111-111111111111";
@@ -318,17 +318,13 @@ describe("presence", () => {
     expect(session().prefs.accent).toBe("moss");
   });
 
-  it("prefs hydrate the theme accent (snapshot and live update)", () => {
-    vi.mocked(hydrateAccent).mockClear();
+  it("prefs hydrate the theme (snapshot and live update)", () => {
+    vi.mocked(hydrateTheme).mockClear();
     dispatchFrame(snapshot());
-    expect(hydrateAccent).toHaveBeenLastCalledWith(PREFS_DEFAULTS.accent);
-    dispatchFrame(
-      event("prefs.updated", {
-        sendDelaySeconds: 0,
-        prefs: { ...PREFS_DEFAULTS, accent: "amber" },
-      }),
-    );
-    expect(hydrateAccent).toHaveBeenLastCalledWith("amber");
+    expect(hydrateTheme).toHaveBeenLastCalledWith(PREFS_DEFAULTS);
+    const next = { ...PREFS_DEFAULTS, accent: "amber" as const };
+    dispatchFrame(event("prefs.updated", { sendDelaySeconds: 0, prefs: next }));
+    expect(hydrateTheme).toHaveBeenLastCalledWith(next);
   });
 
   it("our own STA converges the MeBar/rail status", () => {

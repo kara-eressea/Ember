@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { AppearancePane } from "./AppearancePane.js";
 import styles from "./prefs.module.css";
 
 const PANES = [
@@ -19,7 +20,14 @@ const PANES = [
 
 type PaneId = (typeof PANES)[number]["id"];
 
-export function PreferencesWindow({ onClose }: { onClose: () => void }) {
+export function PreferencesWindow({
+  identityId,
+  onClose,
+}: {
+  /** Routes prefs.set acks; prefs themselves are per app account. */
+  identityId: string;
+  onClose: () => void;
+}) {
   const [pane, setPane] = useState<PaneId>("general");
   const windowRef = useRef<HTMLDivElement>(null);
 
@@ -93,7 +101,11 @@ export function PreferencesWindow({ onClose }: { onClose: () => void }) {
             </button>
           </header>
           <div className={styles.paneBody}>
-            <PaneContent pane={pane} onClose={onClose} />
+            <PaneContent
+              pane={pane}
+              identityId={identityId}
+              onClose={onClose}
+            />
           </div>
         </section>
       </div>
@@ -101,7 +113,15 @@ export function PreferencesWindow({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PaneContent({ pane, onClose }: { pane: PaneId; onClose: () => void }) {
+function PaneContent({
+  pane,
+  identityId,
+  onClose,
+}: {
+  pane: PaneId;
+  identityId: string;
+  onClose: () => void;
+}) {
   switch (pane) {
     case "general":
       return (
@@ -119,12 +139,7 @@ function PaneContent({ pane, onClose }: { pane: PaneId; onClose: () => void }) {
         </>
       );
     case "appearance":
-      return (
-        <p className={styles.stub}>
-          Accent, base theme, density, timestamps and message layout arrive with
-          M5 step 4.
-        </p>
-      );
+      return <AppearancePane identityId={identityId} />;
     case "highlights":
       return (
         <p className={styles.stub}>
