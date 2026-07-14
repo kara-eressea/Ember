@@ -80,3 +80,17 @@ export function setAccent(accent: AccentId): void {
   localStorage.setItem(ACCENT_STORAGE_KEY, accent);
   applyTheme(accent);
 }
+
+/**
+ * Server prefs → theme. The synced prefs document is the accent's source of
+ * truth (decisions.md §10); localStorage is only the pre-hydration flash
+ * cache that boot paints from. Unknown ids are skipped — an older client
+ * must not repaint to default because a newer one saved an accent it
+ * doesn't know.
+ */
+export function hydrateAccent(accent: string): void {
+  if (!Object.hasOwn(ACCENTS, accent) || accent === savedAccent()) {
+    return;
+  }
+  setAccent(accent as AccentId);
+}

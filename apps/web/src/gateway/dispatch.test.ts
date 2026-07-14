@@ -3,11 +3,16 @@
 // (gateway contract), so the interesting cases are the idempotent ones —
 // duplicate joins, FLN as a global leave, unread convergence.
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, ServerFrame } from "@emberchat/protocol";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
+
+// Node environment — hydrateAccent writes to document/localStorage.
+vi.mock("../theme/theme.js", () => ({ hydrateAccent: vi.fn() }));
+import { hydrateAccent } from "../theme/theme.js";
 import { dispatchFrame } from "./dispatch.js";
 
 const IDENTITY = "11111111-1111-7111-8111-111111111111";
@@ -51,6 +56,7 @@ function snapshot(): ServerFrame {
         limits: { chatMax: 4096, privMax: 50000 },
         iconBlacklist: [],
         sendDelaySeconds: 0,
+        prefs: PREFS_DEFAULTS,
         outbox: [],
       },
       channels: [
@@ -301,8 +307,27 @@ describe("presence", () => {
     dispatchFrame(event("outbox.updated", { items: [] }));
     expect(session().outbox).toEqual([]);
 
-    dispatchFrame(event("prefs.updated", { sendDelaySeconds: 30 }));
+    dispatchFrame(
+      event("prefs.updated", {
+        sendDelaySeconds: 30,
+        prefs: { ...PREFS_DEFAULTS, accent: "moss" },
+      }),
+    );
     expect(session().sendDelaySeconds).toBe(30);
+    expect(session().prefs.accent).toBe("moss");
+  });
+
+  it("prefs hydrate the theme accent (snapshot and live update)", () => {
+    vi.mocked(hydrateAccent).mockClear();
+    dispatchFrame(snapshot());
+    expect(hydrateAccent).toHaveBeenLastCalledWith(PREFS_DEFAULTS.accent);
+    dispatchFrame(
+      event("prefs.updated", {
+        sendDelaySeconds: 0,
+        prefs: { ...PREFS_DEFAULTS, accent: "amber" },
+      }),
+    );
+    expect(hydrateAccent).toHaveBeenLastCalledWith("amber");
   });
 
   it("our own STA converges the MeBar/rail status", () => {

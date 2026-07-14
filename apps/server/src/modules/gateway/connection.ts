@@ -9,18 +9,21 @@
 
 import { Buffer } from "node:buffer";
 import type WebSocket from "ws";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DEFAULT_SERVER_VARS } from "@emberchat/fchat-protocol";
 import {
   clientFrameSchema,
   GATEWAY_CLOSE,
   PROTOCOL_VERSION,
+  resolvePrefs,
   type ClientFrame,
   type ConversationDto,
   type GatewayCmd,
   type GatewayEvent,
   type ResumeCursors,
   type ServerFrame,
+  type UserPrefs,
+  type UserPrefsPatch,
 } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import {
@@ -424,6 +427,7 @@ export class GatewayConnection {
     const ignores = session?.state.ignoresSeeded
       ? [...session.state.ignores.values()].sort((a, b) => a.localeCompare(b))
       : await this.#ctx.history.listIgnores(identityId);
+    const { sendDelaySeconds, prefs } = await this.#userPrefs();
     this.#send({
       t: "snapshot",
       d: {
@@ -436,7 +440,8 @@ export class GatewayConnection {
           ignores,
           limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
           iconBlacklist: [...(session?.state.vars.icon_blacklist ?? [])],
-          sendDelaySeconds: await this.#sendDelaySeconds(),
+          sendDelaySeconds,
+          prefs,
           outbox: await this.#ctx.outbox.list(identityId),
         },
         channels: snapshot.channels,
@@ -648,38 +653,68 @@ export class GatewayConnection {
         return;
       }
       case "prefs.set": {
-        await this.#setSendDelay(cmd.d.sendDelaySeconds);
+        await this.#patchPrefs(cmd.d);
         this.#ack(id, { ok: true });
         return;
       }
     }
   }
 
-  /** The user's delayed-send window; absent prefs row = 0 (immediate). */
-  async #sendDelaySeconds(): Promise<number> {
+  /** The user's preferences; absent row = all defaults. */
+  async #userPrefs(): Promise<{
+    sendDelaySeconds: number;
+    prefs: UserPrefs;
+  }> {
     if (this.#userId === undefined) {
-      return 0;
+      return { sendDelaySeconds: 0, prefs: resolvePrefs({}) };
     }
-    const [prefs] = await this.#ctx.db
-      .select({ sendDelaySeconds: userPreferences.sendDelaySeconds })
+    const [row] = await this.#ctx.db
+      .select({
+        sendDelaySeconds: userPreferences.sendDelaySeconds,
+        prefs: userPreferences.prefs,
+      })
       .from(userPreferences)
       .where(eq(userPreferences.userId, this.#userId))
       .limit(1);
-    return prefs?.sendDelaySeconds ?? 0;
+    return {
+      sendDelaySeconds: row?.sendDelaySeconds ?? 0,
+      prefs: resolvePrefs(row?.prefs),
+    };
   }
 
-  /** Upserts the per-user preference and converges every identity's tabs. */
-  async #setSendDelay(sendDelaySeconds: number): Promise<void> {
+  /**
+   * Applies a prefs patch and converges every identity's tabs. The jsonb
+   * merge happens in SQL (`prefs || patch`) so two devices patching
+   * different keys concurrently both land — no read-modify-write race.
+   */
+  async #patchPrefs(d: {
+    sendDelaySeconds?: number;
+    prefs?: UserPrefsPatch;
+  }): Promise<void> {
     if (this.#userId === undefined) {
       return;
     }
+    const patch = d.prefs ?? {};
     await this.#ctx.db
       .insert(userPreferences)
-      .values({ userId: this.#userId, sendDelaySeconds })
+      .values({
+        userId: this.#userId,
+        sendDelaySeconds: d.sendDelaySeconds ?? 0,
+        prefs: patch,
+      })
       .onConflictDoUpdate({
         target: userPreferences.userId,
-        set: { sendDelaySeconds, updatedAt: new Date() },
+        set: {
+          ...(d.sendDelaySeconds === undefined
+            ? {}
+            : { sendDelaySeconds: d.sendDelaySeconds }),
+          prefs: sql`${userPreferences.prefs} || ${JSON.stringify(patch)}::jsonb`,
+          updatedAt: new Date(),
+        },
       });
+    // Broadcast the full resolved state, not the patch — every tab applies
+    // it as an idempotent overwrite regardless of what it missed.
+    const state = await this.#userPrefs();
     const rows = await this.#ctx.db
       .select({ id: identities.id })
       .from(identities)
@@ -688,7 +723,7 @@ export class GatewayConnection {
     for (const row of rows) {
       this.#ctx.hub.broadcast(row.id, {
         kind: "prefs.updated",
-        d: { sendDelaySeconds },
+        d: state,
       });
     }
   }
@@ -718,7 +753,7 @@ export class GatewayConnection {
     }
     // A non-zero send delay parks the message in the server-side outbox —
     // the release worker puts it on the wire when due, tab or no tab.
-    const delaySeconds = await this.#sendDelaySeconds();
+    const { sendDelaySeconds: delaySeconds } = await this.#userPrefs();
     if (delaySeconds > 0) {
       // Validate against the live VAR limit NOW, like the immediate path —
       // deferring the check to release time would fail silently long after

@@ -6,6 +6,7 @@
 // add/remove, never a counter increment keyed to event arrival.
 
 import { create } from "zustand";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type {
   OutboxItemDto,
   ConversationDto,
@@ -13,6 +14,7 @@ import type {
   MemberDto,
   SnapshotChannel,
   SnapshotDm,
+  UserPrefs,
 } from "@emberchat/protocol";
 
 export interface ChannelView {
@@ -65,6 +67,8 @@ export interface IdentitySession {
   iconBlacklist: string[];
   /** The user's delayed-send window (per-user; mirrored per slice). */
   sendDelaySeconds: number;
+  /** The user's resolved preferences (per-user; mirrored per slice). */
+  prefs: UserPrefs;
   /** Messages waiting in the server-side outbox for this identity. */
   outbox: OutboxItemDto[];
   /** Keyed by channel key (events address channels by key). */
@@ -120,6 +124,7 @@ interface SessionsState {
       limits: { chatMax: number; privMax: number };
       iconBlacklist: string[];
       sendDelaySeconds: number;
+      prefs: UserPrefs;
       outbox: OutboxItemDto[];
     };
     channels: SnapshotChannel[];
@@ -128,6 +133,11 @@ interface SessionsState {
   /** Full pending-outbox overwrite (outbox.updated / snapshot). */
   applyOutbox(identityId: string, items: OutboxItemDto[]): void;
   applySendDelay(identityId: string, sendDelaySeconds: number): void;
+  /** Full resolved-prefs overwrite (prefs.updated). */
+  applyPrefs(
+    identityId: string,
+    d: { sendDelaySeconds: number; prefs: UserPrefs },
+  ): void;
   /** Full ignore-list overwrite (ignore.updated / snapshot). */
   applyIgnores(identityId: string, characters: string[]): void;
   applySessionStatus(
@@ -195,6 +205,7 @@ function emptySession(identityId: string): IdentitySession {
     limits: { chatMax: 4096, privMax: 50000 },
     iconBlacklist: [],
     sendDelaySeconds: 0,
+    prefs: PREFS_DEFAULTS,
     outbox: [],
     channels: {},
     dms: {},
@@ -345,6 +356,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         limits: d.self.limits,
         iconBlacklist: [...d.self.iconBlacklist],
         sendDelaySeconds: d.self.sendDelaySeconds,
+        prefs: d.self.prefs,
         outbox: [...d.self.outbox],
         channels,
         dms,
@@ -359,6 +371,14 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applySendDelay(identityId, sendDelaySeconds) {
       patch(identityId, (session) => ({ ...session, sendDelaySeconds }));
+    },
+
+    applyPrefs(identityId, { sendDelaySeconds, prefs }) {
+      patch(identityId, (session) => ({
+        ...session,
+        sendDelaySeconds,
+        prefs,
+      }));
     },
 
     applyIgnores(identityId, characters) {

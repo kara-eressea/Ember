@@ -10,6 +10,7 @@ import {
   CLIENT_SETTABLE_STATUSES,
   TYPING_STATUSES,
 } from "@emberchat/fchat-protocol";
+import { userPrefsPatchSchema, type UserPrefs } from "./prefs.js";
 
 // Re-exported so gateway consumers (the web app) can render status pickers
 // without a direct fchat-protocol dependency.
@@ -133,9 +134,18 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
-    // Per-user (not per-identity) preference; identityId routes the ack.
+    // Per-user (not per-identity) preferences; identityId routes the ack.
+    // `prefs` is a shallow patch — only the supplied keys change (M5).
     action: z.literal("prefs.set"),
-    d: z.object({ sendDelaySeconds: z.number().int().min(0).max(300) }),
+    d: z
+      .object({
+        sendDelaySeconds: z.number().int().min(0).max(300).optional(),
+        prefs: userPrefsPatchSchema.optional(),
+      })
+      .refine(
+        (d) => d.sendDelaySeconds !== undefined || d.prefs !== undefined,
+        { message: "empty prefs patch" },
+      ),
   }),
   z.object({
     identityId: z.uuid(),
@@ -353,8 +363,9 @@ export type GatewayEvent =
   | {
       kind: "prefs.updated";
       /** Per-user preference change, broadcast to each identity's
-       * subscribers (idempotent duplicates across identities). */
-      d: { sendDelaySeconds: number };
+       * subscribers (idempotent duplicates across identities). Carries the
+       * full resolved state after the patch — an idempotent overwrite. */
+      d: { sendDelaySeconds: number; prefs: UserPrefs };
     }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
@@ -406,6 +417,8 @@ export type ServerFrame =
           iconBlacklist: string[];
           /** The user's delayed-send window (user_preferences). */
           sendDelaySeconds: number;
+          /** The user's resolved preferences (user_preferences.prefs). */
+          prefs: UserPrefs;
           /** Messages still waiting in the delayed-send outbox. */
           outbox: OutboxItemDto[];
         };

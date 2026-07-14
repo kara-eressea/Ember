@@ -13,6 +13,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -180,6 +181,10 @@ export const userPreferences = pgTable("user_preferences", {
     .references(() => appUsers.id, { onDelete: "cascade" }),
   /** Delayed-send window in seconds; 0 sends immediately. */
   sendDelaySeconds: integer().notNull().default(0),
+  /** Sparse prefs patch document (M5) — absent keys mean "default". Kept
+   * flat and merged with jsonb `||` so concurrent patches from two devices
+   * never clobber each other's keys. Read through `resolvePrefs`. */
+  prefs: jsonb().$type<Record<string, unknown>>().notNull().default({}),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 

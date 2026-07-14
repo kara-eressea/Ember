@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { IdentitySession, IdentitySummary } from "../stores/sessions.js";
 import {
   channelPath,
@@ -44,6 +45,7 @@ function session(): IdentitySession {
     limits: { chatMax: 4096, privMax: 50000 },
     iconBlacklist: [],
     sendDelaySeconds: 0,
+    prefs: PREFS_DEFAULTS,
     outbox: [],
     channels: {
       Frontpage: {
