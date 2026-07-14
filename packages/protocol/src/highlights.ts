@@ -33,9 +33,15 @@ export const highlightRuleInputSchema = z
 
 export type HighlightRuleInput = z.infer<typeof highlightRuleInputSchema>;
 
-/** PUT /api/highlight-rules body — an idempotent full-list replacement. */
+/** PUT /api/highlight-rules body — an idempotent full-list replacement.
+ * `knownIds` is the compare-and-set guard: the ids of the list the client
+ * last loaded. If they no longer match the stored set (another device
+ * edited in between), the PUT is refused (409) instead of silently
+ * deleting the other device's rules — there is no rules fan-out event, so
+ * a stale full replacement would otherwise be destructive. */
 export const putHighlightRulesSchema = z.object({
   rules: z.array(highlightRuleInputSchema).max(MAX_HIGHLIGHT_RULES),
+  knownIds: z.array(z.uuid()).max(MAX_HIGHLIGHT_RULES).optional(),
 });
 
 export interface HighlightRuleDto {

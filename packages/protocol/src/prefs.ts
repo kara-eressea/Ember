@@ -30,6 +30,17 @@ export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
 /** Matches the eicon-name charset the URL builder accepts (web avatar.ts). */
 const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
 
+/** UTF-8 byte length without TextEncoder/Buffer — this package targets both
+ * runtimes and pulls in neither lib. */
+function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code <= 0xffff ? 3 : 4;
+  }
+  return bytes;
+}
+
 /**
  * Field validators — deliberately no `.default()` here: zod fires defaults
  * even through `.partial()`, which would turn a one-key patch into a
@@ -78,7 +89,12 @@ const prefsShape = {
   autoAwayMinutes: z.number().int().min(1).max(240),
   /** The STA statusmsg both away flavors set (F-Chat caps statusmsg at
    * 255 bytes; the wire limit is what matters, so bytes not chars). */
-  autoAwayMessage: z.string().max(255),
+  autoAwayMessage: z
+    .string()
+    .max(255)
+    .refine((value) => utf8ByteLength(value) <= 255, {
+      message: "away message exceeds 255 bytes",
+    }),
   /** Restore the previous status when activity resumes. */
   autoAwayClearOnReturn: z.boolean(),
   /** Server-side: away after N minutes with zero gateway subscribers,

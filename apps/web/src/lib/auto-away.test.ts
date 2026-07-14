@@ -44,7 +44,17 @@ function seedSession(
   });
 }
 
+// Node has no localStorage — a minimal in-memory stand-in lets the tests
+// exercise the cross-tab shared-activity path too.
+const storage = new Map<string, string>();
 beforeEach(() => {
+  Object.assign(globalThis, {
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    },
+  });
   useSessionsStore.getState().reset();
   cmdMock.mockReset();
   cmdMock.mockResolvedValue({ ok: true });
@@ -80,6 +90,17 @@ describe("checkIdle", () => {
     seedSession(A, { prefs: PREFS_DEFAULTS });
     checkIdle(24 * 60 * MIN);
     expect(cmdMock).not.toHaveBeenCalled();
+  });
+
+  it("respects activity from another tab (shared via localStorage)", () => {
+    seedSession(A);
+    // This tab has been silent since t=0, but a sibling tab saw activity
+    // at t=9min — the user is not idle.
+    localStorage.setItem("eb.lastActivity", String(9 * MIN));
+    checkIdle(15 * MIN);
+    expect(cmdMock).not.toHaveBeenCalled();
+    checkIdle(19 * MIN); // 10 idle minutes past the sibling's activity
+    expect(cmdMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -121,6 +142,35 @@ describe("noteActivity", () => {
 
     seedSession(A, { status: "away", statusmsg: "brb — idle", prefs });
     noteActivity(11 * MIN);
+    expect(cmdMock).not.toHaveBeenCalled();
+  });
+
+  it("restores an away it recognizes even without a local record (reload / other tab)", () => {
+    // The bouncer held the auto-away across a reload: status away with
+    // exactly the away-message pref, and no `applied` entry in this tab.
+    seedSession(A, { status: "away", statusmsg: "brb — idle" });
+    noteActivity(1 * MIN);
+    expect(cmdMock.mock.calls).toEqual([
+      [
+        {
+          identityId: A,
+          action: "status.set",
+          d: { status: "online", statusmsg: "" },
+        },
+      ],
+    ]);
+  });
+
+  it("never touches a manual away whose message differs from the pref", () => {
+    seedSession(A, { status: "away", statusmsg: "at lunch, back at 2" });
+    noteActivity(1 * MIN);
+    expect(cmdMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves a resembling away alone while the feature is off", () => {
+    const prefs: UserPrefs = { ...PREFS_DEFAULTS, autoAwayMessage: "" };
+    seedSession(A, { status: "away", statusmsg: "", prefs });
+    noteActivity(1 * MIN);
     expect(cmdMock).not.toHaveBeenCalled();
   });
 

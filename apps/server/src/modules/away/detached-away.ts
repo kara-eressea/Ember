@@ -106,7 +106,23 @@ export class DetachedAway {
     this.#sweeping = true;
     try {
       const now = this.#now();
-      for (const [identityId, session] of this.#options.sessions.entries()) {
+      const entries = this.#options.sessions.entries();
+      // Prune state for sessions that no longer run (explicit disconnect,
+      // identity delete): a stale #applied entry would block re-applying
+      // away after a reconnect — the fresh session starts plain "online",
+      // there is nothing left to restore.
+      const live = new Set(entries.map(([identityId]) => identityId));
+      for (const identityId of [...this.#applied.keys()]) {
+        if (!live.has(identityId)) {
+          this.#applied.delete(identityId);
+        }
+      }
+      for (const identityId of [...this.#detachedSince.keys()]) {
+        if (!live.has(identityId)) {
+          this.#detachedSince.delete(identityId);
+        }
+      }
+      for (const [identityId, session] of entries) {
         if (this.#options.hub.hasSubscribers(identityId)) {
           this.#detachedSince.delete(identityId);
           continue;
@@ -135,13 +151,29 @@ export class DetachedAway {
           ) {
             continue;
           }
+          // A browser may have attached during the prefs await — onAttach
+          // clears #detachedSince, so a vanished stamp (or a live
+          // subscriber) means the user is looking again: don't go away.
+          if (
+            !this.#detachedSince.has(identityId) ||
+            this.#options.hub.hasSubscribers(identityId)
+          ) {
+            continue;
+          }
           const previous = session.ownStatus;
           await session.setStatus("away", prefs.autoAwayMessage);
-          this.#applied.set(identityId, previous);
-          this.#options.logger.info(
-            { identityId },
-            "detached auto-away applied",
-          );
+          if (this.#options.hub.hasSubscribers(identityId)) {
+            // Attached while the STA was in flight (the send is flood-
+            // gated); onAttach found nothing to restore, so hand back
+            // here instead of leaving a fresh attach sitting away.
+            await session.setStatus(previous.status, previous.statusmsg);
+          } else {
+            this.#applied.set(identityId, previous);
+            this.#options.logger.info(
+              { identityId },
+              "detached auto-away applied",
+            );
+          }
         } catch (error) {
           this.#options.logger.warn(
             { err: error, identityId },

@@ -961,6 +961,36 @@ describe("gateway fan-out", () => {
       ).message.mention,
     ).toBe(false);
 
+    // Compare-and-set (M5 audit): a PUT carrying knownIds from a stale
+    // load must 409 instead of silently deleting the other device's rules.
+    const stale = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: {
+        rules: [{ kind: "word", pattern: "kumquat" }],
+        knownIds: ["00000000-0000-7000-8000-00000000dead"],
+      },
+    });
+    expect(stale.statusCode).toBe(409);
+    // Matching knownIds pass.
+    const currentIds = got
+      .json<{ rules: { id: string }[] }>()
+      .rules.map((r) => r.id);
+    const fresh = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: {
+        rules: [
+          { kind: "word", pattern: "dragonfruit" },
+          { kind: "regex", pattern: "lem+on" },
+        ],
+        knownIds: currentIds,
+      },
+    });
+    expect(fresh.statusCode).toBe(200);
+
     // Replacing the rules invalidates the rules cache the same way.
     const cleared = await app.inject({
       method: "PUT",

@@ -164,13 +164,27 @@ function RulesEditor() {
   async function save(
     next: { kind: HighlightRuleKind; pattern: string }[],
   ): Promise<boolean> {
+    if (!rules) {
+      return false;
+    }
     setBusy(true);
     setError(undefined);
     try {
-      const result = await api.putHighlightRules(next);
+      // knownIds = the list this pane is editing; a 409 means another
+      // device changed the rules since — reload instead of clobbering.
+      const result = await api.putHighlightRules(
+        next,
+        rules.map((rule) => rule.id),
+      );
       setRules(result.rules);
       return true;
     } catch (saveError) {
+      if (saveError instanceof ApiError && saveError.status === 409) {
+        const fresh = await api.listHighlightRules().catch(() => undefined);
+        if (fresh) {
+          setRules(fresh.rules);
+        }
+      }
       setError(
         saveError instanceof ApiError
           ? saveError.message

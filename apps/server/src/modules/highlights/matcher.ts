@@ -54,6 +54,11 @@ export class HighlightMatcher {
   /** identity → user is immutable (identities never move accounts). */
   readonly #userByIdentity = new Map<string, string>();
   readonly #nickRegexes = new Map<string, RE2>();
+  /** Bumped by invalidate(): a load that began before the bump must not
+   * populate the cache — its SELECT saw the pre-change rows, and a stale
+   * entry would stamp wrong (immutable) mention verdicts until the next
+   * invalidation. */
+  readonly #generation = new Map<string, number>();
 
   constructor(db: Db, log?: SessionLogger) {
     this.#db = db;
@@ -90,8 +95,13 @@ export class HighlightMatcher {
 
   /** Drop cached rules + prefs after a rules PUT or a prefs patch. */
   invalidate(userId: string): void {
+    this.#generation.set(userId, this.#gen(userId) + 1);
     this.#rulesByUser.delete(userId);
     this.#ownNickByUser.delete(userId);
+  }
+
+  #gen(userId: string): number {
+    return this.#generation.get(userId) ?? 0;
   }
 
   async #userId(identityId: string): Promise<string | undefined> {
@@ -116,13 +126,16 @@ export class HighlightMatcher {
     if (cached !== undefined) {
       return cached;
     }
+    const generation = this.#gen(userId);
     const [row] = await this.#db
       .select({ prefs: userPreferences.prefs })
       .from(userPreferences)
       .where(eq(userPreferences.userId, userId))
       .limit(1);
     const value = resolvePrefs(row?.prefs).highlightOwnNick;
-    this.#ownNickByUser.set(userId, value);
+    if (generation === this.#gen(userId)) {
+      this.#ownNickByUser.set(userId, value);
+    }
     return value;
   }
 
@@ -131,6 +144,7 @@ export class HighlightMatcher {
     if (cached !== undefined) {
       return cached;
     }
+    const generation = this.#gen(userId);
     const rows = await this.#db
       .select({ kind: highlightRules.kind, pattern: highlightRules.pattern })
       .from(highlightRules)
@@ -148,7 +162,9 @@ export class HighlightMatcher {
         );
       }
     }
-    this.#rulesByUser.set(userId, compiled);
+    if (generation === this.#gen(userId)) {
+      this.#rulesByUser.set(userId, compiled);
+    }
     return compiled;
   }
 
