@@ -19,33 +19,20 @@ import type { SessionState } from "../session-engine/session-state.js";
 /** Unread counts are capped server-side; the client renders 99 as "99+". */
 export const UNREAD_CAP = 99;
 
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /**
  * Per-conversation unread + mention counts past the read cursor, computed in
  * one pass. The inner ORDER BY + LIMIT caps the rows *scanned* per
  * conversation at UNREAD_CAP, newest first (a deterministic window walking
  * the (conversation_id, id desc) index and stopping early) — a busy channel
  * with 40k unread costs the same as one with 99. Own sends never count as
- * unread (matching the client's live bump). Mentions are counted within the
- * same window: a word-boundary, case-insensitive match of the identity's
- * character name in inbound channel messages (M5 highlight rules will
- * extend the matcher). DMs carry no mention count — every DM is already
- * directed at the user.
+ * unread (matching the client's live bump). Mentions read the stored
+ * `messages.mention` flag the sink stamped at persist time (M5) — no
+ * matching happens here anymore.
  */
 async function conversationCounts(
   db: Db,
   identityId: string,
-  character: string,
 ): Promise<Map<string, { unread: number; mentions: number }>> {
-  // Explicit ASCII word-boundary classes, NOT Postgres \m/\M: it keeps the
-  // semantics byte-identical with the client matcher (lib/mention.ts, JS \w
-  // is ASCII) and works for names with leading/trailing hyphens, which have
-  // no \m/\M boundary at all. "Amber Vale" still never matches inside
-  // "Amber Valery".
-  const pattern = `(^|[^a-zA-Z0-9_])${escapeRegex(character)}([^a-zA-Z0-9_]|$)`;
   const result = await db.execute(sql`
     select c.id as conv_id,
            u.unread::int as unread,
@@ -55,7 +42,7 @@ async function conversationCounts(
       select count(*) as unread,
              count(*) filter (where t.mention) as mentions
       from (
-        select (m.kind = 'msg' and m.bbcode ~* ${pattern}) as mention
+        select m.mention
         from messages m
         where m.conversation_id = c.id
           and m.id > coalesce(c.last_read_message_id, 0)
@@ -93,9 +80,8 @@ export interface SnapshotData {
 export async function identityBadgeTotals(
   db: Db,
   identityId: string,
-  character: string,
 ): Promise<{ unread: number; mentions: number }> {
-  const counts = await conversationCounts(db, identityId, character);
+  const counts = await conversationCounts(db, identityId);
   let unread = 0;
   let mentions = 0;
   for (const count of counts.values()) {
@@ -122,6 +108,7 @@ export function messageDto(row: MessageRow): MessageDto {
     kind: row.kind,
     bbcode: row.bbcode,
     sentByUs: row.sentByUs,
+    mention: row.mention,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -129,7 +116,6 @@ export function messageDto(row: MessageRow): MessageDto {
 export async function buildSnapshot(
   db: Db,
   identityId: string,
-  character: string,
   session: FchatSession | undefined,
 ): Promise<SnapshotData> {
   const rows = await db
@@ -138,7 +124,7 @@ export async function buildSnapshot(
     .where(eq(conversations.identityId, identityId))
     .orderBy(conversations.createdAt);
 
-  const counts = await conversationCounts(db, identityId, character);
+  const counts = await conversationCounts(db, identityId);
 
   // F-Chat resolves names case-insensitively, and a DM row keeps the casing
   // of whoever created it — a typed lowercase partner must still find its

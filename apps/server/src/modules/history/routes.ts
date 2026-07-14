@@ -32,6 +32,7 @@ const messageResponse = z.object({
   kind: z.enum(["msg", "lrp", "rll", "sys", "pm"]),
   bbcode: z.string(),
   sentByUs: z.boolean(),
+  mention: z.boolean(),
   createdAt: z.date(),
 });
 
@@ -155,6 +156,7 @@ export async function historyRoutes(
           kind: messages.kind,
           bbcode: messages.bbcode,
           sentByUs: messages.sentByUs,
+          mention: messages.mention,
           createdAt: messages.createdAt,
         })
         .from(messages)

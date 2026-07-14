@@ -10,6 +10,7 @@ import {
   CLIENT_SETTABLE_STATUSES,
   TYPING_STATUSES,
 } from "@emberchat/fchat-protocol";
+import { FLIST_NAME_RE } from "./highlights.js";
 import { userPrefsPatchSchema, type UserPrefs } from "./prefs.js";
 
 // Re-exported so gateway consumers (the web app) can render status pickers
@@ -36,12 +37,8 @@ export const GATEWAY_CLOSE = {
   rateLimited: 4430,
 } as const;
 
-/** Matches the F-List character-name charset (see chat3client avatarURL). */
-const characterName = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-zA-Z0-9_\-\s]+$/);
+/** The F-List character-name charset (FLIST_NAME_RE, highlights.ts). */
+const characterName = z.string().min(1).max(64).regex(FLIST_NAME_RE);
 
 // ── Client → server ──────────────────────────────────────────────────────────
 
@@ -228,6 +225,9 @@ export interface MessageDto {
   kind: "msg" | "lrp" | "rll" | "sys" | "pm";
   bbcode: string;
   sentByUs: boolean;
+  /** Stamped at persist time by the server-side highlight matcher (own
+   * nick + the user's rules) — the client never re-matches. */
+  mention: boolean;
   /** ISO timestamp. */
   createdAt: string;
 }

@@ -18,6 +18,7 @@ function message(id: number): MessageDto {
     kind: "msg",
     bbcode: `message ${String(id)}`,
     sentByUs: false,
+    mention: false,
     createdAt: "2026-07-13T12:00:00.000Z",
   };
 }

@@ -32,6 +32,7 @@ import {
   identities,
   userPreferences,
 } from "../../db/schema.js";
+import type { HighlightMatcher } from "../highlights/matcher.js";
 import {
   ConversationLimitError,
   type ConversationRow,
@@ -74,6 +75,7 @@ export interface GatewayConnectionContext {
   readonly history: HistorySink;
   readonly hub: GatewayHub;
   readonly outbox: Outbox;
+  readonly highlights: Pick<HighlightMatcher, "invalidate">;
   readonly verifyToken: (
     token: string,
   ) => Promise<{ userId: string; sid: string } | undefined>;
@@ -315,9 +317,7 @@ export class GatewayConnection {
     // never be subscribed by this client. Each total walks capped
     // per-conversation windows, so the cost is bounded per identity.
     const totals = await Promise.all(
-      rows.map((row) =>
-        identityBadgeTotals(this.#ctx.db, row.id, row.character),
-      ),
+      rows.map((row) => identityBadgeTotals(this.#ctx.db, row.id)),
     );
     this.#send({
       t: "ready",
@@ -413,12 +413,7 @@ export class GatewayConnection {
     this.#ctx.hub.subscribe(identityId, this);
 
     const session = this.#ctx.sessions.get(identityId);
-    const snapshot = await buildSnapshot(
-      this.#ctx.db,
-      identityId,
-      identity.character,
-      session,
-    );
+    const snapshot = await buildSnapshot(this.#ctx.db, identityId, session);
     const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
     const ownStatus = session?.ownStatus ?? { status: "online", statusmsg: "" };
     // Live session state once this connection's IGN init has seeded it —
@@ -712,6 +707,8 @@ export class GatewayConnection {
           updatedAt: new Date(),
         },
       });
+    // The highlight matcher caches highlightOwnNick per user (M5).
+    this.#ctx.highlights.invalidate(this.#userId);
     // Broadcast the full resolved state, not the patch — every tab applies
     // it as an idempotent overwrite regardless of what it missed.
     const state = await this.#userPrefs();
