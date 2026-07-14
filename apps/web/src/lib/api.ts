@@ -285,11 +285,12 @@ export const api = {
     });
   },
   /** Idempotent full-list replacement; 422 = a rule the server refused
-   * (e.g. a regex RE2 can't compile). */
-  putHighlightRules(rules: HighlightRuleInput[]) {
+   * (e.g. a regex RE2 can't compile); 409 = `knownIds` no longer match —
+   * another device edited the list since it was loaded. */
+  putHighlightRules(rules: HighlightRuleInput[], knownIds?: string[]) {
     return apiRequest<{ rules: HighlightRuleDto[] }>("/highlight-rules", {
       method: "PUT",
-      body: { rules },
+      body: { rules, ...(knownIds !== undefined ? { knownIds } : {}) },
       auth: true,
     });
   },

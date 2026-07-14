@@ -690,7 +690,11 @@ export class GatewayConnection {
       return;
     }
     const patch = d.prefs ?? {};
-    await this.#ctx.db
+    // RETURNING makes the broadcast atomic with the merge: a separate
+    // re-read could resolve after a concurrent patch's UPDATE but broadcast
+    // before (or after) its fan-out, regressing the other device's key on
+    // every tab with nothing to correct it until the next write.
+    const [merged] = await this.#ctx.db
       .insert(userPreferences)
       .values({
         userId: this.#userId,
@@ -706,12 +710,19 @@ export class GatewayConnection {
           prefs: sql`${userPreferences.prefs} || ${JSON.stringify(patch)}::jsonb`,
           updatedAt: new Date(),
         },
+      })
+      .returning({
+        sendDelaySeconds: userPreferences.sendDelaySeconds,
+        prefs: userPreferences.prefs,
       });
     // The highlight matcher caches highlightOwnNick per user (M5).
     this.#ctx.highlights.invalidate(this.#userId);
     // Broadcast the full resolved state, not the patch — every tab applies
     // it as an idempotent overwrite regardless of what it missed.
-    const state = await this.#userPrefs();
+    const state = {
+      sendDelaySeconds: merged?.sendDelaySeconds ?? 0,
+      prefs: resolvePrefs(merged?.prefs),
+    };
     const rows = await this.#ctx.db
       .select({ id: identities.id })
       .from(identities)

@@ -91,6 +91,7 @@ let lastIdentityId: string | undefined;
 async function startIdentity(): Promise<{
   identityId: string;
   userId: string;
+  accountId: string;
   session: FchatSession;
 }> {
   if (lastIdentityId !== undefined) {
@@ -121,7 +122,12 @@ async function startIdentity(): Promise<{
   });
   await waitForOnline(session);
   lastIdentityId = identity!.id;
-  return { identityId: identity!.id, userId: account!.userId, session };
+  return {
+    identityId: identity!.id,
+    userId: account!.userId,
+    accountId,
+    session,
+  };
 }
 
 function waitForOnline(session: FchatSession): Promise<void> {
@@ -237,6 +243,38 @@ describe("detached auto-away", () => {
     app.detachedAway.onAttach(identityId);
     await new Promise((resolve) => setTimeout(resolve, 200));
     await expectOwnStatus(session, "looking", "back, and looking");
+  });
+});
+
+describe("detached auto-away lifecycle", () => {
+  it("a session restart clears the applied record so the feature re-arms", async () => {
+    const { identityId, userId, accountId, session } = await startIdentity();
+    await setPrefs(userId, {
+      detachedAwayEnabled: true,
+      detachedAwayMinutes: 1,
+      autoAwayMessage: "afk",
+    });
+    await app.detachedAway.sweep();
+    fakeNow += 2 * MINUTE_MS;
+    await app.detachedAway.sweep();
+    await expectOwnStatus(session, "away", "afk");
+
+    // Explicit disconnect → later reconnect: the fresh session starts
+    // plain "online" and there is nothing to restore — a stale applied
+    // record must not block going away again.
+    app.sessions.stop(identityId);
+    await app.detachedAway.sweep(); // prunes the dead session's state
+    const restarted = app.sessions.start({
+      identityId,
+      character: CHARACTER,
+      accountId,
+      accountName: ACCOUNT,
+    });
+    await waitForOnline(restarted);
+    await app.detachedAway.sweep(); // stamps a fresh detachment clock
+    fakeNow += 2 * MINUTE_MS;
+    await app.detachedAway.sweep();
+    await expectOwnStatus(restarted, "away", "afk");
   });
 });
 

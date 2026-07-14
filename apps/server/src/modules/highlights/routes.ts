@@ -70,6 +70,7 @@ export async function highlightsRoutes(
         body: putHighlightRulesSchema,
         response: {
           200: z.object({ rules: z.array(ruleResponse) }),
+          409: errorResponse,
           422: errorResponse,
         },
       },
@@ -96,7 +97,24 @@ export async function highlightsRoutes(
         seen.add(key);
         return true;
       });
-      await db.transaction(async (tx) => {
+      // Compare-and-set (M5 audit): with no rules fan-out event, a stale
+      // client's full replacement would silently delete rules another
+      // device added. The check + replacement share one transaction so a
+      // racing PUT can't slip between them.
+      const conflicted = await db.transaction(async (tx) => {
+        if (request.body.knownIds !== undefined) {
+          const current = await tx
+            .select({ id: highlightRules.id })
+            .from(highlightRules)
+            .where(eq(highlightRules.userId, userId));
+          const known = new Set(request.body.knownIds);
+          if (
+            current.length !== known.size ||
+            current.some((row) => !known.has(row.id))
+          ) {
+            return true;
+          }
+        }
         await tx
           .delete(highlightRules)
           .where(eq(highlightRules.userId, userId));
@@ -105,7 +123,13 @@ export async function highlightsRoutes(
             .insert(highlightRules)
             .values(rules.map((rule) => ({ userId, ...rule })));
         }
+        return false;
       });
+      if (conflicted) {
+        return reply.code(409).send({
+          error: "Rules changed on another device — review the updated list",
+        });
+      }
       highlights.invalidate(userId);
       return { rules: await listRules(userId) };
     },

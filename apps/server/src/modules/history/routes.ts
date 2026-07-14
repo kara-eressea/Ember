@@ -183,6 +183,10 @@ export async function historyRoutes(
   app.get(
     "/:identityId/conversations/:conversationId/export",
     {
+      // Exports buffer the whole conversation in memory — a dedicated
+      // (tight) limit keeps repeated large exports from becoming a heap
+      // DoS while streaming waits for M7.
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
         params: z.object({
           identityId: z.uuid(),

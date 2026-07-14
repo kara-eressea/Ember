@@ -23,10 +23,26 @@ export function AwayLogsPane({ identityId }: { identityId: string }) {
     void patchPrefs(identityId, patch);
   };
   // Free-text drafts commit on blur/Enter, not per keystroke — every commit
-  // is a server round trip and a cross-device fan-out.
+  // is a server round trip and a cross-device fan-out. The draft tracks the
+  // synced pref until the user actually types (`dirty`): otherwise a blur
+  // with no edit would PUT a stale value back over another device's change.
   const [messageDraft, setMessageDraft] = useState(prefs.autoAwayMessage);
+  const [messageDirty, setMessageDirty] = useState(false);
+  // Render-time adjustment (React's "state from props" pattern): when the
+  // synced pref moves under a clean draft, follow it.
+  const [seenMessage, setSeenMessage] = useState(prefs.autoAwayMessage);
+  if (prefs.autoAwayMessage !== seenMessage) {
+    setSeenMessage(prefs.autoAwayMessage);
+    if (!messageDirty) {
+      setMessageDraft(prefs.autoAwayMessage);
+    }
+  }
 
   function commitMessage() {
+    if (!messageDirty) {
+      return;
+    }
+    setMessageDirty(false);
     const trimmed = messageDraft.trim();
     setMessageDraft(trimmed);
     if (trimmed !== prefs.autoAwayMessage) {
@@ -73,6 +89,7 @@ export function AwayLogsPane({ identityId }: { identityId: string }) {
           placeholder="Away from the keyboard…"
           aria-label="Away message"
           onChange={(event) => {
+            setMessageDirty(true);
             setMessageDraft(event.target.value);
           }}
           onBlur={commitMessage}

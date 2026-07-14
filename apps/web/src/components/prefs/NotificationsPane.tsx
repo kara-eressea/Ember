@@ -102,6 +102,17 @@ export function NotificationsPane({ identityId }: { identityId: string }) {
           {permissionError}
         </p>
       )}
+      {/* Permission can be revoked in browser settings after enabling — the
+          pref would otherwise sit on and silently never fire. */}
+      {!permissionError &&
+        (prefs.desktopNotifyMentions || prefs.desktopNotifyPms) &&
+        notificationsSupported() &&
+        Notification.permission !== "granted" && (
+          <p className={styles.paneError} role="alert">
+            Notifications are blocked in your browser's site settings — none
+            will show until you re-allow them there.
+          </p>
+        )}
 
       <GroupLabel>Muted identities</GroupLabel>
       <p className={styles.paneNote}>
