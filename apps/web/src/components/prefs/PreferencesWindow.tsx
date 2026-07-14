@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AppearancePane } from "./AppearancePane.js";
+import { HighlightsPane } from "./HighlightsPane.js";
 import styles from "./prefs.module.css";
 
 const PANES = [
@@ -141,12 +142,7 @@ function PaneContent({
     case "appearance":
       return <AppearancePane identityId={identityId} />;
     case "highlights":
-      return (
-        <p className={styles.stub}>
-          Highlight rules and when-highlighted actions arrive with M5 step 6.
-          The rules engine itself is already live server-side.
-        </p>
-      );
+      return <HighlightsPane identityId={identityId} />;
     case "away":
       return (
         <p className={styles.stub}>

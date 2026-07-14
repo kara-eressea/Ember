@@ -232,8 +232,10 @@ export function AppShell() {
             ) : (
               <DmHeader identityId={activeId} dm={conversation.dm} />
             )}
+            {/* Keyed per conversation so both remount on switch — with
+                distinct prefixes, since they are siblings. */}
             <MessageLog
-              key={convId}
+              key={`log:${convId}`}
               identityId={activeId}
               convId={convId}
               readCursorAtAttach={
@@ -243,7 +245,7 @@ export function AppShell() {
               }
             />
             <Composer
-              key={convId}
+              key={`composer:${convId}`}
               session={session}
               convId={convId}
               channelKey={channel?.key}

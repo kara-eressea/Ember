@@ -21,6 +21,7 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { Avatar } from "../common/Avatar.js";
+import { orderRows } from "./sidebar-order.js";
 import styles from "./shell.module.css";
 
 /** Bounded wait for the joined conversation row to reach the store. */
@@ -65,11 +66,18 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
   // convId "" = volatile placeholder whose conversation row is still being
   // written; it becomes routable one event later.
-  const allChannels = Object.values(session.channels)
-    .filter((channel) => channel.convId !== "")
-    .sort((a, b) => a.title.localeCompare(b.title));
-  const allDms = Object.values(session.dms).sort((a, b) =>
-    a.partner.localeCompare(b.partner),
+  const bump = session.prefs.highlightBump;
+  const allChannels = orderRows(
+    Object.values(session.channels).filter((channel) => channel.convId !== ""),
+    (c) => c.title,
+    (c) => c.highlightedAt,
+    bump,
+  );
+  const allDms = orderRows(
+    Object.values(session.dms),
+    (d) => d.partner,
+    (d) => d.highlightedAt,
+    bump,
   );
   // Pinning is cross-type (COMPONENTS.md §3): pinned channels and DMs
   // surface together under Pinned; the rest stay in their type sections.

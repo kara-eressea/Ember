@@ -10,8 +10,15 @@ import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
 
-// Node environment — hydrateTheme writes to document/localStorage.
+// Node environment — hydrateTheme writes to document/localStorage, and the
+// when-highlighted actions touch Audio/document.title.
 vi.mock("../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+vi.mock("../lib/highlight-notify.js", () => ({
+  playHighlightChime: vi.fn(),
+  flashTitle: vi.fn(),
+  stopTitleFlash: vi.fn(),
+}));
+import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { hydrateTheme } from "../theme/theme.js";
 import { dispatchFrame } from "./dispatch.js";
 
@@ -97,6 +104,8 @@ beforeEach(() => {
   useSessionsStore.getState().reset();
   useMessagesStore.getState().reset();
   useUiStore.getState().setActive(undefined, undefined);
+  vi.mocked(playHighlightChime).mockClear();
+  vi.mocked(flashTitle).mockClear();
 });
 
 function session() {
@@ -565,6 +574,76 @@ describe("message.new and unread", () => {
     const dm = session().dms[convId];
     expect(dm?.partner).toBe("Birch Rowan");
     expect(dm?.unread).toBe(1);
+  });
+});
+
+describe("when-highlighted actions", () => {
+  const mention = (id: number) =>
+    event("message.new", {
+      convId: CONV_CHANNEL,
+      message: message(id, { mention: true }),
+    });
+  /** prefs.updated with the given when-highlighted switches. */
+  const setPrefs = (overrides: Partial<typeof PREFS_DEFAULTS>) =>
+    event("prefs.updated", {
+      sendDelaySeconds: 0,
+      prefs: { ...PREFS_DEFAULTS, ...overrides },
+    });
+
+  it("fires each action behind its pref on an inactive mention", () => {
+    dispatchFrame(snapshot());
+    // Defaults: flash on, sound and bump off.
+    dispatchFrame(mention(11));
+    expect(flashTitle).toHaveBeenCalledTimes(1);
+    expect(playHighlightChime).not.toHaveBeenCalled();
+    expect(session().channels["Frontpage"]?.highlightedAt).toBe(0);
+
+    dispatchFrame(
+      setPrefs({
+        highlightSound: true,
+        highlightBump: true,
+        highlightFlashTitle: false,
+      }),
+    );
+    dispatchFrame(mention(12));
+    expect(flashTitle).toHaveBeenCalledTimes(1); // still just the first
+    expect(playHighlightChime).toHaveBeenCalledTimes(1);
+    expect(session().channels["Frontpage"]?.highlightedAt).toBeGreaterThan(0);
+  });
+
+  it("stays silent for the active conversation, own sends, and non-mentions", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ highlightSound: true, highlightBump: true }));
+
+    useUiStore.getState().setActive(IDENTITY, CONV_CHANNEL);
+    dispatchFrame(mention(11));
+
+    useUiStore.getState().setActive(undefined, undefined);
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(12, { mention: true, sentByUs: true }),
+      }),
+    );
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(13) }),
+    );
+
+    expect(flashTitle).not.toHaveBeenCalled();
+    expect(playHighlightChime).not.toHaveBeenCalled();
+    expect(session().channels["Frontpage"]?.highlightedAt).toBe(0);
+  });
+
+  it("clearUnread drops the bump stamp along with the badges", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ highlightBump: true }));
+    dispatchFrame(mention(11));
+    expect(session().channels["Frontpage"]?.highlightedAt).toBeGreaterThan(0);
+    useSessionsStore.getState().clearUnread(IDENTITY, CONV_CHANNEL);
+    const channel = session().channels["Frontpage"];
+    expect(channel?.highlightedAt).toBe(0);
+    expect(channel?.unread).toBe(0);
+    expect(channel?.mentions).toBe(0);
   });
 });
 

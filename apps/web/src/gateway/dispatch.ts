@@ -5,6 +5,7 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
+import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
@@ -91,6 +92,20 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
           event.d.convId,
           event.d.message.mention,
         );
+        if (event.d.message.mention) {
+          // When-highlighted actions, each behind its pref (decisions.md
+          // §10). The prefs are per user — any slice's copy is current.
+          const prefs = sessions.sessions[identityId]?.prefs;
+          if (prefs?.highlightSound) {
+            playHighlightChime();
+          }
+          if (prefs?.highlightFlashTitle) {
+            flashTitle();
+          }
+          if (prefs?.highlightBump) {
+            sessions.bumpHighlight(identityId, event.d.convId);
+          }
+        }
       }
       return;
     }
