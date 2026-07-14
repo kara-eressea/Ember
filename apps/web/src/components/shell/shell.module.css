@@ -478,6 +478,7 @@
   color: var(--eb-faint);
   font-size: 15px;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .meGear:hover {

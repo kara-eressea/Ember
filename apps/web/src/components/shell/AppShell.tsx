@@ -29,6 +29,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
+import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
@@ -51,6 +52,7 @@ export function AppShell() {
     identityId === undefined ? undefined : s.sessions[identityId],
   );
   const membersOpen = useUiStore((s) => s.membersOpen);
+  const prefsOpen = useUiStore((s) => s.prefsOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -270,6 +272,13 @@ export function AppShell() {
         )}
       </main>
       {showMembers && channel && <MemberList channel={channel} />}
+      {prefsOpen && (
+        <PreferencesWindow
+          onClose={() => {
+            useUiStore.getState().setPrefsOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
