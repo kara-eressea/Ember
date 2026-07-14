@@ -61,6 +61,11 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Bramble Thorn"],
     },
+    // Reserved for the M4 compose/delayed-send E2E (same parallelism rule).
+    "sage@example.test": {
+      password: "hunter2",
+      characters: ["Sage Willowmere"],
+    },
   },
   channels: [
     {

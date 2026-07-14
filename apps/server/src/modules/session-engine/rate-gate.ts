@@ -5,10 +5,10 @@
 // (developer policy).
 
 /** Command classes with a flood limit. LRP (lfrp_flood) arrives in M4+.
- * STA and IGN have no documented VAR of their own; they ride the msg_flood
- * pace as client-side discipline — the server throttles STA on its side, and
- * nothing user-triggered should be able to spam the wire unmetered. */
-export type RateGateClass = "MSG" | "PRI" | "STA" | "IGN";
+ * STA, IGN and TPN have no documented VAR of their own; they ride the
+ * msg_flood pace as client-side discipline — the server throttles on its
+ * side, and nothing user-triggered may spam the wire unmetered. */
+export type RateGateClass = "MSG" | "PRI" | "STA" | "IGN" | "TPN";
 
 /**
  * Padding on top of the server's flood window. The server measures the

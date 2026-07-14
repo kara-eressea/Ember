@@ -20,6 +20,7 @@ import {
   serializeClientCommand,
   type ClientCommand,
   type ClientSettableStatus,
+  type TypingStatus,
 } from "@emberchat/fchat-protocol";
 import {
   AccountLockedError,
@@ -174,6 +175,9 @@ export class FchatSession {
   /** Ignored senders (lowercased) already sent an IGN notify on this
    * connection — one courtesy frame per sender, not one per message. */
   readonly #notifiedIgnored = new Set<string>();
+  /** Last TPN status sent per recipient (lowercased) — only changes go on
+   * the wire; a keystroke storm must never become a TPN storm. */
+  readonly #typingSent = new Map<string, TypingStatus>();
 
   constructor(options: FchatSessionOptions) {
     this.character = options.character;
@@ -272,6 +276,33 @@ export class FchatSession {
   /** What the character's status should read as right now. */
   get ownStatus(): { status: ClientSettableStatus; statusmsg: string } {
     return this.#desiredStatus ?? { status: "online", statusmsg: "" };
+  }
+
+  /**
+   * PM typing telemetry (TPN). Best-effort by design: deduped per recipient
+   * (only status changes are sent), silently dropped while not online —
+   * typing state is never worth an error or a queue.
+   */
+  sendTyping(recipient: string, status: TypingStatus): void {
+    if (this.#status !== "online") {
+      return;
+    }
+    const key = recipient.toLowerCase();
+    if (this.#typingSent.get(key) === status) {
+      return;
+    }
+    this.#typingSent.set(key, status);
+    // Through the gate like everything else user-triggered: dedup blocks
+    // repeats, but alternating statuses would otherwise reach the wire at
+    // socket speed (audit). Telemetry is droppable — a full or cleared
+    // queue just loses a typing hint.
+    this.#rateGate
+      .schedule("TPN", () => {
+        this.#send({ cmd: "TPN", payload: { character: recipient, status } });
+      })
+      .catch(() => {
+        // Best-effort; the dedup map keeps intent for the next change.
+      });
   }
 
   /** Adds a character to the server-side ignore list (IGN add). State and
@@ -608,6 +639,7 @@ export class FchatSession {
     }
     this.#rateGate.clear();
     this.#notifiedIgnored.clear();
+    this.#typingSent.clear();
     this.state.resetVolatile();
     const socket = this.#socket;
     if (socket) {

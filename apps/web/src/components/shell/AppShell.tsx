@@ -241,8 +241,13 @@ export function AppShell() {
               }
             />
             <Composer
+              key={convId}
               session={session}
               convId={convId}
+              channelKey={channel?.key}
+              partner={
+                conversation.kind === "pm" ? conversation.dm.partner : undefined
+              }
               placeholder={
                 conversation.kind === "channel"
                   ? `Message #${conversation.channel.title}`

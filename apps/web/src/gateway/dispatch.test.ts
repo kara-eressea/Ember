@@ -49,6 +49,9 @@ function snapshot(): ServerFrame {
         statusmsg: "",
         ignores: [],
         limits: { chatMax: 4096, privMax: 50000 },
+        iconBlacklist: [],
+        sendDelaySeconds: 0,
+        outbox: [],
       },
       channels: [
         {
@@ -280,6 +283,26 @@ describe("presence", () => {
     expect(session().ignores).toEqual(["Nyx Firemane", "Tally Marsh"]);
     dispatchFrame(event("ignore.updated", { characters: [] }));
     expect(session().ignores).toEqual([]);
+  });
+
+  it("outbox.updated and prefs.updated keep the delayed-send state live", () => {
+    dispatchFrame(snapshot());
+    expect(session().outbox).toEqual([]);
+    const item = {
+      id: "ob-1",
+      convId: "conv-1",
+      markdown: "**later**",
+      bbcode: "[b]later[/b]",
+      releaseAt: "2026-07-14T00:00:10.000Z",
+      state: "scheduled",
+    };
+    dispatchFrame(event("outbox.updated", { items: [item] }));
+    expect(session().outbox).toEqual([item]);
+    dispatchFrame(event("outbox.updated", { items: [] }));
+    expect(session().outbox).toEqual([]);
+
+    dispatchFrame(event("prefs.updated", { sendDelaySeconds: 30 }));
+    expect(session().sendDelaySeconds).toBe(30);
   });
 
   it("our own STA converges the MeBar/rail status", () => {

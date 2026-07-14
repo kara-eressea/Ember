@@ -113,4 +113,63 @@ describe("clientFrameSchema", () => {
       ).toBe(false);
     }
   });
+
+  it("validates the M4 cmd payloads at their bounds", () => {
+    const ok = [
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "prefs.set",
+          d: { sendDelaySeconds: 300 },
+        },
+      },
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "typing.set",
+          d: { character: "Nyx Firemane", status: "paused" },
+        },
+      },
+    ];
+    for (const frame of ok) {
+      expect(
+        clientFrameSchema.safeParse(frame).success,
+        JSON.stringify(frame),
+      ).toBe(true);
+    }
+    const bad = [
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "prefs.set",
+          d: { sendDelaySeconds: 301 },
+        },
+      },
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "prefs.set",
+          d: { sendDelaySeconds: -1 },
+        },
+      },
+      {
+        t: "cmd",
+        d: {
+          identityId: IDENTITY,
+          action: "typing.set",
+          d: { character: "Nyx Firemane", status: "busy" },
+        },
+      },
+    ];
+    for (const frame of bad) {
+      expect(
+        clientFrameSchema.safeParse(frame).success,
+        JSON.stringify(frame),
+      ).toBe(false);
+    }
+  });
 });

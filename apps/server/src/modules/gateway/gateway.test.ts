@@ -37,6 +37,7 @@ import {
   conversations,
   identities,
   messages,
+  outboxMessages,
 } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
@@ -847,6 +848,9 @@ describe("gateway fan-out", () => {
       status: "online",
       statusmsg: "",
       ignores: [],
+      iconBlacklist: [],
+      sendDelaySeconds: 0,
+      outbox: [],
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000 },
     });
@@ -1426,4 +1430,191 @@ describe("gateway commands", () => {
       d: { ok: false, error: "identity not found" },
     });
   });
+
+  it("delayed send parks in the outbox, recalls, and releases due rows", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // A long delay: everything below must stay parked until recalled.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "prefs.set", d: { sendDelaySeconds: 120 } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(
+      eventPayload<{ sendDelaySeconds: number }>(
+        await client.nextEvent("prefs.updated"),
+      ),
+    ).toEqual({ sendDelaySeconds: 120 });
+
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "pm.open", d: { character: "Nyx Firemane" } },
+    });
+    const opened = await client.nextOfType("ack");
+    const convId = (opened.d as { conversation: { id: string } }).conversation
+      .id;
+
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "[b]later[/b]", markdown: "**later**" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    const scheduled = await client.nextEvent("outbox.updated");
+    const items = eventPayload<{
+      items: { id: string; convId: string; markdown: string; state: string }[];
+    }>(scheduled).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      convId,
+      markdown: "**later**",
+      state: "scheduled",
+    });
+
+    // A late subscriber's snapshot carries the delay and the pending row —
+    // pending sends are visible on every device, not just the sender's tab.
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self.sendDelaySeconds).toBe(120);
+    expect(snapshot.d.self.outbox).toHaveLength(1);
+
+    // ArrowUp recall: the typed Markdown comes back and the row dies.
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: { identityId, action: "outbox.recall", d: { outboxId: items[0]!.id } },
+    });
+    expect((await client.nextOfType("ack")).d).toMatchObject({
+      ok: true,
+      markdown: "**later**",
+    });
+    expect(
+      eventPayload<{ items: unknown[] }>(
+        await client.nextEvent("outbox.updated"),
+      ).items,
+    ).toEqual([]);
+    client.send({
+      t: "cmd",
+      id: 5,
+      d: { identityId, action: "outbox.recall", d: { outboxId: items[0]!.id } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(false);
+
+    // A due row already in the table (the restart case) releases via the
+    // poll and round-trips as a persisted own message.
+    await db.insert(outboxMessages).values({
+      identityId,
+      conversationId: convId,
+      markdown: "overdue",
+      bbcode: "overdue",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    const released = await client.nextEvent("message.new", 15_000);
+    expect(
+      eventPayload<{ message: { bbcode: string; sentByUs: boolean } }>(released)
+        .message,
+    ).toMatchObject({ bbcode: "overdue", sentByUs: true });
+    expect(
+      eventPayload<{ items: unknown[] }>(
+        await client.nextEvent("outbox.updated"),
+      ).items,
+    ).toEqual([]);
+  }, 30_000);
+
+  it("outbox: releases in order, claims beat recalls, failures say why", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "pm.open", d: { character: "Nyx Firemane" } },
+    });
+    const opened = await client.nextOfType("ack");
+    const convId = (opened.d as { conversation: { id: string } }).conversation
+      .id;
+
+    // Two overdue rows: they must hit the wire in release order (the
+    // milestone-4.md ordering requirement the step-8 suite had dropped).
+    await db.insert(outboxMessages).values([
+      {
+        identityId,
+        conversationId: convId,
+        markdown: "first",
+        bbcode: "first",
+        releaseAt: new Date(Date.now() - 2000),
+      },
+      {
+        identityId,
+        conversationId: convId,
+        markdown: "second",
+        bbcode: "second",
+        releaseAt: new Date(Date.now() - 1000),
+      },
+    ]);
+    const a = await client.nextEvent("message.new", 15_000);
+    const b = await client.nextEvent("message.new", 15_000);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(a).message.bbcode,
+    ).toBe("first");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(b).message.bbcode,
+    ).toBe("second");
+
+    // A row the worker has claimed ("releasing") is no longer recallable —
+    // that window is exactly where a recall would double-post (audit).
+    const [claimed] = await db
+      .insert(outboxMessages)
+      .values({
+        identityId,
+        conversationId: convId,
+        markdown: "in flight",
+        bbcode: "in flight",
+        releaseAt: new Date(Date.now() + 60_000),
+        state: "releasing",
+      })
+      .returning();
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "outbox.recall", d: { outboxId: claimed!.id } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(false);
+    await db.delete(outboxMessages).where(eq(outboxMessages.id, claimed!.id));
+
+    // A release with no live session fails visibly, with the reason.
+    app.sessions.stop(identityId, "test: dead session");
+    await db.insert(outboxMessages).values({
+      identityId,
+      conversationId: convId,
+      markdown: "doomed",
+      bbcode: "doomed",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    for (;;) {
+      const update = await client.nextEvent("outbox.updated", 15_000);
+      const items = eventPayload<{
+        items: { state: string; failureReason?: string }[];
+      }>(update).items;
+      const failed = items.find((item) => item.state === "failed");
+      if (failed) {
+        expect(failed.failureReason).toMatch(/no live session/);
+        break;
+      }
+    }
+  }, 45_000);
 });

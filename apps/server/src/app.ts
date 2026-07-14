@@ -21,6 +21,7 @@ import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
+import { Outbox } from "./modules/outbox/outbox.js";
 import {
   SessionRegistry,
   type SessionTuning,
@@ -32,6 +33,7 @@ declare module "fastify" {
   interface FastifyInstance {
     sessions: SessionRegistry;
     history: HistorySink;
+    outbox: Outbox;
   }
 }
 
@@ -85,6 +87,9 @@ export async function buildApp({
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
+  const outbox = new Outbox({ db, sessions, hub, logger: app.log });
+  outbox.start();
+  app.decorate("outbox", outbox);
   const retention = new RetentionJob({
     db,
     policy: config.RETENTION_POLICY,
@@ -94,6 +99,7 @@ export async function buildApp({
   retention.start();
   app.addHook("onClose", () => {
     retention.stop();
+    outbox.stop();
     sessions.stopAll();
   });
 
@@ -134,7 +140,7 @@ export async function buildApp({
   await app.register(fastifyWebsocket, {
     options: { maxPayload: 128 * 1024 },
   });
-  await app.register(gatewayRoutes, { db, sessions, history, hub });
+  await app.register(gatewayRoutes, { db, sessions, history, hub, outbox });
 
   app.get("/healthz", () => ({ status: "ok" }));
 

@@ -42,6 +42,21 @@ export function themeVariables(accent: AccentId): Record<string, string> {
     "--eb-warn": accent === "moss" ? WARN_MOSS : WARN,
     "--eb-danger": DANGER,
     "--eb-radius": "9px",
+    // F-Chat [color=…] names (the wiki's fixed 12, dark-theme palette).
+    // Wire colors, not theme colors — but tokens, so a theme can retune
+    // them for contrast.
+    "--eb-bbc-red": "#f44",
+    "--eb-bbc-blue": "#1e90ff",
+    "--eb-bbc-white": "#ffffff",
+    "--eb-bbc-yellow": "#e5d45a",
+    "--eb-bbc-pink": "#ffcbdb",
+    "--eb-bbc-gray": "#d3d3d3",
+    "--eb-bbc-green": "#4f4",
+    "--eb-bbc-orange": "#ffa500",
+    "--eb-bbc-purple": "#e2afff",
+    "--eb-bbc-black": mix(text, bg, 0.55),
+    "--eb-bbc-brown": "#a9825d",
+    "--eb-bbc-cyan": "#00ffff",
   };
 }
 

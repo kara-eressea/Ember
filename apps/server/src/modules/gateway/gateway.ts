@@ -18,6 +18,7 @@ import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
+import type { Outbox } from "../outbox/outbox.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 import { GatewayConnection, conversationDto } from "./connection.js";
 import { memberDto, messageDto } from "./snapshot.js";
@@ -280,6 +281,7 @@ export interface GatewayRoutesOptions {
   sessions: SessionRegistry;
   history: HistorySink;
   hub: GatewayHub;
+  outbox: Outbox;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -287,7 +289,7 @@ export async function gatewayRoutes(
   instance: FastifyInstance,
   options: GatewayRoutesOptions,
 ): Promise<void> {
-  const { db, sessions, history, hub } = options;
+  const { db, sessions, history, hub, outbox } = options;
 
   /** True while the auth session row exists and is unexpired. */
   async function sessionAlive(sid: string): Promise<boolean> {
@@ -324,6 +326,7 @@ export async function gatewayRoutes(
       sessions,
       history,
       hub,
+      outbox,
       verifyToken,
       sessionAlive,
       log: instance.log,

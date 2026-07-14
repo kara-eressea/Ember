@@ -1,20 +1,43 @@
-// Composer (COMPONENTS.md §8), M1 form: plain text sent as-is — the wire
-// format is BBCode and raw text passes through untouched; the Markdown layer
-// with live preview is M4. Enter sends, Shift+Enter breaks the line.
+// Composer (COMPONENTS.md §8): Markdown composing with a live preview panel
+// rendered through the same RichText pipeline as the log — what you preview
+// is exactly what recipients see. The Ⓜ toggle switches Markdown mode (off =
+// raw BBCode passthrough, the M1 behavior); Enter sends, Shift+Enter breaks
+// the line. The byte counter counts the translated wire form — that is what
+// the server measures.
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
-import type { IdentitySession } from "../../stores/sessions.js";
+import {
+  useSessionsStore,
+  type IdentitySession,
+} from "../../stores/sessions.js";
+import { parseEmote } from "./rich-text.js";
+import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
 /** The textarea grows with its content up to this, then scrolls. */
 const MAX_INPUT_HEIGHT_PX = 160;
 
+const MARKDOWN_MODE_KEY = "emberchat.composeMarkdown";
+
 const utf8 = new TextEncoder();
+
+function savedMarkdownMode(): boolean {
+  try {
+    return localStorage.getItem(MARKDOWN_MODE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
 
 export interface ComposerProps {
   session: IdentitySession;
   convId: string;
+  /** Channel key when the conversation is a channel (icon_blacklist check). */
+  channelKey?: string;
+  /** DM partner — enables outbound typing telemetry (TPN, PMs only). */
+  partner?: string;
   /** Channel key when the conversation is a channel we are not live in. */
   rejoinKey?: string;
   placeholder: string;
@@ -25,6 +48,8 @@ export interface ComposerProps {
 export function Composer({
   session,
   convId,
+  channelKey,
+  partner,
   rejoinKey,
   placeholder,
   maxBytes,
@@ -32,10 +57,23 @@ export function Composer({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [markdown, setMarkdown] = useState(savedMarkdownMode);
+  const [eiconOpen, setEiconOpen] = useState(false);
+  const [eiconName, setEiconName] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
-  // The server measures the limit in UTF-8 bytes, so count what it counts.
-  const bytes = utf8.encode(text).length;
+  // What actually goes on the wire — and what the server's limit measures.
+  const wire = markdown ? mdToBBCode(text) : text;
+  const bytes = utf8.encode(wire).length;
+  const pending = session.outbox.filter((item) => item.convId === convId);
+  const previewEmote = parseEmote(wire);
+  // Case-insensitive: the icon_blacklist VAR carries lowercase names while
+  // channel keys are canonical-case (audit).
+  const iconsBlacklisted =
+    channelKey !== undefined &&
+    session.iconBlacklist.some(
+      (key) => key.toLowerCase() === channelKey.toLowerCase(),
+    );
 
   function autogrow() {
     const el = inputRef.current;
@@ -45,9 +83,95 @@ export function Composer({
     }
   }
 
+  // Outbound typing telemetry (PMs): "typing" while keys land, "paused"
+  // after 3s idle, "clear" when the input empties or the message sends.
+  // The session dedupes per recipient, so repeats never reach the wire.
+  const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const typingPushed = useRef<"clear" | "paused" | "typing">("clear");
+  function pushTyping(status: "clear" | "paused" | "typing") {
+    if (partner === undefined || !online) {
+      return;
+    }
+    typingPushed.current = status;
+    void gateway.cmd({
+      identityId: session.identityId,
+      action: "typing.set",
+      d: { character: partner, status },
+    });
+  }
+
+  function onTextChange(value: string) {
+    setText(value);
+    autogrow();
+    if (partner === undefined) {
+      return;
+    }
+    clearTimeout(typingTimer.current);
+    if (value === "") {
+      pushTyping("clear");
+      return;
+    }
+    pushTyping("typing");
+    typingTimer.current = setTimeout(() => {
+      pushTyping("paused");
+    }, 3000);
+  }
+
+  // Unmount (the shell keys this component by convId): stop the clock and
+  // tell the old partner we stopped — otherwise they see "typing…" forever
+  // (audit; only a sent PM would otherwise clear it).
+  useEffect(() => {
+    return () => {
+      clearTimeout(typingTimer.current);
+      if (typingPushed.current !== "clear") {
+        pushTyping("clear");
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
+  }, []);
+
+  function toggleMarkdown() {
+    const next = !markdown;
+    setMarkdown(next);
+    try {
+      localStorage.setItem(MARKDOWN_MODE_KEY, next ? "on" : "off");
+    } catch {
+      // Session-only preference then.
+    }
+  }
+
+  /** Inserts at the caret (falls back to the end), keeping focus. */
+  function insertAtCaret(snippet: string) {
+    const el = inputRef.current;
+    const at = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    setText(text.slice(0, at) + snippet + text.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + snippet.length, at + snippet.length);
+      autogrow();
+    });
+  }
+
+  /** Wraps the selection (or empty caret) in a Markdown marker pair. */
+  function wrapSelection(marker: string) {
+    const el = inputRef.current;
+    if (!el) {
+      return;
+    }
+    const from = el.selectionStart;
+    const to = el.selectionEnd;
+    const selected = text.slice(from, to);
+    setText(text.slice(0, from) + marker + selected + marker + text.slice(to));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(from + marker.length, to + marker.length);
+    });
+  }
+
   async function send() {
-    const bbcode = text.trim();
-    if (!bbcode || busy) {
+    const body = wire.trim();
+    if (!body || busy) {
       return;
     }
     setBusy(true);
@@ -55,7 +179,11 @@ export function Composer({
     const ack = await gateway.cmd({
       identityId: session.identityId,
       action: "msg.send",
-      d: { convId, bbcode },
+      // The typed source rides along: a delayed send must recall to what
+      // the user wrote, not the translated wire form.
+      d: markdown
+        ? { convId, bbcode: body, markdown: text.trim() }
+        : { convId, bbcode: body },
     });
     setBusy(false);
     if (!ack.ok) {
@@ -63,6 +191,8 @@ export function Composer({
       return;
     }
     setText("");
+    clearTimeout(typingTimer.current);
+    pushTyping("clear");
     requestAnimationFrame(autogrow);
   }
 
@@ -70,7 +200,42 @@ export function Composer({
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send();
+      return;
     }
+    // ArrowUp in an empty composer recalls the newest pending send (by
+    // creation, not release — a shorter delay must not shadow an earlier
+    // message; audit). The outbox row dies and the typed text comes back.
+    if (event.key === "ArrowUp" && text === "" && pending.length > 0) {
+      event.preventDefault();
+      const newest = [...pending]
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .at(-1)!;
+      void recall(newest.id);
+    }
+  }
+
+  async function recall(outboxId: string) {
+    const ack = await gateway.cmd({
+      identityId: session.identityId,
+      action: "outbox.recall",
+      d: { outboxId },
+    });
+    if (ack.ok && ack.markdown !== undefined) {
+      setText(ack.markdown);
+      requestAnimationFrame(autogrow);
+    }
+  }
+
+  function setDelay(sendDelaySeconds: number) {
+    // Optimistic: prefs.updated converges every other tab.
+    useSessionsStore
+      .getState()
+      .applySendDelay(session.identityId, sendDelaySeconds);
+    void gateway.cmd({
+      identityId: session.identityId,
+      action: "prefs.set",
+      d: { sendDelaySeconds },
+    });
   }
 
   if (rejoinKey !== undefined) {
@@ -103,23 +268,140 @@ export function Composer({
           {error}
         </p>
       )}
+      {markdown && text.trim() !== "" && (
+        <div className={styles.previewPanel} data-testid="md-preview">
+          <div className={styles.previewHead}>PREVIEW · markdown</div>
+          <div
+            className={`${styles.previewBody} ${previewEmote ? (styles.emoteBody ?? "") : ""}`}
+          >
+            {previewEmote ? (
+              <>
+                {session.character}
+                {previewEmote.possessive ? "" : " "}
+                <RichText bbcode={previewEmote.action} />
+              </>
+            ) : (
+              <RichText bbcode={wire} />
+            )}
+          </div>
+        </div>
+      )}
+      {eiconOpen && (
+        <form
+          className={styles.eiconInsert}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const name = eiconName.trim();
+            if (name !== "") {
+              insertAtCaret(`[eicon]${name}[/eicon]`);
+            }
+            setEiconName("");
+            setEiconOpen(false);
+          }}
+        >
+          <input
+            className={styles.miniInput}
+            value={eiconName}
+            onChange={(e) => {
+              setEiconName(e.target.value);
+            }}
+            placeholder="eicon name…"
+            aria-label="Eicon name"
+            // Opened by an explicit click on the insert affordance.
+            autoFocus
+          />
+          <button className={styles.miniButton} type="submit">
+            Insert
+          </button>
+          {iconsBlacklisted && (
+            <span className={styles.blacklistWarning} role="alert">
+              This channel disallows icons — the server will reject it.
+            </span>
+          )}
+        </form>
+      )}
       <div className={styles.inputBar}>
+        <span className={styles.inputGlyph} title="Attachments arrive later">
+          +
+        </span>
         <textarea
           ref={inputRef}
           className={styles.composerInput}
           rows={1}
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
-            autogrow();
+            onTextChange(e.target.value);
           }}
           onKeyDown={onKeyDown}
           placeholder={online ? placeholder : "Session is not connected"}
           disabled={!online}
           aria-label="Message"
         />
+        <span className={styles.formatHints}>
+          <button
+            type="button"
+            className={styles.formatHint}
+            title="Bold (wrap in **)"
+            aria-label="Bold"
+            disabled={!markdown}
+            onClick={() => {
+              wrapSelection("**");
+            }}
+          >
+            **B**
+          </button>
+          <button
+            type="button"
+            className={styles.formatHint}
+            title="Code (wrap in `)"
+            aria-label="Code"
+            disabled={!markdown}
+            onClick={() => {
+              wrapSelection("`");
+            }}
+          >
+            `code`
+          </button>
+          <button
+            type="button"
+            className={styles.formatHint}
+            title="Insert an eicon by name"
+            aria-label="Insert eicon"
+            onClick={() => {
+              setEiconOpen(!eiconOpen);
+            }}
+          >
+            ☺
+          </button>
+        </span>
       </div>
       <div className={styles.composerFooter}>
+        <button
+          type="button"
+          className={`${styles.mdToggle} ${markdown ? (styles.mdToggleOn ?? "") : ""}`}
+          onClick={toggleMarkdown}
+          title={
+            markdown
+              ? "Markdown on — sends BBCode"
+              : "Markdown off — raw BBCode"
+          }
+        >
+          Ⓜ Markdown
+        </button>
+        <select
+          className={styles.delaySelect}
+          value={session.sendDelaySeconds}
+          aria-label="Send delay"
+          title="Hold sends in the server outbox — ArrowUp recalls"
+          onChange={(e) => {
+            setDelay(Number(e.target.value));
+          }}
+        >
+          <option value={0}>instant</option>
+          <option value={10}>10s delay</option>
+          <option value={30}>30s delay</option>
+          <option value={60}>60s delay</option>
+        </select>
         <span>Enter to send · Shift+Enter for newline</span>
         <span
           className={`${styles.charCounter} ${bytes > maxBytes ? (styles.charCounterOver ?? "") : ""}`}
