@@ -24,10 +24,12 @@ import { FchatSim } from "@emberchat/fchat-sim";
 import { serializeServerCommand } from "@emberchat/fchat-protocol";
 import {
   GATEWAY_CLOSE,
+  PREFS_DEFAULTS,
   PROTOCOL_VERSION,
   type ClientFrame,
   type ResumeCursors,
   type ServerFrame,
+  type UserPrefs,
 } from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
@@ -850,6 +852,7 @@ describe("gateway fan-out", () => {
       ignores: [],
       iconBlacklist: [],
       sendDelaySeconds: 0,
+      prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000 },
@@ -1449,7 +1452,7 @@ describe("gateway commands", () => {
       eventPayload<{ sendDelaySeconds: number }>(
         await client.nextEvent("prefs.updated"),
       ),
-    ).toEqual({ sendDelaySeconds: 120 });
+    ).toEqual({ sendDelaySeconds: 120, prefs: PREFS_DEFAULTS });
 
     client.send({
       t: "cmd",
@@ -1531,6 +1534,56 @@ describe("gateway commands", () => {
       ).items,
     ).toEqual([]);
   }, 30_000);
+
+  it("prefs.set patches merge per key and survive in the snapshot", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Patch one prefs key: everything else resolves to its default.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "prefs.set", d: { prefs: { accent: "moss" } } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(
+      eventPayload<{ sendDelaySeconds: number; prefs: UserPrefs }>(
+        await client.nextEvent("prefs.updated"),
+      ),
+    ).toEqual({
+      sendDelaySeconds: 0,
+      prefs: { ...PREFS_DEFAULTS, accent: "moss" },
+    });
+
+    // A later sendDelay-only patch must not clobber the stored accent.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "prefs.set", d: { sendDelaySeconds: 45 } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(
+      eventPayload<{ sendDelaySeconds: number; prefs: UserPrefs }>(
+        await client.nextEvent("prefs.updated"),
+      ),
+    ).toEqual({
+      sendDelaySeconds: 45,
+      prefs: { ...PREFS_DEFAULTS, accent: "moss" },
+    });
+
+    // A fresh device reads the same resolved state from its snapshot —
+    // no live session required (prefs are per user, not per F-Chat socket).
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self.prefs).toEqual({
+      ...PREFS_DEFAULTS,
+      accent: "moss",
+    });
+    expect(snapshot.d.self.sendDelaySeconds).toBe(45);
+  });
 
   it("outbox: releases in order, claims beat recalls, failures say why", async () => {
     const { identityId, token } = await createIdentity();

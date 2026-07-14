@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { themeVariables } from "./theme.js";
+import { hydrateAccent, themeVariables } from "./theme.js";
 import { mix, nickColor, NICK_PALETTE } from "./tokens.js";
 
 describe("mix", () => {
@@ -37,5 +37,46 @@ describe("nickColor", () => {
   it("is deterministic and stays in the palette", () => {
     expect(nickColor("Amber Vale")).toBe(nickColor("Amber Vale"));
     expect(NICK_PALETTE).toContain(nickColor("Nyx Firemane"));
+  });
+});
+
+describe("hydrateAccent", () => {
+  // Node environment — stub the DOM surface the theme writes to.
+  const stored = new Map<string, string>();
+  const setProperty = vi.fn();
+
+  beforeEach(() => {
+    stored.clear();
+    setProperty.mockClear();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    });
+    vi.stubGlobal("document", {
+      documentElement: { style: { setProperty } },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("applies a server accent and refreshes the flash cache", () => {
+    hydrateAccent("moss");
+    expect(stored.get("eb.accent")).toBe("moss");
+    expect(setProperty).toHaveBeenCalledWith("--eb-accent", "#88ac72");
+  });
+
+  it("skips unknown ids — a newer server's accent must not repaint to default", () => {
+    stored.set("eb.accent", "clay");
+    hydrateAccent("neon");
+    expect(stored.get("eb.accent")).toBe("clay");
+    expect(setProperty).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the cache already matches", () => {
+    stored.set("eb.accent", "clay");
+    hydrateAccent("clay");
+    expect(setProperty).not.toHaveBeenCalled();
   });
 });

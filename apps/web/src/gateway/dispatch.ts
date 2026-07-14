@@ -9,6 +9,7 @@ import { mentionsCharacter } from "../lib/mention.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
+import { hydrateAccent } from "../theme/theme.js";
 
 export function dispatchFrame(frame: ServerFrame): void {
   const sessions = useSessionsStore.getState();
@@ -31,6 +32,7 @@ export function dispatchFrame(frame: ServerFrame): void {
       return;
     case "snapshot":
       sessions.applySnapshot(frame.d);
+      hydrateAccent(frame.d.self.prefs.accent);
       return;
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
@@ -115,7 +117,8 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyOutbox(identityId, event.d.items);
       return;
     case "prefs.updated":
-      sessions.applySendDelay(identityId, event.d.sendDelaySeconds);
+      sessions.applyPrefs(identityId, event.d);
+      hydrateAccent(event.d.prefs.accent);
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);

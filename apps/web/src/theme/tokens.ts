@@ -2,6 +2,8 @@
 // style against the CSS custom properties written by applyTheme(), never
 // against these constants directly.
 
+import type { AccentId as PrefsAccentId } from "@emberchat/protocol";
+
 /** Neutrals are fixed across all themes. */
 export const NEUTRALS = {
   /** Landing hero headings only (COMPONENTS.md §15). */
@@ -16,14 +18,16 @@ export const NEUTRALS = {
   border: "#332f2b",
 } as const;
 
-/** User-selectable accents; default is Dusk Purple. */
+/** User-selectable accents; default is Dusk Purple. The `satisfies` pins
+ * this palette to the prefs schema's accent enum — adding or renaming an
+ * accent fails the build until both sides agree. */
 export const ACCENTS = {
   amber: { label: "Amber", hex: "#e6a75a" },
   clay: { label: "Clay Red", hex: "#c87d6a" },
   dusk: { label: "Dusk Purple", hex: "#a892c6" },
   burnt: { label: "Burnt Orange", hex: "#dd955a" },
   moss: { label: "Moss Green", hex: "#88ac72" },
-} as const;
+} as const satisfies Record<PrefsAccentId, { label: string; hex: string }>;
 
 export type AccentId = keyof typeof ACCENTS;
 export const DEFAULT_ACCENT: AccentId = "dusk";
