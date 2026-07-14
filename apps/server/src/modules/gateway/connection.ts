@@ -7,6 +7,7 @@
 // ack fires when the gate resolves. Outbound frames go through send(), which
 // disconnects slow consumers instead of buffering without bound.
 
+import { Buffer } from "node:buffer";
 import type WebSocket from "ws";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_SERVER_VARS } from "@emberchat/fchat-protocol";
@@ -719,6 +720,20 @@ export class GatewayConnection {
     // the release worker puts it on the wire when due, tab or no tab.
     const delaySeconds = await this.#sendDelaySeconds();
     if (delaySeconds > 0) {
+      // Validate against the live VAR limit NOW, like the immediate path —
+      // deferring the check to release time would fail silently long after
+      // the user could react (audit).
+      const limit =
+        conversation.kind === "channel"
+          ? session.state.vars.chat_max
+          : session.state.vars.priv_max;
+      if (Buffer.byteLength(d.bbcode, "utf8") > limit) {
+        this.#ack(id, {
+          ok: false,
+          error: `Message exceeds the server's ${String(limit)}-byte limit`,
+        });
+        return;
+      }
       await this.#ctx.outbox.schedule({
         identityId,
         conversationId: conversation.id,

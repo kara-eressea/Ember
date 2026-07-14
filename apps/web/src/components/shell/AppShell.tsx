@@ -241,6 +241,7 @@ export function AppShell() {
               }
             />
             <Composer
+              key={convId}
               session={session}
               convId={convId}
               channelKey={channel?.key}

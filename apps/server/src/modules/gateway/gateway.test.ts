@@ -1531,4 +1531,90 @@ describe("gateway commands", () => {
       ).items,
     ).toEqual([]);
   }, 30_000);
+
+  it("outbox: releases in order, claims beat recalls, failures say why", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "pm.open", d: { character: "Nyx Firemane" } },
+    });
+    const opened = await client.nextOfType("ack");
+    const convId = (opened.d as { conversation: { id: string } }).conversation
+      .id;
+
+    // Two overdue rows: they must hit the wire in release order (the
+    // milestone-4.md ordering requirement the step-8 suite had dropped).
+    await db.insert(outboxMessages).values([
+      {
+        identityId,
+        conversationId: convId,
+        markdown: "first",
+        bbcode: "first",
+        releaseAt: new Date(Date.now() - 2000),
+      },
+      {
+        identityId,
+        conversationId: convId,
+        markdown: "second",
+        bbcode: "second",
+        releaseAt: new Date(Date.now() - 1000),
+      },
+    ]);
+    const a = await client.nextEvent("message.new", 15_000);
+    const b = await client.nextEvent("message.new", 15_000);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(a).message.bbcode,
+    ).toBe("first");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(b).message.bbcode,
+    ).toBe("second");
+
+    // A row the worker has claimed ("releasing") is no longer recallable —
+    // that window is exactly where a recall would double-post (audit).
+    const [claimed] = await db
+      .insert(outboxMessages)
+      .values({
+        identityId,
+        conversationId: convId,
+        markdown: "in flight",
+        bbcode: "in flight",
+        releaseAt: new Date(Date.now() + 60_000),
+        state: "releasing",
+      })
+      .returning();
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "outbox.recall", d: { outboxId: claimed!.id } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(false);
+    await db.delete(outboxMessages).where(eq(outboxMessages.id, claimed!.id));
+
+    // A release with no live session fails visibly, with the reason.
+    app.sessions.stop(identityId, "test: dead session");
+    await db.insert(outboxMessages).values({
+      identityId,
+      conversationId: convId,
+      markdown: "doomed",
+      bbcode: "doomed",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    for (;;) {
+      const update = await client.nextEvent("outbox.updated", 15_000);
+      const items = eventPayload<{
+        items: { state: string; failureReason?: string }[];
+      }>(update).items;
+      const failed = items.find((item) => item.state === "failed");
+      if (failed) {
+        expect(failed.failureReason).toMatch(/no live session/);
+        break;
+      }
+    }
+  }, 45_000);
 });

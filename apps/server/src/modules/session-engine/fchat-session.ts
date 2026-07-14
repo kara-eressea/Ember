@@ -292,7 +292,17 @@ export class FchatSession {
       return;
     }
     this.#typingSent.set(key, status);
-    this.#send({ cmd: "TPN", payload: { character: recipient, status } });
+    // Through the gate like everything else user-triggered: dedup blocks
+    // repeats, but alternating statuses would otherwise reach the wire at
+    // socket speed (audit). Telemetry is droppable — a full or cleared
+    // queue just loses a typing hint.
+    this.#rateGate
+      .schedule("TPN", () => {
+        this.#send({ cmd: "TPN", payload: { character: recipient, status } });
+      })
+      .catch(() => {
+        // Best-effort; the dedup map keeps intent for the next change.
+      });
   }
 
   /** Adds a character to the server-side ignore list (IGN add). State and

@@ -222,14 +222,17 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
     0,
     Math.ceil((new Date(item.releaseAt).getTime() - now) / 1000),
   );
+  const emote = parseEmote(item.bbcode);
   return (
     <div className={styles.pendingLine} data-testid="pending-send">
-      <span className={styles.body}>
-        <RichText bbcode={item.bbcode} />
+      <span
+        className={`${styles.body} ${emote ? (styles.emoteBody ?? "") : ""}`}
+      >
+        <RichText bbcode={emote ? emote.action : item.bbcode} />
       </span>
       <span className={styles.pendingMeta}>
         {item.state === "failed"
-          ? "could not send — ArrowUp to recall"
+          ? `could not send${item.failureReason ? ` — ${item.failureReason}` : ""}`
           : `sending in ${String(seconds)}s`}
       </span>
     </div>
@@ -249,7 +252,11 @@ function MessageLine({ message }: { message: MessageDto }) {
       </span>
       {emote ? (
         // /me: italic action running straight off the name, no separator.
-        <span className={`${styles.body} ${styles.emoteBody ?? ""}`}>
+        // Possessives pull back across the row gap so "/me's teacup" reads
+        // "Name's teacup", not "Name 's teacup".
+        <span
+          className={`${styles.body} ${styles.emoteBody ?? ""} ${emote.possessive ? (styles.emotePossessive ?? "") : ""}`}
+        >
           <RichText bbcode={emote.action} />
         </span>
       ) : (

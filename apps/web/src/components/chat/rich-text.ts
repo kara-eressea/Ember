@@ -52,8 +52,13 @@ export function parseEmote(
     const action = bbcode.slice(4);
     return { action, possessive: action.startsWith("'") };
   }
-  if (bbcode.startsWith("/me's ")) {
-    return { action: `'s ${bbcode.slice(6)}`, possessive: true };
+  if (bbcode.startsWith("/me'")) {
+    // Possessive without the space: "/me's teacup…" — keep everything after
+    // the /me prefix, tight against the name.
+    return { action: bbcode.slice(3), possessive: true };
+  }
+  if (bbcode === "/me") {
+    return { action: "", possessive: false };
   }
   return undefined;
 }

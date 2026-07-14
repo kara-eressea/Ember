@@ -45,6 +45,25 @@ describe("mdToBBCode", () => {
     expect(mdToBBCode("`a *b* c`")).toBe("[noparse]a *b* c[/noparse]");
   });
 
+  it("code spans bind tightest: closers inside them never match (audit)", () => {
+    // An emphasis closer inside a span must not terminate the emphasis.
+    expect(mdToBBCode("**a `b** c` d**")).toBe(
+      "[b]a [noparse]b** c[/noparse] d[/b]",
+    );
+    // A BBCode closer inside a span must not terminate the passthrough.
+    expect(mdToBBCode("[b]see `[/b]` done[/b]")).toBe(
+      "[b]see [noparse][/b][/noparse] done[/b]",
+    );
+  });
+
+  it("body-form [url] is raw-body passthrough (audit)", () => {
+    // Markdown markers inside a literally-typed URL must survive untouched —
+    // translating them would corrupt the href and destroy the link.
+    expect(mdToBBCode("[url]http://a**b**c[/url]")).toBe(
+      "[url]http://a**b**c[/url]",
+    );
+  });
+
   it("passes literally-typed BBCode through untouched", () => {
     // Raw-body tags: contents never Markdown-processed (milestone-4.md).
     expect(mdToBBCode("[eicon]tea*cup*[/eicon]")).toBe(

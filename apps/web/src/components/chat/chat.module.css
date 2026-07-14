@@ -478,6 +478,11 @@
   color: var(--eb-dim);
 }
 
+/* "/me's teacup" → "Name's teacup": pull back across the row gap. */
+.emotePossessive {
+  margin-left: -9px;
+}
+
 /* F-Chat [color=…] wire colors (tokens in theme.ts, per-theme tunable). */
 .bbc-red {
   color: var(--eb-bbc-red);
@@ -656,6 +661,12 @@
   align-self: center;
   font-size: 11px;
   color: var(--eb-warn);
+}
+
+.footerControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .delaySelect {

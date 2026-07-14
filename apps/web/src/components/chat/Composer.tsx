@@ -12,6 +12,7 @@ import {
   useSessionsStore,
   type IdentitySession,
 } from "../../stores/sessions.js";
+import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
@@ -65,8 +66,14 @@ export function Composer({
   const wire = markdown ? mdToBBCode(text) : text;
   const bytes = utf8.encode(wire).length;
   const pending = session.outbox.filter((item) => item.convId === convId);
+  const previewEmote = parseEmote(wire);
+  // Case-insensitive: the icon_blacklist VAR carries lowercase names while
+  // channel keys are canonical-case (audit).
   const iconsBlacklisted =
-    channelKey !== undefined && session.iconBlacklist.includes(channelKey);
+    channelKey !== undefined &&
+    session.iconBlacklist.some(
+      (key) => key.toLowerCase() === channelKey.toLowerCase(),
+    );
 
   function autogrow() {
     const el = inputRef.current;
@@ -80,10 +87,12 @@ export function Composer({
   // after 3s idle, "clear" when the input empties or the message sends.
   // The session dedupes per recipient, so repeats never reach the wire.
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const typingPushed = useRef<"clear" | "paused" | "typing">("clear");
   function pushTyping(status: "clear" | "paused" | "typing") {
     if (partner === undefined || !online) {
       return;
     }
+    typingPushed.current = status;
     void gateway.cmd({
       identityId: session.identityId,
       action: "typing.set",
@@ -108,11 +117,18 @@ export function Composer({
     }, 3000);
   }
 
+  // Unmount (the shell keys this component by convId): stop the clock and
+  // tell the old partner we stopped — otherwise they see "typing…" forever
+  // (audit; only a sent PM would otherwise clear it).
   useEffect(() => {
     return () => {
       clearTimeout(typingTimer.current);
+      if (typingPushed.current !== "clear") {
+        pushTyping("clear");
+      }
     };
-  }, [convId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
+  }, []);
 
   function toggleMarkdown() {
     const next = !markdown;
@@ -186,11 +202,15 @@ export function Composer({
       void send();
       return;
     }
-    // ArrowUp in an empty composer recalls the newest pending send — the
-    // outbox row dies and what the user typed comes back for editing.
+    // ArrowUp in an empty composer recalls the newest pending send (by
+    // creation, not release — a shorter delay must not shadow an earlier
+    // message; audit). The outbox row dies and the typed text comes back.
     if (event.key === "ArrowUp" && text === "" && pending.length > 0) {
       event.preventDefault();
-      void recall(pending[pending.length - 1]!.id);
+      const newest = [...pending]
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .at(-1)!;
+      void recall(newest.id);
     }
   }
 
@@ -251,8 +271,18 @@ export function Composer({
       {markdown && text.trim() !== "" && (
         <div className={styles.previewPanel} data-testid="md-preview">
           <div className={styles.previewHead}>PREVIEW · markdown</div>
-          <div className={styles.previewBody}>
-            <RichText bbcode={wire} />
+          <div
+            className={`${styles.previewBody} ${previewEmote ? (styles.emoteBody ?? "") : ""}`}
+          >
+            {previewEmote ? (
+              <>
+                {session.character}
+                {previewEmote.possessive ? "" : " "}
+                <RichText bbcode={previewEmote.action} />
+              </>
+            ) : (
+              <RichText bbcode={wire} />
+            )}
           </div>
         </div>
       )}

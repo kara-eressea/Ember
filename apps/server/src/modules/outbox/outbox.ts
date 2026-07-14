@@ -41,7 +41,11 @@ function itemDto(row: OutboxRow): OutboxItemDto {
     markdown: row.markdown,
     bbcode: row.bbcode,
     releaseAt: row.releaseAt.toISOString(),
-    state: row.state,
+    createdAt: row.createdAt.toISOString(),
+    // "releasing" is a worker-internal claim; to the user it is still a
+    // pending send (recall of it just misses — the send is in flight).
+    state: row.state === "failed" ? "failed" : "scheduled",
+    ...(row.failureReason !== null ? { failureReason: row.failureReason } : {}),
   };
 }
 
@@ -66,6 +70,19 @@ export class Outbox {
     if (this.#timer) {
       return;
     }
+    // Rows claimed by a worker that died mid-release are ambiguous — the
+    // send may or may not have reached the wire. Surface them as failed
+    // with the ambiguity spelled out rather than silently re-sending.
+    void this.#db
+      .update(outboxMessages)
+      .set({
+        state: "failed",
+        failureReason: "interrupted by a restart — it may have been sent",
+      })
+      .where(eq(outboxMessages.state, "releasing"))
+      .catch((error: unknown) => {
+        this.#log.error({ err: error }, "outbox releasing-sweep failed");
+      });
     this.#timer = setInterval(() => {
       void this.#tick();
     }, this.#pollMs);
@@ -154,11 +171,26 @@ export class Outbox {
           ),
         )
         .orderBy(asc(outboxMessages.releaseAt), asc(outboxMessages.createdAt));
-      // Sequential on purpose: release order is promised per conversation,
-      // and each send awaits the session's rate gate (msg_flood).
+      // Sequential per identity (release order is promised per conversation
+      // and each send awaits that session's rate gate), but identities in
+      // parallel: one user's congested flood gate must not delay anyone
+      // else's releases (audit).
+      const byIdentity = new Map<string, typeof due>();
       for (const item of due) {
-        await this.#release(item.row, item.conversation);
+        const queue = byIdentity.get(item.row.identityId);
+        if (queue) {
+          queue.push(item);
+        } else {
+          byIdentity.set(item.row.identityId, [item]);
+        }
       }
+      await Promise.all(
+        [...byIdentity.values()].map(async (queue) => {
+          for (const item of queue) {
+            await this.#release(item.row, item.conversation);
+          }
+        }),
+      );
     } catch (error) {
       this.#log.error({ err: error }, "outbox poll failed");
     } finally {
@@ -170,6 +202,23 @@ export class Outbox {
     row: OutboxRow,
     conversation: typeof conversations.$inferSelect,
   ): Promise<void> {
+    // Claim first: once a row is "releasing" it can no longer be recalled,
+    // so a recall racing an in-flight send can never hand text back to the
+    // composer while the message still goes out (audit — double-post). A
+    // claim miss means a recall got there first: nothing to do.
+    const [claimed] = await this.#db
+      .update(outboxMessages)
+      .set({ state: "releasing" })
+      .where(
+        and(
+          eq(outboxMessages.id, row.id),
+          eq(outboxMessages.state, "scheduled"),
+        ),
+      )
+      .returning();
+    if (!claimed) {
+      return;
+    }
     try {
       const session = this.#sessions.get(row.identityId);
       if (!session) {
@@ -186,17 +235,33 @@ export class Outbox {
           row.bbcode,
         );
       }
+    } catch (error) {
+      // Kept as "failed" with the reason, visible to the user (recall
+      // clears it) — a message must never vanish silently or namelessly.
+      this.#log.warn({ err: error, outboxId: row.id }, "outbox release failed");
+      await this.#db
+        .update(outboxMessages)
+        .set({
+          state: "failed",
+          failureReason: error instanceof Error ? error.message : "send failed",
+        })
+        .where(eq(outboxMessages.id, row.id));
+      await this.#fan(row.identityId);
+      return;
+    }
+    // The send is on the wire; the delete is deliberately outside the
+    // catch — a transient DB error here must NOT mark a sent message as
+    // failed (recalling it would double-post; audit). A row stuck in
+    // "releasing" is swept to failed-with-ambiguity at the next start().
+    try {
       await this.#db
         .delete(outboxMessages)
         .where(eq(outboxMessages.id, row.id));
     } catch (error) {
-      // Kept as "failed", visible to the user (recall clears it) — a
-      // message must never vanish silently.
-      this.#log.warn({ err: error, outboxId: row.id }, "outbox release failed");
-      await this.#db
-        .update(outboxMessages)
-        .set({ state: "failed" })
-        .where(eq(outboxMessages.id, row.id));
+      this.#log.error(
+        { err: error, outboxId: row.id },
+        "outbox delete after send failed — row left in releasing",
+      );
     }
     await this.#fan(row.identityId);
   }
