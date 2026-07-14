@@ -134,4 +134,60 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   } finally {
     await contextB.close();
   }
+
+  // ── Highlights (M5 step 6): rules CRUD, then mention badge + tint ─────
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Highlights" }).click();
+  await expect(
+    dialog.getByText("No rules yet", { exact: false }),
+  ).toBeVisible();
+
+  // A regex RE2 refuses comes back as the PUT's 422, surfaced inline.
+  await dialog.getByRole("radio", { name: "Regex" }).click();
+  await dialog.getByLabel("Rule pattern").fill("glow(moss");
+  await dialog.getByRole("button", { name: "Add" }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+
+  // A valid regex rule lands as a chip (the milestone verification rule).
+  await dialog.getByLabel("Rule pattern").fill("glow(moss|cap)");
+  await dialog.getByRole("button", { name: "Add" }).click();
+  await expect(dialog.getByText("glow(moss|cap)")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Badges only bump for inactive conversations — step off Terrarium.
+  await page.goto("/app/Hazel%20Fenwick");
+  const terrariumRow = page.getByRole("link", { name: /Terrarium/ });
+  await expect(terrariumRow).toBeVisible({ timeout: 15_000 });
+
+  // The sibling character says the magic word. JCH→MSG on one socket is
+  // ordered, so the membership exists by the time the message arrives.
+  const sprout2 = await SimClient.connect(
+    "hazel@example.test",
+    "hunter2",
+    "Fenwick Sprout",
+  );
+  try {
+    sprout2.send("JCH", { channel: "Terrarium" });
+    sprout2.send("MSG", {
+      channel: "Terrarium",
+      message: "the glowmoss is spreading again",
+    });
+    // The persist-time verdict rides message.new → the @-badge, not a
+    // plain unread count.
+    await expect(terrariumRow.getByTestId("nav-badge")).toHaveText("@1", {
+      timeout: 10_000,
+    });
+
+    // Visiting shows the tinted row; the inset bar follows the accent
+    // (Moss, chosen above) because highlightTint defaults to "accent".
+    await terrariumRow.click();
+    const mentionRow = page.locator("[data-mention]");
+    await expect(mentionRow).toContainText("glowmoss");
+    const shadow = await mentionRow.evaluate(
+      (el) => getComputedStyle(el).boxShadow,
+    );
+    expect(shadow).toContain("rgb(136, 172, 114)");
+  } finally {
+    sprout2.close();
+  }
 });

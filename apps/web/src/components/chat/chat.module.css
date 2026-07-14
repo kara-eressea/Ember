@@ -113,6 +113,17 @@
   background: var(--eb-hover-main);
 }
 
+/* Mention rows (COMPONENTS.md §6): accentSoft wash + inset accent bar.
+   --eb-hl* come from the highlightTint pref (set on the log root when a
+   fixed hue is chosen); the fallback follows the live theme accent. */
+.mentionLine,
+.mentionLine:hover {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: var(--eb-hl-soft, var(--eb-accent-soft));
+  box-shadow: inset 3px 0 0 var(--eb-hl, var(--eb-accent));
+}
+
 .time {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;

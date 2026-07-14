@@ -65,6 +65,12 @@ const prefsShape = {
     .max(100),
   /** Highlight messages that name the receiving identity's character. */
   highlightOwnNick: z.boolean(),
+  /** When-highlighted actions (COMPONENTS.md §12). */
+  highlightSound: z.boolean(),
+  highlightFlashTitle: z.boolean(),
+  highlightBump: z.boolean(),
+  /** Row-tint hue: "accent" follows the theme accent; otherwise a fixed one. */
+  highlightTint: z.enum(["accent", ...ACCENT_IDS]),
 } as const;
 
 /** The full resolved prefs shape — every field present. */
@@ -95,6 +101,10 @@ export const PREFS_DEFAULTS: UserPrefs = {
   animateEicons: true,
   eiconFavorites: [],
   highlightOwnNick: true,
+  highlightSound: false,
+  highlightFlashTitle: true,
+  highlightBump: false,
+  highlightTint: "accent",
 };
 
 /**

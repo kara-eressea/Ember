@@ -2,6 +2,7 @@
 // 401, and surfaces structured errors. Same-origin `/api` — the dev server
 // proxies to the API server, production serves both from one Fastify.
 
+import type { HighlightRuleDto, HighlightRuleInput } from "@emberchat/protocol";
 import { useAuthStore } from "../stores/auth.js";
 
 export interface UserDto {
@@ -243,5 +244,20 @@ export const api = {
       `/identities/${identityId}/conversations/${conversationId}/messages${suffix}`,
       { auth: true },
     );
+  },
+
+  listHighlightRules() {
+    return apiRequest<{ rules: HighlightRuleDto[] }>("/highlight-rules", {
+      auth: true,
+    });
+  },
+  /** Idempotent full-list replacement; 422 = a rule the server refused
+   * (e.g. a regex RE2 can't compile). */
+  putHighlightRules(rules: HighlightRuleInput[]) {
+    return apiRequest<{ rules: HighlightRuleDto[] }>("/highlight-rules", {
+      method: "PUT",
+      body: { rules },
+      auth: true,
+    });
   },
 };

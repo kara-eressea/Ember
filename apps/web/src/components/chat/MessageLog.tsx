@@ -11,7 +11,7 @@ import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
 import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { useSessionsStore } from "../../stores/sessions.js";
-import { nickColor } from "../../theme/tokens.js";
+import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { buildRows } from "./log-rows.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
@@ -168,14 +168,25 @@ export function MessageLog({
     .filter(Boolean)
     .join(" ");
 
+  // Mention-row hue (highlightTint pref): "accent" leaves the theme vars
+  // alone; a fixed accent overrides --eb-hl* for this log only, with the
+  // soft wash derived the same way applyTheme derives --eb-accent-soft.
+  const styleVars: Record<string, string> = {
+    "--eb-msg-font": `${String(FONT_SIZE_PX[prefs.fontSize])}px`,
+  };
+  if (prefs.highlightTint !== "accent") {
+    styleVars["--eb-hl"] = ACCENTS[prefs.highlightTint].hex;
+    styleVars["--eb-hl-soft"] = mix(
+      ACCENTS[prefs.highlightTint].hex,
+      BASE_THEMES[prefs.baseTheme].bg,
+      0.84,
+    );
+  }
+
   return (
     <div
       className={logClass}
-      style={
-        {
-          "--eb-msg-font": `${String(FONT_SIZE_PX[prefs.fontSize])}px`,
-        } as React.CSSProperties
-      }
+      style={styleVars}
       ref={scrollRef}
       onScroll={onScroll}
       data-testid="message-log"
@@ -292,7 +303,12 @@ function MessageLine({
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
-    <div className={styles.messageLine}>
+    <div
+      className={`${styles.messageLine} ${
+        message.mention ? (styles.mentionLine ?? "") : ""
+      }`}
+      data-mention={message.mention || undefined}
+    >
       {time !== "" && <span className={styles.time}>{time}</span>}
       {/* Grouped rows keep an invisible nick so aligned columns stay put. */}
       <span

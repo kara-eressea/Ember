@@ -50,6 +50,7 @@ function channel(unread: number, mentions: number): ChannelView {
     pinned: false,
     unread,
     mentions,
+    highlightedAt: 0,
     lastReadMessageId: null,
   };
 }
@@ -65,6 +66,7 @@ function dm(unread: number): DmView {
     pinned: false,
     typing: "clear",
     unread,
+    highlightedAt: 0,
     lastReadMessageId: null,
   };
 }
