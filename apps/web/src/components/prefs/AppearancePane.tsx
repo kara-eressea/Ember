@@ -107,6 +107,45 @@ export function AppearancePane({ identityId }: { identityId: string }) {
           }}
         />
       </FieldRow>
+      <FieldRow
+        label="Show join/part/quit"
+        help="Live channel comings and goings — not kept in history"
+      >
+        <Toggle
+          label="Show join/part/quit"
+          checked={prefs.showJoinPartQuit}
+          onChange={(showJoinPartQuit) => {
+            set({ showJoinPartQuit });
+          }}
+        />
+      </FieldRow>
+
+      <GroupLabel>Eicons</GroupLabel>
+      <FieldRow label="Eicon display">
+        <Segmented
+          label="Eicon display"
+          options={[
+            { value: "inline", label: "Inline" },
+            { value: "name", label: "Name only" },
+          ]}
+          value={prefs.eiconDisplay}
+          onChange={(eiconDisplay) => {
+            set({ eiconDisplay });
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Animate eicons"
+        help="Off freezes them on their first frame"
+      >
+        <Toggle
+          label="Animate eicons"
+          checked={prefs.animateEicons}
+          onChange={(animateEicons) => {
+            set({ animateEicons });
+          }}
+        />
+      </FieldRow>
 
       <GroupLabel>Timestamps</GroupLabel>
       <FieldRow label="Timestamp format">

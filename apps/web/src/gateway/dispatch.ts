@@ -51,6 +51,29 @@ export function dispatchFrame(frame: ServerFrame): void {
   }
 }
 
+/**
+ * Live-only join/part line (M5): only when the membership set actually
+ * changes (`ifMember` = the state the character must be in for the line to
+ * make sense), so at-least-once replays around a resync stay silent.
+ */
+function logPresence(
+  sessions: ReturnType<typeof useSessionsStore.getState>,
+  identityId: string,
+  channelKey: string,
+  d: { kind: "join" | "part"; character: string; ifMember: boolean },
+): void {
+  const channel = sessions.sessions[identityId]?.channels[channelKey];
+  if (!channel) {
+    return;
+  }
+  const isMember = channel.members.some((m) => m.character === d.character);
+  if (isMember === d.ifMember) {
+    useMessagesStore
+      .getState()
+      .appendPresence(channel.convId, d.kind, d.character);
+  }
+}
+
 function dispatchEvent(identityId: string, event: GatewayEvent): void {
   const sessions = useSessionsStore.getState();
   switch (event.kind) {
@@ -75,9 +98,21 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyConversation(identityId, event.d.conversation);
       return;
     case "member.join":
+      // Synthesize the live-only join line before the set-add; delivery is
+      // at-least-once, so a replay for someone already present logs nothing.
+      logPresence(sessions, identityId, event.d.channelKey, {
+        kind: "join",
+        character: event.d.member.character,
+        ifMember: false,
+      });
       sessions.applyMemberJoin(identityId, event.d.channelKey, event.d.member);
       return;
     case "member.leave":
+      logPresence(sessions, identityId, event.d.channelKey, {
+        kind: "part",
+        character: event.d.character,
+        ifMember: true,
+      });
       sessions.applyMemberLeave(
         identityId,
         event.d.channelKey,
@@ -91,6 +126,18 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyChannelInfo(identityId, event.d);
       return;
     case "presence":
+      if (!event.d.online) {
+        // FLN is a global leave — a quit line in every channel the
+        // character is (still) a member of, before the store drops them.
+        const channels = sessions.sessions[identityId]?.channels ?? {};
+        for (const channel of Object.values(channels)) {
+          if (channel.members.some((m) => m.character === event.d.character)) {
+            useMessagesStore
+              .getState()
+              .appendPresence(channel.convId, "quit", event.d.character);
+          }
+        }
+      }
       sessions.applyPresence(identityId, event.d);
       return;
     case "presence.bulk":

@@ -136,4 +136,49 @@ describe("buildRows group-consecutive (Appearance pref)", () => {
     );
     expect(groupedShape(rows)).toEqual(["divider", "m1", "m2", "m3"]);
   });
+
+  it("presence lines break groups", () => {
+    const rows = buildRows([msg(1), msg(2)], null, [], {
+      ...GROUP,
+      presence: [
+        {
+          key: "p:1",
+          kind: "join",
+          character: "Tally Marsh",
+          createdAt: "2026-07-13T12:00:00.000Z",
+        },
+      ],
+    });
+    // The join line lands between m1 and m2 (same timestamp sorts before
+    // the next message) — m2 no longer continues m1.
+    expect(groupedShape(rows)).toEqual(["presence", "divider", "m1", "m2+"]);
+  });
+});
+
+describe("buildRows presence lines (show join/part/quit pref)", () => {
+  const line = (key: string, createdAt: string, character = "Tally Marsh") => ({
+    key,
+    kind: "join" as const,
+    character,
+    createdAt,
+  });
+
+  it("merges by timestamp, with the common tail case after all messages", () => {
+    const rows = buildRows([msg(1), msg(2)], null, [], {
+      presence: [line("p:1", "2026-07-13T12:30:00.000Z")],
+    });
+    expect(shape(rows)).toEqual(["divider", "m1", "m2", "presence"]);
+  });
+
+  it("renders nothing without the option (pref off = caller passes none)", () => {
+    const rows = buildRows([msg(1)], null, []);
+    expect(shape(rows)).toEqual(["divider", "m1"]);
+  });
+
+  it("hides lines from ignored characters like their messages", () => {
+    const rows = buildRows([msg(1, true)], null, ["tally marsh"], {
+      presence: [line("p:1", "2026-07-13T12:30:00.000Z")],
+    });
+    expect(shape(rows)).toEqual(["divider", "m1"]);
+  });
 });

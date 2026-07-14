@@ -24,6 +24,11 @@ export const DENSITIES = ["cozy", "compact"] as const;
 export const FONT_SIZES = ["s", "m", "l"] as const;
 /** `[12:04]` · `[12:04:33]` · hidden. */
 export const TIMESTAMP_FORMATS = ["time", "seconds", "off"] as const;
+/** Inline images vs name chips with a hover preview (decisions.md §8). */
+export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
+
+/** Matches the eicon-name charset the URL builder accepts (web avatar.ts). */
+const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
 
 /**
  * Field validators — deliberately no `.default()` here: zod fires defaults
@@ -47,6 +52,17 @@ const prefsShape = {
   groupConsecutive: z.boolean(),
   /** Fixed timestamp/name columns so message text lines up (M1 UAT). */
   alignedColumns: z.boolean(),
+  /** Render join/part/quit lines in channel logs (live-only lines). */
+  showJoinPartQuit: z.boolean(),
+  /** Inline eicon images vs name chips with hover preview. */
+  eiconDisplay: z.enum(EICON_DISPLAY_MODES),
+  /** Off = eicons freeze on their first frame. */
+  animateEicons: z.boolean(),
+  /** Composer ☺ picker quick-inserts (decisions.md §8 — no search API,
+   * favorites are a manual list). Patches replace the whole array. */
+  eiconFavorites: z
+    .array(z.string().min(1).max(100).regex(EICON_NAME))
+    .max(100),
   /** Highlight messages that name the receiving identity's character. */
   highlightOwnNick: z.boolean(),
 } as const;
@@ -74,6 +90,10 @@ export const PREFS_DEFAULTS: UserPrefs = {
   use24HourClock: true,
   groupConsecutive: false,
   alignedColumns: false,
+  showJoinPartQuit: false,
+  eiconDisplay: "inline",
+  animateEicons: true,
+  eiconFavorites: [],
   highlightOwnNick: true,
 };
 

@@ -8,10 +8,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
+import { eiconUrl } from "../../lib/avatar.js";
 import {
   useSessionsStore,
   type IdentitySession,
 } from "../../stores/sessions.js";
+import { patchPrefs } from "../prefs/patch.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
@@ -299,6 +301,45 @@ export function Composer({
             setEiconOpen(false);
           }}
         >
+          {session.prefs.eiconFavorites.length > 0 && (
+            <span className={styles.eiconFavorites}>
+              {session.prefs.eiconFavorites.map((name) => (
+                <span key={name} className={styles.eiconFavorite}>
+                  <button
+                    type="button"
+                    className={styles.eiconFavoriteInsert}
+                    title={`Insert ${name}`}
+                    onClick={() => {
+                      insertAtCaret(`[eicon]${name}[/eicon]`);
+                      setEiconOpen(false);
+                    }}
+                  >
+                    <img
+                      src={eiconUrl(name)}
+                      alt={name}
+                      width={26}
+                      height={26}
+                      loading="lazy"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.eiconFavoriteRemove}
+                    aria-label={`Remove ${name} from favorites`}
+                    onClick={() => {
+                      void patchPrefs(session.identityId, {
+                        eiconFavorites: session.prefs.eiconFavorites.filter(
+                          (f) => f !== name,
+                        ),
+                      });
+                    }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </span>
+          )}
           <input
             className={styles.miniInput}
             value={eiconName}
@@ -312,6 +353,29 @@ export function Composer({
           />
           <button className={styles.miniButton} type="submit">
             Insert
+          </button>
+          <button
+            type="button"
+            className={styles.miniButton}
+            title="Save to favorites"
+            aria-label="Save to favorites"
+            disabled={
+              eiconName.trim() === "" ||
+              session.prefs.eiconFavorites.includes(eiconName.trim())
+            }
+            onClick={() => {
+              const name = eiconName.trim();
+              // The prefs schema caps favorites at 100; drop the oldest
+              // rather than refuse — it's a quick-insert row, not an archive.
+              void patchPrefs(session.identityId, {
+                eiconFavorites: [
+                  ...session.prefs.eiconFavorites.slice(-99),
+                  name,
+                ],
+              });
+            }}
+          >
+            ☆
           </button>
           {iconsBlacklisted && (
             <span className={styles.blacklistWarning} role="alert">
