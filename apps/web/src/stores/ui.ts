@@ -17,6 +17,8 @@ interface UiState {
   gatewayStatus: GatewayConnectionStatus;
   /** Members column visibility (header ☰ toggle). */
   membersOpen: boolean;
+  /** Preferences window (COMPONENTS.md §12), opened from the MeBar gear. */
+  prefsOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -25,6 +27,7 @@ interface UiState {
   setLastConv: (identityId: string, suffix: string) => void;
   setGatewayStatus: (status: GatewayConnectionStatus) => void;
   toggleMembers: () => void;
+  setPrefsOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -33,6 +36,7 @@ export const useUiStore = create<UiState>()((set) => ({
   lastConvByIdentity: {},
   gatewayStatus: "offline",
   membersOpen: true,
+  prefsOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -50,5 +54,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   toggleMembers() {
     set((state) => ({ membersOpen: !state.membersOpen }));
+  },
+  setPrefsOpen(open) {
+    set({ prefsOpen: open });
   },
 }));

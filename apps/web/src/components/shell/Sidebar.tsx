@@ -146,13 +146,17 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         <Avatar name={session.character || "?"} size={30} />
         <MeStatus session={session} online={online} />
         <PowerButton session={session} />
-        <Link
+        <button
+          type="button"
           className={styles.meGear}
-          to="/identities"
-          title="Identities & settings"
+          title="Preferences"
+          aria-label="Preferences"
+          onClick={() => {
+            useUiStore.getState().setPrefsOpen(true);
+          }}
         >
           ⚙
-        </Link>
+        </button>
       </div>
     </nav>
   );

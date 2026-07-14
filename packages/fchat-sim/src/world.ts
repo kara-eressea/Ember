@@ -66,6 +66,11 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Sage Willowmere"],
     },
+    // Reserved for the M5 preferences E2E (same parallelism rule).
+    "hazel@example.test": {
+      password: "hunter2",
+      characters: ["Hazel Fenwick"],
+    },
   },
   channels: [
     {
