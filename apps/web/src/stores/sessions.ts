@@ -196,6 +196,22 @@ interface SessionsState {
   reset(): void;
 }
 
+/**
+ * The user's prefs from any synced slice — they are per app account and
+ * identical across slices, so render code without an identity context
+ * (RichText, previews) reads them here.
+ */
+export function useUserPrefs(): UserPrefs {
+  return useSessionsStore((s) => {
+    for (const session of Object.values(s.sessions)) {
+      if (session.synced) {
+        return session.prefs;
+      }
+    }
+    return PREFS_DEFAULTS;
+  });
+}
+
 function emptySession(identityId: string): IdentitySession {
   return {
     identityId,

@@ -318,6 +318,56 @@ describe("presence", () => {
     expect(session().prefs.accent).toBe("moss");
   });
 
+  it("synthesizes live-only join/part/quit lines, idempotently", () => {
+    dispatchFrame(snapshot());
+    const lines = () =>
+      (useMessagesStore.getState().buffers[CONV_CHANNEL]?.presence ?? []).map(
+        (line) => `${line.kind}:${line.character}`,
+      );
+
+    // A newcomer joins → one line; the at-least-once replay (already a
+    // member by then) logs nothing.
+    dispatchFrame(
+      event("member.join", {
+        channelKey: "Frontpage",
+        member: member("Tally Marsh"),
+      }),
+    );
+    dispatchFrame(
+      event("member.join", {
+        channelKey: "Frontpage",
+        member: member("Tally Marsh"),
+      }),
+    );
+    expect(lines()).toEqual(["join:Tally Marsh"]);
+
+    // Leave → one line; the replay (no longer a member) logs nothing.
+    dispatchFrame(
+      event("member.leave", {
+        channelKey: "Frontpage",
+        character: "Tally Marsh",
+      }),
+    );
+    dispatchFrame(
+      event("member.leave", {
+        channelKey: "Frontpage",
+        character: "Tally Marsh",
+      }),
+    );
+    // FLN: a quit line in every channel the character was a member of.
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    expect(lines()).toEqual([
+      "join:Tally Marsh",
+      "part:Tally Marsh",
+      "quit:Nyx Firemane",
+    ]);
+  });
+
   it("prefs hydrate the theme (snapshot and live update)", () => {
     vi.mocked(hydrateTheme).mockClear();
     dispatchFrame(snapshot());

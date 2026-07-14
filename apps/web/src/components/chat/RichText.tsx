@@ -5,9 +5,10 @@
 // token pass (links, @name, #channel). [icon]/[eicon] render as name chips
 // until step 3 brings inline images.
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
+import { useUserPrefs } from "../../stores/sessions.js";
 import { textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
 
@@ -124,9 +125,12 @@ function renderText(text: string, keyBase: string): ReactNode[] {
  * dimensions so virtualized rows measure right before the image loads;
  * hotlinked + lazy like avatars. [icon] is the character's avatar and links
  * to their profile. A name outside the safe charset falls back to a chip.
- * Display-mode/animation preferences arrive in M5.
+ * Eicons obey the Appearance prefs (M5): display mode (inline vs name chip
+ * with hover preview) and the animate toggle (off = frozen first frame).
+ * [icon] avatars are static images — the prefs don't apply.
  */
 function InlineIcon({ tag, name }: { tag: "icon" | "eicon"; name: string }) {
+  const prefs = useUserPrefs();
   const src = tag === "eicon" ? eiconUrl(name) : avatarUrl(name);
   if (src === undefined) {
     return (
@@ -135,7 +139,41 @@ function InlineIcon({ tag, name }: { tag: "icon" | "eicon"; name: string }) {
       </span>
     );
   }
-  const img = (
+  if (tag === "icon") {
+    return (
+      <a
+        href={`https://www.f-list.net/c/${encodeURIComponent(name)}`}
+        target="_blank"
+        rel="noreferrer noopener"
+      >
+        <img
+          className={styles.bodyEicon}
+          src={src}
+          alt={name}
+          title={name}
+          width={60}
+          height={60}
+          loading="lazy"
+        />
+      </a>
+    );
+  }
+  if (prefs.eiconDisplay === "name") {
+    return <EiconChip name={name} src={src} animate={prefs.animateEicons} />;
+  }
+  return <EiconImage name={name} src={src} animate={prefs.animateEicons} />;
+}
+
+function EiconImage({
+  name,
+  src,
+  animate,
+}: {
+  name: string;
+  src: string;
+  animate: boolean;
+}) {
+  return animate ? (
     <img
       className={styles.bodyEicon}
       src={src}
@@ -145,16 +183,80 @@ function InlineIcon({ tag, name }: { tag: "icon" | "eicon"; name: string }) {
       height={60}
       loading="lazy"
     />
-  );
-  return tag === "icon" ? (
-    <a
-      href={`https://www.f-list.net/c/${encodeURIComponent(name)}`}
-      target="_blank"
-      rel="noreferrer noopener"
-    >
-      {img}
-    </a>
   ) : (
-    img
+    <FrozenImage name={name} src={src} />
+  );
+}
+
+/**
+ * The animate-off rendering: draw the image's current frame onto a canvas
+ * the moment it loads — with a GIF that is the first frame, frozen. No
+ * crossOrigin attribute on purpose: static.f-list.net serves no CORS
+ * headers, so requesting them would fail the load; a tainted canvas is fine
+ * (we display, never read pixels back).
+ */
+function FrozenImage({ name, src }: { name: string; src: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) {
+        return;
+      }
+      canvasRef.current
+        ?.getContext("2d")
+        ?.drawImage(img, 0, 0, EICON_BOX, EICON_BOX);
+    };
+    img.src = src;
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+  return (
+    <canvas
+      ref={canvasRef}
+      className={styles.bodyEicon}
+      width={EICON_BOX}
+      height={EICON_BOX}
+      title={name}
+      role="img"
+      aria-label={name}
+    />
+  );
+}
+
+const EICON_BOX = 60;
+
+/** Name-only display mode: a chip that previews the eicon on hover. */
+function EiconChip({
+  name,
+  src,
+  animate,
+}: {
+  name: string;
+  src: string;
+  animate: boolean;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <span
+      className={styles.eiconChip}
+      onMouseEnter={() => {
+        setHover(true);
+      }}
+      onMouseLeave={() => {
+        setHover(false);
+      }}
+    >
+      <span className={styles.bodyCode} title="[eicon]">
+        {name}
+      </span>
+      {hover && (
+        <span className={styles.eiconPreview}>
+          <EiconImage name={name} src={src} animate={animate} />
+        </span>
+      )}
+    </span>
   );
 }

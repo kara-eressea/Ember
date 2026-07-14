@@ -6,7 +6,7 @@
 // a character can hold only one sim connection, so specs never share one.
 
 import { expect, test, type Page } from "@playwright/test";
-import { interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
 
 /** The applied accent, straight from the theme's CSS custom property. */
 function appliedAccent(page: Page): Promise<string> {
@@ -60,6 +60,44 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Close preferences" }).click();
   await expect(dialog).not.toBeVisible();
+
+  // ── Join/part/quit lines (M5 step 5): live-only, gated by the pref ────
+  await page.getByLabel("Join a channel").fill("Terrarium");
+  await page.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Terrarium" })).toBeVisible({
+    timeout: 10_000,
+  });
+
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Appearance" }).click();
+  await dialog.getByRole("switch", { name: "Show join/part/quit" }).click();
+  await page.keyboard.press("Escape");
+
+  // The account's second character wanders in and out via a raw sim client.
+  const sprout = await SimClient.connect(
+    "hazel@example.test",
+    "hunter2",
+    "Fenwick Sprout",
+  );
+  try {
+    sprout.send("JCH", { channel: "Terrarium" });
+    await expect(
+      page.getByTestId("presence-line").filter({ hasText: "Fenwick Sprout" }),
+    ).toHaveText("Fenwick Sprout joined", { timeout: 10_000 });
+  } finally {
+    sprout.close();
+  }
+  // The socket drop is an FLN — the quit line follows the join line.
+  await expect(
+    page.getByTestId("presence-line").filter({ hasText: "went offline" }),
+  ).toHaveText("Fenwick Sprout went offline", { timeout: 10_000 });
+
+  // Toggling the pref off hides the lines — they are render-gated.
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Appearance" }).click();
+  await dialog.getByRole("switch", { name: "Show join/part/quit" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("presence-line")).toHaveCount(0);
 
   // ── Appearance: pick Moss Green, watch the theme repaint live ─────────
   expect(await appliedAccent(page)).not.toBe(MOSS);

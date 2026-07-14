@@ -55,12 +55,14 @@ export function MessageLog({
     (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
   );
   const pending = outbox.filter((item) => item.convId === convId);
+  const presence = prefs.showJoinPartQuit ? buffer?.presence : undefined;
   const rows = useMemo(
     () =>
       buildRows(messages, newSinceId, ignores, {
         groupConsecutive: prefs.groupConsecutive,
+        presence,
       }),
-    [messages, newSinceId, ignores, prefs.groupConsecutive],
+    [messages, newSinceId, ignores, prefs.groupConsecutive, presence],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -204,6 +206,18 @@ export function MessageLog({
               ) : row.type === "new" ? (
                 <div className={styles.newDivider} data-testid="new-divider">
                   new
+                </div>
+              ) : row.type === "presence" ? (
+                <div
+                  className={styles.presenceLine}
+                  data-testid="presence-line"
+                >
+                  {row.line.character}{" "}
+                  {row.line.kind === "join"
+                    ? "joined"
+                    : row.line.kind === "part"
+                      ? "left the channel"
+                      : "went offline"}
                 </div>
               ) : row.message.kind === "sys" ? (
                 <SystemLine message={row.message} prefs={prefs} />

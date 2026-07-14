@@ -179,6 +179,77 @@
   font-style: italic;
 }
 
+/* Live-only join/part/quit lines (M5, "show join/part/quit" pref). */
+.presenceLine {
+  padding: 1px 16px;
+  color: var(--eb-faint);
+  font-size: 11.5px;
+  font-style: italic;
+}
+
+/* Composer ☺ favorites: quick-insert thumbnails (M5, decisions.md §8). */
+.eiconFavorites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+}
+
+.eiconFavorite {
+  position: relative;
+  display: inline-flex;
+}
+
+.eiconFavoriteInsert {
+  display: inline-flex;
+  padding: 2px;
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 5px;
+}
+
+.eiconFavoriteInsert:hover {
+  border-color: var(--eb-accent-med);
+}
+
+.eiconFavoriteRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: none;
+  padding: 0 3px;
+  font-size: 9px;
+  color: var(--eb-text);
+  cursor: pointer;
+  background: var(--eb-side2);
+  border: 1px solid var(--eb-border);
+  border-radius: 50%;
+}
+
+.eiconFavorite:hover .eiconFavoriteRemove {
+  display: block;
+}
+
+/* Name-only eicon display: chip + hover preview (M5, decisions.md §8). */
+.eiconChip {
+  position: relative;
+  display: inline-block;
+}
+
+.eiconPreview {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 10;
+  padding: 4px;
+  background: var(--eb-side2);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow (§tokens) */
+}
+
 .dateDivider {
   display: flex;
   align-items: center;
