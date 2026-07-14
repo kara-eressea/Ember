@@ -71,6 +71,20 @@ const prefsShape = {
   highlightBump: z.boolean(),
   /** Row-tint hue: "accent" follows the theme accent; otherwise a fixed one. */
   highlightTint: z.enum(["accent", ...ACCENT_IDS]),
+  /** Client idle → STA away (only ever from "online", never clobbering a
+   * manually chosen status). */
+  autoAwayEnabled: z.boolean(),
+  /** Idle threshold in minutes. */
+  autoAwayMinutes: z.number().int().min(1).max(240),
+  /** The STA statusmsg both away flavors set (F-Chat caps statusmsg at
+   * 255 bytes; the wire limit is what matters, so bytes not chars). */
+  autoAwayMessage: z.string().max(255),
+  /** Restore the previous status when activity resumes. */
+  autoAwayClearOnReturn: z.boolean(),
+  /** Server-side: away after N minutes with zero gateway subscribers,
+   * cleared on the next attach. Opt-in (decisions.md §10). */
+  detachedAwayEnabled: z.boolean(),
+  detachedAwayMinutes: z.number().int().min(1).max(1440),
 } as const;
 
 /** The full resolved prefs shape — every field present. */
@@ -105,6 +119,12 @@ export const PREFS_DEFAULTS: UserPrefs = {
   highlightFlashTitle: true,
   highlightBump: false,
   highlightTint: "accent",
+  autoAwayEnabled: false,
+  autoAwayMinutes: 10,
+  autoAwayMessage: "",
+  autoAwayClearOnReturn: true,
+  detachedAwayEnabled: false,
+  detachedAwayMinutes: 30,
 };
 
 /**

@@ -89,6 +89,11 @@ export class SessionRegistry {
     return this.#sessions.get(identityId);
   }
 
+  /** Snapshot of the running sessions (detached-away sweep, M5). */
+  entries(): [string, FchatSession][] {
+    return [...this.#sessions.entries()];
+  }
+
   stop(identityId: string, reason?: string): void {
     const session = this.#sessions.get(identityId);
     if (session) {

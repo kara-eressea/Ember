@@ -100,6 +100,28 @@ async function toError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, message);
 }
 
+/** Authenticated binary/text download (same 401-refresh flow as apiRequest,
+ * but the response stays a Blob instead of being JSON-parsed). */
+export async function apiDownload(path: string): Promise<Blob> {
+  const auth = useAuthStore.getState();
+  let response = await rawRequest(path, { auth: true }, auth.accessToken);
+  if (response.status === 401) {
+    const refreshed = await auth.refreshSession();
+    if (!refreshed) {
+      throw await toError(response);
+    }
+    response = await rawRequest(
+      path,
+      { auth: true },
+      useAuthStore.getState().accessToken,
+    );
+  }
+  if (!response.ok) {
+    throw await toError(response);
+  }
+  return response.blob();
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
@@ -243,6 +265,17 @@ export const api = {
     return apiRequest<{ messages: HistoryMessageDto[]; hasMore: boolean }>(
       `/identities/${identityId}/conversations/${conversationId}/messages${suffix}`,
       { auth: true },
+    );
+  },
+
+  /** Whole-conversation log export (M5 Away & logs pane). */
+  exportLog(
+    identityId: string,
+    conversationId: string,
+    format: "txt" | "html" | "json",
+  ) {
+    return apiDownload(
+      `/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
     );
   },
 

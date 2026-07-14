@@ -12,6 +12,7 @@ import {
 import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { DetachedAway } from "./modules/away/detached-away.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
@@ -36,6 +37,7 @@ declare module "fastify" {
     sessions: SessionRegistry;
     history: HistorySink;
     outbox: Outbox;
+    detachedAway: DetachedAway;
   }
 }
 
@@ -47,6 +49,8 @@ export interface BuildAppOptions {
   flistApiClient?: FlistApiClient;
   /** Test-only session timing knobs; production always runs policy defaults. */
   sessionTuning?: SessionTuning;
+  /** Test-only clock for the detached-away sweep. */
+  detachedAwayNow?: () => number;
 }
 
 export async function buildApp({
@@ -55,6 +59,7 @@ export async function buildApp({
   logger = true,
   flistApiClient,
   sessionTuning,
+  detachedAwayNow,
 }: BuildAppOptions): Promise<FastifyInstance> {
   // Without the right trustProxy, every client behind a reverse proxy shares
   // the proxy's IP and the per-IP rate limits become one global bucket.
@@ -100,7 +105,20 @@ export async function buildApp({
     logger: app.log,
   });
   retention.start();
+  const detachedAway = new DetachedAway({
+    db,
+    sessions,
+    hub,
+    logger: app.log,
+    now: process.env.NODE_ENV === "test" ? detachedAwayNow : undefined,
+  });
+  hub.onFirstSubscribe = (identityId) => {
+    detachedAway.onAttach(identityId);
+  };
+  detachedAway.start();
+  app.decorate("detachedAway", detachedAway);
   app.addHook("onClose", () => {
+    detachedAway.stop();
     retention.stop();
     outbox.stop();
     sessions.stopAll();

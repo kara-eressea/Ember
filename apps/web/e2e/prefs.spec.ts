@@ -5,6 +5,7 @@
 // Owns hazel@example.test (Hazel Fenwick) — spec files run in parallel and
 // a character can hold only one sim connection, so specs never share one.
 
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
 
@@ -190,4 +191,45 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   } finally {
     sprout2.close();
   }
+
+  // ── Away & logs (M5 step 7): away prefs persist, log export downloads ─
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Away & logs" }).click();
+  // The log-location statement (developer-policy requirement).
+  await expect(
+    dialog.getByText("stored in the EmberChat server database", {
+      exact: false,
+    }),
+  ).toBeVisible();
+
+  await dialog.getByLabel("Away message").fill("Tending the moss");
+  await dialog.getByLabel("Away message").press("Enter");
+  await dialog.getByRole("switch", { name: "Away when idle" }).click();
+
+  // Export the Terrarium log as .txt — the mention message is in it.
+  await dialog
+    .getByLabel("Conversation to export")
+    .selectOption({ label: "# Terrarium" });
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    dialog.getByRole("button", { name: "Download" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("Terrarium.txt");
+  const exportPath = await download.path();
+  expect(readFileSync(exportPath, "utf8")).toContain(
+    "Fenwick Sprout: the glowmoss is spreading again",
+  );
+
+  // Away prefs are server-side like everything else: a fresh pane mount
+  // reads them back.
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Away & logs" }).click();
+  await expect(dialog.getByLabel("Away message")).toHaveValue(
+    "Tending the moss",
+  );
+  await expect(
+    dialog.getByRole("switch", { name: "Away when idle" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
 });
