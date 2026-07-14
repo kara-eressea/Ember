@@ -232,4 +232,121 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     dialog.getByRole("switch", { name: "Away when idle" }),
   ).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Escape");
+
+  // ── Notifications (M5 step 8): permission flow, mention notify, mute ──
+  // A recording Notification stub, installed before the next load: real OS
+  // notifications are invisible to the test runner.
+  await page.addInitScript(() => {
+    const recorded: { title: string; body?: string }[] = [];
+    class FakeNotification {
+      static permission = "granted";
+      static requestPermission = () => Promise.resolve("granted");
+      onclick: (() => void) | null = null;
+      constructor(title: string, options?: { body?: string }) {
+        recorded.push({ title, ...options });
+      }
+      close() {}
+    }
+    // Headless pages report hasFocus() true even in the background — the
+    // flag lets the test act out "the user is in another window".
+    const realHasFocus = document.hasFocus.bind(document);
+    document.hasFocus = () =>
+      (window as unknown as { __pretendUnfocused?: boolean }).__pretendUnfocused
+        ? false
+        : realHasFocus();
+    Object.assign(window, {
+      Notification: FakeNotification,
+      __notifications: recorded,
+    });
+  });
+  await page.reload();
+  await expect(page.getByText("Hazel Fenwick · online")).toBeVisible({
+    timeout: 15_000,
+  });
+  const recordedCount = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { __notifications: { title: string }[] })
+          .__notifications.length,
+    );
+
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Notifications" }).click();
+  await dialog.getByRole("switch", { name: "On mentions" }).click();
+  await expect(
+    dialog.getByRole("switch", { name: "On mentions" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+
+  // Notifications only fire while the tab is unfocused — flip the stubbed
+  // focus signal, like the user switching to another window.
+  await page.evaluate(() => {
+    (window as unknown as { __pretendUnfocused?: boolean }).__pretendUnfocused =
+      true;
+  });
+  const sprout3 = await SimClient.connect(
+    "hazel@example.test",
+    "hunter2",
+    "Fenwick Sprout",
+  );
+  try {
+    sprout3.send("JCH", { channel: "Terrarium" });
+    sprout3.send("MSG", {
+      channel: "Terrarium",
+      message: "fresh glowmoss by the waterfall",
+    });
+    await expect.poll(recordedCount, { timeout: 10_000 }).toBe(1);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __notifications: { title: string; body?: string }[];
+            }
+          ).__notifications[0],
+      ),
+    ).toMatchObject({
+      title: "Fenwick Sprout — Terrarium",
+      body: "fresh glowmoss by the waterfall",
+    });
+
+    // Mute Terrarium from its header: alerts stop, badges keep counting.
+    await page.getByRole("link", { name: /Terrarium/ }).click();
+    await page.getByRole("button", { name: "🔔 mute" }).click();
+    await expect(page.getByRole("button", { name: "🔕 muted" })).toBeVisible();
+    await page.goto("/app/Hazel%20Fenwick");
+    const terrariumRow2 = page.getByRole("link", { name: /Terrarium/ });
+    await expect(terrariumRow2).toBeVisible({ timeout: 15_000 });
+    // The navigation re-ran the init script — pretend to be unfocused
+    // again, so silence below is the mute's doing, not the focus gate's.
+    await page.evaluate(() => {
+      (
+        window as unknown as { __pretendUnfocused?: boolean }
+      ).__pretendUnfocused = true;
+    });
+
+    sprout3.send("MSG", {
+      channel: "Terrarium",
+      message: "glowmoss update: still glowing",
+    });
+    // The badge accrues (mute is alerts-only)…
+    await expect(terrariumRow2.getByTestId("nav-badge")).toHaveText("@1", {
+      timeout: 10_000,
+    });
+    // …but no notification arrived for the muted conversation (the
+    // navigation reset the recorder, so any at all would be new).
+    expect(await recordedCount()).toBe(0);
+
+    // The pane lists the mute; unmuting clears it.
+    await page.getByRole("button", { name: "Preferences" }).click();
+    await dialog.getByRole("button", { name: "Notifications" }).click();
+    await expect(dialog.getByText("# Terrarium")).toBeVisible();
+    await dialog.getByRole("button", { name: "Unmute # Terrarium" }).click();
+    await expect(
+      dialog.getByText("Nothing muted", { exact: false }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+  } finally {
+    sprout3.close();
+  }
 });

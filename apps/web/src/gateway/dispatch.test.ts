@@ -18,6 +18,11 @@ vi.mock("../lib/highlight-notify.js", () => ({
   flashTitle: vi.fn(),
   stopTitleFlash: vi.fn(),
 }));
+vi.mock("../lib/desktop-notify.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop-notify.js")>()),
+  showMessageNotification: vi.fn(),
+}));
+import { showMessageNotification } from "../lib/desktop-notify.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { hydrateTheme } from "../theme/theme.js";
 import { dispatchFrame } from "./dispatch.js";
@@ -106,6 +111,7 @@ beforeEach(() => {
   useUiStore.getState().setActive(undefined, undefined);
   vi.mocked(playHighlightChime).mockClear();
   vi.mocked(flashTitle).mockClear();
+  vi.mocked(showMessageNotification).mockClear();
 });
 
 function session() {
@@ -644,6 +650,114 @@ describe("when-highlighted actions", () => {
     expect(channel?.highlightedAt).toBe(0);
     expect(channel?.unread).toBe(0);
     expect(channel?.mentions).toBe(0);
+  });
+});
+
+describe("desktop notifications and mutes", () => {
+  const setPrefs = (overrides: Partial<typeof PREFS_DEFAULTS>) =>
+    event("prefs.updated", {
+      sendDelaySeconds: 0,
+      prefs: { ...PREFS_DEFAULTS, ...overrides },
+    });
+
+  it("notifies on a mention with a stripped preview, titled with the channel", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ desktopNotifyMentions: true }));
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, {
+          bbcode: "[b]Amber Vale[/b], look at this",
+          mention: true,
+        }),
+      }),
+    );
+    expect(showMessageNotification).toHaveBeenCalledWith({
+      title: "Nyx Firemane — Frontpage",
+      body: "Amber Vale, look at this",
+      tag: CONV_CHANNEL,
+    });
+    // A plain message is not a mention — no notification.
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(12) }),
+    );
+    expect(showMessageNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies on PMs behind their own pref, titled with the sender", () => {
+    dispatchFrame(snapshot());
+    const pm = (id: number) =>
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(id, { kind: "pm", bbcode: "hey there" }),
+      });
+    dispatchFrame(pm(11));
+    expect(showMessageNotification).not.toHaveBeenCalled();
+    dispatchFrame(setPrefs({ desktopNotifyPms: true }));
+    dispatchFrame(pm(12));
+    expect(showMessageNotification).toHaveBeenCalledWith({
+      title: "Nyx Firemane",
+      body: "hey there",
+      tag: CONV_DM,
+    });
+  });
+
+  it("omits the body when the preview pref is off", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      setPrefs({ desktopNotifyPms: true, notifyShowContent: false }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(11, { kind: "pm", bbcode: "secret plans" }),
+      }),
+    );
+    expect(showMessageNotification).toHaveBeenCalledWith({
+      title: "Nyx Firemane",
+      tag: CONV_DM,
+    });
+  });
+
+  it("mutes silence alerts only — badges, tint source and bump still accrue", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      setPrefs({
+        desktopNotifyMentions: true,
+        highlightSound: true,
+        highlightFlashTitle: true,
+        highlightBump: true,
+        mutedConvIds: [CONV_CHANNEL],
+      }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, { mention: true }),
+      }),
+    );
+    expect(showMessageNotification).not.toHaveBeenCalled();
+    expect(playHighlightChime).not.toHaveBeenCalled();
+    expect(flashTitle).not.toHaveBeenCalled();
+    const channel = session().channels["Frontpage"];
+    expect(channel?.unread).toBe(4);
+    expect(channel?.mentions).toBe(2);
+    expect(channel?.highlightedAt).toBeGreaterThan(0);
+  });
+
+  it("a per-identity mute covers every conversation of the identity", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      setPrefs({ desktopNotifyPms: true, mutedIdentityIds: [IDENTITY] }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(11, { kind: "pm" }),
+      }),
+    );
+    expect(showMessageNotification).not.toHaveBeenCalled();
+    expect(session().dms[CONV_DM]?.unread).toBe(1);
   });
 });
 

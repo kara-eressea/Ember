@@ -5,6 +5,7 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
+import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
@@ -79,33 +80,65 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
   const sessions = useSessionsStore.getState();
   switch (event.kind) {
     case "message.new": {
-      useMessagesStore.getState().appendLive(event.d.convId, event.d.message);
+      const message = event.d.message;
+      const convId = event.d.convId;
+      useMessagesStore.getState().appendLive(convId, message);
+      if (message.sentByUs) {
+        return;
+      }
       const ui = useUiStore.getState();
       const active =
-        ui.activeIdentityId === identityId &&
-        ui.activeConvId === event.d.convId;
-      if (!event.d.message.sentByUs && !active) {
+        ui.activeIdentityId === identityId && ui.activeConvId === convId;
+      // The prefs are per user — any slice's copy is current. Mutes silence
+      // alerts only: badges, tint and the bump still accrue (decisions.md
+      // §10).
+      const prefs = sessions.sessions[identityId]?.prefs;
+      const muted =
+        prefs !== undefined &&
+        (prefs.mutedIdentityIds.includes(identityId) ||
+          prefs.mutedConvIds.includes(convId));
+      if (!active) {
         // The mention verdict is stamped server-side at persist time (M5)
         // and rides the message — the client never re-matches.
-        sessions.bumpUnread(
-          identityId,
-          event.d.convId,
-          event.d.message.mention,
-        );
-        if (event.d.message.mention) {
-          // When-highlighted actions, each behind its pref (decisions.md
-          // §10). The prefs are per user — any slice's copy is current.
-          const prefs = sessions.sessions[identityId]?.prefs;
-          if (prefs?.highlightSound) {
+        sessions.bumpUnread(identityId, convId, message.mention);
+        if (message.mention && prefs) {
+          // When-highlighted actions, each behind its pref.
+          if (prefs.highlightSound && !muted) {
             playHighlightChime();
           }
-          if (prefs?.highlightFlashTitle) {
+          if (prefs.highlightFlashTitle && !muted) {
             flashTitle();
           }
-          if (prefs?.highlightBump) {
-            sessions.bumpHighlight(identityId, event.d.convId);
+          if (prefs.highlightBump) {
+            sessions.bumpHighlight(identityId, convId);
           }
         }
+      }
+      // Desktop notification — mention or PM, behind its pref. The module
+      // self-gates on permission and window focus (a focused app already
+      // shows badges), so an active-but-unfocused conversation notifies.
+      if (
+        prefs &&
+        !muted &&
+        ((message.mention && prefs.desktopNotifyMentions) ||
+          (message.kind === "pm" && prefs.desktopNotifyPms))
+      ) {
+        const session = sessions.sessions[identityId];
+        const channelKey = session?.channelByConvId[convId];
+        const channelTitle =
+          channelKey !== undefined
+            ? session?.channels[channelKey]?.title
+            : undefined;
+        showMessageNotification({
+          title:
+            channelTitle !== undefined
+              ? `${message.senderCharacter} — ${channelTitle}`
+              : message.senderCharacter,
+          ...(prefs.notifyShowContent
+            ? { body: previewText(message.bbcode) }
+            : {}),
+          tag: convId,
+        });
       }
       return;
     }
