@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AppearancePane } from "./AppearancePane.js";
+import { AwayLogsPane } from "./AwayLogsPane.js";
 import { HighlightsPane } from "./HighlightsPane.js";
 import styles from "./prefs.module.css";
 
@@ -144,11 +145,7 @@ function PaneContent({
     case "highlights":
       return <HighlightsPane identityId={identityId} />;
     case "away":
-      return (
-        <p className={styles.stub}>
-          Auto-away and chat-log export arrive with M5 step 7.
-        </p>
-      );
+      return <AwayLogsPane identityId={identityId} />;
     case "notifications":
       return (
         <p className={styles.stub}>

@@ -41,6 +41,9 @@ export class GatewayHub {
   readonly #subscribers = new Map<string, Set<GatewayConnection>>();
   /** Bus unsubscribers per identity — called when a session is replaced. */
   readonly #sessionDetach = new Map<string, () => void>();
+  /** Fired when an identity goes from zero subscribers to one — the
+   * detached-away restore hook (M5). Assigned in buildApp. */
+  onFirstSubscribe?: (identityId: string) => void;
 
   constructor(options: GatewayHubOptions) {
     this.#log = options.logger ?? NOOP_LOGGER;
@@ -97,7 +100,16 @@ export class GatewayHub {
       set = new Set();
       this.#subscribers.set(identityId, set);
     }
+    const first = set.size === 0;
     set.add(connection);
+    if (first) {
+      this.onFirstSubscribe?.(identityId);
+    }
+  }
+
+  /** True while at least one browser is attached to the identity. */
+  hasSubscribers(identityId: string): boolean {
+    return (this.#subscribers.get(identityId)?.size ?? 0) > 0;
   }
 
   unsubscribe(identityId: string, connection: GatewayConnection): void {

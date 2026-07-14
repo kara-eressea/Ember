@@ -10,6 +10,7 @@
 import { useEffect, useRef } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
 import { gateway } from "../../gateway/socket.js";
+import { startAutoAway } from "../../lib/auto-away.js";
 import {
   identityPath,
   rememberLastIdentity,
@@ -72,6 +73,10 @@ export function AppShell() {
   useEffect(() => {
     gateway.connect();
   }, []);
+
+  // Idle detection lives with the shell: it exists exactly while the user
+  // is in the app, across identity/conversation navigation.
+  useEffect(() => startAutoAway(), []);
 
   // The routed identity subscribes immediately (its snapshot should win the
   // race); the rest follow once ready lists them, so background badges and
