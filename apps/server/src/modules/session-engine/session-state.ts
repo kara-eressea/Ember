@@ -154,6 +154,13 @@ export class SessionState {
         }
         return;
       }
+      case "RMO": {
+        const channel = this.channels.get(command.payload.channel);
+        if (channel) {
+          channel.mode = command.payload.mode;
+        }
+        return;
+      }
       case "LCH": {
         const { channel: key, character } = command.payload;
         if (character === this.ownCharacter) {

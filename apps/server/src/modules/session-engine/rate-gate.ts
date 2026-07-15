@@ -4,15 +4,17 @@
 // Intervals are read from live server VARs at send time, never hardcoded
 // (developer policy).
 
-/** Command classes with a flood limit. LRP (lfrp_flood) arrives in M6.
- * STA, IGN, TPN and the directory queries (CHA/ORS) have no documented VAR
- * of their own; they ride the msg_flood pace as client-side discipline — the
- * server throttles on its side, and nothing user-triggered may spam the wire
+/** Command classes with a flood limit. MSG and PRI pace on msg_flood, LRP
+ * on lfrp_flood (1 per 10 minutes live) — each from live VARs. STA, IGN,
+ * TPN and the directory queries (CHA/ORS) have no documented VAR of their
+ * own; they ride the msg_flood pace as client-side discipline — the server
+ * throttles on its side, and nothing user-triggered may spam the wire
  * unmetered. CHA and ORS are separate classes so one directory refresh puts
  * both frames on the wire together while repeat refreshes still pace. */
 export type RateGateClass =
   | "MSG"
   | "PRI"
+  | "LRP"
   | "STA"
   | "IGN"
   | "TPN"

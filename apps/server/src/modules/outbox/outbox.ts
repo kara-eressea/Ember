@@ -102,6 +102,8 @@ export class Outbox {
     conversationId: string;
     markdown: string;
     bbcode: string;
+    /** "lrp" = a delayed roleplay ad; released via the LRP pace. */
+    kind?: "lrp" | "msg";
     releaseAt: Date;
   }): Promise<void> {
     await this.#db.insert(outboxMessages).values(input);
@@ -224,7 +226,9 @@ export class Outbox {
       if (!session) {
         throw new Error("no live session at release time");
       }
-      if (conversation.kind === "channel") {
+      if (row.kind === "lrp") {
+        await session.sendChannelAd(conversation.channelKey ?? "", row.bbcode);
+      } else if (conversation.kind === "channel") {
         await session.sendChannelMessage(
           conversation.channelKey ?? "",
           row.bbcode,

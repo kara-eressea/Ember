@@ -33,7 +33,7 @@ function seedSession(
       status: options.status ?? "online",
       statusmsg: options.statusmsg ?? "",
       ignores: [],
-      limits: { chatMax: 4096, privMax: 50000 },
+      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
       iconBlacklist: [],
       sendDelaySeconds: 0,
       prefs: options.prefs ?? PREFS_ON,

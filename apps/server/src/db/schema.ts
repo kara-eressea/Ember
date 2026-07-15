@@ -165,6 +165,9 @@ export const outboxMessages = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     markdown: text().notNull(),
     bbcode: text().notNull(),
+    /** What the release puts on the wire: "msg" (or "pm" — the conversation
+     * kind decides) or "lrp" for a delayed roleplay ad (M6). */
+    kind: messageKind().notNull().default("msg"),
     releaseAt: timestamp({ withTimezone: true }).notNull(),
     /** "scheduled" | "releasing" (claimed by the worker — no longer
      * recallable) | "failed" (release refused; failureReason says why). */

@@ -82,6 +82,12 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Laurel Quince", "Quince Pip"],
     },
+    // Reserved for the M6 RP-messages E2E (same parallelism rule); Moss
+    // Tinker is its raw-SimClient "other side" (Greenhouse op, ad sender).
+    "ivy@example.test": {
+      password: "hunter2",
+      characters: ["Ivy Bramblewood", "Moss Tinker"],
+    },
   },
   channels: [
     {
@@ -137,6 +143,18 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "You had to be told about this place.",
       oplist: ["Nyx Firemane"],
       npcs: ["Nyx Firemane"],
+      listed: false,
+    },
+    // Reserved for the M6 RP-messages E2E: mode "both" so ads and the
+    // composer's Ad toggle are live; hidden so listing counts elsewhere
+    // stay stable; no NPCs so /bottle is deterministic.
+    {
+      name: "ADH-77aa88bb99cc00dd11ee",
+      title: "Greenhouse",
+      mode: "both",
+      description: "Warm glass and growing things.",
+      oplist: ["Moss Tinker"],
+      npcs: [],
       listed: false,
     },
   ],

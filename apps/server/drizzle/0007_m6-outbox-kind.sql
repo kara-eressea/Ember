@@ -1,0 +1,1 @@
+ALTER TABLE "outbox_messages" ADD COLUMN "kind" "message_kind" DEFAULT 'msg' NOT NULL;

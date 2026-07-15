@@ -222,6 +222,15 @@ function translateCommand(
           oplist: [...command.payload.oplist],
         },
       };
+    case "RMO":
+      // Room mode changed (chat/ads/both) — gates what the composer offers.
+      return {
+        kind: "channel.info",
+        d: {
+          key: command.payload.channel,
+          mode: command.payload.mode,
+        },
+      };
     case "IGN":
       // Any list change (init at login, add/delete acks) fans the whole
       // list out — session state already folded this command in, so the

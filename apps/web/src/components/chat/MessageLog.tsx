@@ -12,6 +12,7 @@ import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
+import { adsHidden } from "./ads.js";
 import { buildRows } from "./log-rows.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
@@ -54,15 +55,20 @@ export function MessageLog({
   const prefs = useSessionsStore(
     (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
   );
+  const channelKey = useSessionsStore(
+    (s) => s.sessions[identityId]?.channelByConvId[convId],
+  );
   const pending = outbox.filter((item) => item.convId === convId);
   const presence = prefs.showJoinPartQuit ? buffer?.presence : undefined;
+  const hideAds = adsHidden(prefs, channelKey);
   const rows = useMemo(
     () =>
       buildRows(messages, newSinceId, ignores, {
         groupConsecutive: prefs.groupConsecutive,
+        hideAds,
         presence,
       }),
-    [messages, newSinceId, ignores, prefs.groupConsecutive, presence],
+    [messages, newSinceId, ignores, prefs.groupConsecutive, hideAds, presence],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -232,6 +238,8 @@ export function MessageLog({
                 </div>
               ) : row.message.kind === "sys" ? (
                 <SystemLine message={row.message} prefs={prefs} />
+              ) : row.message.kind === "rll" ? (
+                <RollLine message={row.message} prefs={prefs} />
               ) : (
                 <MessageLine
                   message={row.message}
@@ -302,12 +310,14 @@ function MessageLine({
 }) {
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
+  const ad = message.kind === "lrp";
   return (
     <div
       className={`${styles.messageLine} ${
         message.mention ? (styles.mentionLine ?? "") : ""
-      }`}
+      } ${ad ? (styles.adLine ?? "") : ""}`}
       data-mention={message.mention || undefined}
+      data-ad={ad || undefined}
     >
       {time !== "" && <span className={styles.time}>{time}</span>}
       {/* Grouped rows keep an invisible nick so aligned columns stay put. */}
@@ -318,6 +328,11 @@ function MessageLine({
       >
         {message.senderCharacter}
       </span>
+      {ad && (
+        <span className={styles.adTag} title="Roleplay ad (LRP)">
+          AD
+        </span>
+      )}
       {emote ? (
         // /me: italic action running straight off the name, no separator.
         // Possessives pull back across the row gap so "/me's teacup" reads
@@ -332,6 +347,27 @@ function MessageLine({
           <RichText bbcode={message.bbcode} />
         </span>
       )}
+    </div>
+  );
+}
+
+/** A dice roll / bottle spin: the server-rendered BBCode already names the
+ * roller, so it reads like a system line with a die glyph. */
+function RollLine({
+  message,
+  prefs,
+}: {
+  message: MessageDto;
+  prefs: UserPrefs;
+}) {
+  const time = formatTime(message.createdAt, timeFormat(prefs));
+  return (
+    <div className={styles.rollLine} data-testid="roll-line">
+      {time !== "" && <span className={styles.time}>{time}</span>}
+      <span aria-hidden>🎲</span>
+      <span>
+        <RichText bbcode={message.bbcode} />
+      </span>
     </div>
   );
 }

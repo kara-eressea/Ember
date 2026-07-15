@@ -985,3 +985,166 @@ describe("private rooms (M6: CCR / CIU / RST)", () => {
     });
   });
 });
+
+describe("RP message types (M6: LRP / RLL / RMO)", () => {
+  it("relays LRP to other members without echoing to the sender", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    for (const client of [amber, birch]) {
+      client.send({ cmd: "JCH", payload: { channel: "Development" } });
+      await client.waitFor("CDS");
+    }
+    await amber.waitFor("JCH"); // Birch's join
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Development", message: "Looking for a scene." },
+    });
+    expect(parseServerCommand(await birch.waitFor("LRP"))).toEqual({
+      cmd: "LRP",
+      payload: {
+        character: "Amber Vale",
+        message: "Looking for a scene.",
+        channel: "Development",
+      },
+    });
+    expect(amber.pendingCount()).toBe(0);
+  });
+
+  it("rejects LRP in a chat-only channel with ERR 59 and MSG in an ads-only room with ERR 60", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Frontpage" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Frontpage", message: "an ad" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 59 },
+    });
+    // Create a room (owner), flip it to ads-only, and watch MSG bounce.
+    amber.send({ cmd: "CCR", payload: { channel: "Ads Only Attic" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RMO",
+      payload: { channel: "ADH-sim0001", mode: "ads" },
+    });
+    expect(parseServerCommand(await amber.waitFor("RMO"))).toEqual({
+      cmd: "RMO",
+      payload: { channel: "ADH-sim0001", mode: "ads" },
+    });
+    amber.send({
+      cmd: "MSG",
+      payload: { channel: "ADH-sim0001", message: "hello?" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 60 },
+    });
+  });
+
+  it("rejects RMO from a non-op with ERR 19", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RMO",
+      payload: { channel: "Development", mode: "chat" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 19 },
+    });
+  });
+
+  it("enforces the lfrp_flood pace with ERR 56", async () => {
+    const sim = await startSim({ serverVars: { lfrp_flood: 600 } });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Development", message: "first ad" },
+    });
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Development", message: "second ad" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 56 },
+    });
+  });
+
+  it("computes dice rolls and echoes the RLL to the roller", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RLL",
+      payload: { channel: "Development", dice: "2d6+10" },
+    });
+    const roll = parseServerCommand(await amber.waitFor("RLL"));
+    if (roll.cmd !== "RLL" || !("payload" in roll)) {
+      throw new Error("RLL did not parse");
+    }
+    expect(roll.payload).toMatchObject({
+      channel: "Development",
+      type: "dice",
+      character: "Amber Vale",
+      rolls: ["2d6", "10"],
+    });
+    const results = roll.payload.results!;
+    expect(results).toHaveLength(2);
+    expect(results[0]).toBeGreaterThanOrEqual(2);
+    expect(results[0]).toBeLessThanOrEqual(12);
+    expect(results[1]).toBe(10);
+    expect(roll.payload.endresult).toBe(results[0]! + 10);
+    expect(roll.payload.message).toContain("[b]Amber Vale[/b] rolls 2d6+10:");
+  });
+
+  it("spins the bottle at another member and rejects spinning alone", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    amber.send({ cmd: "JCH", payload: { channel: "Terrarium" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RLL",
+      payload: { channel: "Terrarium", dice: "bottle" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 36 },
+    });
+    birch.send({ cmd: "JCH", payload: { channel: "Terrarium" } });
+    await birch.waitFor("CDS");
+    amber.send({
+      cmd: "RLL",
+      payload: { channel: "Terrarium", dice: "bottle" },
+    });
+    expect(parseServerCommand(await birch.waitFor("RLL"))).toEqual({
+      cmd: "RLL",
+      payload: {
+        channel: "Terrarium",
+        type: "bottle",
+        message: "[b]Amber Vale[/b] spins the bottle: [b]Birch Rowan[/b]",
+        character: "Amber Vale",
+        target: "Birch Rowan",
+      },
+    });
+    await amber.waitFor("RLL"); // the roller sees it too
+  });
+
+  it("rejects malformed dice expressions with ERR 36", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    for (const dice of ["0d6", "1d501", "10001", "1d6+", "2x6"]) {
+      amber.send({ cmd: "RLL", payload: { channel: "Development", dice } });
+      expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+        payload: { number: 36 },
+      });
+    }
+  });
+});

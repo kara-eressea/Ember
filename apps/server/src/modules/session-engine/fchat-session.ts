@@ -195,8 +195,11 @@ export class FchatSession {
     this.#watchdogMs = options.watchdogMs ?? WATCHDOG_MS;
     this.events = new SessionEventBus(this.#log);
     // MSG and PRI share the documented msg_flood value but the server tracks
-    // them separately; LRP (lfrp_flood) joins in M4+.
-    this.#rateGate = new RateGate(() => this.state.vars.msg_flood);
+    // them separately; LRP paces on its own lfrp_flood (1/10 min live).
+    // Both come from live VARs at send time, never hardcoded.
+    this.#rateGate = new RateGate((cls) =>
+      cls === "LRP" ? this.state.vars.lfrp_flood : this.state.vars.msg_flood,
+    );
   }
 
   get status(): SessionStatus {
@@ -259,6 +262,34 @@ export class FchatSession {
         throw new SessionNotOnlineError(this.#status);
       }
       this.events.emit("sent", { kind: "channel", channel, message });
+    });
+  }
+
+  /** Sends a roleplay ad (LRP) — its own lfrp_max length and lfrp_flood
+   * pace. The queue bound means a user can park at most a handful of ads;
+   * at 10 minutes each that is deliberate back-pressure, not a bug. */
+  async sendChannelAd(channel: string, message: string): Promise<void> {
+    this.#assertOnline();
+    this.#assertLength(message, this.state.vars.lfrp_max);
+    await this.#rateGate.schedule("LRP", () => {
+      if (!this.#send({ cmd: "LRP", payload: { channel, message } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+      this.events.emit("sent", { kind: "ad", channel, message });
+    });
+  }
+
+  /**
+   * Rolls dice or spins the bottle (RLL). No "sent" event: the server
+   * computes the result and echoes the RLL back to us — persisting that
+   * echo is the only truthful record. Rides the MSG pace.
+   */
+  async rollDice(channel: string, dice: string): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("MSG", () => {
+      if (!this.#send({ cmd: "RLL", payload: { channel, dice } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
     });
   }
 

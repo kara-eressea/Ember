@@ -198,6 +198,39 @@
   font-style: italic;
 }
 
+/* Roleplay ads (LRP, M6): a quiet tinted wash + AD tag so ads scan apart
+   from chat without shouting. */
+.adLine,
+.adLine:hover {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: color-mix(in srgb, var(--eb-accent) 6%, transparent);
+  box-shadow: inset 3px 0 0
+    color-mix(in srgb, var(--eb-accent) 45%, transparent);
+}
+
+.adTag {
+  flex: none;
+  align-self: center;
+  padding: 0 5px;
+  border: 1px solid var(--eb-accent);
+  border-radius: 4px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--eb-accent);
+}
+
+/* Dice rolls / bottle spins (RLL, M6): system-toned with a die glyph. */
+.rollLine {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  padding: 2px 16px;
+  color: var(--eb-dim);
+  font-size: 12.5px;
+}
+
 /* Composer ☺ favorites: quick-insert thumbnails (M5, decisions.md §8). */
 .eiconFavorites {
   display: flex;

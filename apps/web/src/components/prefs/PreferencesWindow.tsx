@@ -5,9 +5,9 @@
 // account, synced across every device (decisions.md §10).
 
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
 import { AppearancePane } from "./AppearancePane.js";
 import { AwayLogsPane } from "./AwayLogsPane.js";
+import { GeneralPane } from "./GeneralPane.js";
 import { HighlightsPane } from "./HighlightsPane.js";
 import { NotificationsPane } from "./NotificationsPane.js";
 import styles from "./prefs.module.css";
@@ -127,20 +127,7 @@ function PaneContent({
 }) {
   switch (pane) {
     case "general":
-      return (
-        <>
-          <p className={styles.stub}>
-            General settings arrive as the preference panes fill in (M5).
-          </p>
-          <p className={styles.stub}>
-            Identities and F-List accounts are managed on the{" "}
-            <Link to="/identities" onClick={onClose}>
-              identity screen
-            </Link>
-            .
-          </p>
-        </>
-      );
+      return <GeneralPane identityId={identityId} onClose={onClose} />;
     case "appearance":
       return <AppearancePane identityId={identityId} />;
     case "highlights":

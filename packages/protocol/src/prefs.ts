@@ -113,6 +113,17 @@ const prefsShape = {
    * Patches replace the whole array. */
   mutedIdentityIds: z.array(z.uuid()).max(64),
   mutedConvIds: z.array(z.uuid()).max(500),
+  /** Never show roleplay ads (LRP) — the account-wide default every channel
+   * inherits. Hidden ads neither render nor count as unread. */
+  hideAds: z.boolean(),
+  /** Per-channel override of hideAds, keyed by lowercased channel key.
+   * Absent key = inherit the global default. Patches replace the whole
+   * record (same convention as the muted lists). */
+  channelAdVisibility: z
+    .record(z.string().min(1).max(128), z.enum(["show", "hide"]))
+    .refine((value) => Object.keys(value).length <= 500, {
+      message: "too many channel overrides",
+    }),
 } as const;
 
 /** The full resolved prefs shape — every field present. */
@@ -158,6 +169,8 @@ export const PREFS_DEFAULTS: UserPrefs = {
   notifyShowContent: true,
   mutedIdentityIds: [],
   mutedConvIds: [],
+  hideAds: false,
+  channelAdVisibility: {},
 };
 
 /**
