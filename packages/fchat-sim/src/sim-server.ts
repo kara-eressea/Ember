@@ -64,8 +64,14 @@ interface ChannelState {
   readonly title: string;
   readonly mode: string;
   readonly official: boolean;
-  /** Hidden rooms are joinable by exact name but never appear in ORS. */
-  readonly listed: boolean;
+  /** In ORS listings. RST public/private flips this together with `open`. */
+  listed: boolean;
+  /** Joinable without an invite. Seeded rooms default open (a `listed:
+   * false` seed stays joinable by exact name — deliberate leniency for the
+   * hidden-join tests); CCR-created rooms start closed. */
+  open: boolean;
+  /** Characters invited via CIU — they may join while the room is closed. */
+  readonly invited: Set<string>;
   description: string;
   oplist: readonly string[];
   readonly members: Set<string>;
@@ -122,6 +128,8 @@ export class FchatSim {
   dropPings = false;
   /** Misbehavior control: channels whose JCH fails with the mapped ERR. */
   readonly #joinRejections = new Map<string, number>();
+  /** Counter behind CCR's minted ADH- ids. */
+  #createdRooms = 0;
   /** Server-stored ignore lists (character → ignored names), like the real
    * server: they survive reconnects and are replayed via IGN init. */
   readonly #ignores = new Map<string, Set<string>>();
@@ -143,6 +151,8 @@ export class FchatSim {
         mode: seed.mode,
         official: !seed.name.startsWith("ADH-"),
         listed: seed.listed ?? true,
+        open: true,
+        invited: new Set(),
         description: seed.description,
         oplist: seed.oplist ?? [""],
         members: new Set(seed.npcs),
@@ -507,6 +517,15 @@ export class FchatSim {
           },
         });
         return;
+      case "CCR":
+        this.#handleCreateRoom(connection, character, command.payload.channel);
+        return;
+      case "CIU":
+        this.#handleInvite(connection, character, command.payload);
+        return;
+      case "RST":
+        this.#handleRoomStatus(connection, character, command.payload);
+        return;
       case "JCH":
         this.#handleJoin(connection, character, command.payload.channel);
         return;
@@ -588,6 +607,14 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.AlreadyInChannel);
       return;
     }
+    if (
+      !channel.open &&
+      !channel.invited.has(character) &&
+      !channel.oplist.includes(character)
+    ) {
+      this.#sendError(connection, FchatErrorCode.InviteRequired);
+      return;
+    }
     channel.members.add(character);
     this.#broadcastToChannel(channel, {
       cmd: "JCH",
@@ -612,6 +639,98 @@ export class FchatSim {
     this.#send(connection, {
       cmd: "CDS",
       payload: { channel: channel.name, description: channel.description },
+    });
+  }
+
+  /** CCR: the payload is the TITLE; the sim mints an ADH- id, makes the
+   * creator owner, and walks them through the normal join flow. Created
+   * rooms start closed and unlisted (invite-only) like the real server. */
+  #handleCreateRoom(
+    connection: Connection,
+    character: string,
+    title: string,
+  ): void {
+    this.#createdRooms += 1;
+    const name = `ADH-sim${String(this.#createdRooms).padStart(4, "0")}`;
+    this.#channels.set(name, {
+      name,
+      title,
+      mode: "both",
+      official: false,
+      listed: false,
+      open: false,
+      invited: new Set(),
+      description: "",
+      oplist: [character],
+      members: new Set(),
+    });
+    this.#handleJoin(connection, character, name);
+  }
+
+  #handleInvite(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (channel.official) {
+      this.#sendError(connection, FchatErrorCode.CannotInviteToPublicChannel);
+      return;
+    }
+    if (!channel.oplist.includes(character)) {
+      // No dedicated "chanop required" code is documented; the real server
+      // answers with a moderation error — 19 is the closest modeled one.
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    channel.invited.add(payload.character);
+    const target = this.#online.get(payload.character)?.connection;
+    if (target) {
+      this.#send(target, {
+        cmd: "CIU",
+        payload: {
+          sender: character,
+          title: channel.title,
+          name: channel.name,
+        },
+      });
+    }
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message: `Your invitation to ${channel.title} has been sent to ${payload.character}.`,
+      },
+    });
+  }
+
+  #handleRoomStatus(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; status: "public" | "private" },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    // Official channels live outside the private-room namespace.
+    if (!channel || channel.official) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.oplist.includes(character)) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    const open = payload.status === "public";
+    channel.open = open;
+    channel.listed = open;
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message: `${channel.title} is now ${open ? "open" : "invite-only"}.`,
+        channel: channel.name,
+      },
     });
   }
 

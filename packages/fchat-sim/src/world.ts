@@ -76,10 +76,11 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Hazel Fenwick", "Fenwick Sprout"],
     },
-    // Reserved for the M6 channel-browser E2E (same parallelism rule).
+    // Reserved for the M6 channel-browser E2E (same parallelism rule);
+    // Quince Pip is its raw-SimClient "other side" (room owner, inviter).
     "laurel@example.test": {
       password: "hunter2",
-      characters: ["Laurel Quince"],
+      characters: ["Laurel Quince", "Quince Pip"],
     },
   },
   channels: [

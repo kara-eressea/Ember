@@ -9,8 +9,15 @@ import { parseFrame, serializeFrame, type RawCommand } from "./codec.js";
 import { CLIENT_SETTABLE_STATUSES, TYPING_STATUSES } from "./enums.js";
 
 export const clientCommandSchemas = {
+  /**
+   * Create a private, invite-only channel. The payload is the TITLE — the
+   * server assigns the ADH- id and answers with a JCH into the new room.
+   */
+  CCR: z.object({ channel: z.string() }),
   /** Request the list of all public channels. Bare command. */
   CHA: z.undefined(),
+  /** Invite a character to a channel (chanop). The response is a SYS. */
+  CIU: z.object({ channel: z.string(), character: z.string() }),
   /**
    * Identify with the server. Must be the first command sent; cname/cversion
    * uniquely identify this client (developer policy).
@@ -46,6 +53,15 @@ export const clientCommandSchemas = {
   PIN: z.undefined(),
   /** Send a private message. */
   PRI: z.object({ recipient: z.string(), message: z.string() }),
+  /**
+   * Set a private room "public" (listed in ORS, freely joinable) or
+   * "private" (unlisted, invite-only). Chanop; official channels have no
+   * room status.
+   */
+  RST: z.object({
+    channel: z.string(),
+    status: z.enum(["public", "private"]),
+  }),
   /** Set own status. "crown" is server-set (RWD) and deliberately excluded. */
   STA: z.object({
     status: z.enum(CLIENT_SETTABLE_STATUSES),

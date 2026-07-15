@@ -42,6 +42,7 @@ function session(): IdentitySession {
     ownStatus: "online",
     ownStatusmsg: "",
     ignores: [],
+    invites: [],
     limits: { chatMax: 4096, privMax: 50000 },
     iconBlacklist: [],
     sendDelaySeconds: 0,

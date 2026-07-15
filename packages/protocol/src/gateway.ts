@@ -104,6 +104,27 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
+    // CCR: the title of the new private room (the server mints the ADH- id;
+    // 64 is the wire's channel-title ceiling — ERR 67 past it).
+    action: z.literal("channel.create"),
+    d: z.object({ title: z.string().min(1).max(64) }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.invite"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // RST: public = listed + freely joinable, private = unlisted + invite-only.
+    action: z.literal("channel.status"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      status: z.enum(["public", "private"]),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
     action: z.literal("msg.send"),
     // The live chat_max/priv_max VARs are enforced by the session at send
     // time; this is only an anti-abuse ceiling, far above any real limit.
@@ -333,6 +354,13 @@ export type GatewayEvent =
        * while it streams would otherwise show everyone offline until their
        * next status change. */
       d: { characters: [string, string, string, string][] };
+    }
+  | {
+      kind: "channel.invite";
+      /** Inbound CIU: `sender` invited this identity to room `key`
+       * (ADH- id), displayed as `title`. Volatile — an invite missed while
+       * detached is joinable later via the key anyway. */
+      d: { sender: string; title: string; key: string };
     }
   | { kind: "typing"; d: { character: string; status: string } }
   | {

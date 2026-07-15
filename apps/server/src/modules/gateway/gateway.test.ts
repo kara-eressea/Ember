@@ -1449,6 +1449,118 @@ describe("gateway commands", () => {
     }
   });
 
+  it("creates a private room, invites, and admits the invitee (M6 rooms)", async () => {
+    const { identityId, token } = await createIdentity();
+    // A second identity on the same account receives the invite.
+    const [row] = await db
+      .select({ accountId: identities.flistAccountId })
+      .from(identities)
+      .where(eq(identities.id, identityId));
+    const [cindral] = await db
+      .insert(identities)
+      .values({ flistAccountId: row!.accountId, characterName: "Cindral" })
+      .returning({ id: identities.id });
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    await client.nextOfType("ack");
+
+    const invitee = await connectClient();
+    await invitee.hello(token);
+    await invitee.subscribe(cindral!.id);
+    invitee.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId: cindral!.id, action: "session.connect" },
+    });
+    await invitee.nextOfType("ack");
+
+    // CCR: the ack confirms the send; the minted ADH- key arrives through
+    // the ordinary join fan-out.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "channel.create",
+        d: { title: "Gateway Attic" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    const room = await nextConversationUpdate<{
+      id: string;
+      channelKey: string | null;
+      title: string;
+      joined: boolean;
+      lastReadMessageId: number | null;
+    }>(client, (c) => c.joined);
+    expect(room.channelKey).toMatch(/^ADH-/);
+    expect(room.title).toBe("Gateway Attic");
+    const key = room.channelKey!;
+
+    // Invite → the other identity's subscribers get the actionable event.
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "channel.invite",
+        d: { key, character: "Cindral" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 3,
+      d: { ok: true },
+    });
+    const invite = await invitee.nextEvent("channel.invite");
+    expect(eventPayload<object>(invite)).toEqual({
+      sender: CHARACTER,
+      title: "Gateway Attic",
+      key,
+    });
+
+    // The invitee is admitted to the closed room…
+    invitee.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId: cindral!.id, action: "channel.join", d: { key } },
+    });
+    await invitee.nextOfType("ack");
+    const joined = await nextConversationUpdate<{
+      id: string;
+      channelKey: string | null;
+      joined: boolean;
+      lastReadMessageId: number | null;
+    }>(invitee, (c) => c.joined && c.channelKey === key);
+    expect(joined.channelKey).toBe(key);
+
+    // …and RST flips the room public without an error.
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: {
+        identityId,
+        action: "channel.status",
+        d: { key, status: "public" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 4,
+      d: { ok: true },
+    });
+
+    app.sessions.stop(cindral!.id);
+  });
+
   it("opens a PM conversation and advances the read cursor across clients", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);

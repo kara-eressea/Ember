@@ -15,6 +15,7 @@ import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
 import {
   useSessionsStore,
+  type ChannelInvite,
   type ChannelView,
   type DmView,
   type IdentitySession,
@@ -150,6 +151,9 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           </button>
         </div>
         {channels.map((channel) => channelRow(channel, false))}
+        {session.invites.map((invite) => (
+          <InviteRow key={invite.key} session={session} invite={invite} />
+        ))}
         <JoinChannelForm session={session} />
 
         <div className={styles.sectionHeader}>
@@ -442,6 +446,96 @@ function NavRow({
         )
       )}
     </Link>
+  );
+}
+
+/**
+ * An inbound channel invitation (CIU) as an actionable row: join or
+ * dismiss. Volatile by design — a dismissed or missed invite stays joinable
+ * later through the channel browser's hidden-by-name footer.
+ */
+function InviteRow({
+  session,
+  invite,
+}: {
+  session: IdentitySession;
+  invite: ChannelInvite;
+}) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  async function join() {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const ack = await gateway.cmd({
+        identityId: session.identityId,
+        action: "channel.join",
+        d: { key: invite.key },
+      });
+      if (!ack.ok) {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            session.identityId,
+            "error",
+            ack.error ?? "Could not join",
+          );
+        return;
+      }
+      const channel = await waitForJoin(session.identityId, invite.key);
+      if (!channel) {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            session.identityId,
+            "error",
+            "No response from the channel — the invite may have expired",
+          );
+        return;
+      }
+      useSessionsStore.getState().dismissInvite(session.identityId, invite.key);
+      void navigate(channelPath(session.character, channel.key));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.inviteRow}>
+      <span
+        className={styles.inviteText}
+        title={`${invite.title} (${invite.key})`}
+      >
+        ✉ <strong>{invite.sender}</strong> invited you to{" "}
+        <strong>{invite.title}</strong>
+      </span>
+      <button
+        type="button"
+        className={styles.miniButton}
+        aria-label={`Join ${invite.title}`}
+        disabled={busy || session.sessionStatus !== "online"}
+        onClick={() => {
+          void join();
+        }}
+      >
+        Join
+      </button>
+      <button
+        type="button"
+        className={styles.inviteDismiss}
+        aria-label={`Dismiss invite to ${invite.title}`}
+        onClick={() => {
+          useSessionsStore
+            .getState()
+            .dismissInvite(session.identityId, invite.key);
+        }}
+      >
+        ✕
+      </button>
+    </div>
   );
 }
 

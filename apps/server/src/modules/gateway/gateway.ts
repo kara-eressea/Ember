@@ -195,6 +195,17 @@ function translateCommand(
           ),
         },
       };
+    case "CIU":
+      // An invitation to a private room — actionable client-side (join /
+      // dismiss). Volatile: a missed invite is joinable later via the key.
+      return {
+        kind: "channel.invite",
+        d: {
+          sender: command.payload.sender,
+          title: command.payload.title,
+          key: command.payload.name,
+        },
+      };
     case "CDS":
       return {
         kind: "channel.info",

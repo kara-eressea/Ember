@@ -43,6 +43,25 @@ async function waitForJoin(
   return undefined;
 }
 
+/** CCR's ack can't carry the minted ADH- id (the server assigns it in the
+ * JCH echo) — watch for a newly joined ADH- room that wasn't there before. */
+async function waitForCreatedRoom(
+  identityId: string,
+  before: ReadonlySet<string>,
+): Promise<ChannelView | undefined> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const channels =
+      useSessionsStore.getState().sessions[identityId]?.channels ?? {};
+    for (const [key, channel] of Object.entries(channels)) {
+      if (key.startsWith("ADH-") && channel.joined && !before.has(key)) {
+        return channel;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return undefined;
+}
+
 interface DirectoryData {
   channels: DirectoryChannelDto[];
   refreshedAt: string | null;
@@ -393,6 +412,104 @@ function HiddenJoinFooter({
           Hidden and invite-only rooms won&apos;t appear in the lists above.
         </p>
       )}
+      <CreateRoomForm session={session} onClose={onClose} />
     </footer>
+  );
+}
+
+/**
+ * CCR: creates a private, invite-only room (the title is the payload; the
+ * server mints the ADH- id). New rooms start unlisted — open them up or
+ * invite people from the room header.
+ */
+function CreateRoomForm({
+  session,
+  onClose,
+}: {
+  session: IdentitySession;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = title.trim();
+    if (!trimmed || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    try {
+      const before = new Set(
+        Object.keys(
+          useSessionsStore.getState().sessions[session.identityId]?.channels ??
+            {},
+        ),
+      );
+      const ack = await gateway.cmd({
+        identityId: session.identityId,
+        action: "channel.create",
+        d: { title: trimmed },
+      });
+      if (!ack.ok) {
+        setError(ack.error ?? "Could not create the room");
+        return;
+      }
+      const channel = await waitForCreatedRoom(session.identityId, before);
+      if (!channel) {
+        setError("The server never confirmed the room — try again");
+        return;
+      }
+      onClose();
+      void navigate(channelPath(session.character, channel.key));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div
+        className={`${styles.footerLabel} ${styles.footerLabelSpaced ?? ""}`}
+      >
+        Create a private room
+      </div>
+      <form
+        className={styles.footerForm}
+        onSubmit={(event) => {
+          void submit(event);
+        }}
+      >
+        <input
+          className={styles.footerInput}
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+          }}
+          maxLength={64}
+          placeholder="Room title…"
+          aria-label="Create a private room"
+        />
+        <button
+          type="submit"
+          className={styles.joinButton}
+          disabled={busy || session.sessionStatus !== "online"}
+        >
+          Create
+        </button>
+      </form>
+      {error ? (
+        <p className={styles.footerError} role="alert">
+          {error}
+        </p>
+      ) : (
+        <p className={styles.footerNote}>
+          New rooms start invite-only; open them up from the room header.
+        </p>
+      )}
+    </>
   );
 }

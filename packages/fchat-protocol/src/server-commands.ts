@@ -18,6 +18,13 @@ export const serverCommandSchemas = {
       z.object({ name: z.string(), mode: z.string(), characters: z.int() }),
     ),
   }),
+  /** A channel invitation: `sender` invites us to room `name` ("ADH-…"),
+   * displayed as `title`. */
+  CIU: z.object({
+    sender: z.string(),
+    title: z.string(),
+    name: z.string(),
+  }),
   /** List of channel ops. First entry is the owner (may be ""). */
   COL: z.object({ channel: z.string(), oplist: z.array(z.string()) }),
   /** Connected-user count, sent after identification and before the LIS batches. */
