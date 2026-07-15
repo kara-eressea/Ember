@@ -81,6 +81,12 @@ export class ChannelDirectory {
     this.#now = options.now ?? Date.now;
   }
 
+  /** Resolves once every replacement enqueued so far has committed. Test
+   * hook: sleeping "long enough" for the queue flakes on loaded runners. */
+  async flushWrites(): Promise<void> {
+    await this.#writeQueue;
+  }
+
   /** Subscribes to a session's inbound commands; any CHA/ORS response —
    * whoever requested it — replaces the shared cache. */
   attach(session: DirectorySession): void {

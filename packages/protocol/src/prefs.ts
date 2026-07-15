@@ -108,6 +108,10 @@ const prefsShape = {
   /** Off = notifications show the sender only, never the message body
    * (privacy toggle, decisions.md §10). */
   notifyShowContent: z.boolean(),
+  /** Desktop notifications for website events pushed over RTB — new notes
+   * and friend requests (M6 step 9, feature-parity audit decision 3). The
+   * notice strip shows them regardless. */
+  desktopNotifyNotes: z.boolean(),
   /** Mute overrides — alerts only (chime, title flash, desktop
    * notifications); badges and tint still accrue (decisions.md §10).
    * Patches replace the whole array. */
@@ -167,6 +171,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   desktopNotifyMentions: false,
   desktopNotifyPms: false,
   notifyShowContent: true,
+  desktopNotifyNotes: false,
   mutedIdentityIds: [],
   mutedConvIds: [],
   hideAds: false,

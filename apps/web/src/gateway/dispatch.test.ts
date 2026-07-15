@@ -25,7 +25,7 @@ vi.mock("../lib/desktop-notify.js", async (importOriginal) => ({
 import { showMessageNotification } from "../lib/desktop-notify.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { hydrateTheme } from "../theme/theme.js";
-import { dispatchFrame } from "./dispatch.js";
+import { dispatchFrame, rtbNoticeText } from "./dispatch.js";
 
 const IDENTITY = "11111111-1111-7111-8111-111111111111";
 const CONV_CHANNEL = "22222222-2222-7222-8222-222222222222";
@@ -782,5 +782,24 @@ describe("catchup", () => {
       useMessagesStore.getState().buffers[CONV_CHANNEL]?.messages,
     ).toHaveLength(2);
     expect(session().channels["Frontpage"]?.unread).toBe(3);
+  });
+});
+
+describe("rtbNoticeText", () => {
+  it("renders notes, friend requests, and comments; stays silent otherwise", () => {
+    expect(
+      rtbNoticeText({
+        type: "note",
+        character: "Nyx Firemane",
+        subject: "Hello",
+      }),
+    ).toBe("New note from Nyx Firemane: Hello — read it on f-list.net");
+    expect(rtbNoticeText({ type: "note", character: "Nyx Firemane" })).toBe(
+      "New note from Nyx Firemane — read it on f-list.net",
+    );
+    expect(rtbNoticeText({ type: "friendrequest", character: "Tally" })).toBe(
+      "Tally sent a friend request",
+    );
+    expect(rtbNoticeText({ type: "trackadd" })).toBeUndefined();
   });
 });

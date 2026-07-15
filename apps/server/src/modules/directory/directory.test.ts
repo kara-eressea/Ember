@@ -227,11 +227,6 @@ function emitOfficial(
   });
 }
 
-/** The write queue is a promise chain; one macrotask turn lets it drain. */
-function drained(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 25));
-}
-
 describe("directory cache semantics (direct instance)", () => {
   // Direct instances share the one channel_directory table with the REST
   // tests above — start each test from an empty directory.
@@ -254,10 +249,10 @@ describe("directory cache semantics (direct instance)", () => {
         channels: [{ name: "ADH-feed", characters: 2, title: "Bird Feeder" }],
       },
     });
-    await drained();
+    await directory.flushWrites();
 
     emitOfficial(events, [{ name: "Alpha", characters: 4 }]);
-    await drained();
+    await directory.flushWrites();
 
     const snapshot = await directory.get();
     expect(snapshot.channels).toEqual([
@@ -286,7 +281,7 @@ describe("directory cache semantics (direct instance)", () => {
     });
     directory.attach(session);
     emitOfficial(events, [{ name: "Alpha", characters: 1 }]);
-    await drained();
+    await directory.flushWrites();
 
     const snapshot = await directory.get(session);
     expect(snapshot.channels.map((c) => c.key)).toContain("Alpha");
@@ -300,7 +295,7 @@ describe("directory cache semantics (direct instance)", () => {
     const { session, events } = fakeSession();
     directory.attach(session);
     emitOfficial(events, [{ name: "Alpha", characters: 1 }]);
-    await drained();
+    await directory.flushWrites();
 
     // requestChannelLists resolves but no CHA/ORS ever comes back.
     const snapshot = await directory.get(session);
@@ -314,7 +309,7 @@ describe("directory cache semantics (direct instance)", () => {
     });
     directory.attach(session);
     emitOfficial(events, [{ name: "Alpha", characters: 1 }]);
-    await drained();
+    await directory.flushWrites();
 
     const snapshot = await directory.get(session);
     expect(snapshot.channels.map((c) => c.key)).toContain("Alpha");

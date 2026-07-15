@@ -476,6 +476,13 @@ export type GatewayEvent =
       d: { sendDelaySeconds: number; prefs: UserPrefs };
     }
   | { kind: "sys"; d: { message: string } }
+  // Real-time bridge: website events (notes, friend requests, comment
+  // replies) pushed over the chat socket. Volatile — the website remains
+  // the place to read/act; the client surfaces a notice + notification.
+  | {
+      kind: "rtb";
+      d: { type: string; character?: string; subject?: string };
+    }
   | { kind: "error"; d: { number: number; message: string } };
 
 export type ServerFrame =
