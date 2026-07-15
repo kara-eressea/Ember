@@ -14,6 +14,7 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { adsHidden, toggleChannelAds } from "./ads.js";
 import { RichText } from "./RichText.js";
 import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
@@ -127,6 +128,40 @@ function MuteChip({
 }
 
 const EMPTY_MUTES = PREFS_DEFAULTS.mutedConvIds;
+
+/**
+ * Ads visibility for this channel (M6): every channel inherits the global
+ * hideAds preference; this chip stores a per-channel exception in the
+ * synced prefs document. Render-side only — history keeps hidden ads.
+ */
+function AdsChip({
+  identityId,
+  channelKey,
+}: {
+  identityId: string;
+  channelKey: string;
+}) {
+  const prefs = useSessionsStore(
+    (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
+  );
+  const hidden = adsHidden(prefs, channelKey);
+
+  return (
+    <button
+      className={`${styles.pinChip} ${hidden ? (styles.ignoreChipActive ?? "") : ""}`}
+      onClick={() => {
+        void patchPrefs(identityId, toggleChannelAds(prefs, channelKey));
+      }}
+      title={
+        hidden
+          ? "Ads are hidden in this channel — click to show them"
+          : "Ads are shown in this channel — click to hide them"
+      }
+    >
+      {hidden ? "♥ ads off" : "♥ ads on"}
+    </button>
+  );
+}
 
 function PinChip({
   identityId,
@@ -369,6 +404,9 @@ export function ChannelHeader({
           pinned={channel.pinned}
         />
         <MuteChip identityId={identityId} convId={channel.convId} />
+        {channel.mode !== "chat" && (
+          <AdsChip identityId={identityId} channelKey={channel.key} />
+        )}
         {canManageRoom && (
           <RoomChip identityId={identityId} channelKey={channel.key} />
         )}

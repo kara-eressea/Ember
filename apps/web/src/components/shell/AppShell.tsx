@@ -256,6 +256,7 @@ export function AppShell() {
               session={session}
               convId={convId}
               channelKey={channel?.key}
+              channelMode={channel?.mode}
               partner={
                 conversation.kind === "pm" ? conversation.dm.partner : undefined
               }

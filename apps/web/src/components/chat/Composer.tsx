@@ -16,6 +16,7 @@ import {
 import { patchPrefs } from "../prefs/patch.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
+import { parseSlash, SlashUsageError } from "./slash.js";
 import styles from "./chat.module.css";
 
 /** The textarea grows with its content up to this, then scrolls. */
@@ -38,6 +39,8 @@ export interface ComposerProps {
   convId: string;
   /** Channel key when the conversation is a channel (icon_blacklist check). */
   channelKey?: string;
+  /** The channel's room mode (chat/ads/both) — gates the ad toggle. */
+  channelMode?: string;
   /** DM partner — enables outbound typing telemetry (TPN, PMs only). */
   partner?: string;
   /** Channel key when the conversation is a channel we are not live in. */
@@ -51,6 +54,7 @@ export function Composer({
   session,
   convId,
   channelKey,
+  channelMode,
   partner,
   rejoinKey,
   placeholder,
@@ -62,11 +66,18 @@ export function Composer({
   const [markdown, setMarkdown] = useState(savedMarkdownMode);
   const [eiconOpen, setEiconOpen] = useState(false);
   const [eiconName, setEiconName] = useState("");
+  const [adChosen, setAdChosen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
+  // Room mode decides what a send is: ads-only rooms force LRP, chat-only
+  // rooms force MSG, "both" offers the toggle (RMO re-gates this live).
+  const adsPossible = channelKey !== undefined && channelMode !== "chat";
+  const adForced = channelKey !== undefined && channelMode === "ads";
+  const sendAsAd = adForced || (adsPossible && adChosen);
   // What actually goes on the wire — and what the server's limit measures.
   const wire = markdown ? mdToBBCode(text) : text;
   const bytes = utf8.encode(wire).length;
+  const limitBytes = sendAsAd ? session.limits.lfrpMax : maxBytes;
   const pending = session.outbox.filter((item) => item.convId === convId);
   const previewEmote = parseEmote(wire);
   // Case-insensitive: the icon_blacklist VAR carries lowercase names while
@@ -176,6 +187,45 @@ export function Composer({
     if (!body || busy) {
       return;
     }
+    // Slash commands act on the raw typed text, before any translation.
+    let slash;
+    try {
+      slash = parseSlash(text.trim());
+    } catch (usage) {
+      if (usage instanceof SlashUsageError) {
+        setError(usage.message);
+        return;
+      }
+      throw usage;
+    }
+    if (slash) {
+      if (slash.type === "unknown") {
+        setError(`Unknown command /${slash.name}`);
+        return;
+      }
+      if (channelKey === undefined) {
+        setError("Rolls only work in channels");
+        return;
+      }
+      setBusy(true);
+      setError(undefined);
+      const ack = await gateway.cmd({
+        identityId: session.identityId,
+        action: "channel.roll",
+        d: {
+          key: channelKey,
+          dice: slash.type === "bottle" ? "bottle" : slash.dice,
+        },
+      });
+      setBusy(false);
+      if (!ack.ok) {
+        setError(ack.error ?? "Roll failed");
+        return;
+      }
+      setText("");
+      requestAnimationFrame(autogrow);
+      return;
+    }
     setBusy(true);
     setError(undefined);
     const ack = await gateway.cmd({
@@ -183,9 +233,12 @@ export function Composer({
       action: "msg.send",
       // The typed source rides along: a delayed send must recall to what
       // the user wrote, not the translated wire form.
-      d: markdown
-        ? { convId, bbcode: body, markdown: text.trim() }
-        : { convId, bbcode: body },
+      d: {
+        convId,
+        bbcode: body,
+        ...(markdown ? { markdown: text.trim() } : {}),
+        ...(sendAsAd ? { kind: "lrp" as const } : {}),
+      },
     });
     setBusy(false);
     if (!ack.ok) {
@@ -452,6 +505,26 @@ export function Composer({
         >
           Ⓜ Markdown
         </button>
+        {adsPossible && (
+          <button
+            type="button"
+            className={`${styles.mdToggle} ${sendAsAd ? (styles.mdToggleOn ?? "") : ""}`}
+            onClick={() => {
+              setAdChosen(!adChosen);
+            }}
+            disabled={adForced}
+            title={
+              adForced
+                ? "This room only accepts roleplay ads (LRP)"
+                : sendAsAd
+                  ? "Sending as a roleplay ad (LRP) — 1 per 10 minutes"
+                  : "Send as a roleplay ad (LRP)"
+            }
+            aria-pressed={sendAsAd}
+          >
+            ♥ Ad
+          </button>
+        )}
         <select
           className={styles.delaySelect}
           value={session.sendDelaySeconds}
@@ -468,9 +541,9 @@ export function Composer({
         </select>
         <span>Enter to send · Shift+Enter for newline</span>
         <span
-          className={`${styles.charCounter} ${bytes > maxBytes ? (styles.charCounterOver ?? "") : ""}`}
+          className={`${styles.charCounter} ${bytes > limitBytes ? (styles.charCounterOver ?? "") : ""}`}
         >
-          {bytes}/{maxBytes}
+          {bytes}/{limitBytes}
         </span>
       </div>
     </div>

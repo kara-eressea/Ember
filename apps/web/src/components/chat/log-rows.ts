@@ -36,22 +36,24 @@ export function buildRows(
   ignores: readonly string[] = [],
   options: {
     groupConsecutive?: boolean;
+    /** Hide roleplay ads (the ads-visibility pref, resolved per channel by
+     * the caller). Render-side like ignores — ads stay persisted. */
+    hideAds?: boolean;
     /** Live-only join/part/quit lines, merged by timestamp (the show-
      * join/part/quit pref: the caller passes nothing when it's off). */
     presence?: readonly PresenceLine[];
   } = {},
 ): LogRow[] {
-  // Ignoring is render-side only (messages stay persisted; unignoring later
-  // brings them back). Own sends always show; names match case-insensitively.
+  // Ignoring and ad-hiding are render-side only (messages stay persisted;
+  // flipping the pref brings them back). Own sends always show; ignore
+  // names match case-insensitively.
   const ignored = new Set(ignores.map((name) => name.toLowerCase()));
-  const visible =
-    ignored.size === 0
-      ? messages
-      : messages.filter(
-          (message) =>
-            message.sentByUs ||
-            !ignored.has(message.senderCharacter.toLowerCase()),
-        );
+  const visible = messages.filter(
+    (message) =>
+      message.sentByUs ||
+      ((options.hideAds !== true || message.kind !== "lrp") &&
+        !ignored.has(message.senderCharacter.toLowerCase())),
+  );
   const presence = (options.presence ?? []).filter(
     (line) => !ignored.has(line.character.toLowerCase()),
   );

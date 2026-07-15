@@ -54,16 +54,12 @@
         "app_users_email_unique": {
           "name": "app_users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         },
         "app_users_username_unique": {
           "name": "app_users_username_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "username"
-          ]
+          "columns": ["username"]
         }
       },
       "policies": {},
@@ -126,12 +122,8 @@
           "name": "auth_sessions_user_id_app_users_id_fk",
           "tableFrom": "auth_sessions",
           "tableTo": "app_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -141,9 +133,7 @@
         "auth_sessions_refreshTokenHash_unique": {
           "name": "auth_sessions_refreshTokenHash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "refresh_token_hash"
-          ]
+          "columns": ["refresh_token_hash"]
         }
       },
       "policies": {},
@@ -317,12 +307,8 @@
           "name": "conversations_identity_id_identities_id_fk",
           "tableFrom": "conversations",
           "tableTo": "identities",
-          "columnsFrom": [
-            "identity_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["identity_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -392,12 +378,8 @@
           "name": "flist_accounts_user_id_app_users_id_fk",
           "tableFrom": "flist_accounts",
           "tableTo": "app_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -480,12 +462,8 @@
           "name": "highlight_rules_user_id_app_users_id_fk",
           "tableFrom": "highlight_rules",
           "tableTo": "app_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -569,12 +547,8 @@
           "name": "identities_flist_account_id_flist_accounts_id_fk",
           "tableFrom": "identities",
           "tableTo": "flist_accounts",
-          "columnsFrom": [
-            "flist_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["flist_account_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -608,12 +582,8 @@
           "name": "ignores_identity_id_identities_id_fk",
           "tableFrom": "ignores",
           "tableTo": "identities",
-          "columnsFrom": [
-            "identity_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["identity_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -621,10 +591,7 @@
       "compositePrimaryKeys": {
         "ignores_identity_id_character_pk": {
           "name": "ignores_identity_id_character_pk",
-          "columns": [
-            "identity_id",
-            "character"
-          ]
+          "columns": ["identity_id", "character"]
         }
       },
       "uniqueConstraints": {},
@@ -723,12 +690,8 @@
           "name": "messages_conversation_id_conversations_id_fk",
           "tableFrom": "messages",
           "tableTo": "conversations",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["conversation_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -837,12 +800,8 @@
           "name": "outbox_messages_identity_id_identities_id_fk",
           "tableFrom": "outbox_messages",
           "tableTo": "identities",
-          "columnsFrom": [
-            "identity_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["identity_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -850,12 +809,8 @@
           "name": "outbox_messages_conversation_id_conversations_id_fk",
           "tableFrom": "outbox_messages",
           "tableTo": "conversations",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["conversation_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -904,12 +859,8 @@
           "name": "user_preferences_user_id_app_users_id_fk",
           "tableFrom": "user_preferences",
           "tableTo": "app_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -925,38 +876,22 @@
     "public.channel_directory_kind": {
       "name": "channel_directory_kind",
       "schema": "public",
-      "values": [
-        "official",
-        "open"
-      ]
+      "values": ["official", "open"]
     },
     "public.conversation_kind": {
       "name": "conversation_kind",
       "schema": "public",
-      "values": [
-        "channel",
-        "pm"
-      ]
+      "values": ["channel", "pm"]
     },
     "public.highlight_rule_kind": {
       "name": "highlight_rule_kind",
       "schema": "public",
-      "values": [
-        "word",
-        "nick",
-        "regex"
-      ]
+      "values": ["word", "nick", "regex"]
     },
     "public.message_kind": {
       "name": "message_kind",
       "schema": "public",
-      "values": [
-        "msg",
-        "lrp",
-        "rll",
-        "sys",
-        "pm"
-      ]
+      "values": ["msg", "lrp", "rll", "sys", "pm"]
     }
   },
   "schemas": {},
