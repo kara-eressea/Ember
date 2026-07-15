@@ -7,6 +7,12 @@ import type { ChannelMode } from "@emberchat/fchat-protocol";
 export interface SimAccount {
   readonly password: string;
   readonly characters: readonly string[];
+  /** Account-wide profile bookmarks (JSON API + FRL seed). */
+  readonly bookmarks?: readonly string[];
+  /** Friend pairs: `own` is this account's character, `friend` theirs. */
+  readonly friends?: readonly { own: string; friend: string }[];
+  /** Incoming friend requests waiting on this account (request-list). */
+  readonly incomingRequests?: readonly { from: string; to: string }[];
 }
 
 export interface SimChannelSeed {
@@ -97,6 +103,15 @@ export const DEFAULT_WORLD: SimWorld = {
     "rue@example.test": {
       password: "hunter2",
       characters: ["Rue Alder", "Alder Fen", "Sorrel Vane"],
+    },
+    // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
+    // with a bookmark, a friend, and a pending incoming request from Tally.
+    "fern@example.test": {
+      password: "hunter2",
+      characters: ["Fern Glade"],
+      bookmarks: ["Old Greywhisker"],
+      friends: [{ own: "Fern Glade", friend: "Nyx Firemane" }],
+      incomingRequests: [{ from: "Tally Marsh", to: "Fern Glade" }],
     },
   },
   channels: [

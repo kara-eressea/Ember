@@ -311,4 +311,15 @@ describe("SessionState moderation folds (M6)", () => {
     state.resetVolatile();
     expect(state.ownIsChatop).toBe(false);
   });
+
+  it("captures the FRL friends+bookmarks union (M6 step 7)", () => {
+    const state = new SessionState();
+    state.apply({
+      cmd: "FRL",
+      payload: { characters: ["Nyx Firemane", "Old Greywhisker"] },
+    });
+    expect([...state.frl]).toEqual(["Nyx Firemane", "Old Greywhisker"]);
+    state.resetVolatile();
+    expect(state.frl.size).toBe(0);
+  });
 });

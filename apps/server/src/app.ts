@@ -18,6 +18,7 @@ import {
   type ChannelDirectoryOptions,
 } from "./modules/directory/directory.js";
 import { directoryRoutes } from "./modules/directory/routes.js";
+import { socialRoutes } from "./modules/social/routes.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
@@ -169,6 +170,13 @@ export async function buildApp({
     db,
     sessions,
     directory,
+  });
+  await app.register(socialRoutes, {
+    prefix: "/api/identities",
+    db,
+    sessions,
+    tickets,
+    flistApi,
   });
   await app.register(highlightsRoutes, {
     prefix: "/api/highlight-rules",

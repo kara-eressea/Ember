@@ -50,6 +50,9 @@ export class SessionState {
   ignoresSeeded = false;
   /** Chatops (global moderators), from ADL at login. */
   readonly chatops = new Set<string>();
+  /** The FRL login list: the union of the account's friends and bookmarks
+   * (the JSON API distinguishes them; this is the fast path). */
+  readonly frl = new Set<string>();
 
   /** Whether our own character is a chatop (gates the admin UI). */
   get ownIsChatop(): boolean {
@@ -177,6 +180,13 @@ export class SessionState {
         }
         return;
       }
+      case "FRL": {
+        this.frl.clear();
+        for (const name of command.payload.characters) {
+          this.frl.add(name);
+        }
+        return;
+      }
       case "COA": {
         const channel = this.channels.get(command.payload.channel);
         if (channel && !channel.oplist.includes(command.payload.character)) {
@@ -243,5 +253,6 @@ export class SessionState {
     this.ignores.clear();
     this.ignoresSeeded = false;
     this.chatops.clear();
+    this.frl.clear();
   }
 }
