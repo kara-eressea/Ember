@@ -75,8 +75,13 @@ interface ChannelState {
   /** Characters invited via CIU — they may join while the room is closed. */
   readonly invited: Set<string>;
   description: string;
-  oplist: readonly string[];
+  oplist: string[];
   readonly members: Set<string>;
+  /** Characters banned via CBU — JCH refuses with ERR 48 until CUB. */
+  readonly banned: Set<string>;
+  /** Character → timeout expiry (epoch ms). Expired entries are pruned on
+   * the next join attempt. */
+  readonly timeouts: Map<string, number>;
 }
 
 interface CharacterState {
@@ -187,8 +192,10 @@ export class FchatSim {
         open: true,
         invited: new Set(),
         description: seed.description,
-        oplist: seed.oplist ?? [""],
+        oplist: [...(seed.oplist ?? [""])],
         members: new Set(seed.npcs),
+        banned: new Set(),
+        timeouts: new Map(),
       });
     }
     for (const npc of this.#world.npcs) {
@@ -458,6 +465,10 @@ export class FchatSim {
       payload: { count: this.#online.size },
     });
     this.#send(connection, {
+      cmd: "ADL",
+      payload: { ops: [...(this.#world.chatops ?? [])] },
+    });
+    this.#send(connection, {
       cmd: "IGN",
       payload: {
         action: "init",
@@ -578,6 +589,33 @@ export class FchatSim {
       case "RMO":
         this.#handleRoomMode(connection, character, command.payload);
         return;
+      case "CKU":
+        this.#handleKick(connection, character, command.payload);
+        return;
+      case "CBU":
+        this.#handleBan(connection, character, command.payload);
+        return;
+      case "CTU":
+        this.#handleTimeout(connection, character, command.payload);
+        return;
+      case "CUB":
+        this.#handleUnban(connection, character, command.payload);
+        return;
+      case "COA":
+        this.#handlePromote(connection, character, command.payload);
+        return;
+      case "COR":
+        this.#handleDemote(connection, character, command.payload);
+        return;
+      case "CSO":
+        this.#handleSetOwner(connection, character, command.payload);
+        return;
+      case "CDS":
+        this.#handleSetDescription(connection, character, command.payload);
+        return;
+      case "CBL":
+        this.#handleBanlist(connection, character, command.payload.channel);
+        return;
       case "PRI":
         this.#handlePrivateMessage(connection, character, command.payload);
         return;
@@ -650,6 +688,14 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.AlreadyInChannel);
       return;
     }
+    const timeoutUntil = channel.timeouts.get(character);
+    if (timeoutUntil !== undefined && timeoutUntil <= Date.now()) {
+      channel.timeouts.delete(character); // expired — prune and allow
+    }
+    if (channel.banned.has(character) || channel.timeouts.has(character)) {
+      this.#sendError(connection, FchatErrorCode.BannedFromChannel);
+      return;
+    }
     if (
       !channel.open &&
       !channel.invited.has(character) &&
@@ -706,6 +752,8 @@ export class FchatSim {
       description: "",
       oplist: [character],
       members: new Set(),
+      banned: new Set(),
+      timeouts: new Map(),
     });
     this.#handleJoin(connection, character, name);
   }
@@ -944,6 +992,281 @@ export class FchatSim {
             : `${String(roll.count)}d${String(roll.sides)}`,
         ),
         endresult,
+      },
+    });
+  }
+
+  /** Chanop check shared by the moderation handlers: channel op or global
+   * chatop. Answers ERR 19 itself; returns the channel on success. */
+  #requireOp(
+    connection: Connection,
+    character: string,
+    channelName: string,
+  ): ChannelState | undefined {
+    const channel = this.#channels.get(channelName);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return undefined;
+    }
+    if (
+      !channel.oplist.includes(character) &&
+      !(this.#world.chatops ?? []).includes(character)
+    ) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return undefined;
+    }
+    return channel;
+  }
+
+  /** Ops are shielded from kick/ban/timeout unless the actor is the owner
+   * or a chatop — the real server answers with ERR 21. */
+  #targetIsShielded(
+    channel: ChannelState,
+    actor: string,
+    target: string,
+  ): boolean {
+    return (
+      channel.oplist.includes(target) &&
+      channel.oplist[0] !== actor &&
+      !(this.#world.chatops ?? []).includes(actor)
+    );
+  }
+
+  #handleKick(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (!channel.members.has(payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CharacterNotInChannel);
+      return;
+    }
+    if (this.#targetIsShielded(channel, character, payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    this.#broadcastToChannel(channel, {
+      cmd: "CKU",
+      payload: {
+        operator: character,
+        channel: channel.name,
+        character: payload.character,
+      },
+    });
+    // The invite (if any) survives: bans gate via the banned set, and an
+    // unban or expired timeout lets an invited character straight back in.
+    channel.members.delete(payload.character);
+  }
+
+  #handleBan(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (channel.banned.has(payload.character)) {
+      this.#sendError(connection, FchatErrorCode.AlreadyBannedFromChannel);
+      return;
+    }
+    if (this.#targetIsShielded(channel, character, payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    channel.banned.add(payload.character);
+    this.#broadcastToChannel(channel, {
+      cmd: "CBU",
+      payload: {
+        operator: character,
+        channel: channel.name,
+        character: payload.character,
+      },
+    });
+    // The invite (if any) survives: bans gate via the banned set, and an
+    // unban or expired timeout lets an invited character straight back in.
+    channel.members.delete(payload.character);
+  }
+
+  #handleTimeout(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string; length: number },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (this.#targetIsShielded(channel, character, payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    channel.timeouts.set(
+      payload.character,
+      Date.now() + payload.length * 60_000,
+    );
+    this.#broadcastToChannel(channel, {
+      cmd: "CTU",
+      payload: {
+        operator: character,
+        channel: channel.name,
+        length: payload.length,
+        character: payload.character,
+      },
+    });
+    // The invite (if any) survives: bans gate via the banned set, and an
+    // unban or expired timeout lets an invited character straight back in.
+    channel.members.delete(payload.character);
+  }
+
+  #handleUnban(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (!channel.banned.delete(payload.character)) {
+      this.#sendError(connection, FchatErrorCode.NotBannedFromChannel);
+      return;
+    }
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message: `Channel ban removed on ${payload.character}.`,
+        channel: channel.name,
+      },
+    });
+  }
+
+  #handlePromote(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (channel.oplist.includes(payload.character)) {
+      this.#send(connection, {
+        cmd: "SYS",
+        payload: {
+          message: `${payload.character} is already a channel operator.`,
+          channel: channel.name,
+        },
+      });
+      return;
+    }
+    channel.oplist.push(payload.character);
+    this.#broadcastToChannel(channel, {
+      cmd: "COA",
+      payload: { character: payload.character, channel: channel.name },
+    });
+  }
+
+  #handleDemote(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    const index = channel.oplist.indexOf(payload.character);
+    if (index === -1) {
+      this.#send(connection, {
+        cmd: "SYS",
+        payload: {
+          message: `${payload.character} is not a channel operator.`,
+          channel: channel.name,
+        },
+      });
+      return;
+    }
+    // The owner slot is not a demotable op entry — CSO moves ownership.
+    if (index === 0) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    channel.oplist.splice(index, 1);
+    this.#broadcastToChannel(channel, {
+      cmd: "COR",
+      payload: { character: payload.character, channel: channel.name },
+    });
+  }
+
+  /** CSO: only the current owner (or a chatop) may hand the room over. */
+  #handleSetOwner(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (
+      channel.oplist[0] !== character &&
+      !(this.#world.chatops ?? []).includes(character)
+    ) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    channel.oplist = [
+      payload.character,
+      ...channel.oplist.slice(1).filter((op) => op !== payload.character),
+    ];
+    this.#broadcastToChannel(channel, {
+      cmd: "CSO",
+      payload: { character: payload.character, channel: channel.name },
+    });
+  }
+
+  #handleSetDescription(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; description: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    channel.description = payload.description;
+    this.#broadcastToChannel(channel, {
+      cmd: "CDS",
+      payload: { channel: channel.name, description: payload.description },
+    });
+  }
+
+  /** CBL has no dedicated response command — the list arrives as a SYS. */
+  #handleBanlist(
+    connection: Connection,
+    character: string,
+    channelName: string,
+  ): void {
+    const channel = this.#requireOp(connection, character, channelName);
+    if (!channel) {
+      return;
+    }
+    const names = [...channel.banned];
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message:
+          names.length === 0
+            ? `There are no bans set on ${channel.title}.`
+            : `Channel bans for ${channel.title}: ${names.join(", ")}.`,
+        channel: channel.name,
       },
     });
   }

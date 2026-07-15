@@ -366,6 +366,77 @@ export class FchatSession {
     });
   }
 
+  /**
+   * Moderation commands (M6 op tooling) share one shape: chanop-restricted,
+   * rare, user-clicked — they ride the ROOM rate class like the other room
+   * management. Errors come back as ERR frames; SYS acks fan out normally.
+   */
+  async #roomCommand(command: ClientCommand): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send(command)) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  async kickFromChannel(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CKU", payload: { channel, character } });
+  }
+
+  async banFromChannel(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CBU", payload: { channel, character } });
+  }
+
+  async unbanFromChannel(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CUB", payload: { channel, character } });
+  }
+
+  /** Channel timeout — a temporary ban of 1-90 minutes. */
+  async timeoutFromChannel(
+    channel: string,
+    character: string,
+    length: number,
+  ): Promise<void> {
+    await this.#roomCommand({
+      cmd: "CTU",
+      payload: { channel, character, length },
+    });
+  }
+
+  async promoteOp(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "COA", payload: { channel, character } });
+  }
+
+  async demoteOp(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "COR", payload: { channel, character } });
+  }
+
+  /** Hands the room to a new owner (current owner only). */
+  async setRoomOwner(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CSO", payload: { channel, character } });
+  }
+
+  async setRoomDescription(
+    channel: string,
+    description: string,
+  ): Promise<void> {
+    await this.#roomCommand({ cmd: "CDS", payload: { channel, description } });
+  }
+
+  /** Sets the room mode: chat, ads, or both (chanop). */
+  async setRoomMode(
+    channel: string,
+    mode: "ads" | "both" | "chat",
+  ): Promise<void> {
+    await this.#roomCommand({ cmd: "RMO", payload: { channel, mode } });
+  }
+
+  /** Requests the channel banlist — the answer arrives as a channel SYS. */
+  async requestBanlist(channel: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CBL", payload: { channel } });
+  }
+
   /** What the character's status should read as right now. */
   get ownStatus(): { status: ClientSettableStatus; statusmsg: string } {
     return this.#desiredStatus ?? { status: "online", statusmsg: "" };
@@ -659,6 +730,20 @@ export class FchatSession {
         this.events.emit("command", command);
         return;
       }
+      // Kick / ban / timeout: the frame is the leave signal (no LCH). Our
+      // own removal must also leave the desired set — a reconnect would
+      // otherwise walk straight back into a room we were just thrown out
+      // of (and churn ERR 48 forever on a ban).
+      case "CKU":
+      case "CBU":
+      case "CTU":
+        if (command.payload.character === this.character) {
+          this.#desiredChannels.delete(command.payload.channel);
+          this.#unconfirmedJoins.delete(command.payload.channel);
+        }
+        this.state.apply(command);
+        this.events.emit("command", command);
+        return;
       default:
         this.state.apply(command);
         this.events.emit("command", command);

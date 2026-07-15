@@ -158,6 +158,35 @@ export class HistorySink {
           });
           return;
         }
+        // Moderation actions render as SystemLines (M6): persisted like a
+        // channel SYS so history and every attached device agree.
+        case "CKU":
+        case "CBU":
+        case "CTU": {
+          const verb =
+            command.cmd === "CKU"
+              ? "was kicked from the channel by"
+              : command.cmd === "CBU"
+                ? "was banned from the channel by"
+                : `was timed out of the channel for ${String(command.payload.length)} minutes by`;
+          this.#enqueueMessage(identityId, {
+            target: this.#channelTarget(session, command.payload.channel),
+            senderCharacter: "",
+            kind: "sys",
+            bbcode: `${command.payload.character} ${verb} ${command.payload.operator}.`,
+            sentByUs: false,
+          });
+          // Our own removal un-joins the conversation, exactly like an LCH
+          // (the server sends no separate leave for a kick/ban).
+          if (command.payload.character === session.character) {
+            this.#enqueueJoinedFlag(
+              identityId,
+              this.#channelTarget(session, command.payload.channel),
+              false,
+            );
+          }
+          return;
+        }
         case "IGN":
           // Mirror of the server-authoritative ignore list, so snapshots can
           // serve it without (or before) a live session.

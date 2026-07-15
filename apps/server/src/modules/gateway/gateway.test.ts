@@ -20,8 +20,12 @@ import {
   it,
   vi,
 } from "vitest";
-import { FchatSim } from "@emberchat/fchat-sim";
-import { serializeServerCommand } from "@emberchat/fchat-protocol";
+import { FchatSim, rawDataToString } from "@emberchat/fchat-sim";
+import {
+  serializeClientCommand,
+  serializeServerCommand,
+  type ClientCommand,
+} from "@emberchat/fchat-protocol";
 import {
   GATEWAY_CLOSE,
   PREFS_DEFAULTS,
@@ -240,6 +244,86 @@ afterEach(() => {
 // ── Production-path setup helpers (mirrors history.test.ts) ─────────────────
 
 let userCounter = 0;
+/** A bare second participant on the sim (the "other side" of moderation). */
+class SimClient {
+  readonly #socket: WebSocket;
+  readonly #queue: string[] = [];
+  readonly #waiters: Array<(raw: string) => void> = [];
+
+  private constructor(socket: WebSocket) {
+    this.#socket = socket;
+    socket.on("message", (data) => {
+      const raw = rawDataToString(data);
+      const waiter = this.#waiters.shift();
+      if (waiter) {
+        waiter(raw);
+      } else {
+        this.#queue.push(raw);
+      }
+    });
+  }
+
+  static async connect(
+    fchat: FchatSim,
+    account: string,
+    character: string,
+  ): Promise<SimClient> {
+    const socket = new WebSocket(fchat.wsUrl);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    const client = new SimClient(socket);
+    client.send({
+      cmd: "IDN",
+      payload: {
+        method: "ticket",
+        account,
+        ticket: fchat.issueTicketFor(account),
+        character,
+        cname: "EmberChat-test-observer",
+        cversion: "0.0.0",
+      },
+    });
+    await client.waitFor("IDN");
+    return client;
+  }
+
+  send(command: ClientCommand): void {
+    this.#socket.send(serializeClientCommand(command));
+  }
+
+  async next(timeoutMs = 5000): Promise<string> {
+    const queued = this.#queue.shift();
+    if (queued !== undefined) {
+      return queued;
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("timed out waiting for a sim frame"));
+      }, timeoutMs);
+      this.#waiters.push((raw) => {
+        clearTimeout(timer);
+        resolve(raw);
+      });
+    });
+  }
+
+  /** Skips frames until one starts with the given command name. */
+  async waitFor(cmd: string): Promise<string> {
+    for (;;) {
+      const raw = await this.next();
+      if (raw === cmd || raw.startsWith(`${cmd} `)) {
+        return raw;
+      }
+    }
+  }
+
+  close(): void {
+    this.#socket.terminate();
+  }
+}
+
 async function registerUser(): Promise<string> {
   userCounter += 1;
   const response = await app.inject({
@@ -860,6 +944,7 @@ describe("gateway fan-out", () => {
       status: "online",
       statusmsg: "",
       ignores: [],
+      chatop: false,
       iconBlacklist: [],
       sendDelaySeconds: 0,
       prefs: PREFS_DEFAULTS,
@@ -1567,6 +1652,169 @@ describe("gateway commands", () => {
 
     app.sessions.stop(cindral!.id);
   });
+
+  it("moderates a room: promote/demote, describe, kick with SystemLine, ban/banlist/unban (M6 op tooling)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Own room (owner role) with Birch as the second member.
+    await session.createRoom("Mod Bench");
+    const room = await nextConversationUpdate<{
+      channelKey: string | null;
+      joined: boolean;
+    }>(client, (c) => c.joined);
+    const key = room.channelKey!;
+    await session.inviteToChannel(key, "Birch Rowan");
+    const birch = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+    birch.send({ cmd: "JCH", payload: { channel: key } });
+    await birch.waitFor("CDS");
+    await client.nextEvent("member.join");
+
+    let cmdId = 0;
+    const cmd = (action: string, d: unknown) => {
+      cmdId += 1;
+      client.send({
+        t: "cmd",
+        id: cmdId,
+        d: { identityId, action, d } as never,
+      });
+      return client.nextOfType("ack");
+    };
+    // Content-matched channel.info wait — the join flow already queued
+    // earlier channel.info frames (COL/CDS on join), so kind alone is
+    // ambiguous here.
+    const nextInfo = (
+      match: (d: {
+        key: string;
+        oplist?: string[];
+        description?: string;
+      }) => boolean,
+    ) =>
+      client.next(
+        (frame): frame is Extract<ServerFrame, { t: "event" }> =>
+          frame.t === "event" &&
+          (frame.d as { kind: string }).kind === "channel.info" &&
+          match(eventPayload(frame as { d: unknown })),
+      );
+
+    // Promote → the post-fold oplist fans out as channel.info.
+    expect(
+      (await cmd("channel.promote", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    await nextInfo(
+      (d) =>
+        d.key === key &&
+        JSON.stringify(d.oplist) === JSON.stringify([CHARACTER, "Birch Rowan"]),
+    );
+    expect(
+      (await cmd("channel.demote", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    await nextInfo(
+      (d) =>
+        d.key === key &&
+        JSON.stringify(d.oplist) === JSON.stringify([CHARACTER]),
+    );
+
+    // Describe → CDS broadcast → channel.info carries the new description.
+    expect(
+      (await cmd("channel.describe", { key, description: "House rules." })).d
+        .ok,
+    ).toBe(true);
+    await nextInfo((d) => d.key === key && d.description === "House rules.");
+
+    // Kick → member.leave + a persisted SystemLine naming operator+target.
+    expect(
+      (await cmd("channel.kick", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    expect(
+      eventPayload<object>(await client.nextEvent("member.leave")),
+    ).toEqual({ channelKey: key, character: "Birch Rowan" });
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({
+      kind: "sys",
+      bbcode: `Birch Rowan was kicked from the channel by ${CHARACTER}.`,
+    });
+
+    // Ban (Birch can rejoin after a kick, so ban while absent), list, unban.
+    expect(
+      (await cmd("channel.ban", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({
+      kind: "sys",
+      bbcode: `Birch Rowan was banned from the channel by ${CHARACTER}.`,
+    });
+    expect((await cmd("channel.banlist", { key })).d.ok).toBe(true);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(
+        await client.nextEvent("message.new"),
+      ).message.bbcode,
+    ).toBe("Channel bans for Mod Bench: Birch Rowan.");
+    // A second ban is refused by the sim — the ERR fans out as an error.
+    expect(
+      (await cmd("channel.ban", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    expect(
+      eventPayload<{ number: number }>(await client.nextEvent("error")).number,
+    ).toBe(41);
+    expect(
+      (await cmd("channel.unban", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+
+    birch.close();
+  }, 30_000);
+
+  it("being kicked drops the channel from the session and stops rejoins (M6)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Birch owns a room; Amber gets invited, joins, then is kicked.
+    const birch = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+    birch.send({ cmd: "CCR", payload: { channel: "Birch's Bench" } });
+    const jchRaw = await birch.waitFor("JCH");
+    const key = (JSON.parse(jchRaw.slice(4)) as { channel: string }).channel;
+    birch.send({ cmd: "CIU", payload: { channel: key, character: CHARACTER } });
+    await client.nextEvent("channel.invite");
+    session.joinChannel(key);
+    await nextConversationUpdate<{
+      channelKey: string | null;
+      joined: boolean;
+    }>(client, (c) => c.joined && c.channelKey === key);
+
+    birch.send({ cmd: "CKU", payload: { channel: key, character: CHARACTER } });
+    // The conversation un-joins (sink flag) and the SystemLine lands.
+    await nextConversationUpdate<{
+      channelKey: string | null;
+      joined: boolean;
+    }>(client, (c) => !c.joined && c.channelKey === key);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(
+        await client.nextEvent("message.new"),
+      ).message.bbcode,
+    ).toBe(`${CHARACTER} was kicked from the channel by Birch Rowan.`);
+    // The session forgot the channel — no rejoin on reconnect.
+    expect(session.state.channels.has(key)).toBe(false);
+
+    birch.close();
+  }, 30_000);
 
   it("sends ads and rolls, tracks room mode, and releases delayed ads as LRP (M6 RP messages)", async () => {
     const { identityId, token } = await createIdentity();

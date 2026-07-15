@@ -8,7 +8,7 @@
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { MemberDto } from "@emberchat/protocol";
 import { presenceDot } from "../../lib/presence.js";
-import type { ChannelView } from "../../stores/sessions.js";
+import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { roleFor, type ChannelRole } from "./member-roles.js";
@@ -73,6 +73,10 @@ export function MemberList({
   channel: ChannelView;
 }) {
   const [menu, setMenu] = useState<MenuState>();
+  const viewerChatop = useSessionsStore(
+    (s) => s.sessions[identityId]?.chatop ?? false,
+  );
+  const viewerRole = roleFor(ownCharacter, channel.oplist);
 
   function openMenu(
     event: ReactMouseEvent,
@@ -117,8 +121,11 @@ export function MemberList({
         <MemberContextMenu
           identityId={identityId}
           ownCharacter={ownCharacter}
+          channelKey={channel.key}
           member={menu.member}
           role={menu.role}
+          viewerRole={viewerRole}
+          viewerChatop={viewerChatop}
           position={menu.position}
           onClose={() => {
             setMenu(undefined);

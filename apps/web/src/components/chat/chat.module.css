@@ -492,6 +492,26 @@
   gap: 6px;
 }
 
+/* Mode segmented in the room menu: the live mode reads as pressed. */
+.miniButtonActive {
+  background: var(--eb-bg);
+  color: var(--eb-accent);
+  box-shadow: inset 0 0 0 1px var(--eb-accent);
+}
+
+.roomMenuTextarea {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--eb-border);
+  border-radius: 6px;
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+
 .roomMenuInfo {
   margin: 0;
   font-size: 11.5px;
@@ -573,6 +593,19 @@
 
 .memberMenuDanger {
   color: var(--eb-danger);
+}
+
+/* §10 admin items: dim label + right-aligned mono tag. */
+.memberMenuAdmin {
+  color: var(--eb-dim);
+}
+
+.memberMenuAdminTag {
+  margin-left: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--eb-faint);
 }
 
 .memberMenuDivider {

@@ -439,6 +439,7 @@ export class GatewayConnection {
             lfrpMax: vars.lfrp_max,
           },
           iconBlacklist: [...(session?.state.vars.icon_blacklist ?? [])],
+          chatop: session?.state.ownIsChatop ?? false,
           sendDelaySeconds,
           prefs,
           outbox: await this.#ctx.outbox.list(identityId),
@@ -699,6 +700,63 @@ export class GatewayConnection {
             },
           );
         }
+        return;
+      }
+      // Channel moderation (M6): one shared shape — put the frame on the
+      // wire behind the ROOM gate, ack the send. Refusals (not an op, ERR
+      // 21/41/42…) come back as ERR frames and fan out as error events.
+      case "channel.kick":
+      case "channel.ban":
+      case "channel.unban":
+      case "channel.timeout":
+      case "channel.promote":
+      case "channel.demote":
+      case "channel.owner":
+      case "channel.describe":
+      case "channel.mode":
+      case "channel.banlist": {
+        const session = this.#requireSession(identity.id, id);
+        if (!session) {
+          return;
+        }
+        const send =
+          cmd.action === "channel.kick"
+            ? session.kickFromChannel(cmd.d.key, cmd.d.character)
+            : cmd.action === "channel.ban"
+              ? session.banFromChannel(cmd.d.key, cmd.d.character)
+              : cmd.action === "channel.unban"
+                ? session.unbanFromChannel(cmd.d.key, cmd.d.character)
+                : cmd.action === "channel.timeout"
+                  ? session.timeoutFromChannel(
+                      cmd.d.key,
+                      cmd.d.character,
+                      cmd.d.minutes,
+                    )
+                  : cmd.action === "channel.promote"
+                    ? session.promoteOp(cmd.d.key, cmd.d.character)
+                    : cmd.action === "channel.demote"
+                      ? session.demoteOp(cmd.d.key, cmd.d.character)
+                      : cmd.action === "channel.owner"
+                        ? session.setRoomOwner(cmd.d.key, cmd.d.character)
+                        : cmd.action === "channel.describe"
+                          ? session.setRoomDescription(
+                              cmd.d.key,
+                              cmd.d.description,
+                            )
+                          : cmd.action === "channel.mode"
+                            ? session.setRoomMode(cmd.d.key, cmd.d.mode)
+                            : session.requestBanlist(cmd.d.key);
+        send.then(
+          () => {
+            this.#ack(id, { ok: true });
+          },
+          (error: unknown) => {
+            this.#ack(id, {
+              ok: false,
+              error: error instanceof Error ? error.message : "send failed",
+            });
+          },
+        );
         return;
       }
       case "typing.set": {

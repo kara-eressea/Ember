@@ -10,8 +10,24 @@ import { z } from "zod";
 import { parseFrame, serializeFrame, type RawCommand } from "./codec.js";
 
 export const serverCommandSchemas = {
+  /** The current list of chatops (global moderators), sent at login. */
+  ADL: z.object({ ops: z.array(z.string()) }),
+  /** A character was banned from a channel (removes them like a leave). */
+  CBU: z.object({
+    operator: z.string(),
+    channel: z.string(),
+    character: z.string(),
+  }),
   /** Channel description changed. Sent after every JCH. */
   CDS: z.object({ channel: z.string(), description: z.string() }),
+  /** A character was kicked from a channel (removes them like a leave). */
+  CKU: z.object({
+    operator: z.string(),
+    channel: z.string(),
+    character: z.string(),
+  }),
+  /** A character was promoted to channel operator. */
+  COA: z.object({ character: z.string(), channel: z.string() }),
   /** List of all public channels. */
   CHA: z.object({
     channels: z.array(
@@ -29,6 +45,17 @@ export const serverCommandSchemas = {
   COL: z.object({ channel: z.string(), oplist: z.array(z.string()) }),
   /** Connected-user count, sent after identification and before the LIS batches. */
   CON: z.object({ count: z.int() }),
+  /** A channel operator was demoted. */
+  COR: z.object({ character: z.string(), channel: z.string() }),
+  /** The channel changed owner. */
+  CSO: z.object({ character: z.string(), channel: z.string() }),
+  /** A character was timed out of a channel for `length` minutes. */
+  CTU: z.object({
+    operator: z.string(),
+    channel: z.string(),
+    length: z.int(),
+    character: z.string(),
+  }),
   /** An error occurred. See src/error-codes.ts. */
   ERR: z.object({ number: z.int(), message: z.string() }),
   /** A character went offline. Treat as a global LCH for that character. */

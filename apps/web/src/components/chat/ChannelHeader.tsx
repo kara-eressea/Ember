@@ -216,22 +216,31 @@ function PinChip({
 }
 
 /**
- * Room management for private rooms (owner/op viewers only): invite a
- * character (CIU) and flip the room public/private (RST). F-Chat has no
- * command reporting the current open/closed state, so both actions are
- * always offered — the server's SYS response says what happened.
+ * Room management for op+ viewers: invites and public/private (private
+ * rooms only — RST/CIU have no meaning on official channels), plus the op
+ * tooling that works everywhere: room mode (RMO), description (CDS), and
+ * the banlist (CBL — the answer lands in the log as a SystemLine). F-Chat
+ * has no command reporting the open/closed state, so both of those actions
+ * are always offered — the server's SYS response says what happened.
  */
 function RoomChip({
   identityId,
   channelKey,
+  isPrivateRoom,
+  mode,
+  description,
 }: {
   identityId: string;
   channelKey: string;
+  isPrivateRoom: boolean;
+  mode: string;
+  description: string;
 }) {
   const [open, setOpen] = useState(false);
   const [character, setCharacter] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<string>();
+  const [draft, setDraft] = useState<string>();
   const containerRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -305,6 +314,24 @@ function RoomChip({
     }
   }
 
+  /** Shared shape for the op commands whose feedback is just the result. */
+  async function run(
+    label: string,
+    command: Parameters<typeof gateway.cmd>[0],
+  ) {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setInfo(undefined);
+    try {
+      const ack = await gateway.cmd(command);
+      setInfo(ack.ok ? label : (ack.error ?? "Command failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <span className={styles.roomChipWrap} ref={containerRef}>
       <button
@@ -323,23 +350,101 @@ function RoomChip({
           role="dialog"
           aria-label="Room settings"
         >
+          {isPrivateRoom && (
+            <>
+              <form
+                className={styles.roomMenuForm}
+                onSubmit={(event) => {
+                  void invite(event);
+                }}
+              >
+                <input
+                  className={styles.miniInput}
+                  value={character}
+                  onChange={(e) => {
+                    setCharacter(e.target.value);
+                  }}
+                  placeholder="Invite a character…"
+                  aria-label="Invite a character"
+                />
+                <button
+                  className={styles.miniButton}
+                  type="submit"
+                  disabled={busy}
+                >
+                  Invite
+                </button>
+              </form>
+              <div className={styles.roomMenuActions}>
+                <button
+                  className={styles.miniButton}
+                  disabled={busy}
+                  onClick={() => {
+                    void setStatus("public");
+                  }}
+                >
+                  Make open
+                </button>
+                <button
+                  className={styles.miniButton}
+                  disabled={busy}
+                  onClick={() => {
+                    void setStatus("private");
+                  }}
+                >
+                  Make invite-only
+                </button>
+              </div>
+            </>
+          )}
+          {/* Room mode (RMO): which message kinds the room accepts. The
+              active segment reflects the live mode via channel.info. */}
+          <div
+            className={styles.roomMenuActions}
+            role="radiogroup"
+            aria-label="Room mode"
+          >
+            {(["chat", "ads", "both"] as const).map((option) => (
+              <button
+                key={option}
+                className={`${styles.miniButton} ${mode === option ? (styles.miniButtonActive ?? "") : ""}`}
+                role="radio"
+                aria-checked={mode === option}
+                disabled={busy || mode === option}
+                onClick={() => {
+                  void run(`Room mode set to ${option}`, {
+                    identityId,
+                    action: "channel.mode",
+                    d: { key: channelKey, mode: option },
+                  });
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
           <form
             className={styles.roomMenuForm}
             onSubmit={(event) => {
-              void invite(event);
+              event.preventDefault();
+              void run("Description updated", {
+                identityId,
+                action: "channel.describe",
+                d: { key: channelKey, description: draft ?? description },
+              });
             }}
           >
-            <input
-              className={styles.miniInput}
-              value={character}
+            <textarea
+              className={styles.roomMenuTextarea}
+              value={draft ?? description}
               onChange={(e) => {
-                setCharacter(e.target.value);
+                setDraft(e.target.value);
               }}
-              placeholder="Invite a character…"
-              aria-label="Invite a character"
+              rows={3}
+              aria-label="Channel description"
             />
             <button className={styles.miniButton} type="submit" disabled={busy}>
-              Invite
+              Save
             </button>
           </form>
           <div className={styles.roomMenuActions}>
@@ -347,19 +452,15 @@ function RoomChip({
               className={styles.miniButton}
               disabled={busy}
               onClick={() => {
-                void setStatus("public");
+                setOpen(false);
+                void run("", {
+                  identityId,
+                  action: "channel.banlist",
+                  d: { key: channelKey },
+                });
               }}
             >
-              Make open
-            </button>
-            <button
-              className={styles.miniButton}
-              disabled={busy}
-              onClick={() => {
-                void setStatus("private");
-              }}
-            >
-              Make invite-only
+              View banlist
             </button>
           </div>
           {info && (
@@ -385,13 +486,17 @@ export function ChannelHeader({
   const ownCharacter = useSessionsStore(
     (s) => s.sessions[identityId]?.character ?? "",
   );
+  const chatop = useSessionsStore(
+    (s) => s.sessions[identityId]?.chatop ?? false,
+  );
   const description = channel.description.trim();
   const clampable = description.length > DESCRIPTION_CLAMP;
-  // Room management is a private-room, owner/op affair (RST/CIU are
-  // chanop-restricted wire-side; the UI simply doesn't offer them to others).
+  // Room management is an op+ affair (the commands are chanop-restricted
+  // wire-side; the UI simply doesn't offer them to others). Chatops manage
+  // any channel; the private-room actions (invite, open/close) only render
+  // for ADH rooms.
   const canManageRoom =
-    channel.key.startsWith("ADH-") &&
-    roleFor(ownCharacter, channel.oplist) !== null;
+    roleFor(ownCharacter, channel.oplist) !== null || chatop;
 
   return (
     <header className={styles.header}>
@@ -408,7 +513,13 @@ export function ChannelHeader({
           <AdsChip identityId={identityId} channelKey={channel.key} />
         )}
         {canManageRoom && (
-          <RoomChip identityId={identityId} channelKey={channel.key} />
+          <RoomChip
+            identityId={identityId}
+            channelKey={channel.key}
+            isPrivateRoom={channel.key.startsWith("ADH-")}
+            mode={channel.mode}
+            description={channel.description}
+          />
         )}
         <span className={styles.headerSpacer} />
         <button
