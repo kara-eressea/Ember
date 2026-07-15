@@ -13,15 +13,37 @@ import {
 } from "./enums.js";
 
 export const clientCommandSchemas = {
+  /** Request the channel banlist (chanop). The response arrives as a SYS. */
+  CBL: z.object({ channel: z.string() }),
+  /** Ban a character from a channel (chanop). */
+  CBU: z.object({ channel: z.string(), character: z.string() }),
   /**
    * Create a private, invite-only channel. The payload is the TITLE — the
    * server assigns the ADH- id and answers with a JCH into the new room.
    */
   CCR: z.object({ channel: z.string() }),
+  /** Change a channel's description (chanop). */
+  CDS: z.object({ channel: z.string(), description: z.string() }),
   /** Request the list of all public channels. Bare command. */
   CHA: z.undefined(),
   /** Invite a character to a channel (chanop). The response is a SYS. */
   CIU: z.object({ channel: z.string(), character: z.string() }),
+  /** Kick a character from a channel (chanop). */
+  CKU: z.object({ channel: z.string(), character: z.string() }),
+  /** Promote a character to channel operator (chanop). */
+  COA: z.object({ channel: z.string(), character: z.string() }),
+  /** Demote a channel operator to a normal user (chanop). */
+  COR: z.object({ channel: z.string(), character: z.string() }),
+  /** Hand the channel to a new owner (current owner only). */
+  CSO: z.object({ channel: z.string(), character: z.string() }),
+  /** Channel timeout: a temporary ban of 1-90 minutes (chanop). */
+  CTU: z.object({
+    channel: z.string(),
+    character: z.string(),
+    length: z.int().min(1).max(90),
+  }),
+  /** Unban a character from a channel (chanop). The response is a SYS. */
+  CUB: z.object({ channel: z.string(), character: z.string() }),
   /**
    * Identify with the server. Must be the first command sent; cname/cversion
    * uniquely identify this client (developer policy).

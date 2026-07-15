@@ -8,7 +8,14 @@ import {
 // Sample frames from design/server-commands.md (trimmed where the doc
 // abbreviates with "...", and with the doc's JSON typos fixed).
 const DOC_SAMPLES: readonly string[] = [
+  'ADL {"ops": ["Silver", "Hiro", "Jamii", "Oskenso", "Aniko"]}',
+  'CBU {"operator":"Teal Deer","channel":"ADH-c7fc4c15c858dd76d860","character":"Pas un Caractere"}',
   'CDS {"description": "[color=red]No actual roleplay in here.[/color] This is the channel for RP offers and announcements.", "channel": "Looking for RP"}',
+  'CKU {"operator":"Pas un Caractere","channel":"ADH-c7fc4c15c858dd76d860","character":"Teal Deer"}',
+  'COA {"character":"Teal Deer", "channel":"ADH-c7fc4c15c858dd76d860"}',
+  'COR {"character":"Teal Deer", "channel":"ADH-c7fc4c15c858dd76d860"}',
+  'CSO {"character":"Jinni Wicked","channel":"ADH-3875a3c8c11325b49992"}',
+  'CTU {"operator":"Michael Donohue","channel":"ADH-2e7542f374c7ec3a542d","length":10,"character":"TestingStuff"}',
   'CHA {"channels": [{"name":"Hermaphrodites","mode":"both","characters":144},{"name":"Avians","mode":"chat","characters":20}]}',
   'COL { "oplist": ["","Robert Grayson","Natsudra"], "channel": "Frontpage"}',
   'CON {"count": 254}',

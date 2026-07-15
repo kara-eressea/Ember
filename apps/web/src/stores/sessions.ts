@@ -71,6 +71,8 @@ export interface IdentitySession {
   limits: { chatMax: number; privMax: number; lfrpMax: number };
   /** Channels where the server disallows [icon]/[eicon] (icon_blacklist). */
   iconBlacklist: string[];
+  /** Own character is a chatop (global moderator) — unlocks the admin UI. */
+  chatop: boolean;
   /** The user's delayed-send window (per-user; mirrored per slice). */
   sendDelaySeconds: number;
   /** The user's resolved preferences (per-user; mirrored per slice). */
@@ -138,6 +140,7 @@ interface SessionsState {
       ignores: string[];
       limits: { chatMax: number; privMax: number; lfrpMax: number };
       iconBlacklist: string[];
+      chatop: boolean;
       sendDelaySeconds: number;
       prefs: UserPrefs;
       outbox: OutboxItemDto[];
@@ -242,6 +245,7 @@ function emptySession(identityId: string): IdentitySession {
     // Placeholder until the snapshot delivers the live VARs.
     limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
     iconBlacklist: [],
+    chatop: false,
     sendDelaySeconds: 0,
     prefs: PREFS_DEFAULTS,
     outbox: [],
@@ -396,6 +400,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ignores: [...d.self.ignores],
         limits: d.self.limits,
         iconBlacklist: [...d.self.iconBlacklist],
+        chatop: d.self.chatop,
         sendDelaySeconds: d.self.sendDelaySeconds,
         prefs: d.self.prefs,
         outbox: [...d.self.outbox],

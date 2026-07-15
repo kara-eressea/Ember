@@ -123,6 +123,74 @@ const cmdSchema = z.discriminatedUnion("action", [
       status: z.enum(["public", "private"]),
     }),
   }),
+  // ── Channel moderation (M6 op tooling). All chanop-restricted on the
+  // wire; the UI additionally gates by viewer role. Errors come back as
+  // ERR events, SYS acks as persisted SystemLines.
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.kick"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.ban"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.unban"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CTU: the wire caps timeouts at 1-90 minutes.
+    action: z.literal("channel.timeout"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      character: characterName,
+      minutes: z.number().int().min(1).max(90),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.promote"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.demote"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CSO: hand the room to a new owner (current owner only).
+    action: z.literal("channel.owner"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CDS: change the room description (chanop).
+    action: z.literal("channel.describe"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      description: z.string().max(50_000),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // RMO: room mode — chat (MSG only), ads (LRP only), or both.
+    action: z.literal("channel.mode"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      mode: z.enum(["chat", "ads", "both"]),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CBL: the banlist arrives as a channel SYS (persisted SystemLine).
+    action: z.literal("channel.banlist"),
+    d: z.object({ key: z.string().min(1).max(128) }),
+  }),
   z.object({
     identityId: z.uuid(),
     action: z.literal("msg.send"),
@@ -455,6 +523,10 @@ export type ServerFrame =
           /** Channels where the server disallows [icon]/[eicon] (the
            * icon_blacklist VAR) — the composer warns before inserting. */
           iconBlacklist: string[];
+          /** Own character is a chatop (global moderator, ADL at login) —
+           * unlocks the admin UI everywhere. Snapshot-only: promotions are
+           * rare enough that a reconnect picking it up is fine. */
+          chatop: boolean;
           /** The user's delayed-send window (user_preferences). */
           sendDelaySeconds: number;
           /** The user's resolved preferences (user_preferences.prefs). */

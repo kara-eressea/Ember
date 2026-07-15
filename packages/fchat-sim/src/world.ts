@@ -37,6 +37,9 @@ export interface SimWorld {
   readonly accounts: Readonly<Record<string, SimAccount>>;
   readonly channels: readonly SimChannelSeed[];
   readonly npcs: readonly SimNpc[];
+  /** Chatops (global moderators) announced via ADL at login. None by
+   * default — tests that need one build a world with it. */
+  readonly chatops?: readonly string[];
 }
 
 export const DEFAULT_WORLD: SimWorld = {

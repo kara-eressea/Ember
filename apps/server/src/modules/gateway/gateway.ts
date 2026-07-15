@@ -231,6 +231,34 @@ function translateCommand(
           mode: command.payload.mode,
         },
       };
+    // Kick / ban / timeout remove the member (no LCH follows); the
+    // who-did-what SystemLine is persisted by the sink and arrives as
+    // message.new.
+    case "CKU":
+    case "CBU":
+    case "CTU":
+      return {
+        kind: "member.leave",
+        d: {
+          channelKey: command.payload.channel,
+          character: command.payload.character,
+        },
+      };
+    // Op roster changes: state already folded the command, so the map
+    // holds the post-change oplist (same pattern as IGN).
+    case "COA":
+    case "COR":
+    case "CSO": {
+      const oplist = session.state.channels.get(
+        command.payload.channel,
+      )?.oplist;
+      return oplist
+        ? {
+            kind: "channel.info",
+            d: { key: command.payload.channel, oplist: [...oplist] },
+          }
+        : undefined;
+    }
     case "IGN":
       // Any list change (init at login, add/delete acks) fans the whole
       // list out — session state already folded this command in, so the

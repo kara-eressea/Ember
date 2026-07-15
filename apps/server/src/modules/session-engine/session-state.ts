@@ -48,6 +48,15 @@ export class SessionState {
   /** True once this connection's IGN init arrived — before that, an empty
    * `ignores` means "not seeded yet", not "nobody ignored". */
   ignoresSeeded = false;
+  /** Chatops (global moderators), from ADL at login. */
+  readonly chatops = new Set<string>();
+
+  /** Whether our own character is a chatop (gates the admin UI). */
+  get ownIsChatop(): boolean {
+    return (
+      this.ownCharacter !== undefined && this.chatops.has(this.ownCharacter)
+    );
+  }
 
   /** F-Chat resolves names case-insensitively. */
   isIgnored(character: string): boolean {
@@ -161,6 +170,55 @@ export class SessionState {
         }
         return;
       }
+      case "ADL": {
+        this.chatops.clear();
+        for (const op of command.payload.ops) {
+          this.chatops.add(op);
+        }
+        return;
+      }
+      case "COA": {
+        const channel = this.channels.get(command.payload.channel);
+        if (channel && !channel.oplist.includes(command.payload.character)) {
+          channel.oplist = [...channel.oplist, command.payload.character];
+        }
+        return;
+      }
+      case "COR": {
+        const channel = this.channels.get(command.payload.channel);
+        if (channel) {
+          // The owner slot only moves via CSO — never strip index 0.
+          channel.oplist = channel.oplist.filter(
+            (op, index) => index === 0 || op !== command.payload.character,
+          );
+        }
+        return;
+      }
+      case "CSO": {
+        const channel = this.channels.get(command.payload.channel);
+        if (channel) {
+          channel.oplist = [
+            command.payload.character,
+            ...channel.oplist
+              .slice(1)
+              .filter((op) => op !== command.payload.character),
+          ];
+        }
+        return;
+      }
+      // Kick / ban / timeout remove the character like a leave — the frame
+      // IS the leave signal, the server sends no separate LCH.
+      case "CKU":
+      case "CBU":
+      case "CTU": {
+        const { channel: key, character } = command.payload;
+        if (character === this.ownCharacter) {
+          this.channels.delete(key);
+          return;
+        }
+        this.channels.get(key)?.members.delete(character);
+        return;
+      }
       case "LCH": {
         const { channel: key, character } = command.payload;
         if (character === this.ownCharacter) {
@@ -184,5 +242,6 @@ export class SessionState {
     this.channels.clear();
     this.ignores.clear();
     this.ignoresSeeded = false;
+    this.chatops.clear();
   }
 }

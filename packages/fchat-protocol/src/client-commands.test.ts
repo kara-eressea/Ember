@@ -40,7 +40,34 @@ describe("serializeClientCommand", () => {
 
 describe("parseClientCommand", () => {
   const COMMANDS: readonly ClientCommand[] = [
+    { cmd: "CBL", payload: { channel: "ADH-c7fc4c15c858dd76d860" } },
+    {
+      cmd: "CBU",
+      payload: {
+        channel: "ADH-c7fc4c15c858dd76d860",
+        character: "Pas un Caractere",
+      },
+    },
+    {
+      cmd: "CDS",
+      payload: { channel: "Looking for RP", description: "New description." },
+    },
     { cmd: "CHA" },
+    { cmd: "CKU", payload: { channel: "Frontpage", character: "Teal Deer" } },
+    { cmd: "COA", payload: { channel: "Frontpage", character: "Teal Deer" } },
+    { cmd: "COR", payload: { channel: "Frontpage", character: "Teal Deer" } },
+    {
+      cmd: "CSO",
+      payload: {
+        channel: "ADH-3875a3c8c11325b49992",
+        character: "Jinni Wicked",
+      },
+    },
+    {
+      cmd: "CTU",
+      payload: { channel: "Frontpage", character: "Treebob", length: 30 },
+    },
+    { cmd: "CUB", payload: { channel: "Frontpage", character: "Treebob" } },
     {
       cmd: "IDN",
       payload: {
@@ -89,6 +116,13 @@ describe("parseClientCommand", () => {
       );
     },
   );
+
+  it("rejects a CTU timeout outside the documented 1-90 minutes", () => {
+    for (const length of [0, 91]) {
+      const raw = `CTU {"channel":"Frontpage","character":"Treebob","length":${String(length)}}`;
+      expect(parseClientCommand(raw)).toEqual({ cmd: "CTU", raw });
+    }
+  });
 
   it("rejects a client STA with the server-only crown status", () => {
     const raw = 'STA {"status":"crown","statusmsg":""}';

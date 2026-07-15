@@ -35,6 +35,7 @@ function seedSession(
       ignores: [],
       limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
       iconBlacklist: [],
+      chatop: false,
       sendDelaySeconds: 0,
       prefs: options.prefs ?? PREFS_ON,
       outbox: [],
