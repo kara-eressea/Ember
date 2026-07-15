@@ -1,0 +1,145 @@
+# Feature-parity audit vs. the official F-Chat 3.0 client
+
+M6 step 8 (2026-07-15). Compares EmberChat against the official client
+(github.com/f-list/exported, "chat3client") feature by feature, and lists
+the popular Rising fork's additions separately. Sources: the official
+client's `chat/localize.ts` string inventory and `chat/slash_commands.ts`,
+its component tree, the fchat-rising archive, and the F-List wiki.
+
+Verdict shorthand:
+
+- **✅ Mx** — shipped, milestone noted.
+- **📅 Mx** — planned, on a milestone checklist.
+- **≠ design** — deliberately different by design; no action.
+- **❓ decision** — needs a user decision; collected at the bottom.
+- **⛔ out of scope** — not planned; reason given.
+
+## Where EmberChat already goes beyond the official client
+
+The official client has none of these; they are the product's reason to
+exist (project-description.md):
+
+- Server-held sessions: stay online with no browser attached, multi-device
+  login, catch-up on missed history with unread cursors (M2/M4).
+- Server-side history in Postgres — logs exist without the app running,
+  browsable/exportable from any device (M1–M5).
+- Markdown composing translated to BBCode, live preview (M4).
+- Delayed send with recall — the closest thing to message editing F-Chat
+  can support (M4).
+- Outbound typing suppression (delayed sends never leak typing state) and
+  per-recipient TPN dedup (M4).
+- Granular highlight rules (word/nick/regex) matched server-side at persist
+  time, so badges are consistent across devices (M5).
+- Detached auto-away — away when no device is attached (M5, beyond scope).
+
+## Feature map — official client (base)
+
+### Conversations, channels, composing
+
+| chat3client feature | EmberChat |
+|---|---|
+| Channel/PM/console tabs | ✅ M1–M3 — sidebar + main pane; **console** is ≠ design: global SYS/ERR surface as a dismissable notice strip, durable channel SYS persist into the channel log |
+| Channel browser (official/open, filter, create) | ✅ M6 |
+| Pin/close/unread per conversation | ✅ M2/M3 (pinning doubles as the reconnect-rejoin set) |
+| Recent conversations | ≠ design — conversations are server-persisted and never vanish from the sidebar unless removed; "recent" is the DM list itself |
+| Channel modes chat/ads/both + ad countdown | ✅ M6 (mode gating); ⛔ per-channel ad countdown timer — the composer surfaces the flood refusal instead; revisit if users ask |
+| In-tab message search | 📅 M8 (client polish; server history makes this a REST query, arguably better than chat3's buffer-only search) |
+| Tab settings (per-conversation overrides) | ≠ design — per-conversation mute exists (M5); finer per-tab overrides deferred until asked for |
+| Typing indicators (PMs) | ✅ M4 (both directions) |
+| BBCode toolbar | ✅ M4 (Markdown-first; toolbar hints for bold/code/eicon; full toolbar is M8 polish) |
+| Enter-sends toggle | ⛔ — Enter sends, Shift+Enter breaks; no demand yet |
+| /me, /roll, /bottle | ✅ M4 (/me as emote), M6 (/roll, /bottle) |
+| Slash-command help ("?") | 📅 M8 — the framework exists (M6); a help surface lands with the composer polish pass |
+| Copy with/without BBCode | ⛔ — browser selection copies rendered text; revisit on demand |
+
+### Discovery and profiles
+
+| chat3client feature | EmberChat |
+|---|---|
+| **Character search (FKS)** — kinks/genders/orientations/languages/roles filters | ❓ **decision 1** |
+| **In-app profile viewer** (character-data API: infotags, kinks, images, guestbook, memos) | ❓ **decision 2** — today profile links open f-list.net in a new tab (deliberate M6 choice) |
+| Memo dialog | folds into decision 2 (same API family) |
+| Report character from profile | folds into decision 4 (SFC) |
+
+### Notifications and presence
+
+| chat3client feature | EmberChat |
+|---|---|
+| **RTB events** (notes, friend requests, helpdesk/comment replies) | ❓ **decision 3** — currently logged and swallowed |
+| Desktop notifications, sounds, mention highlighting, highlight words | ✅ M5 (regex rules go beyond chat3) |
+| Status switcher + statusmsg | ✅ M3 |
+| Idle auto-away | ✅ M5 (plus detached-away, which chat3 cannot have) |
+| Broadcasts (BRO) shown + notified | ❓ **decision 5** — currently logged and swallowed; admin broadcasts are rare but server-critical |
+| Login/logout/status/join/leave event lines | ✅ M5 (presence lines behind a pref) |
+
+### Friends, bookmarks, users
+
+| chat3client feature | EmberChat |
+|---|---|
+| Friends/bookmarks lists + colored members | ✅ M6 sidebar sections; member-list coloring 📅 M8 polish |
+| Right-click user menu (profile, PM, bookmark, ignore, memo, report, kick) | ✅ M6 (memo/report per decisions 2/4) |
+| Friend request send/accept/deny/cancel | ✅ M6 |
+| Ignore list (/ignore etc. + anti-circumvention notify) | ✅ M3 (IGN notify included) |
+| Hide ads from specific users | ≠ design — EmberChat has global + per-channel ad visibility (M6); per-user hiding stacks on ignore; revisit on demand |
+| Click-user behavior setting | ⛔ — left-click profile, right-click menu, Message item for PMs |
+
+### Logs and settings
+
+| chat3client feature | EmberChat |
+|---|---|
+| Local logs + log browser + export (txt/html) | ✅ M5, ≠ design — server-side logs, export as txt/html/json; no corruption-repair tool needed (Postgres) |
+| Settings sync/import between characters | ✅ M5, ≠ design — prefs are per app account, synced across devices by construction |
+| Themes + custom themes | ✅ M5 (base themes + accent swap); custom user themes ⛔ v1.0+ |
+| Spellcheck | ≠ design — the browser provides it |
+| slimCat import | ⛔ |
+| Auto-updater, tray, Electron shell | 📅 M8 (Electron wrapper milestone) |
+
+### Moderation and staff
+
+| chat3client feature | EmberChat |
+|---|---|
+| Channel op tools (kick/ban/unban/banlist/timeout/op/deop/setowner/invite/open-close/setmode/setdescription) | ✅ M6 |
+| Manage Channel dialog | ✅ M6 (RoomChip popover; a fuller dialog is M8 polish) |
+| /warn formatted warnings, /code channel link | 📅 M8 (slash polish) |
+| **Alert Staff (SFC) report dialog with attached logs** | ❓ **decision 4** |
+| Global staff tools (gkick/gban/broadcast/…) | ⛔ — F-List staff tooling; EmberChat targets regular users and chanops. Revisit only if staff ever ask |
+| killchannel | ⛔ with the staff set |
+
+### Wire commands still logged-and-swallowed (policy-compliant)
+
+`FKS` `RTB` `BRO` `SFC` `UPT` `KID` `PRD` `AOP` `DOP` and the admin-only
+client set (`ACB CRC KIK TMO UNB RWD AWC RLD XYZ`). `UPT`/`KID`/`PRD` are
+legacy or trivia; the rest are covered by the decisions below or the staff
+⛔ above.
+
+## Rising fork (out of parity scope, listed as future inspiration)
+
+The parity target is the official client. Rising's additions are noted for
+later milestones, not gaps: profile match scoring and kink comparison,
+smart filters with auto-reply, ad ratings, link/image hover previews,
+search history and extra search filters, status-message history, unread
+counters, colorblind mode. Two cautions: **auto ad posting** (rotation/
+reposting) is automation the F-List policy environment may frown on for a
+hosted service — treat as ⛔ unless cleared; smart-filter auto-replies send
+messages on the user's behalf — same caution.
+
+## Decisions for the user (M6 step 8 exit)
+
+1. **FKS character search.** Options: (a) build the search dialog
+   (M8 candidate — wire schemas + sim are a day, the filter UI per
+   COMPONENTS-style design is the real cost); (b) skip and link to the
+   website's search; (c) minimal version (kinks/genders only) in M8.
+2. **In-app profile viewer.** Options: (a) keep website links (zero cost,
+   ships v1.0 sooner); (b) M8 viewer using character-data + mapping-list
+   (respecting the <200 character-data requests/hour budget); memos ride
+   along if built.
+3. **RTB note/notification bridge.** Options: (a) surface RTB events as
+   notices + desktop notifications with links to the website (cheap,
+   high value — parse + fan-out only); (b) ignore RTB entirely.
+4. **SFC "Alert Staff" reporting.** Options: (a) M7 (public-service
+   hardening — a hosted client arguably *should* let users reach F-List
+   staff); (b) skip (report via the website).
+5. **BRO admin broadcasts.** Recommendation: parse and surface as a global
+   notice + notification in M6 step 9 (trivial, and silently dropping
+   admin broadcasts is the one "swallow" that can hide server-critical
+   messages). Confirm or veto.
