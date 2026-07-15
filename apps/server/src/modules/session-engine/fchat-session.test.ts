@@ -491,6 +491,31 @@ describe("FchatSession against fchat-sim", () => {
     ).rejects.toThrow(MessageTooLongError);
   });
 
+  it("refuses a second immediate ad inside the window, per channel (M6 audit)", async () => {
+    // A gate this long outlives any ack window — the old behavior parked
+    // the frame and ghost-posted it minutes after the client showed an
+    // error; now the send fails fast with the remaining cooldown.
+    const sim = await startSim({ serverVars: { lfrp_flood: 3600 } });
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    for (const channel of ["Development", "Terrarium"]) {
+      const joined = waitForCommand(
+        session,
+        (c) => c.cmd === "CDS" && c.payload.channel === channel,
+      );
+      session.joinChannel(channel);
+      await joined;
+    }
+
+    await session.sendChannelAd("Development", "first ad");
+    await expect(
+      session.sendChannelAd("Development", "second ad"),
+    ).rejects.toThrow(/next available in (59|60)m/);
+    // The pace is per channel: another room's ad is unaffected.
+    await session.sendChannelAd("Terrarium", "other room");
+  });
+
   it("sends RLL and receives the computed roll back", async () => {
     const sim = await startSim();
     const session = makeSession(sim);

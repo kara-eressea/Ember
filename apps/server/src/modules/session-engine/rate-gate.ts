@@ -4,17 +4,20 @@
 // Intervals are read from live server VARs at send time, never hardcoded
 // (developer policy).
 
-/** Command classes with a flood limit. MSG and PRI pace on msg_flood, LRP
- * on lfrp_flood (1 per 10 minutes live) — each from live VARs. STA, IGN,
- * TPN and the directory queries (CHA/ORS) have no documented VAR of their
- * own; they ride the msg_flood pace as client-side discipline — the server
- * throttles on its side, and nothing user-triggered may spam the wire
- * unmetered. CHA and ORS are separate classes so one directory refresh puts
- * both frames on the wire together while repeat refreshes still pace. */
+/** Command classes with a flood limit. MSG and PRI pace on msg_flood; ads
+ * pace on lfrp_flood (1 per 10 minutes live) **per channel** — ERR 56's own
+ * text says "to a channel", and the official client posts to several
+ * channels on independent timers (M6 audit; confirm on the supervised live
+ * pass). Each interval comes from live VARs. STA, IGN, TPN and the
+ * directory queries (CHA/ORS) have no documented VAR of their own; they
+ * ride the msg_flood pace as client-side discipline — the server throttles
+ * on its side, and nothing user-triggered may spam the wire unmetered. CHA
+ * and ORS are separate classes so one directory refresh puts both frames on
+ * the wire together while repeat refreshes still pace. */
 export type RateGateClass =
   | "MSG"
   | "PRI"
-  | "LRP"
+  | `LRP:${string}`
   | "STA"
   | "IGN"
   | "TPN"
@@ -95,6 +98,25 @@ export class RateGate {
       state.queue.push({ send, resolve, reject });
       this.#pump(cls, state);
     });
+  }
+
+  /**
+   * Estimated wait (ms) before a send scheduled NOW would reach the wire:
+   * the current slot's remaining cooldown plus a full interval per item
+   * already queued. Lets callers fail fast instead of parking work behind
+   * a long window (the 10-minute ad pace outlives every ack timeout).
+   */
+  waitMs(cls: RateGateClass): number {
+    const state = this.#classes.get(cls);
+    if (!state) {
+      return 0;
+    }
+    const intervalMs = this.#intervalSecondsFor(cls) * 1000 + FLOOD_MARGIN_MS;
+    const cooldown =
+      state.lastSentAt === 0
+        ? 0
+        : Math.max(0, state.lastSentAt + intervalMs - Date.now());
+    return cooldown + state.queue.length * intervalMs;
   }
 
   /**

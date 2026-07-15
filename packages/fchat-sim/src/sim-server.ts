@@ -58,7 +58,9 @@ interface Connection {
   lastClientPinAt: number;
   lastMsgAt: number;
   lastPriAt: number;
-  lastLrpAt: number;
+  /** Per-channel ad timestamps — the lfrp pace reads as per channel
+   * (ERR 56: "to a channel"); confirm on the supervised live pass. */
+  readonly lastLrpAt: Map<string, number>;
 }
 
 interface ChannelState {
@@ -424,7 +426,7 @@ export class FchatSim {
       lastClientPinAt: 0,
       lastMsgAt: 0,
       lastPriAt: 0,
-      lastLrpAt: 0,
+      lastLrpAt: new Map(),
     };
     this.#connections.add(connection);
     socket.on("message", (data: RawData) => {
@@ -974,7 +976,8 @@ export class FchatSim {
       return;
     }
     const now = Date.now();
-    if (now - connection.lastLrpAt < this.#vars.lfrp_flood * 1000) {
+    const lastAt = connection.lastLrpAt.get(channel.name) ?? 0;
+    if (now - lastAt < this.#vars.lfrp_flood * 1000) {
       this.#sendError(connection, FchatErrorCode.AdFlood);
       return;
     }
@@ -982,7 +985,7 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.MessageTooLong);
       return;
     }
-    connection.lastLrpAt = now;
+    connection.lastLrpAt.set(channel.name, now);
     this.#broadcastToChannel(
       channel,
       {

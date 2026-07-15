@@ -116,3 +116,17 @@ describe("RateGate", () => {
     expect(sent).toEqual(["first", "after-clear"]);
   });
 });
+
+describe("waitMs (M6 audit — ad fail-fast)", () => {
+  it("reports remaining cooldown plus a full interval per queued item", async () => {
+    const gate = new RateGate(() => 600); // the live lfrp pace
+    expect(gate.waitMs("LRP:Frontpage")).toBe(0);
+    await gate.schedule("LRP:Frontpage", () => {});
+    // Slot just used: a new send waits out ~the whole window.
+    const wait = gate.waitMs("LRP:Frontpage");
+    expect(wait).toBeGreaterThan(590_000);
+    expect(wait).toBeLessThanOrEqual(600_100);
+    // Classes are independent — another channel's ads are unaffected.
+    expect(gate.waitMs("LRP:Development")).toBe(0);
+  });
+});

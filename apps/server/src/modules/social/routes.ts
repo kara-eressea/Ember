@@ -12,8 +12,15 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
-import type { FlistApiClient, SocialAuth } from "../flist-api/api-client.js";
-import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
+import {
+  FlistApiBusyError,
+  type FlistApiClient,
+  type SocialAuth,
+} from "../flist-api/api-client.js";
+import {
+  AccountLockedError,
+  type TicketManagerRegistry,
+} from "../flist-api/ticket-manager.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 
 const characterRow = z.object({
@@ -38,13 +45,6 @@ export interface SocialRoutesOptions {
   sessions: SessionRegistry;
   tickets: TicketManagerRegistry;
   flistApi: FlistApiClient;
-}
-
-/** Rate-limit key: the identity in the path (falls back to the IP for
- * malformed requests that never reach the handler anyway). */
-function identityKey(request: { ip: string; params: unknown }): string {
-  const params = request.params as { identityId?: string } | undefined;
-  return params?.identityId ?? request.ip;
 }
 
 interface IdentityRow {
@@ -85,6 +85,33 @@ export async function socialRoutes(
   }
 
   /**
+   * Rejections (as opposed to error envelopes) from the upstream path:
+   * a memory-only vault after a restart throws AccountLockedError until
+   * the user re-enters the password — the MOST likely production failure
+   * of these routes, so it gets its own status instead of a bare 500
+   * (M6 audit). Busy = the shared 1 req/s budget shed the call.
+   */
+  function upstreamStatus(error: unknown): {
+    code: 409 | 502 | 503;
+    error: string;
+  } {
+    if (error instanceof AccountLockedError) {
+      return {
+        code: 409,
+        error:
+          "The F-List account is locked (server restart) — unlock it from the identity screen",
+      };
+    }
+    if (error instanceof FlistApiBusyError) {
+      return { code: 503, error: error.message };
+    }
+    return {
+      code: 502,
+      error: error instanceof Error ? error.message : "F-List API error",
+    };
+  }
+
+  /**
    * Runs an API call with the account's current ticket; on a ticket
    * refusal, invalidates and retries once with a fresh one. Tickets expire
    * after 30 minutes while the manager caches for 25 — the overlap window
@@ -106,7 +133,9 @@ export async function socialRoutes(
     if (!/ticket/i.test(result.error)) {
       return result;
     }
-    manager.invalidate();
+    // Conditional: a LATE refusal for an old ticket must not evict a fresh
+    // one another call already fetched (see TicketManager.invalidate).
+    manager.invalidate(auth.ticket);
     return call({
       account: identity.accountName,
       ticket: await manager.getTicket(),
@@ -121,19 +150,18 @@ export async function socialRoutes(
         response: {
           200: socialResponse,
           404: errorResponse,
+          409: errorResponse,
           502: errorResponse,
+          503: errorResponse,
         },
       },
-      // Each hit is four upstream calls on the shared 1 req/s budget.
-      // Keyed per identity: per-IP buckets would pool everyone behind one
-      // NAT (and every E2E spec on loopback) into one allowance.
-      config: {
-        rateLimit: {
-          max: 10,
-          timeWindow: "1 minute",
-          keyGenerator: identityKey,
-        },
-      },
+      // Each hit is four upstream calls on the shared 1 req/s budget. The
+      // limiter runs pre-auth, so the key MUST NOT come from the request
+      // (a path-param key would mint fresh buckets per rotated UUID and
+      // bypass every ceiling — M6 audit). Per-IP with a generous ceiling:
+      // legitimate use is load-once + manual refresh, and the upstream
+      // budget is separately guarded by the client's queue cap.
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
       const identity = await ownedIdentity(
@@ -143,12 +171,18 @@ export async function socialRoutes(
       if (!identity) {
         return reply.code(404).send({ error: "Identity not found" });
       }
-      const [bookmarks, friends, incoming, outgoing] = await Promise.all([
-        withTicket(identity, (auth) => flistApi.bookmarkList(auth)),
-        withTicket(identity, (auth) => flistApi.friendList(auth)),
-        withTicket(identity, (auth) => flistApi.requestList(auth)),
-        withTicket(identity, (auth) => flistApi.requestPending(auth)),
-      ]);
+      let bookmarks, friends, incoming, outgoing;
+      try {
+        [bookmarks, friends, incoming, outgoing] = await Promise.all([
+          withTicket(identity, (auth) => flistApi.bookmarkList(auth)),
+          withTicket(identity, (auth) => flistApi.friendList(auth)),
+          withTicket(identity, (auth) => flistApi.requestList(auth)),
+          withTicket(identity, (auth) => flistApi.requestPending(auth)),
+        ]);
+      } catch (error) {
+        const mapped = upstreamStatus(error);
+        return reply.code(mapped.code).send({ error: mapped.error });
+      }
       const failed = [bookmarks, friends, incoming, outgoing].find(
         (result) => result.error !== "",
       );
@@ -192,15 +226,15 @@ export async function socialRoutes(
           action: z.enum(["add", "remove"]),
           name: z.string().min(1).max(64),
         }),
-        response: { 200: okResponse, 404: errorResponse, 502: errorResponse },
-      },
-      config: {
-        rateLimit: {
-          max: 20,
-          timeWindow: "1 minute",
-          keyGenerator: identityKey,
+        response: {
+          200: okResponse,
+          404: errorResponse,
+          409: errorResponse,
+          502: errorResponse,
+          503: errorResponse,
         },
       },
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
       const identity = await ownedIdentity(
@@ -211,11 +245,17 @@ export async function socialRoutes(
         return reply.code(404).send({ error: "Identity not found" });
       }
       const { action, name } = request.body;
-      const result = await withTicket(identity, (auth) =>
-        action === "add"
-          ? flistApi.bookmarkAdd(auth, name)
-          : flistApi.bookmarkRemove(auth, name),
-      );
+      let result;
+      try {
+        result = await withTicket(identity, (auth) =>
+          action === "add"
+            ? flistApi.bookmarkAdd(auth, name)
+            : flistApi.bookmarkRemove(auth, name),
+        );
+      } catch (error) {
+        const mapped = upstreamStatus(error);
+        return reply.code(mapped.code).send({ error: mapped.error });
+      }
       if (result.error !== "") {
         return reply.code(502).send({ error: result.error });
       }
@@ -247,15 +287,15 @@ export async function socialRoutes(
             requestId: z.number().int(),
           }),
         ]),
-        response: { 200: okResponse, 404: errorResponse, 502: errorResponse },
-      },
-      config: {
-        rateLimit: {
-          max: 20,
-          timeWindow: "1 minute",
-          keyGenerator: identityKey,
+        response: {
+          200: okResponse,
+          404: errorResponse,
+          409: errorResponse,
+          502: errorResponse,
+          503: errorResponse,
         },
       },
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
       const identity = await ownedIdentity(
@@ -266,28 +306,34 @@ export async function socialRoutes(
         return reply.code(404).send({ error: "Identity not found" });
       }
       const body = request.body;
-      const result = await withTicket(identity, (auth) => {
-        switch (body.action) {
-          case "send":
-            return flistApi.requestSend(
-              auth,
-              identity.character,
-              body.character,
-            );
-          case "remove-friend":
-            return flistApi.friendRemove(
-              auth,
-              identity.character,
-              body.character,
-            );
-          case "accept":
-            return flistApi.requestAccept(auth, body.requestId);
-          case "deny":
-            return flistApi.requestDeny(auth, body.requestId);
-          case "cancel":
-            return flistApi.requestCancel(auth, body.requestId);
-        }
-      });
+      let result;
+      try {
+        result = await withTicket(identity, (auth) => {
+          switch (body.action) {
+            case "send":
+              return flistApi.requestSend(
+                auth,
+                identity.character,
+                body.character,
+              );
+            case "remove-friend":
+              return flistApi.friendRemove(
+                auth,
+                identity.character,
+                body.character,
+              );
+            case "accept":
+              return flistApi.requestAccept(auth, body.requestId);
+            case "deny":
+              return flistApi.requestDeny(auth, body.requestId);
+            case "cancel":
+              return flistApi.requestCancel(auth, body.requestId);
+          }
+        });
+      } catch (error) {
+        const mapped = upstreamStatus(error);
+        return reply.code(mapped.code).send({ error: mapped.error });
+      }
       if (result.error !== "") {
         return reply.code(502).send({ error: result.error });
       }

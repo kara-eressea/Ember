@@ -72,7 +72,19 @@ export type AppConfig = z.infer<typeof configSchema>;
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): AppConfig {
-  return configSchema.parse(env);
+  const config = configSchema.parse(env);
+  // Guardrail, not just documentation: the sub-budget interval exists for
+  // local fchat-sim stacks only. Refusing to boot beats silently violating
+  // the F-List developer policy in production (M6 audit).
+  if (
+    config.FLIST_API_MIN_INTERVAL_MS < 1000 &&
+    new URL(config.FLIST_API_URL).hostname.endsWith("f-list.net")
+  ) {
+    throw new Error(
+      "FLIST_API_MIN_INTERVAL_MS below 1000 is only allowed against a local fchat-sim, never the real F-List API",
+    );
+  }
+  return config;
 }
 
 /** Translates TRUST_PROXY into the value Fastify's trustProxy option takes. */

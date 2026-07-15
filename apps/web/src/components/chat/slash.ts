@@ -28,6 +28,22 @@ export type SlashCommand =
  * before the wire (the server/sim still validates authoritatively). */
 const DICE_EXPR = /^[1-9]d[1-9]\d{0,2}(\+([1-9]d[1-9]\d{0,2}|\d{1,5}))*$/;
 
+/** Mirrors the sim/server grammar so refusals stay friendly and inline
+ * instead of an async ERR 36: ≤20 terms, sides ≤500, flat bonuses ≤10000. */
+function diceWithinBounds(dice: string): boolean {
+  const terms = dice.split("+");
+  if (terms.length > 20) {
+    return false;
+  }
+  return terms.every((term) => {
+    const die = /^[1-9]d([1-9]\d{0,2})$/.exec(term);
+    if (die) {
+      return Number(die[1]) <= 500;
+    }
+    return Number(term) <= 10_000;
+  });
+}
+
 export class SlashUsageError extends Error {}
 
 /**
@@ -35,7 +51,7 @@ export class SlashUsageError extends Error {}
  * SlashUsageError when the command is recognized but malformed.
  */
 export function parseSlash(text: string): SlashCommand | undefined {
-  if (!text.startsWith("/") || text.startsWith("/me")) {
+  if (!text.startsWith("/") || /^\/me\b|^\/me'/.test(text)) {
     return undefined;
   }
   const [word = "", ...rest] = text.slice(1).split(/\s+/);
@@ -44,7 +60,7 @@ export function parseSlash(text: string): SlashCommand | undefined {
   switch (name) {
     case "roll": {
       const dice = args === "" ? "1d20" : args;
-      if (!DICE_EXPR.test(dice)) {
+      if (!DICE_EXPR.test(dice) || !diceWithinBounds(dice)) {
         throw new SlashUsageError(
           "Usage: /roll 2d6 (up to 20 dice sets and +N bonuses)",
         );

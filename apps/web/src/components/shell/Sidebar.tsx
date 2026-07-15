@@ -553,11 +553,20 @@ function InviteRow({
 function SocialSections({ session }: { session: IdentitySession }) {
   const identityId = session.identityId;
   const social = session.social;
+  const [loadError, setLoadError] = useState<string>();
 
   useEffect(() => {
-    loadSocial(identityId).catch(() => {
-      // The sections render an empty state; the ↻ retries.
-    });
+    // No synchronous state write here (lint): the load either resolves
+    // (social data replaces any stale error implicitly on render) or
+    // rejects and sets a fresh error.
+    loadSocial(identityId).then(
+      () => {
+        setLoadError(undefined);
+      },
+      (error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : "Couldn't load");
+      },
+    );
   }, [identityId]);
 
   async function respond(requestId: number, action: "accept" | "deny") {
@@ -582,8 +591,11 @@ function SocialSections({ session }: { session: IdentitySession }) {
       title="Refresh friends and bookmarks"
       aria-label="Refresh friends and bookmarks"
       onClick={() => {
-        loadSocial(identityId, true).catch(() => {
-          // Notice-worthy failures already surfaced on the mutation path.
+        setLoadError(undefined);
+        loadSocial(identityId, true).catch((error: unknown) => {
+          setLoadError(
+            error instanceof Error ? error.message : "Couldn't load",
+          );
         });
       }}
     >
@@ -597,6 +609,11 @@ function SocialSections({ session }: { session: IdentitySession }) {
         <span>Friends</span>
         {refresh}
       </div>
+      {loadError !== undefined && (
+        <div className={styles.socialEmpty} role="alert">
+          Couldn't load — {loadError}. Use ↻ to retry.
+        </div>
+      )}
       {social?.incoming.map((request) => (
         <div className={styles.inviteRow} key={`fr:${String(request.id)}`}>
           <span className={styles.inviteText}>

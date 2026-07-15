@@ -57,6 +57,9 @@ export class Outbox {
   readonly #pollMs: number;
   #timer: NodeJS.Timeout | undefined;
   #releasing = false;
+  /** Identities with a release chain in flight — skipped by the poll so a
+   * slow flood gate (a queued ad) only ever delays its own user. */
+  readonly #releasingIdentities = new Set<string>();
 
   constructor(options: OutboxOptions) {
     this.#db = options.db;
@@ -155,7 +158,7 @@ export class Outbox {
 
   async #tick(): Promise<void> {
     if (this.#releasing) {
-      return; // a slow flood gate must not stack overlapping ticks
+      return; // one poll query at a time
     }
     this.#releasing = true;
     try {
@@ -174,11 +177,17 @@ export class Outbox {
         )
         .orderBy(asc(outboxMessages.releaseAt), asc(outboxMessages.createdAt));
       // Sequential per identity (release order is promised per conversation
-      // and each send awaits that session's rate gate), but identities in
-      // parallel: one user's congested flood gate must not delay anyone
-      // else's releases (audit).
+      // and each send awaits that session's rate gate), identities in
+      // parallel — and, crucially, the tick NEVER awaits the chains: a
+      // roleplay ad waiting out the 10-minute lfrp gate would otherwise
+      // stall every other user's due releases for the whole window (M6
+      // audit). An identity with a chain still running is skipped; its
+      // rows stay "scheduled" and the next poll picks them up.
       const byIdentity = new Map<string, typeof due>();
       for (const item of due) {
+        if (this.#releasingIdentities.has(item.row.identityId)) {
+          continue;
+        }
         const queue = byIdentity.get(item.row.identityId);
         if (queue) {
           queue.push(item);
@@ -186,13 +195,20 @@ export class Outbox {
           byIdentity.set(item.row.identityId, [item]);
         }
       }
-      await Promise.all(
-        [...byIdentity.values()].map(async (queue) => {
-          for (const item of queue) {
-            await this.#release(item.row, item.conversation);
+      for (const [identityId, queue] of byIdentity) {
+        this.#releasingIdentities.add(identityId);
+        void (async () => {
+          try {
+            for (const item of queue) {
+              await this.#release(item.row, item.conversation);
+            }
+          } catch (error) {
+            this.#log.error({ err: error }, "outbox release chain failed");
+          } finally {
+            this.#releasingIdentities.delete(identityId);
           }
-        }),
-      );
+        })();
+      }
     } catch (error) {
       this.#log.error({ err: error }, "outbox poll failed");
     } finally {
@@ -227,7 +243,9 @@ export class Outbox {
         throw new Error("no live session at release time");
       }
       if (row.kind === "lrp") {
-        await session.sendChannelAd(conversation.channelKey ?? "", row.bbcode);
+        await session.sendChannelAd(conversation.channelKey ?? "", row.bbcode, {
+          wait: true, // a delayed ad is MEANT to park; only this user waits
+        });
       } else if (conversation.kind === "channel") {
         await session.sendChannelMessage(
           conversation.channelKey ?? "",
