@@ -41,6 +41,9 @@ export const serverCommandSchemas = {
     title: z.string(),
     name: z.string(),
   }),
+  /** An admin broadcast to every connected user. Rare and server-critical
+   * — never swallowed (feature-parity audit, decision 5). */
+  BRO: z.object({ message: z.string(), character: z.string().optional() }),
   /** List of channel ops. First entry is the owner (may be ""). */
   COL: z.object({ channel: z.string(), oplist: z.array(z.string()) }),
   /** Connected-user count, sent after identification and before the LIS batches. */
@@ -138,6 +141,18 @@ export const serverCommandSchemas = {
   }),
   /** The room mode changed: chat (MSG only), ads (LRP only), or both. */
   RMO: z.object({ channel: z.string(), mode: z.string() }),
+  /** Real-time bridge: website events pushed over the chat socket (notes,
+   * friend requests, comment replies…). Deliberately lenient — the type
+   * set is undocumented and per-type extras vary (feature-parity audit,
+   * decision 3). */
+  RTB: z.object({
+    type: z.string(),
+    character: z.string().optional(),
+    name: z.string().optional(),
+    sender: z.string().optional(),
+    subject: z.string().optional(),
+    id: z.union([z.number(), z.string()]).optional(),
+  }),
   /** A character changed status. */
   STA: z.object({
     status: z.string(),

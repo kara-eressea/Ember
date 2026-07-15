@@ -10,6 +10,7 @@ import {
 const DOC_SAMPLES: readonly string[] = [
   'ADL {"ops": ["Silver", "Hiro", "Jamii", "Oskenso", "Aniko"]}',
   'CBU {"operator":"Teal Deer","channel":"ADH-c7fc4c15c858dd76d860","character":"Pas un Caractere"}',
+  'BRO {"message": "The server will restart in 30 minutes."}',
   'CDS {"description": "[color=red]No actual roleplay in here.[/color] This is the channel for RP offers and announcements.", "channel": "Looking for RP"}',
   'CKU {"operator":"Pas un Caractere","channel":"ADH-c7fc4c15c858dd76d860","character":"Teal Deer"}',
   'COA {"character":"Teal Deer", "channel":"ADH-c7fc4c15c858dd76d860"}',
@@ -37,6 +38,8 @@ const DOC_SAMPLES: readonly string[] = [
   'RLL {"channel":"ADH-dce8eb7af86213ac4c15","results":[22],"type":"dice","message":"[b]Teal Deer[/b] rolls 4d10: [b]22[/b]","rolls":["4d10"],"character":"Teal Deer","endresult":22}',
   'RLL {"target":"Teal Deer","channel":"ADH-c7fc4c15c858dd76d860","message":"[b]Michael Donohue[/b] spins the bottle: [b]Teal Deer[/b]","type":"bottle","character":"Michael Donohue"}',
   'RMO {"mode":"chat","channel":"ADH-c7fc4c15c858dd76d860"}',
+  'RTB {"type":"note","sender":"Teal Deer","subject":"About that scene","id":12345}',
+  'RTB {"type":"friendrequest","name":"Teal Deer"}',
   'STA {"status":"looking","character":"Jippen Faddoul","statusmsg":"Just testing something"}',
   'SYS { "message":"Testytest has been added to the moderator list for derp","channel": "ADH-011aeb5bb591b1f4721a"}',
   'TPN {"character":"Leon Priest","status":"clear"}',

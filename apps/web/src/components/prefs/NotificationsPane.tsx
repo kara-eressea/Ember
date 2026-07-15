@@ -86,6 +86,23 @@ export function NotificationsPane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
       <FieldRow
+        label="On notes & friend requests"
+        help="Website events (RTB) — reading and replying stay on f-list.net"
+      >
+        <Toggle
+          label="On notes & friend requests"
+          checked={prefs.desktopNotifyNotes}
+          disabled={!notificationsSupported()}
+          onChange={(desktopNotifyNotes) => {
+            if (desktopNotifyNotes) {
+              void enableDesktop({ desktopNotifyNotes });
+            } else {
+              set({ desktopNotifyNotes });
+            }
+          }}
+        />
+      </FieldRow>
+      <FieldRow
         label="Show message preview"
         help="Off shows only who wrote, never what"
       >
@@ -105,7 +122,9 @@ export function NotificationsPane({ identityId }: { identityId: string }) {
       {/* Permission can be revoked in browser settings after enabling — the
           pref would otherwise sit on and silently never fire. */}
       {!permissionError &&
-        (prefs.desktopNotifyMentions || prefs.desktopNotifyPms) &&
+        (prefs.desktopNotifyMentions ||
+          prefs.desktopNotifyPms ||
+          prefs.desktopNotifyNotes) &&
         notificationsSupported() &&
         Notification.permission !== "granted" && (
           <p className={styles.paneError} role="alert">

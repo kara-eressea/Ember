@@ -324,6 +324,37 @@ function translateCommand(
       return command.payload.channel === undefined
         ? { kind: "sys", d: { message: command.payload.message } }
         : undefined;
+    case "BRO":
+      // Admin broadcasts are rare and server-critical — the one frame that
+      // must never be swallowed (feature-parity audit, decision 5).
+      return {
+        kind: "sys",
+        d: {
+          message: `Server broadcast${
+            command.payload.character !== undefined
+              ? ` from ${command.payload.character}`
+              : ""
+          }: ${command.payload.message}`,
+        },
+      };
+    case "RTB": {
+      // Website events (notes, friend requests…). The website stays the
+      // place to read and act; the client shows a notice + notification.
+      const character =
+        command.payload.character ??
+        command.payload.name ??
+        command.payload.sender;
+      return {
+        kind: "rtb",
+        d: {
+          type: command.payload.type,
+          ...(character !== undefined ? { character } : {}),
+          ...(command.payload.subject !== undefined
+            ? { subject: command.payload.subject }
+            : {}),
+        },
+      };
+    }
     case "ERR":
       return {
         kind: "error",

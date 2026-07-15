@@ -123,23 +123,21 @@ reposting) is automation the F-List policy environment may frown on for a
 hosted service — treat as ⛔ unless cleared; smart-filter auto-replies send
 messages on the user's behalf — same caution.
 
-## Decisions for the user (M6 step 8 exit)
+## Decisions (made with the user, 2026-07-15)
 
-1. **FKS character search.** Options: (a) build the search dialog
-   (M8 candidate — wire schemas + sim are a day, the filter UI per
-   COMPONENTS-style design is the real cost); (b) skip and link to the
-   website's search; (c) minimal version (kinks/genders only) in M8.
-2. **In-app profile viewer.** Options: (a) keep website links (zero cost,
-   ships v1.0 sooner); (b) M8 viewer using character-data + mapping-list
-   (respecting the <200 character-data requests/hour budget); memos ride
-   along if built.
-3. **RTB note/notification bridge.** Options: (a) surface RTB events as
-   notices + desktop notifications with links to the website (cheap,
-   high value — parse + fan-out only); (b) ignore RTB entirely.
-4. **SFC "Alert Staff" reporting.** Options: (a) M7 (public-service
-   hardening — a hosted client arguably *should* let users reach F-List
-   staff); (b) skip (report via the website).
-5. **BRO admin broadcasts.** Recommendation: parse and surface as a global
-   notice + notification in M6 step 9 (trivial, and silently dropping
-   admin broadcasts is the one "swallow" that can hide server-critical
-   messages). Confirm or veto.
+1. **FKS character search — skipped for now, revisit later.** No in-app
+   search for v1.0; recorded on the post-v1.0 wishlist in `milestones.md`.
+2. **In-app profile viewer — eventually, but not v1.0.** Website links
+   stay for now; the viewer (character-data + mapping-list, memos riding
+   along, <200 character-data requests/hour budget) joins the post-v1.0
+   wishlist.
+3. **RTB note/notification bridge — surface as notifications.** Landed in
+   M6 step 9: RTB parses, notes/friend requests/comment replies show as
+   notices, notes + friend requests optionally raise desktop notifications
+   behind the new `desktopNotifyNotes` pref, and inbound friend requests
+   auto-refresh the sidebar's social lists. Reading and acting stay on
+   f-list.net.
+4. **SFC "Alert Staff" reporting — M7.** Added to the M7 scope: a hosted
+   client should let users reach F-List staff.
+5. **BRO admin broadcasts — surfaced.** Landed in M6 step 9: BRO parses
+   and fans out as a global notice ("Server broadcast: …").

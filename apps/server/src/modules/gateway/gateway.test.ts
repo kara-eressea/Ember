@@ -1931,6 +1931,48 @@ describe("gateway commands", () => {
     });
   }, 30_000);
 
+  it("surfaces BRO broadcasts and RTB website events (M6 step 9)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    await inject(session, {
+      cmd: "BRO",
+      payload: { message: "The server restarts in 30 minutes." },
+    });
+    expect(
+      eventPayload<{ message: string }>(await client.nextEvent("sys")),
+    ).toEqual({
+      message: "Server broadcast: The server restarts in 30 minutes.",
+    });
+
+    await inject(session, {
+      cmd: "RTB",
+      payload: {
+        type: "note",
+        sender: "Nyx Firemane",
+        subject: "About that scene",
+        id: 42,
+      },
+    });
+    expect(eventPayload<object>(await client.nextEvent("rtb"))).toEqual({
+      type: "note",
+      character: "Nyx Firemane",
+      subject: "About that scene",
+    });
+
+    await inject(session, {
+      cmd: "RTB",
+      payload: { type: "friendrequest", name: "Tally Marsh" },
+    });
+    expect(eventPayload<object>(await client.nextEvent("rtb"))).toEqual({
+      type: "friendrequest",
+      character: "Tally Marsh",
+    });
+  });
+
   it("opens a PM conversation and advances the read cursor across clients", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
