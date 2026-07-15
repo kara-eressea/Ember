@@ -24,6 +24,65 @@ describe("parseSlash", () => {
 
   it("parses /bottle and flags unknown commands", () => {
     expect(parseSlash("/bottle")).toEqual({ type: "bottle" });
-    expect(parseSlash("/kick Nyx")).toEqual({ type: "unknown", name: "kick" });
+    expect(parseSlash("/frolic about")).toEqual({
+      type: "unknown",
+      name: "frolic",
+    });
+  });
+});
+
+describe("parseSlash op commands (M6 step 6)", () => {
+  it("parses the one-character moderation commands", () => {
+    expect(parseSlash("/kick Nyx Firemane")).toEqual({
+      type: "mod",
+      action: "channel.kick",
+      character: "Nyx Firemane",
+    });
+    expect(parseSlash("/ban Nyx Firemane")).toEqual({
+      type: "mod",
+      action: "channel.ban",
+      character: "Nyx Firemane",
+    });
+    expect(parseSlash("/unban Nyx Firemane")).toEqual({
+      type: "mod",
+      action: "channel.unban",
+      character: "Nyx Firemane",
+    });
+    expect(parseSlash("/op Tally Marsh")).toEqual({
+      type: "mod",
+      action: "channel.promote",
+      character: "Tally Marsh",
+    });
+    expect(parseSlash("/deop Tally Marsh")).toEqual({
+      type: "mod",
+      action: "channel.demote",
+      character: "Tally Marsh",
+    });
+    expect(parseSlash("/setowner Tally Marsh")).toEqual({
+      type: "mod",
+      action: "channel.owner",
+      character: "Tally Marsh",
+    });
+    expect(() => parseSlash("/kick")).toThrow(SlashUsageError);
+  });
+
+  it("parses /timeout with a comma separator and bounds the minutes", () => {
+    expect(parseSlash("/timeout Nyx Firemane, 30")).toEqual({
+      type: "timeout",
+      character: "Nyx Firemane",
+      minutes: 30,
+    });
+    expect(() => parseSlash("/timeout Nyx Firemane")).toThrow(SlashUsageError);
+    expect(() => parseSlash("/timeout Nyx, 91")).toThrow(SlashUsageError);
+    expect(() => parseSlash("/timeout Nyx, five")).toThrow(SlashUsageError);
+  });
+
+  it("parses /setmode and /banlist", () => {
+    expect(parseSlash("/setmode ads")).toEqual({
+      type: "setmode",
+      mode: "ads",
+    });
+    expect(() => parseSlash("/setmode loud")).toThrow(SlashUsageError);
+    expect(parseSlash("/banlist")).toEqual({ type: "banlist" });
   });
 });

@@ -2,7 +2,7 @@
 // every role-dependent surface (context-menu admin section, op tooling).
 
 import { describe, expect, it } from "vitest";
-import { roleFor, roleTag } from "./member-roles.js";
+import { modPowers, roleFor, roleTag } from "./member-roles.js";
 
 describe("roleFor", () => {
   const oplist = ["Nyx Firemane", "Tally Marsh", "Old Greywhisker"];
@@ -35,5 +35,82 @@ describe("roleTag", () => {
     expect(roleTag("owner")).toBe("owner ~");
     expect(roleTag("op")).toBe("channel op @");
     expect(roleTag(null)).toBe("member");
+  });
+});
+
+describe("modPowers", () => {
+  it("gives plain members and self no powers", () => {
+    expect(
+      modPowers({
+        viewer: null,
+        viewerChatop: false,
+        target: null,
+        self: false,
+      }),
+    ).toEqual({
+      remove: false,
+      promote: false,
+      demote: false,
+      setOwner: false,
+    });
+    expect(
+      modPowers({
+        viewer: "owner",
+        viewerChatop: false,
+        target: "owner",
+        self: true,
+      }),
+    ).toEqual({
+      remove: false,
+      promote: false,
+      demote: false,
+      setOwner: false,
+    });
+  });
+
+  it("ops moderate members but not other ops; owners outrank", () => {
+    expect(
+      modPowers({
+        viewer: "op",
+        viewerChatop: false,
+        target: null,
+        self: false,
+      }),
+    ).toEqual({ remove: true, promote: true, demote: false, setOwner: false });
+    expect(
+      modPowers({
+        viewer: "op",
+        viewerChatop: false,
+        target: "op",
+        self: false,
+      }),
+    ).toEqual({ remove: false, promote: false, demote: true, setOwner: false });
+    expect(
+      modPowers({
+        viewer: "owner",
+        viewerChatop: false,
+        target: "op",
+        self: false,
+      }),
+    ).toEqual({ remove: true, promote: false, demote: true, setOwner: true });
+  });
+
+  it("chatops outrank everyone, even without a channel role", () => {
+    expect(
+      modPowers({
+        viewer: null,
+        viewerChatop: true,
+        target: "op",
+        self: false,
+      }),
+    ).toEqual({ remove: true, promote: false, demote: true, setOwner: true });
+    expect(
+      modPowers({
+        viewer: null,
+        viewerChatop: true,
+        target: "owner",
+        self: false,
+      }),
+    ).toEqual({ remove: true, promote: false, demote: false, setOwner: false });
   });
 });

@@ -91,6 +91,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Ivy Bramblewood", "Moss Tinker"],
     },
+    // Reserved for the M6 op-tooling E2E (same parallelism rule); Alder Fen
+    // (Potting Shed owner) and Sorrel Vane (moderation target) are its
+    // raw-SimClient "other sides".
+    "rue@example.test": {
+      password: "hunter2",
+      characters: ["Rue Alder", "Alder Fen", "Sorrel Vane"],
+    },
   },
   channels: [
     {
@@ -157,6 +164,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "both",
       description: "Warm glass and growing things.",
       oplist: ["Moss Tinker"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the M6 op-tooling E2E: Alder Fen owns it; Rue Alder
+    // starts as a plain member (the spec promotes her live). Hidden for the
+    // same listing-stability reason.
+    {
+      name: "ADH-55ee66ff77aa88bb99cc",
+      title: "Potting Shed",
+      mode: "chat",
+      description: "Tools on every wall.",
+      oplist: ["Alder Fen"],
       npcs: [],
       listed: false,
     },

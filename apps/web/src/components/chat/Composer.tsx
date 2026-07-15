@@ -204,22 +204,52 @@ export function Composer({
         return;
       }
       if (channelKey === undefined) {
-        setError("Rolls only work in channels");
+        setError("That command only works in channels");
         return;
       }
+      const command =
+        slash.type === "roll" || slash.type === "bottle"
+          ? ({
+              identityId: session.identityId,
+              action: "channel.roll",
+              d: {
+                key: channelKey,
+                dice: slash.type === "bottle" ? "bottle" : slash.dice,
+              },
+            } as const)
+          : slash.type === "timeout"
+            ? ({
+                identityId: session.identityId,
+                action: "channel.timeout",
+                d: {
+                  key: channelKey,
+                  character: slash.character,
+                  minutes: slash.minutes,
+                },
+              } as const)
+            : slash.type === "setmode"
+              ? ({
+                  identityId: session.identityId,
+                  action: "channel.mode",
+                  d: { key: channelKey, mode: slash.mode },
+                } as const)
+              : slash.type === "banlist"
+                ? ({
+                    identityId: session.identityId,
+                    action: "channel.banlist",
+                    d: { key: channelKey },
+                  } as const)
+                : ({
+                    identityId: session.identityId,
+                    action: slash.action,
+                    d: { key: channelKey, character: slash.character },
+                  } as const);
       setBusy(true);
       setError(undefined);
-      const ack = await gateway.cmd({
-        identityId: session.identityId,
-        action: "channel.roll",
-        d: {
-          key: channelKey,
-          dice: slash.type === "bottle" ? "bottle" : slash.dice,
-        },
-      });
+      const ack = await gateway.cmd(command);
       setBusy(false);
       if (!ack.ok) {
-        setError(ack.error ?? "Roll failed");
+        setError(ack.error ?? "Command failed");
         return;
       }
       setText("");
