@@ -259,6 +259,23 @@
   color: var(--eb-faint);
 }
 
+/* Small trailing action in a section header (channel browser opener). */
+.sectionAction {
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.sectionAction:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
 .navItem {
   display: flex;
   align-items: center;

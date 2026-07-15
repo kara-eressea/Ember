@@ -20,6 +20,10 @@ export interface SimChannelSeed {
   readonly oplist?: readonly string[];
   /** NPCs seeded as members. */
   readonly npcs?: readonly string[];
+  /** false = hidden/invite-only room: joinable by exact name but never
+   * returned in ORS listings (real ADH- rooms behave this way when closed).
+   * Official channels are always listed. */
+  readonly listed?: boolean;
 }
 
 export interface SimNpc {
@@ -72,6 +76,11 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Hazel Fenwick", "Fenwick Sprout"],
     },
+    // Reserved for the M6 channel-browser E2E (same parallelism rule).
+    "laurel@example.test": {
+      password: "hunter2",
+      characters: ["Laurel Quince"],
+    },
   },
   channels: [
     {
@@ -110,6 +119,24 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "A private open room with an [i]ID[/i] instead of a name.",
       oplist: ["Nyx Firemane"],
       npcs: ["Nyx Firemane"],
+    },
+    // Reserved for the M6 channel-browser E2E (join through the dialog).
+    {
+      name: "Orchard",
+      mode: "chat",
+      description: "Rows of quiet trees.",
+      npcs: ["Tally Marsh"],
+    },
+    // Hidden room for the browser's join-by-name footer: joinable by exact
+    // id, never listed in ORS.
+    {
+      name: "ADH-9f8e7d6c5b4a39281706",
+      title: "Root Cellar",
+      mode: "chat",
+      description: "You had to be told about this place.",
+      oplist: ["Nyx Firemane"],
+      npcs: ["Nyx Firemane"],
+      listed: false,
     },
   ],
   npcs: [
