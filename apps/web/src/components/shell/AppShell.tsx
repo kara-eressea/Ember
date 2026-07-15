@@ -280,7 +280,13 @@ export function AppShell() {
           </>
         )}
       </main>
-      {showMembers && channel && <MemberList channel={channel} />}
+      {showMembers && channel && (
+        <MemberList
+          identityId={activeId}
+          ownCharacter={session.character}
+          channel={channel}
+        />
+      )}
       {prefsOpen && (
         <PreferencesWindow
           identityId={activeId}
