@@ -60,6 +60,9 @@ export const serverCommandSchemas = {
   ERR: z.object({ number: z.int(), message: z.string() }),
   /** A character went offline. Treat as a global LCH for that character. */
   FLN: z.object({ character: z.string() }),
+  /** Initial friends list, sent at login — the union of the account's
+   * friends and bookmarks (the JSON API distinguishes them). */
+  FRL: z.object({ characters: z.array(z.string()) }),
   /** Server hello, sent after successful identification. */
   HLO: z.object({ message: z.string() }),
   /** Initial channel data, in response to JCH (along with CDS). */

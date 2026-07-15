@@ -7,6 +7,12 @@ import type { ChannelMode } from "@emberchat/fchat-protocol";
 export interface SimAccount {
   readonly password: string;
   readonly characters: readonly string[];
+  /** Account-wide profile bookmarks (JSON API + FRL seed). */
+  readonly bookmarks?: readonly string[];
+  /** Friend pairs: `own` is this account's character, `friend` theirs. */
+  readonly friends?: readonly { own: string; friend: string }[];
+  /** Incoming friend requests waiting on this account (request-list). */
+  readonly incomingRequests?: readonly { from: string; to: string }[];
 }
 
 export interface SimChannelSeed {
@@ -44,9 +50,18 @@ export interface SimWorld {
 
 export const DEFAULT_WORLD: SimWorld = {
   accounts: {
+    // amber is shared by unit/integration suites (each runs its own sim);
+    // within the E2E suite it belongs to chat.spec alone — sharing an
+    // ACCOUNT between parallel specs makes their ticket managers invalidate
+    // each other (every new ticket kills all previous ones account-wide).
     "amber@example.test": {
       password: "hunter2",
       characters: ["Amber Vale", "Cindral"],
+    },
+    // Reserved for the auth E2E (account-add/identity CRUD flows).
+    "aspen@example.test": {
+      password: "hunter2",
+      characters: ["Aspen Vale", "Aspen Brook"],
     },
     "birch@example.test": {
       password: "hunter2",
@@ -97,6 +112,15 @@ export const DEFAULT_WORLD: SimWorld = {
     "rue@example.test": {
       password: "hunter2",
       characters: ["Rue Alder", "Alder Fen", "Sorrel Vane"],
+    },
+    // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
+    // with a bookmark, a friend, and a pending incoming request from Tally.
+    "fern@example.test": {
+      password: "hunter2",
+      characters: ["Fern Glade"],
+      bookmarks: ["Old Greywhisker"],
+      friends: [{ own: "Fern Glade", friend: "Nyx Firemane" }],
+      incomingRequests: [{ from: "Tally Marsh", to: "Fern Glade" }],
     },
   },
   channels: [
@@ -177,6 +201,17 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Tools on every wall.",
       oplist: ["Alder Fen"],
       npcs: [],
+      listed: false,
+    },
+    // Reserved for the M6 social E2E: NPC members to right-click. Hidden
+    // for the same listing-stability reason.
+    {
+      name: "ADH-33cc44dd55ee66ff77aa",
+      title: "Fernery",
+      mode: "chat",
+      description: "Fronds everywhere.",
+      oplist: ["Nyx Firemane"],
+      npcs: ["Tally Marsh", "Old Greywhisker"],
       listed: false,
     },
   ],

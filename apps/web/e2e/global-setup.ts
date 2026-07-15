@@ -77,6 +77,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         AUTH_RATE_LIMIT_MAX: "1000",
         FCHAT_URL: sim.wsUrl,
         FLIST_API_URL: sim.httpUrl,
+        // The sim is local — the 1 req/s policy budget only matters against
+        // the real F-List, and serializing on it starves parallel specs.
+        FLIST_API_MIN_INTERVAL_MS: "0",
+        // The whole parallel suite arrives from one loopback IP; the
+        // production per-IP backstop would 429 innocent specs.
+        RATE_LIMIT_MAX: "100000",
       },
       stdio: ["ignore", "inherit", "inherit"],
     });

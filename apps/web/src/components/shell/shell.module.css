@@ -335,6 +335,20 @@
   text-decoration: none;
 }
 
+/* Friends/Bookmarks rows (M6): navItem look on a button element. */
+.socialRow {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.socialEmpty {
+  margin: 1px 6px;
+  padding: 3px 10px;
+  color: var(--eb-faint);
+  font-size: 12px;
+  font-style: italic;
+}
+
 .navItem.active {
   background: var(--eb-accent-soft);
   box-shadow: inset 2px 0 0 var(--eb-accent);

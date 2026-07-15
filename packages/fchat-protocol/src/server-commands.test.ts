@@ -21,6 +21,7 @@ const DOC_SAMPLES: readonly string[] = [
   'CON {"count": 254}',
   'ERR {"message": "You have already joined this channel.", "number": 28}',
   'FLN {"character":"Hexxy"}',
+  'FRL {"characters": ["Bookmarked Friend", "Hexxy"]}',
   'HLO {"message":"Welcome. Running F-Chat 0.8.6-Lua by Kira. Enjoy your stay."}',
   'ICH {"users": [{"identity": "Shadlor"}, {"identity": "Bunnie Patcher"}, {"identity": "Hexxy"}], "channel": "Frontpage", "mode": "chat"}',
   'IDN {"character": "Hexxy"}',

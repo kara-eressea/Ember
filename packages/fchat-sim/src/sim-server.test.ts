@@ -182,7 +182,7 @@ describe("getApiTicket.php", () => {
 });
 
 describe("login handshake", () => {
-  it("walks IDN → HLO → VAR → CON → ADL → IGN → LIS → NLN in order", async () => {
+  it("walks IDN → HLO → VAR → CON → ADL → FRL → IGN → LIS → NLN in order", async () => {
     const sim = await startSim();
     const client = await TestClient.connect(sim);
     client.send(
@@ -223,6 +223,11 @@ describe("login handshake", () => {
     expect(parseServerCommand(await client.next())).toEqual({
       cmd: "ADL",
       payload: { ops: [] },
+    });
+    // Friends+bookmarks union (M6 step 7) — none seeded for this account.
+    expect(parseServerCommand(await client.next())).toEqual({
+      cmd: "FRL",
+      payload: { characters: [] },
     });
     // The ignore list replays before the roster (real-server order).
     expect(parseServerCommand(await client.next())).toEqual({
@@ -1342,5 +1347,226 @@ describe("channel moderation (M6: CKU / CBU / CTU / CUB / COA / COR / CSO / CDS 
         character: "Amber Vale",
       },
     });
+  });
+});
+
+describe("social JSON API + FRL (M6 step 7)", () => {
+  async function socialCall(
+    sim: FchatSim,
+    path: string,
+    form: Record<string, string>,
+  ): Promise<Record<string, unknown>> {
+    const response = await fetch(new URL(path, sim.httpUrl), {
+      method: "POST",
+      body: new URLSearchParams(form),
+    });
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  function ticketFor(sim: FchatSim, account: string): Promise<string> {
+    return Promise.resolve(sim.issueTicketFor(account));
+  }
+
+  it("sends the seeded friends+bookmarks union as FRL at login", async () => {
+    const sim = await startSim();
+    const client = await TestClient.connect(sim);
+    client.send(
+      idn(
+        "fern@example.test",
+        sim.issueTicketFor("fern@example.test"),
+        "Fern Glade",
+      ),
+    );
+    expect(parseServerCommand(await client.waitFor("FRL"))).toEqual({
+      cmd: "FRL",
+      payload: { characters: ["Nyx Firemane", "Old Greywhisker"] },
+    });
+  });
+
+  it("rejects a stale ticket and serves the seeded lists with a fresh one", async () => {
+    const sim = await startSim();
+    const account = "fern@example.test";
+    const stale = await ticketFor(sim, account);
+    const fresh = await ticketFor(sim, account); // invalidates `stale`
+    expect(
+      await socialCall(sim, "/json/api/bookmark-list.php", {
+        account,
+        ticket: stale,
+      }),
+    ).toEqual({ error: "Invalid ticket." });
+    expect(
+      await socialCall(sim, "/json/api/bookmark-list.php", {
+        account,
+        ticket: fresh,
+      }),
+    ).toEqual({ error: "", characters: ["Old Greywhisker"] });
+    expect(
+      await socialCall(sim, "/json/api/friend-list.php", {
+        account,
+        ticket: fresh,
+      }),
+    ).toEqual({
+      error: "",
+      friends: [{ source: "Nyx Firemane", dest: "Fern Glade" }],
+    });
+  });
+
+  it("adds and removes bookmarks with envelope errors on misuse", async () => {
+    const sim = await startSim();
+    const account = "amber@example.test";
+    const ticket = await ticketFor(sim, account);
+    const call = (path: string, extra: Record<string, string>) =>
+      socialCall(sim, path, { account, ticket, ...extra });
+    expect(
+      await call("/json/api/bookmark-add.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "" });
+    expect(
+      await call("/json/api/bookmark-add.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "You already have this character bookmarked." });
+    expect(await call("/json/api/bookmark-list.php", {})).toEqual({
+      error: "",
+      characters: ["Tally Marsh"],
+    });
+    expect(
+      await call("/json/api/bookmark-remove.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "" });
+    expect(
+      await call("/json/api/bookmark-remove.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "You do not have this character bookmarked." });
+  });
+
+  it("walks a friend request end to end: send → pending/incoming → accept → symmetric friendship → remove", async () => {
+    const sim = await startSim();
+    const amber = "amber@example.test";
+    const birch = "birch@example.test";
+    const amberTicket = await ticketFor(sim, amber);
+    const birchTicket = await ticketFor(sim, birch);
+
+    // Amber Vale sends Birch Rowan a request.
+    expect(
+      await socialCall(sim, "/json/api/request-send.php", {
+        account: amber,
+        ticket: amberTicket,
+        source_name: "Amber Vale",
+        dest_name: "Birch Rowan",
+      }),
+    ).toEqual({ error: "" });
+    // Duplicate refused.
+    expect(
+      (
+        await socialCall(sim, "/json/api/request-send.php", {
+          account: amber,
+          ticket: amberTicket,
+          source_name: "Amber Vale",
+          dest_name: "Birch Rowan",
+        })
+      )["error"],
+    ).toContain("already a pending request");
+
+    const pending = await socialCall(sim, "/json/api/request-pending.php", {
+      account: amber,
+      ticket: amberTicket,
+    });
+    const incoming = await socialCall(sim, "/json/api/request-list.php", {
+      account: birch,
+      ticket: birchTicket,
+    });
+    expect(pending["requests"]).toEqual(incoming["requests"]);
+    const request = (
+      incoming["requests"] as { id: number; source: string; dest: string }[]
+    )[0]!;
+    expect(request).toMatchObject({
+      source: "Amber Vale",
+      dest: "Birch Rowan",
+    });
+
+    // Birch accepts: friendship lands on BOTH accounts.
+    expect(
+      await socialCall(sim, "/json/api/request-accept.php", {
+        account: birch,
+        ticket: birchTicket,
+        request_id: String(request.id),
+      }),
+    ).toEqual({ error: "" });
+    expect(
+      (
+        await socialCall(sim, "/json/api/friend-list.php", {
+          account: birch,
+          ticket: birchTicket,
+        })
+      )["friends"],
+    ).toEqual([{ source: "Amber Vale", dest: "Birch Rowan" }]);
+    expect(
+      (
+        await socialCall(sim, "/json/api/friend-list.php", {
+          account: amber,
+          ticket: amberTicket,
+        })
+      )["friends"],
+    ).toEqual([{ source: "Birch Rowan", dest: "Amber Vale" }]);
+
+    // Removing is symmetric too.
+    expect(
+      await socialCall(sim, "/json/api/friend-remove.php", {
+        account: amber,
+        ticket: amberTicket,
+        source_name: "Amber Vale",
+        dest_name: "Birch Rowan",
+      }),
+    ).toEqual({ error: "" });
+    expect(
+      (
+        await socialCall(sim, "/json/api/friend-list.php", {
+          account: birch,
+          ticket: birchTicket,
+        })
+      )["friends"],
+    ).toEqual([]);
+  });
+
+  it("denies and cancels requests", async () => {
+    const sim = await startSim();
+    const fern = "fern@example.test";
+    const ticket = await ticketFor(sim, fern);
+    // The seeded incoming request from Tally Marsh can be denied.
+    const incoming = await socialCall(sim, "/json/api/request-list.php", {
+      account: fern,
+      ticket,
+    });
+    const seeded = (incoming["requests"] as { id: number }[])[0]!;
+    expect(
+      await socialCall(sim, "/json/api/request-deny.php", {
+        account: fern,
+        ticket,
+        request_id: String(seeded.id),
+      }),
+    ).toEqual({ error: "" });
+    // Fern sends one and cancels it.
+    await socialCall(sim, "/json/api/request-send.php", {
+      account: fern,
+      ticket,
+      source_name: "Fern Glade",
+      dest_name: "Amber Vale",
+    });
+    const outgoing = await socialCall(sim, "/json/api/request-pending.php", {
+      account: fern,
+      ticket,
+    });
+    const sent = (outgoing["requests"] as { id: number }[])[0]!;
+    expect(
+      await socialCall(sim, "/json/api/request-cancel.php", {
+        account: fern,
+        ticket,
+        request_id: String(sent.id),
+      }),
+    ).toEqual({ error: "" });
+    expect(
+      (
+        await socialCall(sim, "/json/api/request-pending.php", {
+          account: fern,
+          ticket,
+        })
+      )["requests"],
+    ).toEqual([]);
   });
 });

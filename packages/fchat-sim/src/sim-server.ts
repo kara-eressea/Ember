@@ -28,6 +28,7 @@ import {
   type ServerCommand,
   type ServerVars,
 } from "@emberchat/fchat-protocol";
+import { SocialService } from "./social-service.js";
 import { TicketService } from "./ticket-service.js";
 import { DEFAULT_WORLD, type SimWorld } from "./world.js";
 
@@ -157,6 +158,7 @@ export class FchatSim {
   readonly #host: string;
   readonly #log: (line: string) => void;
   readonly #tickets: TicketService;
+  readonly #social: SocialService;
   readonly #http: Server;
   readonly #wss: WebSocketServer;
   readonly #connections = new Set<Connection>();
@@ -182,6 +184,7 @@ export class FchatSim {
     this.#host = options.host ?? "127.0.0.1";
     this.#log = options.log ?? (() => {});
     this.#tickets = new TicketService(this.#world.accounts);
+    this.#social = new SocialService(this.#world.accounts);
     for (const seed of this.#world.channels) {
       this.#channels.set(seed.name, {
         name: seed.name,
@@ -312,7 +315,11 @@ export class FchatSim {
 
   #handleHttp(request: IncomingMessage, response: ServerResponse): void {
     const url = new URL(request.url ?? "/", this.httpUrl);
-    if (request.method !== "POST" || url.pathname !== API_TICKET_PATH) {
+    const isSocial = url.pathname.startsWith("/json/api/");
+    if (
+      request.method !== "POST" ||
+      (url.pathname !== API_TICKET_PATH && !isSocial)
+    ) {
       response.writeHead(404, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "Not found." }));
       return;
@@ -327,28 +334,84 @@ export class FchatSim {
     });
     request.on("end", () => {
       const form = new URLSearchParams(body);
-      const account = form.get("account") ?? "";
-      const ticket = this.#tickets.issue(account, form.get("password") ?? "");
-      let payload: ApiTicketResponse;
-      if (!ticket) {
-        payload = { error: "Invalid username or password." };
-      } else {
-        const characters = [
-          ...(this.#tickets.account(account)?.characters ?? []),
-        ];
-        payload = {
-          error: "",
-          ticket,
-          ...(form.get("no_characters") === "true"
-            ? {}
-            : { characters, default_character: characters[0] }),
-          ...(form.get("no_friends") === "true" ? {} : { friends: [] }),
-          ...(form.get("no_bookmarks") === "true" ? {} : { bookmarks: [] }),
-        };
-      }
+      const payload = isSocial
+        ? this.#handleSocialApi(url.pathname, form)
+        : this.#handleTicketApi(form);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(payload));
     });
+  }
+
+  #handleTicketApi(form: URLSearchParams): ApiTicketResponse {
+    const account = form.get("account") ?? "";
+    const ticket = this.#tickets.issue(account, form.get("password") ?? "");
+    if (!ticket) {
+      return { error: "Invalid username or password." };
+    }
+    const characters = [...(this.#tickets.account(account)?.characters ?? [])];
+    return {
+      error: "",
+      ticket,
+      ...(form.get("no_characters") === "true"
+        ? {}
+        : { characters, default_character: characters[0] }),
+      ...(form.get("no_friends") === "true" ? {} : { friends: [] }),
+      ...(form.get("no_bookmarks") === "true" ? {} : { bookmarks: [] }),
+    };
+  }
+
+  /** The social JSON endpoints (M6 step 7). Envelope: {"error": ""} on
+   * success; every endpoint requires a valid account+ticket pair. */
+  #handleSocialApi(pathname: string, form: URLSearchParams): object {
+    const account = form.get("account") ?? "";
+    if (!this.#tickets.validate(account, form.get("ticket") ?? "")) {
+      return { error: "Invalid ticket." };
+    }
+    const name = form.get("name") ?? "";
+    const requestId = Number(form.get("request_id") ?? "");
+    switch (pathname) {
+      case "/json/api/bookmark-list.php":
+        return { error: "", characters: this.#social.bookmarks(account) };
+      case "/json/api/bookmark-add.php":
+        return { error: this.#social.bookmarkAdd(account, name) };
+      case "/json/api/bookmark-remove.php":
+        return { error: this.#social.bookmarkRemove(account, name) };
+      case "/json/api/friend-list.php":
+        return {
+          error: "",
+          friends: this.#social
+            .friends(account)
+            .map((pair) => ({ source: pair.friend, dest: pair.own })),
+        };
+      case "/json/api/friend-remove.php":
+        return {
+          error: this.#social.friendRemove(
+            account,
+            form.get("source_name") ?? "",
+            form.get("dest_name") ?? "",
+          ),
+        };
+      case "/json/api/request-list.php":
+        return { error: "", requests: this.#social.incoming(account) };
+      case "/json/api/request-pending.php":
+        return { error: "", requests: this.#social.outgoing(account) };
+      case "/json/api/request-send.php":
+        return {
+          error: this.#social.requestSend(
+            account,
+            form.get("source_name") ?? "",
+            form.get("dest_name") ?? "",
+          ),
+        };
+      case "/json/api/request-accept.php":
+        return { error: this.#social.requestAccept(account, requestId) };
+      case "/json/api/request-deny.php":
+        return { error: this.#social.requestDeny(account, requestId) };
+      case "/json/api/request-cancel.php":
+        return { error: this.#social.requestCancel(account, requestId) };
+      default:
+        return { error: "Not found." };
+    }
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -467,6 +530,11 @@ export class FchatSim {
     this.#send(connection, {
       cmd: "ADL",
       payload: { ops: [...(this.#world.chatops ?? [])] },
+    });
+    // Friends+bookmarks union, like the real login flow (M6 step 7).
+    this.#send(connection, {
+      cmd: "FRL",
+      payload: { characters: this.#social.frlFor(account) },
     });
     this.#send(connection, {
       cmd: "IGN",
