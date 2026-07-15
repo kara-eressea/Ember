@@ -413,11 +413,14 @@ describe("channels", () => {
           { name: "Development", mode: "both", characters: 1 },
           { name: "Gardening", mode: "chat", characters: 1 },
           { name: "Terrarium", mode: "both", characters: 0 },
+          { name: "Orchard", mode: "chat", characters: 1 },
         ],
       },
     });
     client.send({ cmd: "ORS" });
     const ors = parseServerCommand(await client.waitFor("ORS"));
+    // Root Cellar (listed: false) must NOT appear — hidden rooms are
+    // joinable by exact id only.
     expect(ors).toMatchObject({
       cmd: "ORS",
       payload: {
@@ -428,6 +431,22 @@ describe("channels", () => {
             title: "Ember Lounge",
           },
         ],
+      },
+    });
+  });
+
+  it("keeps hidden rooms out of ORS but joinable by exact id", async () => {
+    const sim = await startSim();
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    client.send({
+      cmd: "JCH",
+      payload: { channel: "ADH-9f8e7d6c5b4a39281706" },
+    });
+    expect(parseServerCommand(await client.waitFor("JCH"))).toMatchObject({
+      cmd: "JCH",
+      payload: {
+        channel: "ADH-9f8e7d6c5b4a39281706",
+        title: "Root Cellar",
       },
     });
   });

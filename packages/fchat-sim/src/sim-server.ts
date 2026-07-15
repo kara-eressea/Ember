@@ -64,6 +64,8 @@ interface ChannelState {
   readonly title: string;
   readonly mode: string;
   readonly official: boolean;
+  /** Hidden rooms are joinable by exact name but never appear in ORS. */
+  readonly listed: boolean;
   description: string;
   oplist: readonly string[];
   readonly members: Set<string>;
@@ -140,6 +142,7 @@ export class FchatSim {
         title: seed.title ?? seed.name,
         mode: seed.mode,
         official: !seed.name.startsWith("ADH-"),
+        listed: seed.listed ?? true,
         description: seed.description,
         oplist: seed.oplist ?? [""],
         members: new Set(seed.npcs),
@@ -495,7 +498,7 @@ export class FchatSim {
           cmd: "ORS",
           payload: {
             channels: [...this.#channels.values()]
-              .filter((channel) => !channel.official)
+              .filter((channel) => !channel.official && channel.listed)
               .map((channel) => ({
                 name: channel.name,
                 characters: channel.members.size,

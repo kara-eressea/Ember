@@ -137,7 +137,17 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
         <div className={styles.sectionHeader}>
           <span>Channels</span>
-          <span>{channels.length || ""}</span>
+          <button
+            type="button"
+            className={styles.sectionAction}
+            title="Browse channels"
+            aria-label="Browse channels"
+            onClick={() => {
+              useUiStore.getState().setChannelBrowserOpen(true);
+            }}
+          >
+            +
+          </button>
         </div>
         {channels.map((channel) => channelRow(channel, false))}
         <JoinChannelForm session={session} />

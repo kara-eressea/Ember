@@ -46,6 +46,15 @@ export interface HistoryMessageDto {
   createdAt: string;
 }
 
+export interface DirectoryChannelDto {
+  /** F-Chat channel name (official) or ADH- id (open room). */
+  key: string;
+  kind: "official" | "open";
+  title: string;
+  /** Member count as of refreshedAt — point-in-time by nature. */
+  characters: number;
+}
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -277,6 +286,16 @@ export const api = {
     return apiDownload(
       `/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
     );
+  },
+
+  /** Shared channel listings (M6 channel browser). The server refreshes the
+   * cache over the identity's live session when it is past the cooldown;
+   * refreshedAt says how stale the point-in-time counts are. */
+  getDirectory(identityId: string) {
+    return apiRequest<{
+      channels: DirectoryChannelDto[];
+      refreshedAt: string | null;
+    }>(`/identities/${identityId}/directory`, { auth: true });
   },
 
   listHighlightRules() {

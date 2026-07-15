@@ -19,6 +19,9 @@ interface UiState {
   membersOpen: boolean;
   /** Preferences window (COMPONENTS.md §12), opened from the MeBar gear. */
   prefsOpen: boolean;
+  /** Channel browser dialog (COMPONENTS.md §11), opened from the sidebar
+   * Channels section. */
+  channelBrowserOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -28,6 +31,7 @@ interface UiState {
   setGatewayStatus: (status: GatewayConnectionStatus) => void;
   toggleMembers: () => void;
   setPrefsOpen: (open: boolean) => void;
+  setChannelBrowserOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -37,6 +41,7 @@ export const useUiStore = create<UiState>()((set) => ({
   gatewayStatus: "offline",
   membersOpen: true,
   prefsOpen: false,
+  channelBrowserOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -57,5 +62,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setPrefsOpen(open) {
     set({ prefsOpen: open });
+  },
+  setChannelBrowserOpen(open) {
+    set({ channelBrowserOpen: open });
   },
 }));
