@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type {
   ChannelView,
   DmView,
@@ -26,6 +27,7 @@ function slice(overrides: Partial<IdentitySession>): IdentitySession {
     limits: { chatMax: 4096, privMax: 50000 },
     iconBlacklist: [],
     sendDelaySeconds: 0,
+    prefs: PREFS_DEFAULTS,
     outbox: [],
     channels: {},
     dms: {},
@@ -48,6 +50,7 @@ function channel(unread: number, mentions: number): ChannelView {
     pinned: false,
     unread,
     mentions,
+    highlightedAt: 0,
     lastReadMessageId: null,
   };
 }
@@ -63,6 +66,7 @@ function dm(unread: number): DmView {
     pinned: false,
     typing: "clear",
     unread,
+    highlightedAt: 0,
     lastReadMessageId: null,
   };
 }

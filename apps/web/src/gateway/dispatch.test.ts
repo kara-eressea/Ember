@@ -3,11 +3,28 @@
 // (gateway contract), so the interesting cases are the idempotent ones —
 // duplicate joins, FLN as a global leave, unread convergence.
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, ServerFrame } from "@emberchat/protocol";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
+
+// Node environment — hydrateTheme writes to document/localStorage, and the
+// when-highlighted actions touch Audio/document.title.
+vi.mock("../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+vi.mock("../lib/highlight-notify.js", () => ({
+  playHighlightChime: vi.fn(),
+  flashTitle: vi.fn(),
+  stopTitleFlash: vi.fn(),
+}));
+vi.mock("../lib/desktop-notify.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop-notify.js")>()),
+  showMessageNotification: vi.fn(),
+}));
+import { showMessageNotification } from "../lib/desktop-notify.js";
+import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
+import { hydrateTheme } from "../theme/theme.js";
 import { dispatchFrame } from "./dispatch.js";
 
 const IDENTITY = "11111111-1111-7111-8111-111111111111";
@@ -25,6 +42,7 @@ function message(id: number, overrides: Partial<MessageDto> = {}): MessageDto {
     kind: "msg",
     bbcode: `message ${String(id)}`,
     sentByUs: false,
+    mention: false,
     createdAt: "2026-07-13T12:00:00.000Z",
     ...overrides,
   };
@@ -51,6 +69,7 @@ function snapshot(): ServerFrame {
         limits: { chatMax: 4096, privMax: 50000 },
         iconBlacklist: [],
         sendDelaySeconds: 0,
+        prefs: PREFS_DEFAULTS,
         outbox: [],
       },
       channels: [
@@ -90,6 +109,9 @@ beforeEach(() => {
   useSessionsStore.getState().reset();
   useMessagesStore.getState().reset();
   useUiStore.getState().setActive(undefined, undefined);
+  vi.mocked(playHighlightChime).mockClear();
+  vi.mocked(flashTitle).mockClear();
+  vi.mocked(showMessageNotification).mockClear();
 });
 
 function session() {
@@ -301,8 +323,73 @@ describe("presence", () => {
     dispatchFrame(event("outbox.updated", { items: [] }));
     expect(session().outbox).toEqual([]);
 
-    dispatchFrame(event("prefs.updated", { sendDelaySeconds: 30 }));
+    dispatchFrame(
+      event("prefs.updated", {
+        sendDelaySeconds: 30,
+        prefs: { ...PREFS_DEFAULTS, accent: "moss" },
+      }),
+    );
     expect(session().sendDelaySeconds).toBe(30);
+    expect(session().prefs.accent).toBe("moss");
+  });
+
+  it("synthesizes live-only join/part/quit lines, idempotently", () => {
+    dispatchFrame(snapshot());
+    const lines = () =>
+      (useMessagesStore.getState().buffers[CONV_CHANNEL]?.presence ?? []).map(
+        (line) => `${line.kind}:${line.character}`,
+      );
+
+    // A newcomer joins → one line; the at-least-once replay (already a
+    // member by then) logs nothing.
+    dispatchFrame(
+      event("member.join", {
+        channelKey: "Frontpage",
+        member: member("Tally Marsh"),
+      }),
+    );
+    dispatchFrame(
+      event("member.join", {
+        channelKey: "Frontpage",
+        member: member("Tally Marsh"),
+      }),
+    );
+    expect(lines()).toEqual(["join:Tally Marsh"]);
+
+    // Leave → one line; the replay (no longer a member) logs nothing.
+    dispatchFrame(
+      event("member.leave", {
+        channelKey: "Frontpage",
+        character: "Tally Marsh",
+      }),
+    );
+    dispatchFrame(
+      event("member.leave", {
+        channelKey: "Frontpage",
+        character: "Tally Marsh",
+      }),
+    );
+    // FLN: a quit line in every channel the character was a member of.
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    dispatchFrame(
+      event("presence", { character: "Nyx Firemane", online: false }),
+    );
+    expect(lines()).toEqual([
+      "join:Tally Marsh",
+      "part:Tally Marsh",
+      "quit:Nyx Firemane",
+    ]);
+  });
+
+  it("prefs hydrate the theme (snapshot and live update)", () => {
+    vi.mocked(hydrateTheme).mockClear();
+    dispatchFrame(snapshot());
+    expect(hydrateTheme).toHaveBeenLastCalledWith(PREFS_DEFAULTS);
+    const next = { ...PREFS_DEFAULTS, accent: "amber" as const };
+    dispatchFrame(event("prefs.updated", { sendDelaySeconds: 0, prefs: next }));
+    expect(hydrateTheme).toHaveBeenLastCalledWith(next);
   });
 
   it("our own STA converges the MeBar/rail status", () => {
@@ -359,28 +446,33 @@ describe("message.new and unread", () => {
     expect(session().channels["Frontpage"]?.unread).toBe(3);
   });
 
-  it("bumps mentions when an inbound channel message names our character", () => {
+  it("bumps mentions from the server-stamped flag, never by re-matching", () => {
     dispatchFrame(snapshot());
+    // The persist-time verdict rides the message (M5) — the client trusts it.
     dispatchFrame(
       event("message.new", {
         convId: CONV_CHANNEL,
-        message: message(11, { bbcode: "ping Amber Vale, you around?" }),
+        message: message(11, {
+          bbcode: "ping Amber Vale, you around?",
+          mention: true,
+        }),
       }),
     );
-    // Word boundary: a longer name containing ours does not count.
+    // Naming us with mention:false stays a plain unread — no client matcher.
     dispatchFrame(
       event("message.new", {
         convId: CONV_CHANNEL,
-        message: message(12, { bbcode: "Amber Valery sends regards" }),
+        message: message(12, { bbcode: "Amber Vale sends regards" }),
       }),
     );
-    // Our own message naming ourselves does not count.
+    // Our own sends never bump, whatever the flag says.
     dispatchFrame(
       event("message.new", {
         convId: CONV_CHANNEL,
         message: message(13, {
           bbcode: "I am Amber Vale",
           sentByUs: true,
+          mention: true,
         }),
       }),
     );
@@ -488,6 +580,184 @@ describe("message.new and unread", () => {
     const dm = session().dms[convId];
     expect(dm?.partner).toBe("Birch Rowan");
     expect(dm?.unread).toBe(1);
+  });
+});
+
+describe("when-highlighted actions", () => {
+  const mention = (id: number) =>
+    event("message.new", {
+      convId: CONV_CHANNEL,
+      message: message(id, { mention: true }),
+    });
+  /** prefs.updated with the given when-highlighted switches. */
+  const setPrefs = (overrides: Partial<typeof PREFS_DEFAULTS>) =>
+    event("prefs.updated", {
+      sendDelaySeconds: 0,
+      prefs: { ...PREFS_DEFAULTS, ...overrides },
+    });
+
+  it("fires each action behind its pref on an inactive mention", () => {
+    dispatchFrame(snapshot());
+    // Defaults: flash on, sound and bump off.
+    dispatchFrame(mention(11));
+    expect(flashTitle).toHaveBeenCalledTimes(1);
+    expect(playHighlightChime).not.toHaveBeenCalled();
+    expect(session().channels["Frontpage"]?.highlightedAt).toBe(0);
+
+    dispatchFrame(
+      setPrefs({
+        highlightSound: true,
+        highlightBump: true,
+        highlightFlashTitle: false,
+      }),
+    );
+    dispatchFrame(mention(12));
+    expect(flashTitle).toHaveBeenCalledTimes(1); // still just the first
+    expect(playHighlightChime).toHaveBeenCalledTimes(1);
+    expect(session().channels["Frontpage"]?.highlightedAt).toBeGreaterThan(0);
+  });
+
+  it("stays silent for the active conversation, own sends, and non-mentions", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ highlightSound: true, highlightBump: true }));
+
+    useUiStore.getState().setActive(IDENTITY, CONV_CHANNEL);
+    dispatchFrame(mention(11));
+
+    useUiStore.getState().setActive(undefined, undefined);
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(12, { mention: true, sentByUs: true }),
+      }),
+    );
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(13) }),
+    );
+
+    expect(flashTitle).not.toHaveBeenCalled();
+    expect(playHighlightChime).not.toHaveBeenCalled();
+    expect(session().channels["Frontpage"]?.highlightedAt).toBe(0);
+  });
+
+  it("clearUnread drops the bump stamp along with the badges", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ highlightBump: true }));
+    dispatchFrame(mention(11));
+    expect(session().channels["Frontpage"]?.highlightedAt).toBeGreaterThan(0);
+    useSessionsStore.getState().clearUnread(IDENTITY, CONV_CHANNEL);
+    const channel = session().channels["Frontpage"];
+    expect(channel?.highlightedAt).toBe(0);
+    expect(channel?.unread).toBe(0);
+    expect(channel?.mentions).toBe(0);
+  });
+});
+
+describe("desktop notifications and mutes", () => {
+  const setPrefs = (overrides: Partial<typeof PREFS_DEFAULTS>) =>
+    event("prefs.updated", {
+      sendDelaySeconds: 0,
+      prefs: { ...PREFS_DEFAULTS, ...overrides },
+    });
+
+  it("notifies on a mention with a stripped preview, titled with the channel", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ desktopNotifyMentions: true }));
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, {
+          bbcode: "[b]Amber Vale[/b], look at this",
+          mention: true,
+        }),
+      }),
+    );
+    expect(showMessageNotification).toHaveBeenCalledWith({
+      title: "Nyx Firemane — Frontpage",
+      body: "Amber Vale, look at this",
+      tag: CONV_CHANNEL,
+    });
+    // A plain message is not a mention — no notification.
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(12) }),
+    );
+    expect(showMessageNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies on PMs behind their own pref, titled with the sender", () => {
+    dispatchFrame(snapshot());
+    const pm = (id: number) =>
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(id, { kind: "pm", bbcode: "hey there" }),
+      });
+    dispatchFrame(pm(11));
+    expect(showMessageNotification).not.toHaveBeenCalled();
+    dispatchFrame(setPrefs({ desktopNotifyPms: true }));
+    dispatchFrame(pm(12));
+    expect(showMessageNotification).toHaveBeenCalledWith({
+      title: "Nyx Firemane",
+      body: "hey there",
+      tag: CONV_DM,
+    });
+  });
+
+  it("omits the body when the preview pref is off", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      setPrefs({ desktopNotifyPms: true, notifyShowContent: false }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(11, { kind: "pm", bbcode: "secret plans" }),
+      }),
+    );
+    expect(showMessageNotification).toHaveBeenCalledWith({
+      title: "Nyx Firemane",
+      tag: CONV_DM,
+    });
+  });
+
+  it("mutes silence alerts only — badges, tint source and bump still accrue", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      setPrefs({
+        desktopNotifyMentions: true,
+        highlightSound: true,
+        highlightFlashTitle: true,
+        highlightBump: true,
+        mutedConvIds: [CONV_CHANNEL],
+      }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, { mention: true }),
+      }),
+    );
+    expect(showMessageNotification).not.toHaveBeenCalled();
+    expect(playHighlightChime).not.toHaveBeenCalled();
+    expect(flashTitle).not.toHaveBeenCalled();
+    const channel = session().channels["Frontpage"];
+    expect(channel?.unread).toBe(4);
+    expect(channel?.mentions).toBe(2);
+    expect(channel?.highlightedAt).toBeGreaterThan(0);
+  });
+
+  it("a per-identity mute covers every conversation of the identity", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      setPrefs({ desktopNotifyPms: true, mutedIdentityIds: [IDENTITY] }),
+    );
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(11, { kind: "pm" }),
+      }),
+    );
+    expect(showMessageNotification).not.toHaveBeenCalled();
+    expect(session().dms[CONV_DM]?.unread).toBe(1);
   });
 });
 

@@ -2,6 +2,7 @@
 // 401, and surfaces structured errors. Same-origin `/api` — the dev server
 // proxies to the API server, production serves both from one Fastify.
 
+import type { HighlightRuleDto, HighlightRuleInput } from "@emberchat/protocol";
 import { useAuthStore } from "../stores/auth.js";
 
 export interface UserDto {
@@ -40,6 +41,8 @@ export interface HistoryMessageDto {
   kind: "msg" | "lrp" | "rll" | "sys" | "pm";
   bbcode: string;
   sentByUs: boolean;
+  /** Persist-time highlight verdict (M5) — same field as MessageDto. */
+  mention: boolean;
   createdAt: string;
 }
 
@@ -95,6 +98,28 @@ async function toError(response: Response): Promise<ApiError> {
     // Non-JSON error body — keep the generic message.
   }
   return new ApiError(response.status, message);
+}
+
+/** Authenticated binary/text download (same 401-refresh flow as apiRequest,
+ * but the response stays a Blob instead of being JSON-parsed). */
+export async function apiDownload(path: string): Promise<Blob> {
+  const auth = useAuthStore.getState();
+  let response = await rawRequest(path, { auth: true }, auth.accessToken);
+  if (response.status === 401) {
+    const refreshed = await auth.refreshSession();
+    if (!refreshed) {
+      throw await toError(response);
+    }
+    response = await rawRequest(
+      path,
+      { auth: true },
+      useAuthStore.getState().accessToken,
+    );
+  }
+  if (!response.ok) {
+    throw await toError(response);
+  }
+  return response.blob();
 }
 
 export async function apiRequest<T>(
@@ -241,5 +266,32 @@ export const api = {
       `/identities/${identityId}/conversations/${conversationId}/messages${suffix}`,
       { auth: true },
     );
+  },
+
+  /** Whole-conversation log export (M5 Away & logs pane). */
+  exportLog(
+    identityId: string,
+    conversationId: string,
+    format: "txt" | "html" | "json",
+  ) {
+    return apiDownload(
+      `/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
+    );
+  },
+
+  listHighlightRules() {
+    return apiRequest<{ rules: HighlightRuleDto[] }>("/highlight-rules", {
+      auth: true,
+    });
+  },
+  /** Idempotent full-list replacement; 422 = a rule the server refused
+   * (e.g. a regex RE2 can't compile); 409 = `knownIds` no longer match —
+   * another device edited the list since it was loaded. */
+  putHighlightRules(rules: HighlightRuleInput[], knownIds?: string[]) {
+    return apiRequest<{ rules: HighlightRuleDto[] }>("/highlight-rules", {
+      method: "PUT",
+      body: { rules, ...(knownIds !== undefined ? { knownIds } : {}) },
+      auth: true,
+    });
   },
 };

@@ -2,9 +2,8 @@
 // to snake_case via drizzle's `casing` option — keep it set in both
 // drizzle.config.ts and createDb().
 //
-// M4–M6 tables (highlight_rules, user_preferences, channel_directory,
-// email_tokens) arrive with their milestones; outbox_messages exists from day
-// one per the architecture.
+// M6+ tables (channel_directory, email_tokens) arrive with their milestones;
+// outbox_messages exists from day one per the architecture.
 
 import { sql } from "drizzle-orm";
 import {
@@ -13,6 +12,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -138,6 +138,9 @@ export const messages = pgTable(
     bbcode: text().notNull(),
     sourceMarkdown: text(),
     sentByUs: boolean().notNull().default(false),
+    /** Highlight-matcher verdict, stamped at persist time (M5). Immutable —
+     * rule changes affect new messages only (decisions.md §10). */
+    mention: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   // Pagination, unread counts, catch-up replay.
@@ -180,8 +183,41 @@ export const userPreferences = pgTable("user_preferences", {
     .references(() => appUsers.id, { onDelete: "cascade" }),
   /** Delayed-send window in seconds; 0 sends immediately. */
   sendDelaySeconds: integer().notNull().default(0),
+  /** Sparse prefs patch document (M5) — absent keys mean "default". Kept
+   * flat and merged with jsonb `||` so concurrent patches from two devices
+   * never clobber each other's keys. Read through `resolvePrefs`. */
+  prefs: jsonb().$type<Record<string, unknown>>().notNull().default({}),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+
+export const highlightRuleKind = pgEnum("highlight_rule_kind", [
+  "word",
+  "nick",
+  "regex",
+]);
+
+// Per-user highlight rules (M5) — apply across every identity's log. The
+// sink consults them at persist time to stamp messages.mention; regex
+// patterns are validated against RE2 at PUT.
+export const highlightRules = pgTable(
+  "highlight_rules",
+  {
+    id: uuid().primaryKey().default(uuidv7),
+    userId: uuid()
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    kind: highlightRuleKind().notNull(),
+    pattern: text().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("highlight_rules_user_kind_pattern_uniq").on(
+      t.userId,
+      t.kind,
+      t.pattern,
+    ),
+  ],
+);
 
 export const ignores = pgTable(
   "ignores",

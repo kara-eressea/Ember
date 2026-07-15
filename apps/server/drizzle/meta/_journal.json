@@ -29,6 +29,20 @@
       "when": 1784008256449,
       "tag": "0003_m4-audit-failure-reason",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784034687716,
+      "tag": "0004_m5-prefs-jsonb",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784036327536,
+      "tag": "0005_m5-highlight-rules",
+      "breakpoints": true
     }
   ]
 }

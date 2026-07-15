@@ -12,10 +12,27 @@ import { api } from "../lib/api.js";
 export const BUFFER_WINDOW = 1500;
 /** REST page size for backfill and scroll-up. */
 export const PAGE_SIZE = 50;
+/** Keep at most this many join/part/quit lines per conversation. */
+export const PRESENCE_WINDOW = 200;
+
+/**
+ * A live-only join/part/quit line (M5): synthesized client-side from the
+ * member events, never persisted — a reload starts clean. Timestamps are
+ * the client clock, which is exactly what "it just happened" means here.
+ */
+export interface PresenceLine {
+  key: string;
+  kind: "join" | "part" | "quit";
+  character: string;
+  /** ISO timestamp. */
+  createdAt: string;
+}
 
 export interface ConvBuffer {
   /** Ascending by id. */
   messages: MessageDto[];
+  /** Live-only join/part/quit lines, ascending by time. */
+  presence: PresenceLine[];
   /** Older history exists beyond the buffer's start. */
   hasMoreBefore: boolean;
   /** Initial REST page loaded — the log can render. */
@@ -28,6 +45,11 @@ interface MessagesState {
 
   appendLive(convId: string, message: MessageDto): void;
   appendMany(convId: string, messages: MessageDto[]): void;
+  appendPresence(
+    convId: string,
+    kind: PresenceLine["kind"],
+    character: string,
+  ): void;
   /** Initial page for a conversation (latest PAGE_SIZE via REST). */
   backfill(identityId: string, convId: string): Promise<void>;
   /** Scroll-up: one older page before the current buffer start. */
@@ -37,10 +59,13 @@ interface MessagesState {
 
 const EMPTY_BUFFER: ConvBuffer = {
   messages: [],
+  presence: [],
   hasMoreBefore: false,
   backfilled: false,
   loadingOlder: false,
 };
+
+let presenceCounter = 0;
 
 /** Merge ascending & dedupe by id, then trim to the window from the front. */
 function merge(existing: MessageDto[], incoming: MessageDto[]): MessageDto[] {
@@ -88,6 +113,20 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
 
     appendMany(convId, messages) {
       put(convId, messages);
+    },
+
+    appendPresence(convId, kind, character) {
+      presenceCounter += 1;
+      const line: PresenceLine = {
+        key: `p:${String(presenceCounter)}`,
+        kind,
+        character,
+        createdAt: new Date().toISOString(),
+      };
+      patch(convId, (buffer) => ({
+        ...buffer,
+        presence: [...buffer.presence, line].slice(-PRESENCE_WINDOW),
+      }));
     },
 
     async backfill(identityId, convId) {

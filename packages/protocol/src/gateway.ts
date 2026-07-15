@@ -10,6 +10,8 @@ import {
   CLIENT_SETTABLE_STATUSES,
   TYPING_STATUSES,
 } from "@emberchat/fchat-protocol";
+import { FLIST_NAME_RE } from "./highlights.js";
+import { userPrefsPatchSchema, type UserPrefs } from "./prefs.js";
 
 // Re-exported so gateway consumers (the web app) can render status pickers
 // without a direct fchat-protocol dependency.
@@ -35,12 +37,8 @@ export const GATEWAY_CLOSE = {
   rateLimited: 4430,
 } as const;
 
-/** Matches the F-List character-name charset (see chat3client avatarURL). */
-const characterName = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-zA-Z0-9_\-\s]+$/);
+/** The F-List character-name charset (FLIST_NAME_RE, highlights.ts). */
+const characterName = z.string().min(1).max(64).regex(FLIST_NAME_RE);
 
 // ── Client → server ──────────────────────────────────────────────────────────
 
@@ -133,9 +131,18 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
-    // Per-user (not per-identity) preference; identityId routes the ack.
+    // Per-user (not per-identity) preferences; identityId routes the ack.
+    // `prefs` is a shallow patch — only the supplied keys change (M5).
     action: z.literal("prefs.set"),
-    d: z.object({ sendDelaySeconds: z.number().int().min(0).max(300) }),
+    d: z
+      .object({
+        sendDelaySeconds: z.number().int().min(0).max(300).optional(),
+        prefs: userPrefsPatchSchema.optional(),
+      })
+      .refine(
+        (d) => d.sendDelaySeconds !== undefined || d.prefs !== undefined,
+        { message: "empty prefs patch" },
+      ),
   }),
   z.object({
     identityId: z.uuid(),
@@ -218,6 +225,9 @@ export interface MessageDto {
   kind: "msg" | "lrp" | "rll" | "sys" | "pm";
   bbcode: string;
   sentByUs: boolean;
+  /** Stamped at persist time by the server-side highlight matcher (own
+   * nick + the user's rules) — the client never re-matches. */
+  mention: boolean;
   /** ISO timestamp. */
   createdAt: string;
 }
@@ -353,8 +363,9 @@ export type GatewayEvent =
   | {
       kind: "prefs.updated";
       /** Per-user preference change, broadcast to each identity's
-       * subscribers (idempotent duplicates across identities). */
-      d: { sendDelaySeconds: number };
+       * subscribers (idempotent duplicates across identities). Carries the
+       * full resolved state after the patch — an idempotent overwrite. */
+      d: { sendDelaySeconds: number; prefs: UserPrefs };
     }
   | { kind: "sys"; d: { message: string } }
   | { kind: "error"; d: { number: number; message: string } };
@@ -406,6 +417,8 @@ export type ServerFrame =
           iconBlacklist: string[];
           /** The user's delayed-send window (user_preferences). */
           sendDelaySeconds: number;
+          /** The user's resolved preferences (user_preferences.prefs). */
+          prefs: UserPrefs;
           /** Messages still waiting in the delayed-send outbox. */
           outbox: OutboxItemDto[];
         };

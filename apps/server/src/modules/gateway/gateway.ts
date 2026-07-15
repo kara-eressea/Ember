@@ -13,6 +13,7 @@ import type { ServerCommand } from "@emberchat/fchat-protocol";
 import type { GatewayEvent } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
+import type { HighlightMatcher } from "../highlights/matcher.js";
 import type { HistorySink } from "../history/sink.js";
 import type {
   FchatSession,
@@ -40,6 +41,9 @@ export class GatewayHub {
   readonly #subscribers = new Map<string, Set<GatewayConnection>>();
   /** Bus unsubscribers per identity — called when a session is replaced. */
   readonly #sessionDetach = new Map<string, () => void>();
+  /** Fired when an identity goes from zero subscribers to one — the
+   * detached-away restore hook (M5). Assigned in buildApp. */
+  onFirstSubscribe?: (identityId: string) => void;
 
   constructor(options: GatewayHubOptions) {
     this.#log = options.logger ?? NOOP_LOGGER;
@@ -96,7 +100,16 @@ export class GatewayHub {
       set = new Set();
       this.#subscribers.set(identityId, set);
     }
+    const first = set.size === 0;
     set.add(connection);
+    if (first) {
+      this.onFirstSubscribe?.(identityId);
+    }
+  }
+
+  /** True while at least one browser is attached to the identity. */
+  hasSubscribers(identityId: string): boolean {
+    return (this.#subscribers.get(identityId)?.size ?? 0) > 0;
   }
 
   unsubscribe(identityId: string, connection: GatewayConnection): void {
@@ -282,6 +295,7 @@ export interface GatewayRoutesOptions {
   history: HistorySink;
   hub: GatewayHub;
   outbox: Outbox;
+  highlights: HighlightMatcher;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -289,7 +303,7 @@ export async function gatewayRoutes(
   instance: FastifyInstance,
   options: GatewayRoutesOptions,
 ): Promise<void> {
-  const { db, sessions, history, hub, outbox } = options;
+  const { db, sessions, history, hub, outbox, highlights } = options;
 
   /** True while the auth session row exists and is unexpired. */
   async function sessionAlive(sid: string): Promise<boolean> {
@@ -327,6 +341,7 @@ export async function gatewayRoutes(
       history,
       hub,
       outbox,
+      highlights,
       verifyToken,
       sessionAlive,
       log: instance.log,

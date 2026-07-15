@@ -66,6 +66,12 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Sage Willowmere"],
     },
+    // Reserved for the M5 preferences E2E (same parallelism rule);
+    // Fenwick Sprout is its raw-SimClient "other side".
+    "hazel@example.test": {
+      password: "hunter2",
+      characters: ["Hazel Fenwick", "Fenwick Sprout"],
+    },
   },
   channels: [
     {
@@ -89,6 +95,13 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Seeds, cuttings, and quiet company.",
       npcs: ["Tally Marsh"],
+    },
+    // Reserved for the M5 preferences E2E (join/part/quit lines).
+    {
+      name: "Terrarium",
+      mode: "both",
+      description: "Small glass worlds.",
+      npcs: [],
     },
     {
       name: "ADH-1a2b3c4d5e6f7a8b9c0d",

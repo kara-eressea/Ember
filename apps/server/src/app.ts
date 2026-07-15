@@ -12,11 +12,14 @@ import {
 import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { DetachedAway } from "./modules/away/detached-away.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
+import { HighlightMatcher } from "./modules/highlights/matcher.js";
+import { highlightsRoutes } from "./modules/highlights/routes.js";
 import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
@@ -34,6 +37,7 @@ declare module "fastify" {
     sessions: SessionRegistry;
     history: HistorySink;
     outbox: Outbox;
+    detachedAway: DetachedAway;
   }
 }
 
@@ -45,6 +49,8 @@ export interface BuildAppOptions {
   flistApiClient?: FlistApiClient;
   /** Test-only session timing knobs; production always runs policy defaults. */
   sessionTuning?: SessionTuning;
+  /** Test-only clock for the detached-away sweep. */
+  detachedAwayNow?: () => number;
 }
 
 export async function buildApp({
@@ -53,6 +59,7 @@ export async function buildApp({
   logger = true,
   flistApiClient,
   sessionTuning,
+  detachedAwayNow,
 }: BuildAppOptions): Promise<FastifyInstance> {
   // Without the right trustProxy, every client behind a reverse proxy shares
   // the proxy's IP and the per-IP rate limits become one global bucket.
@@ -67,7 +74,8 @@ export async function buildApp({
   const flistApi =
     flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
   const tickets = new TicketManagerRegistry(flistApi, vault);
-  const history = new HistorySink(db, app.log);
+  const highlights = new HighlightMatcher(db, app.log);
+  const history = new HistorySink(db, app.log, { highlights });
   const hub = new GatewayHub({ history, logger: app.log });
   const sessions = new SessionRegistry({
     tickets,
@@ -97,7 +105,20 @@ export async function buildApp({
     logger: app.log,
   });
   retention.start();
+  const detachedAway = new DetachedAway({
+    db,
+    sessions,
+    hub,
+    logger: app.log,
+    now: process.env.NODE_ENV === "test" ? detachedAwayNow : undefined,
+  });
+  hub.onFirstSubscribe = (identityId) => {
+    detachedAway.onAttach(identityId);
+  };
+  detachedAway.start();
+  app.decorate("detachedAway", detachedAway);
   app.addHook("onClose", () => {
+    detachedAway.stop();
     retention.stop();
     outbox.stop();
     sessions.stopAll();
@@ -127,6 +148,11 @@ export async function buildApp({
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(highlightsRoutes, {
+    prefix: "/api/highlight-rules",
+    db,
+    highlights,
+  });
   await app.register(identitiesRoutes, {
     prefix: "/api/identities",
     db,
@@ -140,7 +166,14 @@ export async function buildApp({
   await app.register(fastifyWebsocket, {
     options: { maxPayload: 128 * 1024 },
   });
-  await app.register(gatewayRoutes, { db, sessions, history, hub, outbox });
+  await app.register(gatewayRoutes, {
+    db,
+    sessions,
+    history,
+    hub,
+    outbox,
+    highlights,
+  });
 
   app.get("/healthz", () => ({ status: "ok" }));
 

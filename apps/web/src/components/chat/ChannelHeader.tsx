@@ -4,6 +4,7 @@
 // header shows the partner with presence and the TPN typing state.
 
 import { useState } from "react";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { presenceDot } from "../../lib/presence.js";
 import {
@@ -12,6 +13,7 @@ import {
   type DmView,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { patchPrefs } from "../prefs/patch.js";
 import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
@@ -83,6 +85,47 @@ function IgnoreChip({
     </button>
   );
 }
+
+/**
+ * Per-conversation mute (M5 step 8, decisions.md §10): silences the alert
+ * layer — chime, title flash, desktop notifications — while badges and
+ * mention tint keep accruing. Stored in the synced prefs document; the
+ * Notifications pane lists and clears these.
+ */
+function MuteChip({
+  identityId,
+  convId,
+}: {
+  identityId: string;
+  convId: string;
+}) {
+  const mutedConvIds = useSessionsStore(
+    (s) => s.sessions[identityId]?.prefs.mutedConvIds ?? EMPTY_MUTES,
+  );
+  const muted = mutedConvIds.includes(convId);
+
+  return (
+    <button
+      className={`${styles.pinChip} ${muted ? (styles.ignoreChipActive ?? "") : ""}`}
+      onClick={() => {
+        void patchPrefs(identityId, {
+          mutedConvIds: muted
+            ? mutedConvIds.filter((entry) => entry !== convId)
+            : [...mutedConvIds, convId],
+        });
+      }}
+      title={
+        muted
+          ? "Unmute — sounds and notifications again"
+          : "Mute — no sounds or notifications (badges still count)"
+      }
+    >
+      {muted ? "🔕 muted" : "🔔 mute"}
+    </button>
+  );
+}
+
+const EMPTY_MUTES = PREFS_DEFAULTS.mutedConvIds;
 
 function PinChip({
   identityId,
@@ -158,6 +201,7 @@ export function ChannelHeader({
           convId={channel.convId}
           pinned={channel.pinned}
         />
+        <MuteChip identityId={identityId} convId={channel.convId} />
         <span className={styles.headerSpacer} />
         <button
           className={styles.headerButton}
@@ -226,6 +270,7 @@ export function DmHeader({
           convId={dm.convId}
           pinned={dm.pinned}
         />
+        <MuteChip identityId={identityId} convId={dm.convId} />
         <IgnoreChip identityId={identityId} character={dm.partner} />
         {dm.typing === "typing" && (
           <span className={styles.typing}>is typing…</span>

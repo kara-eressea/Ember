@@ -1,25 +1,34 @@
-// applyTheme(accent) — derives the full palette and writes it as `--eb-*`
-// CSS custom properties on :root. Switching accent = calling it again
-// (COMPONENTS.md: only the accent hue changes; neutrals stay fixed).
+// applyTheme(accent, baseTheme) — derives the full palette and writes it as
+// `--eb-*` CSS custom properties on :root. Switching either = calling it
+// again. The synced prefs document is the source of truth for both choices
+// (decisions.md §10); localStorage only caches them so boot paints without
+// a flash before the first snapshot arrives.
 
 import {
   ACCENTS,
+  BASE_THEMES,
   DANGER,
   DEFAULT_ACCENT,
   mix,
-  NEUTRALS,
   OK,
   WARN,
   WARN_MOSS,
   type AccentId,
+  type BaseThemeId,
 } from "./tokens.js";
 
 const ACCENT_STORAGE_KEY = "eb.accent";
+const BASE_THEME_STORAGE_KEY = "eb.baseTheme";
+const DEFAULT_BASE_THEME: BaseThemeId = "slate";
 
-/** The complete set of custom properties for one accent choice. */
-export function themeVariables(accent: AccentId): Record<string, string> {
+/** The complete set of custom properties for one accent + base choice. */
+export function themeVariables(
+  accent: AccentId,
+  baseTheme: BaseThemeId = DEFAULT_BASE_THEME,
+): Record<string, string> {
   const accentHex = ACCENTS[accent].hex;
-  const { heading, bg, side, side2, head, text, dim, faint, border } = NEUTRALS;
+  const { heading, bg, side, side2, head, text, dim, faint, border } =
+    BASE_THEMES[baseTheme];
   return {
     "--eb-heading": heading,
     "--eb-bg": bg,
@@ -60,9 +69,14 @@ export function themeVariables(accent: AccentId): Record<string, string> {
   };
 }
 
-export function applyTheme(accent: AccentId): void {
+export function applyTheme(
+  accent: AccentId,
+  baseTheme: BaseThemeId = DEFAULT_BASE_THEME,
+): void {
   const root = document.documentElement;
-  for (const [name, value] of Object.entries(themeVariables(accent))) {
+  for (const [name, value] of Object.entries(
+    themeVariables(accent, baseTheme),
+  )) {
     root.style.setProperty(name, value);
   }
 }
@@ -76,7 +90,32 @@ export function savedAccent(): AccentId {
     : DEFAULT_ACCENT;
 }
 
-export function setAccent(accent: AccentId): void {
+export function savedBaseTheme(): BaseThemeId {
+  const stored = localStorage.getItem(BASE_THEME_STORAGE_KEY);
+  return stored !== null && Object.hasOwn(BASE_THEMES, stored)
+    ? (stored as BaseThemeId)
+    : DEFAULT_BASE_THEME;
+}
+
+/**
+ * Server prefs → theme. Applies and re-caches when either choice changed.
+ * Unknown ids are skipped per field — an older client must not repaint to
+ * default because a newer one saved a theme it doesn't know.
+ */
+export function hydrateTheme(prefs: {
+  accent: string;
+  baseTheme: string;
+}): void {
+  const accent = Object.hasOwn(ACCENTS, prefs.accent)
+    ? (prefs.accent as AccentId)
+    : savedAccent();
+  const baseTheme = Object.hasOwn(BASE_THEMES, prefs.baseTheme)
+    ? (prefs.baseTheme as BaseThemeId)
+    : savedBaseTheme();
+  if (accent === savedAccent() && baseTheme === savedBaseTheme()) {
+    return;
+  }
   localStorage.setItem(ACCENT_STORAGE_KEY, accent);
-  applyTheme(accent);
+  localStorage.setItem(BASE_THEME_STORAGE_KEY, baseTheme);
+  applyTheme(accent, baseTheme);
 }

@@ -5,10 +5,12 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
-import { mentionsCharacter } from "../lib/mention.js";
+import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
+import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
+import { hydrateTheme } from "../theme/theme.js";
 
 export function dispatchFrame(frame: ServerFrame): void {
   const sessions = useSessionsStore.getState();
@@ -31,6 +33,7 @@ export function dispatchFrame(frame: ServerFrame): void {
       return;
     case "snapshot":
       sessions.applySnapshot(frame.d);
+      hydrateTheme(frame.d.self.prefs);
       return;
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
@@ -50,25 +53,92 @@ export function dispatchFrame(frame: ServerFrame): void {
   }
 }
 
+/**
+ * Live-only join/part line (M5): only when the membership set actually
+ * changes (`ifMember` = the state the character must be in for the line to
+ * make sense), so at-least-once replays around a resync stay silent.
+ */
+function logPresence(
+  sessions: ReturnType<typeof useSessionsStore.getState>,
+  identityId: string,
+  channelKey: string,
+  d: { kind: "join" | "part"; character: string; ifMember: boolean },
+): void {
+  const channel = sessions.sessions[identityId]?.channels[channelKey];
+  if (!channel) {
+    return;
+  }
+  const isMember = channel.members.some((m) => m.character === d.character);
+  if (isMember === d.ifMember) {
+    useMessagesStore
+      .getState()
+      .appendPresence(channel.convId, d.kind, d.character);
+  }
+}
+
 function dispatchEvent(identityId: string, event: GatewayEvent): void {
   const sessions = useSessionsStore.getState();
   switch (event.kind) {
     case "message.new": {
-      useMessagesStore.getState().appendLive(event.d.convId, event.d.message);
+      const message = event.d.message;
+      const convId = event.d.convId;
+      useMessagesStore.getState().appendLive(convId, message);
+      if (message.sentByUs) {
+        return;
+      }
       const ui = useUiStore.getState();
       const active =
-        ui.activeIdentityId === identityId &&
-        ui.activeConvId === event.d.convId;
-      if (!event.d.message.sentByUs && !active) {
-        // Live counterpart of the server's snapshot-time mention counter:
-        // channel messages naming our character (DMs carry no mention count).
-        const mention =
-          event.d.message.kind === "msg" &&
-          mentionsCharacter(
-            event.d.message.bbcode,
-            sessions.sessions[identityId]?.character ?? "",
-          );
-        sessions.bumpUnread(identityId, event.d.convId, mention);
+        ui.activeIdentityId === identityId && ui.activeConvId === convId;
+      // The prefs are per user — any slice's copy is current. Mutes silence
+      // alerts only: badges, tint and the bump still accrue (decisions.md
+      // §10).
+      const prefs = sessions.sessions[identityId]?.prefs;
+      const muted =
+        prefs !== undefined &&
+        (prefs.mutedIdentityIds.includes(identityId) ||
+          prefs.mutedConvIds.includes(convId));
+      if (!active) {
+        // The mention verdict is stamped server-side at persist time (M5)
+        // and rides the message — the client never re-matches.
+        sessions.bumpUnread(identityId, convId, message.mention);
+        if (message.mention && prefs) {
+          // When-highlighted actions, each behind its pref.
+          if (prefs.highlightSound && !muted) {
+            playHighlightChime();
+          }
+          if (prefs.highlightFlashTitle && !muted) {
+            flashTitle();
+          }
+          if (prefs.highlightBump) {
+            sessions.bumpHighlight(identityId, convId);
+          }
+        }
+      }
+      // Desktop notification — mention or PM, behind its pref. The module
+      // self-gates on permission and window focus (a focused app already
+      // shows badges), so an active-but-unfocused conversation notifies.
+      if (
+        prefs &&
+        !muted &&
+        ((message.mention && prefs.desktopNotifyMentions) ||
+          (message.kind === "pm" && prefs.desktopNotifyPms))
+      ) {
+        const session = sessions.sessions[identityId];
+        const channelKey = session?.channelByConvId[convId];
+        const channelTitle =
+          channelKey !== undefined
+            ? session?.channels[channelKey]?.title
+            : undefined;
+        showMessageNotification({
+          title:
+            channelTitle !== undefined
+              ? `${message.senderCharacter} — ${channelTitle}`
+              : message.senderCharacter,
+          ...(prefs.notifyShowContent
+            ? { body: previewText(message.bbcode) }
+            : {}),
+          tag: convId,
+        });
       }
       return;
     }
@@ -76,9 +146,21 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyConversation(identityId, event.d.conversation);
       return;
     case "member.join":
+      // Synthesize the live-only join line before the set-add; delivery is
+      // at-least-once, so a replay for someone already present logs nothing.
+      logPresence(sessions, identityId, event.d.channelKey, {
+        kind: "join",
+        character: event.d.member.character,
+        ifMember: false,
+      });
       sessions.applyMemberJoin(identityId, event.d.channelKey, event.d.member);
       return;
     case "member.leave":
+      logPresence(sessions, identityId, event.d.channelKey, {
+        kind: "part",
+        character: event.d.character,
+        ifMember: true,
+      });
       sessions.applyMemberLeave(
         identityId,
         event.d.channelKey,
@@ -92,6 +174,18 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyChannelInfo(identityId, event.d);
       return;
     case "presence":
+      if (!event.d.online) {
+        // FLN is a global leave — a quit line in every channel the
+        // character is (still) a member of, before the store drops them.
+        const channels = sessions.sessions[identityId]?.channels ?? {};
+        for (const channel of Object.values(channels)) {
+          if (channel.members.some((m) => m.character === event.d.character)) {
+            useMessagesStore
+              .getState()
+              .appendPresence(channel.convId, "quit", event.d.character);
+          }
+        }
+      }
       sessions.applyPresence(identityId, event.d);
       return;
     case "presence.bulk":
@@ -115,7 +209,8 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyOutbox(identityId, event.d.items);
       return;
     case "prefs.updated":
-      sessions.applySendDelay(identityId, event.d.sendDelaySeconds);
+      sessions.applyPrefs(identityId, event.d);
+      hydrateTheme(event.d.prefs);
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);

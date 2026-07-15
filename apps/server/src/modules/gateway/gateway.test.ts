@@ -24,10 +24,12 @@ import { FchatSim } from "@emberchat/fchat-sim";
 import { serializeServerCommand } from "@emberchat/fchat-protocol";
 import {
   GATEWAY_CLOSE,
+  PREFS_DEFAULTS,
   PROTOCOL_VERSION,
   type ClientFrame,
   type ResumeCursors,
   type ServerFrame,
+  type UserPrefs,
 } from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
@@ -682,7 +684,10 @@ describe("gateway handshake", () => {
         conversationId: dev!.id,
         senderCharacter: "Nyx Firemane",
         kind: "msg" as const,
-        bbcode: `oi ${CHARACTER}!`, // mention
+        bbcode: `oi ${CHARACTER}!`,
+        // Seeded directly, so the flag is set here; live traffic gets it
+        // stamped by the sink's highlight matcher at persist time (M5).
+        mention: true,
       },
       {
         conversationId: lounge!.id,
@@ -850,6 +855,7 @@ describe("gateway fan-out", () => {
       ignores: [],
       iconBlacklist: [],
       sendDelaySeconds: 0,
+      prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000 },
@@ -867,6 +873,138 @@ describe("gateway fan-out", () => {
 
     const capped = snapshot.d.channels.find((c) => c.key === "Flooded")!;
     expect(capped).toMatchObject({ unread: 99, mentions: 0 });
+  });
+
+  it("highlight rules match at persist time and badge a detached identity", async () => {
+    const { identityId, token } = await createIdentity();
+    const auth = { authorization: `Bearer ${token}` };
+
+    // A pattern RE2 refuses is the client's 422 at PUT, never a silent skip.
+    const refused = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: { rules: [{ kind: "regex", pattern: "(?<=x)y" }] },
+    });
+    expect(refused.statusCode).toBe(422);
+    // Nick rules must be a valid character name (schema-level 400).
+    const badNick = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: { rules: [{ kind: "nick", pattern: "no/slashes" }] },
+    });
+    expect(badNick.statusCode).toBe(400);
+
+    // Full-list replacement dedupes payload-internal duplicates.
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: {
+        rules: [
+          { kind: "word", pattern: "dragonfruit" },
+          { kind: "regex", pattern: "lem+on" },
+          { kind: "word", pattern: "dragonfruit" },
+        ],
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json<{ rules: unknown[] }>().rules).toHaveLength(2);
+    const got = await app.inject({
+      method: "GET",
+      url: "/api/highlight-rules",
+      headers: auth,
+    });
+    expect(
+      got.json<{ rules: { pattern: string }[] }>().rules.map((r) => r.pattern),
+    ).toEqual(["dragonfruit", "lem+on"]);
+
+    // Traffic lands while NO gateway client is attached — the flags must be
+    // stamped at persist time, not computed for whoever happens to watch.
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Development");
+    const say = (message: string) =>
+      inject(session, {
+        cmd: "MSG",
+        payload: { character: "Nyx Firemane", message, channel: "Development" },
+      });
+    await say("fancy some DRAGONFRUIT tea?"); // word rule, case-insensitive
+    await say("dragonfruits are different"); // word boundary: no match
+    await say("lemmmon squash"); // regex rule
+    await say(`${CHARACTER}, hello`); // own nick (default on)
+    await app.history.flush();
+
+    // A fresh device's snapshot reads the stored flags.
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
+    expect(channel).toMatchObject({ unread: 4, mentions: 3 });
+
+    // highlightOwnNick off → prefs patch invalidates the matcher's cache.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "prefs.set",
+        d: { prefs: { highlightOwnNick: false } },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    await client.nextEvent("prefs.updated");
+    await say(`${CHARACTER}, again`);
+    expect(
+      eventPayload<{ message: { mention: boolean } }>(
+        await client.nextEvent("message.new"),
+      ).message.mention,
+    ).toBe(false);
+
+    // Compare-and-set (M5 audit): a PUT carrying knownIds from a stale
+    // load must 409 instead of silently deleting the other device's rules.
+    const stale = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: {
+        rules: [{ kind: "word", pattern: "kumquat" }],
+        knownIds: ["00000000-0000-7000-8000-00000000dead"],
+      },
+    });
+    expect(stale.statusCode).toBe(409);
+    // Matching knownIds pass.
+    const currentIds = got
+      .json<{ rules: { id: string }[] }>()
+      .rules.map((r) => r.id);
+    const fresh = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: {
+        rules: [
+          { kind: "word", pattern: "dragonfruit" },
+          { kind: "regex", pattern: "lem+on" },
+        ],
+        knownIds: currentIds,
+      },
+    });
+    expect(fresh.statusCode).toBe(200);
+
+    // Replacing the rules invalidates the rules cache the same way.
+    const cleared = await app.inject({
+      method: "PUT",
+      url: "/api/highlight-rules",
+      headers: auth,
+      payload: { rules: [] },
+    });
+    expect(cleared.statusCode).toBe(200);
+    await say("more dragonfruit!");
+    expect(
+      eventPayload<{ message: { mention: boolean } }>(
+        await client.nextEvent("message.new"),
+      ).message.mention,
+    ).toBe(false);
   });
 
   it("ignore.add/remove drive IGN, fan out the list, persist the mirror, and keep messages", async () => {
@@ -1449,7 +1587,7 @@ describe("gateway commands", () => {
       eventPayload<{ sendDelaySeconds: number }>(
         await client.nextEvent("prefs.updated"),
       ),
-    ).toEqual({ sendDelaySeconds: 120 });
+    ).toEqual({ sendDelaySeconds: 120, prefs: PREFS_DEFAULTS });
 
     client.send({
       t: "cmd",
@@ -1531,6 +1669,56 @@ describe("gateway commands", () => {
       ).items,
     ).toEqual([]);
   }, 30_000);
+
+  it("prefs.set patches merge per key and survive in the snapshot", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Patch one prefs key: everything else resolves to its default.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "prefs.set", d: { prefs: { accent: "moss" } } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(
+      eventPayload<{ sendDelaySeconds: number; prefs: UserPrefs }>(
+        await client.nextEvent("prefs.updated"),
+      ),
+    ).toEqual({
+      sendDelaySeconds: 0,
+      prefs: { ...PREFS_DEFAULTS, accent: "moss" },
+    });
+
+    // A later sendDelay-only patch must not clobber the stored accent.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "prefs.set", d: { sendDelaySeconds: 45 } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    expect(
+      eventPayload<{ sendDelaySeconds: number; prefs: UserPrefs }>(
+        await client.nextEvent("prefs.updated"),
+      ),
+    ).toEqual({
+      sendDelaySeconds: 45,
+      prefs: { ...PREFS_DEFAULTS, accent: "moss" },
+    });
+
+    // A fresh device reads the same resolved state from its snapshot —
+    // no live session required (prefs are per user, not per F-Chat socket).
+    const late = await connectClient();
+    await late.hello(token);
+    const snapshot = await late.subscribe(identityId);
+    expect(snapshot.d.self.prefs).toEqual({
+      ...PREFS_DEFAULTS,
+      accent: "moss",
+    });
+    expect(snapshot.d.self.sendDelaySeconds).toBe(45);
+  });
 
   it("outbox: releases in order, claims beat recalls, failures say why", async () => {
     const { identityId, token } = await createIdentity();

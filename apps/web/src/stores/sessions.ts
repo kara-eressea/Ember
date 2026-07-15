@@ -6,6 +6,7 @@
 // add/remove, never a counter increment keyed to event arrival.
 
 import { create } from "zustand";
+import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type {
   OutboxItemDto,
   ConversationDto,
@@ -13,6 +14,7 @@ import type {
   MemberDto,
   SnapshotChannel,
   SnapshotDm,
+  UserPrefs,
 } from "@emberchat/protocol";
 
 export interface ChannelView {
@@ -31,6 +33,10 @@ export interface ChannelView {
   /** Unread messages naming this identity (server-counted at snapshot,
    * bumped client-side for live messages). */
   mentions: number;
+  /** Last live mention (epoch ms, 0 = none) — the "bump to top" sort key
+   * when the highlightBump pref is on. Volatile: cleared on visit, never
+   * persisted or restored by snapshots. */
+  highlightedAt: number;
   lastReadMessageId: number | null;
 }
 
@@ -45,6 +51,8 @@ export interface DmView {
   /** TPN state: "typing" | "paused" | "clear". */
   typing: string;
   unread: number;
+  /** Same bump sort key as ChannelView.highlightedAt. */
+  highlightedAt: number;
   lastReadMessageId: number | null;
 }
 
@@ -65,6 +73,8 @@ export interface IdentitySession {
   iconBlacklist: string[];
   /** The user's delayed-send window (per-user; mirrored per slice). */
   sendDelaySeconds: number;
+  /** The user's resolved preferences (per-user; mirrored per slice). */
+  prefs: UserPrefs;
   /** Messages waiting in the server-side outbox for this identity. */
   outbox: OutboxItemDto[];
   /** Keyed by channel key (events address channels by key). */
@@ -120,6 +130,7 @@ interface SessionsState {
       limits: { chatMax: number; privMax: number };
       iconBlacklist: string[];
       sendDelaySeconds: number;
+      prefs: UserPrefs;
       outbox: OutboxItemDto[];
     };
     channels: SnapshotChannel[];
@@ -128,6 +139,14 @@ interface SessionsState {
   /** Full pending-outbox overwrite (outbox.updated / snapshot). */
   applyOutbox(identityId: string, items: OutboxItemDto[]): void;
   applySendDelay(identityId: string, sendDelaySeconds: number): void;
+  /** Full resolved-prefs overwrite (prefs.updated). */
+  applyPrefs(
+    identityId: string,
+    d: { sendDelaySeconds: number; prefs: UserPrefs },
+  ): void;
+  /** Optimistic local prefs overwrite across every slice — prefs are per
+   * user, so a pane edit must not wait for the per-identity fan-out. */
+  applyPrefsLocal(prefs: UserPrefs): void;
   /** Full ignore-list overwrite (ignore.updated / snapshot). */
   applyIgnores(identityId: string, characters: string[]): void;
   applySessionStatus(
@@ -179,8 +198,26 @@ interface SessionsState {
   applyNotice(identityId: string, kind: "sys" | "error", text: string): void;
   clearNotice(identityId: string): void;
   bumpUnread(identityId: string, convId: string, mention?: boolean): void;
+  /** Stamp the conversation's bump sort key (highlightBump pref). */
+  bumpHighlight(identityId: string, convId: string): void;
   clearUnread(identityId: string, convId: string): void;
   reset(): void;
+}
+
+/**
+ * The user's prefs from any synced slice — they are per app account and
+ * identical across slices, so render code without an identity context
+ * (RichText, previews) reads them here.
+ */
+export function useUserPrefs(): UserPrefs {
+  return useSessionsStore((s) => {
+    for (const session of Object.values(s.sessions)) {
+      if (session.synced) {
+        return session.prefs;
+      }
+    }
+    return PREFS_DEFAULTS;
+  });
 }
 
 function emptySession(identityId: string): IdentitySession {
@@ -195,6 +232,7 @@ function emptySession(identityId: string): IdentitySession {
     limits: { chatMax: 4096, privMax: 50000 },
     iconBlacklist: [],
     sendDelaySeconds: 0,
+    prefs: PREFS_DEFAULTS,
     outbox: [],
     channels: {},
     dms: {},
@@ -249,6 +287,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         pinned: false,
         unread: 0,
         mentions: 0,
+        highlightedAt: 0,
         lastReadMessageId: null,
       };
       return {
@@ -328,12 +367,13 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           ...ch,
           oplist: [...ch.oplist],
           members: [...ch.members],
+          highlightedAt: 0,
         };
         channelByConvId[ch.convId] = ch.key;
       }
       const dms: Record<string, DmView> = {};
       for (const dm of d.dms) {
-        dms[dm.convId] = { ...dm, typing: "clear" };
+        dms[dm.convId] = { ...dm, typing: "clear", highlightedAt: 0 };
       }
       patch(d.identityId, (session) => ({
         ...session,
@@ -345,6 +385,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         limits: d.self.limits,
         iconBlacklist: [...d.self.iconBlacklist],
         sendDelaySeconds: d.self.sendDelaySeconds,
+        prefs: d.self.prefs,
         outbox: [...d.self.outbox],
         channels,
         dms,
@@ -359,6 +400,25 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applySendDelay(identityId, sendDelaySeconds) {
       patch(identityId, (session) => ({ ...session, sendDelaySeconds }));
+    },
+
+    applyPrefs(identityId, { sendDelaySeconds, prefs }) {
+      patch(identityId, (session) => ({
+        ...session,
+        sendDelaySeconds,
+        prefs,
+      }));
+    },
+
+    applyPrefsLocal(prefs) {
+      set((state) => ({
+        sessions: Object.fromEntries(
+          Object.entries(state.sessions).map(([id, session]) => [
+            id,
+            { ...session, prefs },
+          ]),
+        ),
+      }));
     },
 
     applyIgnores(identityId, characters) {
@@ -414,6 +474,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 pinned: conversation.pinned,
                 unread: 0,
                 mentions: 0,
+                highlightedAt: 0,
                 lastReadMessageId: conversation.lastReadMessageId,
               };
           // The read cursor moved (this tab's ack or another's): drop the
@@ -425,6 +486,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           ) {
             channel.unread = 0;
             channel.mentions = 0;
+            channel.highlightedAt = 0;
           }
           return {
             ...session,
@@ -442,11 +504,10 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               title: conversation.title,
               pinned: conversation.pinned,
               lastReadMessageId: conversation.lastReadMessageId,
-              unread:
-                (conversation.lastReadMessageId ?? 0) >
-                (existing.lastReadMessageId ?? 0)
-                  ? 0
-                  : existing.unread,
+              ...((conversation.lastReadMessageId ?? 0) >
+              (existing.lastReadMessageId ?? 0)
+                ? { unread: 0, highlightedAt: 0 }
+                : {}),
             }
           : {
               convId: conversation.id,
@@ -458,6 +519,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               pinned: conversation.pinned,
               typing: "clear",
               unread: 0,
+              highlightedAt: 0,
               lastReadMessageId: conversation.lastReadMessageId,
             };
         return { ...session, dms: { ...session.dms, [conversation.id]: dm } };
@@ -651,27 +713,58 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       });
     },
 
+    bumpHighlight(identityId, convId) {
+      const stamp = Date.now();
+      patch(identityId, (session) => {
+        const key = session.channelByConvId[convId];
+        if (key !== undefined && session.channels[key]) {
+          return {
+            ...session,
+            channels: {
+              ...session.channels,
+              [key]: { ...session.channels[key], highlightedAt: stamp },
+            },
+          };
+        }
+        const dm = session.dms[convId];
+        if (dm) {
+          return {
+            ...session,
+            dms: { ...session.dms, [convId]: { ...dm, highlightedAt: stamp } },
+          };
+        }
+        return session;
+      });
+    },
+
     clearUnread(identityId, convId) {
       patch(identityId, (session) => {
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
           const channel = session.channels[key];
-          if (channel.unread === 0 && channel.mentions === 0) {
+          if (
+            channel.unread === 0 &&
+            channel.mentions === 0 &&
+            channel.highlightedAt === 0
+          ) {
             return session;
           }
           return {
             ...session,
             channels: {
               ...session.channels,
-              [key]: { ...channel, unread: 0, mentions: 0 },
+              [key]: { ...channel, unread: 0, mentions: 0, highlightedAt: 0 },
             },
           };
         }
         const dm = session.dms[convId];
-        if (dm && dm.unread > 0) {
+        if (dm && (dm.unread > 0 || dm.highlightedAt > 0)) {
           return {
             ...session,
-            dms: { ...session.dms, [convId]: { ...dm, unread: 0 } },
+            dms: {
+              ...session.dms,
+              [convId]: { ...dm, unread: 0, highlightedAt: 0 },
+            },
           };
         }
         return session;

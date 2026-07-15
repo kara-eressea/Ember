@@ -83,6 +83,19 @@ This gives pinning one crisp meaning: *"channels this character is always in whe
 
 **Kick/ban exception:** a server-initiated removal (kick, ban, timeout) drops the channel from the desired set — the session never fights a moderator by auto-rejoining, in any scenario. Pinned channels are not exempt: F-Chat's `ERR` frames carry no channel reference, so a refused join (banned, invite-only, deleted) is detected by its missing echo, and a channel is given up after **two** unconfirmed attempts — two rather than one because a connection can die with the echo in flight, and a single network blip must not silently unsubscribe channels. The errors still surface to the user. Beyond politeness, this minimizes abuse reports against the app itself.
 
+## 10. Preferences & highlight semantics (M5 kickoff, 2026-07-14)
+
+Settled with the user before M5 step 1:
+
+- **All prefs sync cross-device.** One `user_preferences.prefs` jsonb per app-account; a preference set anywhere applies everywhere. No device-local carve-outs (density/font size included) — revisit only if it proves annoying in practice. localStorage keeps a copy of paint-affecting prefs (accent) purely as a pre-hydration flash cache.
+- **Base theme = dark variants only in M5** (current Dusk-dark plus a dimmer/OLED-black neutral set). A true light theme is a full token-set design pass and ships as a follow-up, not rushed into M5.
+- **Regex rules run on RE2** (linear-time guarantee, native dep accepted): a catastrophic pattern in the persist-time matcher would be a service-wide DoS, not self-harm — heuristic backtracking guards are known-incomplete, so the engine itself must be safe. Word/nick rules stay plain string/boundary matching.
+- **Rule changes affect new messages only.** The stored `messages.mention` flag is immutable — written once at persist time under the rules active at that moment. No history re-flagging; old badge counts stay as they were.
+- **Muting silences alerts only** (notifications, sound, title flash). Unread/mention badges still accrue and rows still tint — you stop being interrupted without losing track. Applies to both per-identity and per-conversation mutes.
+- **Desktop notifications show sender + message preview by default**, with a "hide message content" privacy toggle (sender-only) for screen-sharing/shoulder-surfing situations.
+- **Detached auto-away (bouncer pattern, beyond milestone scope — added):** alongside the specced browser-idle auto-away, an opt-in server-side toggle sets the away status after N minutes with zero gateway subscribers; the first device to attach clears it. Off by default — appearing online while detached is the bouncer's point for many users; this is the honest-presence option for the rest.
+- **Highlight sound = one bundled chime** (short, unobtrusive, license-clean) with a global on/off. Per-rule/custom sounds are a possible later extension.
+
 ## Other settled points
 
 - The server is a **bouncer**: it owns one F-Chat WebSocket per connected identity; browsers attach via our own gateway protocol and receive synchronized events. This is what makes "stay online when the app is closed", catch-up, and multi-device login possible.

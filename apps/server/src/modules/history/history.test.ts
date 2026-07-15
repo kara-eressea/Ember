@@ -684,4 +684,65 @@ describe("history pagination", () => {
     );
     expect(wrongConversation.statusCode).toBe(404);
   });
+
+  it("exports the whole log as txt, html and json (M5 Away & logs)", async () => {
+    const { identityId, conversationId, token } = await seedConversation(2);
+    // A sys line and a markup-bearing body (the html export must escape it).
+    await db.insert(messages).values({
+      conversationId,
+      senderCharacter: "System",
+      kind: "sys",
+      bbcode: "Nyx Firemane joined",
+    });
+    await db.insert(messages).values({
+      conversationId,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "<script>alert(1)</script>",
+    });
+
+    const get = (format: string, tok = token) =>
+      app.inject({
+        method: "GET",
+        url: `/api/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
+        headers: { authorization: `Bearer ${tok}` },
+      });
+
+    const txt = await get("txt");
+    expect(txt.statusCode).toBe(200);
+    expect(txt.headers["content-type"]).toContain("text/plain");
+    expect(txt.headers["content-disposition"]).toContain(
+      'filename="Seeded.txt"',
+    );
+    expect(txt.body).toContain("Nyx Firemane: message 1");
+    expect(txt.body).toContain("* Nyx Firemane joined");
+
+    const html = await get("html");
+    expect(html.statusCode).toBe(200);
+    expect(html.headers["content-type"]).toContain("text/html");
+    expect(html.body).toContain("<b>Nyx Firemane</b>: message 2");
+    // Message bodies are content, never markup.
+    expect(html.body).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html.body).not.toContain("<script>");
+
+    const json = await get("json");
+    expect(json.statusCode).toBe(200);
+    expect(json.headers["content-type"]).toContain("application/json");
+    const parsed = JSON.parse(json.body) as {
+      title: string;
+      messages: { sender: string; bbcode: string; kind: string }[];
+    };
+    expect(parsed.title).toBe("Seeded");
+    expect(parsed.messages).toHaveLength(4);
+    expect(parsed.messages[0]).toMatchObject({
+      sender: "Nyx Firemane",
+      bbcode: "message 1",
+      kind: "msg",
+    });
+
+    // Ownership and validation gates match the other history routes.
+    const otherToken = await registerUser();
+    expect((await get("txt", otherToken)).statusCode).toBe(404);
+    expect((await get("csv")).statusCode).toBe(400);
+  });
 });

@@ -2,7 +2,14 @@
 // style against the CSS custom properties written by applyTheme(), never
 // against these constants directly.
 
-/** Neutrals are fixed across all themes. */
+import type {
+  AccentId as PrefsAccentId,
+  BaseThemeId,
+} from "@emberchat/protocol";
+
+export type { BaseThemeId };
+
+/** The original Slate Cozy neutral set (COMPONENTS.md tokens). */
 export const NEUTRALS = {
   /** Landing hero headings only (COMPONENTS.md §15). */
   heading: "#f4ecde",
@@ -16,14 +23,36 @@ export const NEUTRALS = {
   border: "#332f2b",
 } as const;
 
-/** User-selectable accents; default is Dusk Purple. */
+/** Base themes — dark variants only in M5 (decisions.md §10). The
+ * `satisfies` pins the set to the prefs schema's enum, like ACCENTS. */
+export const BASE_THEMES = {
+  slate: NEUTRALS,
+  // Charcoal: the same warm hue family pulled toward black — for OLED and
+  // dim rooms. Text/dim/faint drop a touch with it to keep contrast ratios
+  // in the same band as slate.
+  charcoal: {
+    heading: "#f4ecde",
+    bg: "#121110",
+    side: "#171615",
+    side2: "#1c1a19",
+    head: "#141312",
+    text: "#e9e4dd",
+    dim: "#a49a8e",
+    faint: "#6e675d",
+    border: "#282520",
+  },
+} as const satisfies Record<BaseThemeId, Record<keyof typeof NEUTRALS, string>>;
+
+/** User-selectable accents; default is Dusk Purple. The `satisfies` pins
+ * this palette to the prefs schema's accent enum — adding or renaming an
+ * accent fails the build until both sides agree. */
 export const ACCENTS = {
   amber: { label: "Amber", hex: "#e6a75a" },
   clay: { label: "Clay Red", hex: "#c87d6a" },
   dusk: { label: "Dusk Purple", hex: "#a892c6" },
   burnt: { label: "Burnt Orange", hex: "#dd955a" },
   moss: { label: "Moss Green", hex: "#88ac72" },
-} as const;
+} as const satisfies Record<PrefsAccentId, { label: string; hex: string }>;
 
 export type AccentId = keyof typeof ACCENTS;
 export const DEFAULT_ACCENT: AccentId = "dusk";

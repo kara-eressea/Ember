@@ -10,6 +10,7 @@
 import { useEffect, useRef } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
 import { gateway } from "../../gateway/socket.js";
+import { startAutoAway } from "../../lib/auto-away.js";
 import {
   identityPath,
   rememberLastIdentity,
@@ -29,6 +30,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
+import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
@@ -51,6 +53,7 @@ export function AppShell() {
     identityId === undefined ? undefined : s.sessions[identityId],
   );
   const membersOpen = useUiStore((s) => s.membersOpen);
+  const prefsOpen = useUiStore((s) => s.prefsOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -70,6 +73,10 @@ export function AppShell() {
   useEffect(() => {
     gateway.connect();
   }, []);
+
+  // Idle detection lives with the shell: it exists exactly while the user
+  // is in the app, across identity/conversation navigation.
+  useEffect(() => startAutoAway(), []);
 
   // The routed identity subscribes immediately (its snapshot should win the
   // race); the rest follow once ready lists them, so background badges and
@@ -230,8 +237,10 @@ export function AppShell() {
             ) : (
               <DmHeader identityId={activeId} dm={conversation.dm} />
             )}
+            {/* Keyed per conversation so both remount on switch — with
+                distinct prefixes, since they are siblings. */}
             <MessageLog
-              key={convId}
+              key={`log:${convId}`}
               identityId={activeId}
               convId={convId}
               readCursorAtAttach={
@@ -241,7 +250,7 @@ export function AppShell() {
               }
             />
             <Composer
-              key={convId}
+              key={`composer:${convId}`}
               session={session}
               convId={convId}
               channelKey={channel?.key}
@@ -270,6 +279,14 @@ export function AppShell() {
         )}
       </main>
       {showMembers && channel && <MemberList channel={channel} />}
+      {prefsOpen && (
+        <PreferencesWindow
+          identityId={activeId}
+          onClose={() => {
+            useUiStore.getState().setPrefsOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
