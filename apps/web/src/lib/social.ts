@@ -14,19 +14,26 @@ export function loadSocial(identityId: string, force = false): Promise<void> {
     return Promise.resolve();
   }
   const running = inflight.get(identityId);
-  if (running) {
+  if (running && !force) {
     return running;
   }
-  const load = api
-    .getSocial(identityId)
-    .then((data) => {
+  // A forced refresh must NOT join a stale in-flight load: a GET is four
+  // upstream calls (seconds), so "mutate, then force-refresh" routinely
+  // overlaps the initial load — joining it would render pre-mutation lists
+  // (M6 audit). Chain a fresh fetch behind whatever is running instead.
+  const fetchNow = () =>
+    api.getSocial(identityId).then((data) => {
       useSessionsStore
         .getState()
         .applySocial(identityId, { ...data, fetchedAt: Date.now() });
-    })
-    .finally(() => {
-      inflight.delete(identityId);
     });
+  const load = (
+    running ? running.catch(() => undefined).then(fetchNow) : fetchNow()
+  ).finally(() => {
+    if (inflight.get(identityId) === load) {
+      inflight.delete(identityId);
+    }
+  });
   inflight.set(identityId, load);
   return load;
 }

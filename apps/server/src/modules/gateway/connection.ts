@@ -563,52 +563,63 @@ export class GatewayConnection {
       case "channel.create": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
-          try {
-            // The ack confirms the CCR went out; the JCH echo into the new
-            // ADH- room flows through the ordinary join/persist fan-out and
-            // carries the minted key.
-            await session.createRoom(cmd.d.title);
-            this.#ack(id, { ok: true });
-          } catch (error) {
-            this.#ack(id, {
-              ok: false,
-              error:
-                error instanceof Error ? error.message : "room create failed",
-            });
-          }
+          // The ack confirms the CCR went out; the JCH echo into the new
+          // ADH- room flows through the ordinary join/persist fan-out and
+          // carries the minted key. Not awaited: the ROOM gate must not
+          // stall the serial inbound queue (M6 audit).
+          session.createRoom(cmd.d.title).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error:
+                  error instanceof Error ? error.message : "room create failed",
+              });
+            },
+          );
         }
         return;
       }
       case "channel.invite": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
-          try {
-            await session.inviteToChannel(cmd.d.key, cmd.d.character);
-            this.#ack(id, { ok: true });
-          } catch (error) {
-            this.#ack(id, {
-              ok: false,
-              error: error instanceof Error ? error.message : "invite failed",
-            });
-          }
+          // Not awaited: the ROOM gate can hold a frame and must not stall
+          // the serial inbound queue (M6 audit) — the promise's outcome
+          // becomes the ack, like msg.send.
+          session.inviteToChannel(cmd.d.key, cmd.d.character).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error: error instanceof Error ? error.message : "invite failed",
+              });
+            },
+          );
         }
         return;
       }
       case "channel.status": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
-          try {
-            await session.setRoomStatus(cmd.d.key, cmd.d.status);
-            this.#ack(id, { ok: true });
-          } catch (error) {
-            this.#ack(id, {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "room status change failed",
-            });
-          }
+          // Same non-awaiting pattern as channel.create (M6 audit).
+          session.setRoomStatus(cmd.d.key, cmd.d.status).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "room status change failed",
+              });
+            },
+          );
         }
         return;
       }

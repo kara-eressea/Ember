@@ -49,6 +49,10 @@ export const MAX_IDENTIFY_REJECTIONS = 3;
  * set. See #unconfirmedJoins. */
 export const MAX_UNCONFIRMED_JOIN_ATTEMPTS = 2;
 
+/** An immediate ad may briefly wait out a short gate (tests, generous
+ * VARs) but never longer than the client's ack window can survive. */
+export const AD_IMMEDIATE_WAIT_CEILING_MS = 10_000;
+
 export interface BackoffOptions {
   readonly floorMs: number;
   readonly capMs: number;
@@ -127,6 +131,20 @@ export class MessageTooLongError extends Error {
   }
 }
 
+/** An immediate ad inside the channel's lfrp_flood window. Refusing beats
+ * queuing: the gateway ack would time out long before the 10-minute gate
+ * released the frame, and the ad would then ghost-post after a shown
+ * "failure" (M6 audit HIGH). */
+export class AdCooldownError extends Error {
+  constructor(paceSeconds: number, waitMs: number) {
+    const wait = Math.ceil(waitMs / 1000);
+    super(
+      `One ad per ${String(Math.round(paceSeconds / 60))} minutes per channel — next available in ${String(Math.floor(wait / 60))}m ${String(wait % 60)}s`,
+    );
+    this.name = "AdCooldownError";
+  }
+}
+
 export class FchatSession {
   readonly character: string;
   readonly accountName: string;
@@ -195,10 +213,12 @@ export class FchatSession {
     this.#watchdogMs = options.watchdogMs ?? WATCHDOG_MS;
     this.events = new SessionEventBus(this.#log);
     // MSG and PRI share the documented msg_flood value but the server tracks
-    // them separately; LRP paces on its own lfrp_flood (1/10 min live).
+    // them separately; ads pace on lfrp_flood (1/10 min live) per channel.
     // Both come from live VARs at send time, never hardcoded.
     this.#rateGate = new RateGate((cls) =>
-      cls === "LRP" ? this.state.vars.lfrp_flood : this.state.vars.msg_flood,
+      cls.startsWith("LRP:")
+        ? this.state.vars.lfrp_flood
+        : this.state.vars.msg_flood,
     );
   }
 
@@ -265,13 +285,29 @@ export class FchatSession {
     });
   }
 
-  /** Sends a roleplay ad (LRP) — its own lfrp_max length and lfrp_flood
-   * pace. The queue bound means a user can park at most a handful of ads;
-   * at 10 minutes each that is deliberate back-pressure, not a bug. */
-  async sendChannelAd(channel: string, message: string): Promise<void> {
+  /**
+   * Sends a roleplay ad (LRP) — its own lfrp_max length and a per-channel
+   * lfrp_flood pace. An immediate send inside the window REFUSES with the
+   * remaining cooldown instead of queuing (the ack would time out and the
+   * ad would ghost-post minutes later — M6 audit); the outbox release path
+   * passes `wait: true`, where parking is the point and only that user's
+   * own queue waits behind it.
+   */
+  async sendChannelAd(
+    channel: string,
+    message: string,
+    options: { wait?: boolean } = {},
+  ): Promise<void> {
     this.#assertOnline();
     this.#assertLength(message, this.state.vars.lfrp_max);
-    await this.#rateGate.schedule("LRP", () => {
+    const cls = `LRP:${channel}` as const;
+    if (options.wait !== true) {
+      const waitMs = this.#rateGate.waitMs(cls);
+      if (waitMs > AD_IMMEDIATE_WAIT_CEILING_MS) {
+        throw new AdCooldownError(this.state.vars.lfrp_flood, waitMs);
+      }
+    }
+    await this.#rateGate.schedule(cls, () => {
       if (!this.#send({ cmd: "LRP", payload: { channel, message } })) {
         throw new SessionNotOnlineError(this.#status);
       }
@@ -740,6 +776,9 @@ export class FchatSession {
         if (command.payload.character === this.character) {
           this.#desiredChannels.delete(command.payload.channel);
           this.#unconfirmedJoins.delete(command.payload.channel);
+          // A kick racing our own just-issued LCH must not leave a stale
+          // pending-leave count that would swallow a later real LCH.
+          this.#pendingLeaves.delete(command.payload.channel);
         }
         this.state.apply(command);
         this.events.emit("command", command);

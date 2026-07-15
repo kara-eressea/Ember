@@ -133,3 +133,28 @@ describe("TicketManager", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("conditional invalidate (M6 audit)", () => {
+  it("drops the cache only while it still holds the failed ticket", async () => {
+    const { api, calls } = stubApi((_params, index) =>
+      ok(`fct_${String(index)}`),
+    );
+    const m = manager(api);
+    const t0 = await m.getTicket();
+    expect(t0).toBe("fct_0");
+
+    // A late "invalid ticket" for an OLD ticket after a refresh already
+    // cached a new one must not evict the fresh ticket (issuing another
+    // would invalidate it account-wide).
+    m.invalidate(t0); // cache holds t0 → drops
+    const t1 = await m.getTicket();
+    expect(t1).toBe("fct_1");
+    m.invalidate(t0); // stale complaint about t0 → no-op
+    expect(await m.getTicket()).toBe("fct_1");
+    expect(calls).toHaveLength(2);
+
+    // The argument-less form (IDN rejection path) stays unconditional.
+    m.invalidate();
+    expect(await m.getTicket()).toBe("fct_2");
+  });
+});
