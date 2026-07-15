@@ -57,12 +57,14 @@ interface Connection {
   lastClientPinAt: number;
   lastMsgAt: number;
   lastPriAt: number;
+  lastLrpAt: number;
 }
 
 interface ChannelState {
   readonly name: string;
   readonly title: string;
-  readonly mode: string;
+  /** chat = MSG only, ads = LRP only, both = either. RMO changes it live. */
+  mode: string;
   readonly official: boolean;
   /** In ORS listings. RST public/private flips this together with `open`. */
   listed: boolean;
@@ -86,6 +88,37 @@ interface CharacterState {
 
 const MAX_PING_MISSES = 3;
 const UNSOLICITED_PIN_WINDOW_MS = 10_000;
+
+/**
+ * Parses an RLL dice expression per the documented grammar: up to 20 "+"-
+ * joined terms, each "#d##" (1-9 dice of 1-500 sides) or a flat number up
+ * to 10000 (modeled as sides 0). Undefined = malformed (RollError).
+ */
+function parseDice(
+  dice: string,
+): { count: number; sides: number }[] | undefined {
+  const terms = dice.split("+");
+  if (terms.length === 0 || terms.length > 20) {
+    return undefined;
+  }
+  const rolls: { count: number; sides: number }[] = [];
+  for (const term of terms) {
+    const die = /^([1-9])d([1-9]\d{0,2})$/.exec(term);
+    if (die) {
+      const sides = Number(die[2]);
+      if (sides > 500) {
+        return undefined;
+      }
+      rolls.push({ count: Number(die[1]), sides });
+      continue;
+    }
+    if (!/^\d{1,5}$/.test(term) || Number(term) > 10_000) {
+      return undefined;
+    }
+    rolls.push({ count: Number(term), sides: 0 });
+  }
+  return rolls;
+}
 
 /** Best-effort extraction of the "method" field from a schema-invalid IDN. */
 function extractIdnMethod(raw: string): unknown {
@@ -321,6 +354,7 @@ export class FchatSim {
       lastClientPinAt: 0,
       lastMsgAt: 0,
       lastPriAt: 0,
+      lastLrpAt: 0,
     };
     this.#connections.add(connection);
     socket.on("message", (data: RawData) => {
@@ -534,6 +568,15 @@ export class FchatSim {
         return;
       case "MSG":
         this.#handleChannelMessage(connection, character, command.payload);
+        return;
+      case "LRP":
+        this.#handleChannelAd(connection, character, command.payload);
+        return;
+      case "RLL":
+        this.#handleRoll(connection, character, command.payload);
+        return;
+      case "RMO":
+        this.#handleRoomMode(connection, character, command.payload);
         return;
       case "PRI":
         this.#handlePrivateMessage(connection, character, command.payload);
@@ -769,6 +812,10 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.NotInChannel);
       return;
     }
+    if (channel.mode === "ads") {
+      this.#sendError(connection, FchatErrorCode.AdsOnlyChannel);
+      return;
+    }
     const now = Date.now();
     if (now - connection.lastMsgAt < this.#vars.msg_flood * 1000) {
       this.#sendError(connection, FchatErrorCode.MessageFlood);
@@ -788,6 +835,139 @@ export class FchatSim {
       },
       character,
     );
+  }
+
+  /** LRP: like MSG, but on the lfrp pace/length and blocked in chat-only
+   * rooms (the mirror of MSG being blocked in ads-only ones). */
+  #handleChannelAd(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; message: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.members.has(character)) {
+      this.#sendError(connection, FchatErrorCode.NotInChannel);
+      return;
+    }
+    if (channel.mode === "chat") {
+      this.#sendError(connection, FchatErrorCode.ChatOnlyChannel);
+      return;
+    }
+    const now = Date.now();
+    if (now - connection.lastLrpAt < this.#vars.lfrp_flood * 1000) {
+      this.#sendError(connection, FchatErrorCode.AdFlood);
+      return;
+    }
+    if (Buffer.byteLength(payload.message, "utf8") > this.#vars.lfrp_max) {
+      this.#sendError(connection, FchatErrorCode.MessageTooLong);
+      return;
+    }
+    connection.lastLrpAt = now;
+    this.#broadcastToChannel(
+      channel,
+      {
+        cmd: "LRP",
+        payload: { character, message: payload.message, channel: channel.name },
+      },
+      character,
+    );
+  }
+
+  /** RLL: the server computes the result and broadcasts it to everyone —
+   * including the roller (unlike MSG/LRP, which are never echoed). */
+  #handleRoll(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; dice: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.members.has(character)) {
+      this.#sendError(connection, FchatErrorCode.NotInChannel);
+      return;
+    }
+    if (payload.dice === "bottle") {
+      const candidates = [...channel.members].filter(
+        (member) => member !== character,
+      );
+      const target = candidates[Math.floor(Math.random() * candidates.length)];
+      if (target === undefined) {
+        this.#sendError(connection, FchatErrorCode.RollError);
+        return;
+      }
+      this.#broadcastToChannel(channel, {
+        cmd: "RLL",
+        payload: {
+          channel: channel.name,
+          type: "bottle",
+          message: `[b]${character}[/b] spins the bottle: [b]${target}[/b]`,
+          character,
+          target,
+        },
+      });
+      return;
+    }
+    const rolls = parseDice(payload.dice);
+    if (!rolls) {
+      this.#sendError(connection, FchatErrorCode.RollError);
+      return;
+    }
+    const results = rolls.map((roll) =>
+      roll.sides === 0
+        ? roll.count
+        : Array.from(
+            { length: roll.count },
+            () => 1 + Math.floor(Math.random() * roll.sides),
+          ).reduce((sum, value) => sum + value, 0),
+    );
+    const endresult = results.reduce((sum, value) => sum + value, 0);
+    const breakdown =
+      results.length > 1 ? `${results.map(String).join(" + ")} = ` : "";
+    this.#broadcastToChannel(channel, {
+      cmd: "RLL",
+      payload: {
+        channel: channel.name,
+        type: "dice",
+        message: `[b]${character}[/b] rolls ${payload.dice}: ${breakdown}[b]${String(endresult)}[/b]`,
+        character,
+        results,
+        rolls: rolls.map((roll) =>
+          roll.sides === 0
+            ? String(roll.count)
+            : `${String(roll.count)}d${String(roll.sides)}`,
+        ),
+        endresult,
+      },
+    });
+  }
+
+  /** RMO: chanop changes which message kinds the room accepts. */
+  #handleRoomMode(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; mode: "ads" | "both" | "chat" },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.oplist.includes(character)) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    channel.mode = payload.mode;
+    this.#broadcastToChannel(channel, {
+      cmd: "RMO",
+      payload: { channel: channel.name, mode: payload.mode },
+    });
   }
 
   #handlePrivateMessage(

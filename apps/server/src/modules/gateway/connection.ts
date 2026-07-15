@@ -433,7 +433,11 @@ export class GatewayConnection {
           status: ownStatus.status,
           statusmsg: ownStatus.statusmsg,
           ignores,
-          limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
+          limits: {
+            chatMax: vars.chat_max,
+            privMax: vars.priv_max,
+            lfrpMax: vars.lfrp_max,
+          },
           iconBlacklist: [...(session?.state.vars.icon_blacklist ?? [])],
           sendDelaySeconds,
           prefs,
@@ -678,6 +682,25 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "channel.roll": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          // Like msg.send: the flood-gate wait must not stall the inbound
+          // queue, so the promise's outcome becomes the ack instead.
+          session.rollDice(cmd.d.key, cmd.d.dice).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error: error instanceof Error ? error.message : "roll failed",
+              });
+            },
+          );
+        }
+        return;
+      }
       case "typing.set": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
@@ -790,7 +813,12 @@ export class GatewayConnection {
 
   async #handleMsgSend(
     identityId: string,
-    d: { convId: string; bbcode: string; markdown?: string },
+    d: {
+      convId: string;
+      bbcode: string;
+      markdown?: string;
+      kind?: "lrp" | "msg";
+    },
     id: number | undefined,
   ): Promise<void> {
     const session = this.#requireSession(identityId, id);
@@ -811,6 +839,11 @@ export class GatewayConnection {
       this.#ack(id, { ok: false, error: "conversation not found" });
       return;
     }
+    const ad = d.kind === "lrp";
+    if (ad && conversation.kind !== "channel") {
+      this.#ack(id, { ok: false, error: "ads can only go to channels" });
+      return;
+    }
     // A non-zero send delay parks the message in the server-side outbox —
     // the release worker puts it on the wire when due, tab or no tab.
     const { sendDelaySeconds: delaySeconds } = await this.#userPrefs();
@@ -818,8 +851,9 @@ export class GatewayConnection {
       // Validate against the live VAR limit NOW, like the immediate path —
       // deferring the check to release time would fail silently long after
       // the user could react (audit).
-      const limit =
-        conversation.kind === "channel"
+      const limit = ad
+        ? session.state.vars.lfrp_max
+        : conversation.kind === "channel"
           ? session.state.vars.chat_max
           : session.state.vars.priv_max;
       if (Buffer.byteLength(d.bbcode, "utf8") > limit) {
@@ -836,13 +870,15 @@ export class GatewayConnection {
         // separate source form.
         markdown: d.markdown ?? d.bbcode,
         bbcode: d.bbcode,
+        kind: ad ? "lrp" : "msg",
         releaseAt: new Date(Date.now() + delaySeconds * 1000),
       });
       this.#ack(id, { ok: true });
       return;
     }
-    const send =
-      conversation.kind === "channel"
+    const send = ad
+      ? session.sendChannelAd(conversation.channelKey ?? "", d.bbcode)
+      : conversation.kind === "channel"
         ? session.sendChannelMessage(conversation.channelKey ?? "", d.bbcode)
         : session.sendPrivateMessage(
             conversation.partnerCharacter ?? "",

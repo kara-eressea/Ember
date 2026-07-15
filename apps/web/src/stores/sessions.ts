@@ -68,7 +68,7 @@ export interface IdentitySession {
    * persisted but are hidden from render. */
   ignores: string[];
   /** Live server VARs (bytes) from the snapshot — composer limits. */
-  limits: { chatMax: number; privMax: number };
+  limits: { chatMax: number; privMax: number; lfrpMax: number };
   /** Channels where the server disallows [icon]/[eicon] (icon_blacklist). */
   iconBlacklist: string[];
   /** The user's delayed-send window (per-user; mirrored per slice). */
@@ -136,7 +136,7 @@ interface SessionsState {
       status: string;
       statusmsg: string;
       ignores: string[];
-      limits: { chatMax: number; privMax: number };
+      limits: { chatMax: number; privMax: number; lfrpMax: number };
       iconBlacklist: string[];
       sendDelaySeconds: number;
       prefs: UserPrefs;
@@ -240,7 +240,7 @@ function emptySession(identityId: string): IdentitySession {
     ownStatusmsg: "",
     ignores: [],
     // Placeholder until the snapshot delivers the live VARs.
-    limits: { chatMax: 4096, privMax: 50000 },
+    limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
     iconBlacklist: [],
     sendDelaySeconds: 0,
     prefs: PREFS_DEFAULTS,

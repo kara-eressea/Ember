@@ -54,10 +54,23 @@ describe("parseClientCommand", () => {
     },
     { cmd: "JCH", payload: { channel: "Frontpage" } },
     { cmd: "LCH", payload: { channel: "ADH-c7fc4c15c858dd76d860" } },
+    {
+      cmd: "LRP",
+      payload: { channel: "Frontpage", message: "Right, evenin'" },
+    },
     { cmd: "MSG", payload: { channel: "Frontpage", message: "héllo 世界 🦊" } },
     { cmd: "ORS" },
     { cmd: "PIN" },
     { cmd: "PRI", payload: { recipient: "Hexxy", message: "Hi there." } },
+    {
+      cmd: "RLL",
+      payload: { channel: "ADH-dce8eb7af86213ac4c15", dice: "1d6+1d20" },
+    },
+    { cmd: "RLL", payload: { channel: "Frontpage", dice: "bottle" } },
+    {
+      cmd: "RMO",
+      payload: { channel: "ADH-c7fc4c15c858dd76d860", mode: "ads" },
+    },
     {
       cmd: "STA",
       payload: {

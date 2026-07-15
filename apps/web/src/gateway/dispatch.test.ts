@@ -66,7 +66,7 @@ function snapshot(): ServerFrame {
         status: "online",
         statusmsg: "",
         ignores: [],
-        limits: { chatMax: 4096, privMax: 50000 },
+        limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
         iconBlacklist: [],
         sendDelaySeconds: 0,
         prefs: PREFS_DEFAULTS,
@@ -293,7 +293,7 @@ describe("presence", () => {
     expect(dm?.status).toBe("looking");
     expect(dm?.statusmsg).toBe("Open!");
     // The snapshot carried the live limits too.
-    expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000 });
+    expect(session().limits).toEqual({ chatMax: 4096, privMax: 50000, lfrpMax: 50000 });
   });
 
   it("ignore.updated overwrites the ignore list", () => {

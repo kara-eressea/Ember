@@ -59,6 +59,12 @@ export const serverCommandSchemas = {
   }),
   /** A character left a channel (possibly our own). */
   LCH: z.object({ channel: z.string(), character: z.string() }),
+  /** A roleplay ad in a channel. Same shape as MSG. */
+  LRP: z.object({
+    channel: z.string(),
+    message: z.string(),
+    character: z.string(),
+  }),
   /** Online characters: [name, gender, status, status message]. Sent in batches. */
   LIS: z.object({
     characters: z.array(
@@ -87,6 +93,21 @@ export const serverCommandSchemas = {
   PIN: z.undefined(),
   /** A private message. */
   PRI: z.object({ character: z.string(), message: z.string() }),
+  /** A dice roll or bottle spin. `message` is the display BBCode; the typed
+   * extras differ by `type` (dice: results/rolls/endresult, bottle: target)
+   * and are optional here so either shape parses. */
+  RLL: z.object({
+    channel: z.string(),
+    type: z.string(),
+    message: z.string(),
+    character: z.string(),
+    results: z.array(z.int()).optional(),
+    rolls: z.array(z.string()).optional(),
+    endresult: z.int().optional(),
+    target: z.string().optional(),
+  }),
+  /** The room mode changed: chat (MSG only), ads (LRP only), or both. */
+  RMO: z.object({ channel: z.string(), mode: z.string() }),
   /** A character changed status. */
   STA: z.object({
     status: z.string(),

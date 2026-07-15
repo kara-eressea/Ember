@@ -60,7 +60,10 @@ let app: FastifyInstance;
 let gatewayUrl: string;
 
 beforeAll(async () => {
-  sim = new FchatSim();
+  // lfrp_flood is zeroed: the RP-messages test sends several ads and would
+  // otherwise wait out the live 10-minute pace (pacing itself is covered in
+  // fchat-session.test.ts against a dedicated sim).
+  sim = new FchatSim({ serverVars: { lfrp_flood: 0 } });
   await sim.start();
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
@@ -149,7 +152,11 @@ class TestClient {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         throw new Error(
-          `timed out; buffered: ${JSON.stringify(this.#frames.map((f) => f.t))}`,
+          `timed out; buffered: ${JSON.stringify(
+            this.#frames.map((f) =>
+              f.t === "event" ? `event:${(f.d as { kind: string }).kind}` : f.t,
+            ),
+          )}`,
         );
       }
       await new Promise<void>((resolve) => {
@@ -858,7 +865,7 @@ describe("gateway fan-out", () => {
       prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
-      limits: { chatMax: 4096, privMax: 50000 },
+      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
     });
     expect(snapshot.d.channels).toHaveLength(2);
     const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
@@ -1560,6 +1567,121 @@ describe("gateway commands", () => {
 
     app.sessions.stop(cindral!.id);
   });
+
+  it("sends ads and rolls, tracks room mode, and releases delayed ads as LRP (M6 RP messages)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Development"); // mode "both": ads allowed
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Development"),
+        ),
+      );
+    const convId = conv!.id;
+
+    // An ad goes out as LRP and persists with its own kind.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "Seeking a scene partner.", kind: "lrp" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: true },
+    });
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({
+      kind: "lrp",
+      senderCharacter: CHARACTER,
+      bbcode: "Seeking a scene partner.",
+      sentByUs: true,
+    });
+
+    // A roll comes back as the sim-computed RLL, persisted as our own.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "channel.roll",
+        d: { key: "Development", dice: "2d6" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    const roll = eventPayload<{ message: { kind: string; bbcode: string } }>(
+      await client.nextEvent("message.new"),
+    ).message;
+    expect(roll).toMatchObject({ kind: "rll", sentByUs: true });
+    expect(roll.bbcode).toContain(`[b]${CHARACTER}[/b] rolls 2d6:`);
+
+    // Ads never go to PM conversations.
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: { identityId, action: "pm.open", d: { character: "Nyx Firemane" } },
+    });
+    const pmAck = await client.nextOfType("ack");
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId: pmAck.d.conversation!.id, bbcode: "ad?", kind: "lrp" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 4,
+      d: { ok: false, error: "ads can only go to channels" },
+    });
+
+    // RMO fans out as channel.info so the composer can re-gate live.
+    await inject(session, {
+      cmd: "RMO",
+      payload: { channel: "Development", mode: "chat" },
+    });
+    expect(
+      eventPayload<{ key: string; mode: string }>(
+        await client.nextEvent("channel.info"),
+      ),
+    ).toEqual({ key: "Development", mode: "chat" });
+
+    // A due outbox row with kind "lrp" (a delayed ad) releases as an LRP
+    // frame and persists as an lrp message, not a msg. (The RMO above was
+    // injected at our session only — the sim's room stayed "both", so the
+    // ad is accepted on the wire.)
+    await db.insert(outboxMessages).values({
+      identityId,
+      conversationId: convId,
+      markdown: "delayed ad",
+      bbcode: "delayed ad",
+      kind: "lrp",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    const released = await client.nextEvent("message.new", 15_000);
+    expect(eventPayload<{ message: object }>(released).message).toMatchObject({
+      kind: "lrp",
+      bbcode: "delayed ad",
+      sentByUs: true,
+    });
+  }, 30_000);
 
   it("opens a PM conversation and advances the read cursor across clients", async () => {
     const { identityId, token } = await createIdentity();

@@ -280,6 +280,53 @@ describe("history sink", () => {
     });
   });
 
+  it("persists ads and rolls with their own kinds (M6)", async () => {
+    const { identityId, session } = await startIdentity();
+    await joinAndSettle(session, "Development");
+
+    // Inbound ad from someone else.
+    await inject(session, {
+      cmd: "LRP",
+      payload: {
+        character: "Tally Marsh",
+        message: "[b]Open for scenes![/b]",
+        channel: "Development",
+      },
+    });
+    // Our own send goes out as an LRP frame → persisted as a sent ad.
+    await session.sendChannelAd("Development", "Looking for a partner.");
+    // Rolls are echoed to everyone including the roller; sentByUs follows
+    // the character on the payload.
+    await inject(session, {
+      cmd: "RLL",
+      payload: {
+        channel: "Development",
+        type: "dice",
+        message: `[b]${CHARACTER}[/b] rolls 1d6: [b]4[/b]`,
+        character: CHARACTER,
+        results: [4],
+        rolls: ["1d6"],
+        endresult: 4,
+      },
+    });
+    await app.history.flush();
+
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.identityId, identityId));
+    const rows = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conv!.id))
+      .orderBy(messages.id);
+    expect(rows.map((r) => [r.kind, r.senderCharacter, r.sentByUs])).toEqual([
+      ["lrp", "Tally Marsh", false],
+      ["lrp", CHARACTER, true],
+      ["rll", CHARACTER, true],
+    ]);
+  });
+
   it("merges PM threads case-insensitively (F-Chat resolves recipients regardless of casing)", async () => {
     const { identityId, session } = await startIdentity();
 

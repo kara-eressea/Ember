@@ -126,14 +126,26 @@ const cmdSchema = z.discriminatedUnion("action", [
   z.object({
     identityId: z.uuid(),
     action: z.literal("msg.send"),
-    // The live chat_max/priv_max VARs are enforced by the session at send
-    // time; this is only an anti-abuse ceiling, far above any real limit.
-    // `markdown` is the pre-translation source: stored with a delayed send
-    // so ArrowUp recall returns what the user typed, not the wire form.
+    // The live chat_max/priv_max/lfrp_max VARs are enforced by the session
+    // at send time; this is only an anti-abuse ceiling, far above any real
+    // limit. `markdown` is the pre-translation source: stored with a delayed
+    // send so ArrowUp recall returns what the user typed, not the wire form.
+    // kind "lrp" = a roleplay ad (channel conversations only).
     d: z.object({
       convId: z.uuid(),
       bbcode: z.string().min(1).max(65_536),
       markdown: z.string().max(65_536).optional(),
+      kind: z.enum(["msg", "lrp"]).optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // RLL: "bottle" or a dice expression ("2d6", "1d20+5", …). The server
+    // validates the grammar and broadcasts the computed result.
+    action: z.literal("channel.roll"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      dice: z.string().min(1).max(128),
     }),
   }),
   z.object({
@@ -439,7 +451,7 @@ export type ServerFrame =
            * hidden from render client-side but still persisted. */
           ignores: string[];
           /** Live server VARs (bytes) — composer limits, never hardcoded. */
-          limits: { chatMax: number; privMax: number };
+          limits: { chatMax: number; privMax: number; lfrpMax: number };
           /** Channels where the server disallows [icon]/[eicon] (the
            * icon_blacklist VAR) — the composer warns before inserting. */
           iconBlacklist: string[];
