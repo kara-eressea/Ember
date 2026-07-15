@@ -1363,8 +1363,8 @@ describe("social JSON API + FRL (M6 step 7)", () => {
     return (await response.json()) as Record<string, unknown>;
   }
 
-  async function ticketFor(sim: FchatSim, account: string): Promise<string> {
-    return sim.issueTicketFor(account);
+  function ticketFor(sim: FchatSim, account: string): Promise<string> {
+    return Promise.resolve(sim.issueTicketFor(account));
   }
 
   it("sends the seeded friends+bookmarks union as FRL at login", async () => {
@@ -1423,9 +1423,10 @@ describe("social JSON API + FRL (M6 step 7)", () => {
     expect(
       await call("/json/api/bookmark-add.php", { name: "Tally Marsh" }),
     ).toEqual({ error: "You already have this character bookmarked." });
-    expect(
-      await call("/json/api/bookmark-list.php", {}),
-    ).toEqual({ error: "", characters: ["Tally Marsh"] });
+    expect(await call("/json/api/bookmark-list.php", {})).toEqual({
+      error: "",
+      characters: ["Tally Marsh"],
+    });
     expect(
       await call("/json/api/bookmark-remove.php", { name: "Tally Marsh" }),
     ).toEqual({ error: "" });

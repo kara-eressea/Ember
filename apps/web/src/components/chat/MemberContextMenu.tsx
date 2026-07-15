@@ -3,8 +3,8 @@
 // relationship (own row loses Message/Ignore; an ignored target offers
 // Unignore). The admin section (kick/timeout/ban/promote/demote/set-owner,
 // each dim with a mono `admin` tag) renders only for op+ viewers and
-// mirrors the wire rules via modPowers. Social items (bookmark, friend
-// request) land with M6 step 7.
+// mirrors the wire rules via modPowers. The social items (bookmark, friend
+// request) are relationship-aware off the lazily-loaded social lists.
 
 import {
   useEffect,
@@ -14,7 +14,9 @@ import {
 import { useNavigate } from "react-router";
 import type { MemberDto } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
+import { api } from "../../lib/api.js";
 import { dmPath } from "../../lib/routes.js";
+import { loadSocial } from "../../lib/social.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { modPowers, roleTag, type ChannelRole } from "./member-roles.js";
@@ -62,6 +64,26 @@ export function MemberContextMenu({
       (name) => name.toLowerCase() === member.character.toLowerCase(),
     ),
   );
+  // Relationship-aware social items (§10): the lists load lazily; until
+  // they arrive the items simply don't render (right-click again).
+  const social = useSessionsStore((s) => s.sessions[identityId]?.social);
+  const lower = member.character.toLowerCase();
+  const bookmarked =
+    social?.bookmarks.some((row) => row.name.toLowerCase() === lower) ?? false;
+  const friend =
+    social?.friends.some((row) => row.name.toLowerCase() === lower) ?? false;
+  const incomingRequest = social?.incoming.find(
+    (row) => row.name.toLowerCase() === lower,
+  );
+  const outgoingRequest = social?.outgoing.find(
+    (row) => row.name.toLowerCase() === lower,
+  );
+
+  useEffect(() => {
+    loadSocial(identityId).catch(() => {
+      // The social items just stay hidden.
+    });
+  }, [identityId]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -154,6 +176,22 @@ export function MemberContextMenu({
     });
   }
 
+  /** Social mutations: close, call, refresh the lists, surface failures. */
+  function mutateSocial(run: () => Promise<unknown>) {
+    onClose();
+    void run()
+      .then(() => loadSocial(identityId, true))
+      .catch((error: unknown) => {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            identityId,
+            "error",
+            error instanceof Error ? error.message : "Request failed",
+          );
+      });
+  }
+
   function toggleIgnore() {
     onClose();
     void gateway
@@ -217,6 +255,87 @@ export function MemberContextMenu({
         >
           View profile <span className={styles.memberMenuHint}>↗ website</span>
         </a>
+        {!self && social !== undefined && (
+          <>
+            <div className={styles.memberMenuDivider} />
+            <button
+              className={styles.memberMenuItem}
+              role="menuitem"
+              onClick={() => {
+                mutateSocial(() =>
+                  api.postBookmark(
+                    identityId,
+                    bookmarked ? "remove" : "add",
+                    member.character,
+                  ),
+                );
+              }}
+            >
+              {bookmarked ? "Remove bookmark" : "Add bookmark"}
+            </button>
+            {friend ? (
+              <button
+                className={styles.memberMenuItem}
+                role="menuitem"
+                onClick={() => {
+                  mutateSocial(() =>
+                    api.postFriendRequest(identityId, {
+                      action: "remove-friend",
+                      character: member.character,
+                    }),
+                  );
+                }}
+              >
+                Remove friend
+              </button>
+            ) : incomingRequest ? (
+              <button
+                className={styles.memberMenuItem}
+                role="menuitem"
+                onClick={() => {
+                  mutateSocial(() =>
+                    api.postFriendRequest(identityId, {
+                      action: "accept",
+                      requestId: incomingRequest.id,
+                    }),
+                  );
+                }}
+              >
+                Accept friend request
+              </button>
+            ) : outgoingRequest ? (
+              <button
+                className={styles.memberMenuItem}
+                role="menuitem"
+                onClick={() => {
+                  mutateSocial(() =>
+                    api.postFriendRequest(identityId, {
+                      action: "cancel",
+                      requestId: outgoingRequest.id,
+                    }),
+                  );
+                }}
+              >
+                Cancel friend request
+              </button>
+            ) : (
+              <button
+                className={styles.memberMenuItem}
+                role="menuitem"
+                onClick={() => {
+                  mutateSocial(() =>
+                    api.postFriendRequest(identityId, {
+                      action: "send",
+                      character: member.character,
+                    }),
+                  );
+                }}
+              >
+                Add friend
+              </button>
+            )}
+          </>
+        )}
         {!self && (
           <>
             <div className={styles.memberMenuDivider} />

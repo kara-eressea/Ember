@@ -129,7 +129,11 @@ export class SocialService {
       return "That character does not belong to this account.";
     }
     const social = this.#social(account);
-    if (social?.friends.some((pair) => pair.own === source && pair.friend === dest)) {
+    if (
+      social?.friends.some(
+        (pair) => pair.own === source && pair.friend === dest,
+      )
+    ) {
       return "You are already friends with this character.";
     }
     if (

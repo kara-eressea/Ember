@@ -82,7 +82,11 @@ export async function buildApp({
 
   const vault = new CredentialVault();
   const flistApi =
-    flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
+    flistApiClient ??
+    new FlistApiClient({
+      baseUrl: config.FLIST_API_URL,
+      minRequestIntervalMs: config.FLIST_API_MIN_INTERVAL_MS,
+    });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const highlights = new HighlightMatcher(db, app.log);
   const history = new HistorySink(db, app.log, { highlights });
@@ -145,7 +149,10 @@ export async function buildApp({
     origin: config.CORS_ORIGIN ? config.CORS_ORIGIN.split(",") : false,
   });
   // Global backstop; the auth endpoints set stricter per-route limits.
-  await app.register(fastifyRateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(fastifyRateLimit, {
+    max: config.RATE_LIMIT_MAX,
+    timeWindow: "1 minute",
+  });
   await app.register(authPlugin, { secret: config.AUTH_SECRET, db });
   await app.register(authRoutes, {
     prefix: "/api/auth",

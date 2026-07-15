@@ -117,9 +117,8 @@ describe("social routes", () => {
     app.sessions.start({
       identityId,
       character: CHARACTER,
-      accountId: (
-        await db.select().from(identities).limit(1)
-      )[0]!.flistAccountId,
+      accountId: (await db.select().from(identities).limit(1))[0]!
+        .flistAccountId,
       accountName: ACCOUNT,
     });
     await vi.waitFor(() => {
@@ -131,7 +130,12 @@ describe("social routes", () => {
     const body = response.json<SocialBody>();
     expect(body.bookmarks).toEqual([
       // Old Greywhisker is an online NPC with status busy.
-      { name: "Old Greywhisker", online: true, status: "busy", statusmsg: "Lurking." },
+      {
+        name: "Old Greywhisker",
+        online: true,
+        status: "busy",
+        statusmsg: "Lurking.",
+      },
     ]);
     expect(body.friends).toEqual([
       { name: "Nyx Firemane", online: true, status: "online", statusmsg: "" },
@@ -149,7 +153,9 @@ describe("social routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    let body = (await get(`/api/identities/${identityId}/social`)).json<SocialBody>();
+    let body = (
+      await get(`/api/identities/${identityId}/social`)
+    ).json<SocialBody>();
     expect(body.bookmarks.map((row) => row.name)).toEqual([
       "Old Greywhisker",
       "Tally Marsh",
@@ -171,7 +177,9 @@ describe("social routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    body = (await get(`/api/identities/${identityId}/social`)).json<SocialBody>();
+    body = (
+      await get(`/api/identities/${identityId}/social`)
+    ).json<SocialBody>();
     expect(body.bookmarks.map((row) => row.name)).toEqual(["Old Greywhisker"]);
   });
 
@@ -184,7 +192,9 @@ describe("social routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    let body = (await get(`/api/identities/${identityId}/social`)).json<SocialBody>();
+    let body = (
+      await get(`/api/identities/${identityId}/social`)
+    ).json<SocialBody>();
     expect(body.friends.map((row) => row.name).sort()).toEqual([
       "Nyx Firemane",
       "Tally Marsh",
@@ -199,7 +209,9 @@ describe("social routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    body = (await get(`/api/identities/${identityId}/social`)).json<SocialBody>();
+    body = (
+      await get(`/api/identities/${identityId}/social`)
+    ).json<SocialBody>();
     const sent = body.outgoing.find((row) => row.name === "Amber Vale");
     expect(sent).toBeDefined();
     expect(
@@ -220,7 +232,9 @@ describe("social routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    body = (await get(`/api/identities/${identityId}/social`)).json<SocialBody>();
+    body = (
+      await get(`/api/identities/${identityId}/social`)
+    ).json<SocialBody>();
     expect(body.friends.map((row) => row.name)).toEqual(["Nyx Firemane"]);
   });
 

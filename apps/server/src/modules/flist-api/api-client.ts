@@ -82,15 +82,30 @@ export class FlistApiClient {
   // ── Social endpoints (M6 step 7) — all through the same 1 req/s budget ──
 
   bookmarkList(auth: SocialAuth): Promise<BookmarkList> {
-    return this.#post(SOCIAL_API_PATHS.bookmarkList, auth, {}, bookmarkListSchema);
+    return this.#post(
+      SOCIAL_API_PATHS.bookmarkList,
+      auth,
+      {},
+      bookmarkListSchema,
+    );
   }
 
   bookmarkAdd(auth: SocialAuth, name: string): Promise<ApiEnvelope> {
-    return this.#post(SOCIAL_API_PATHS.bookmarkAdd, auth, { name }, apiEnvelopeSchema);
+    return this.#post(
+      SOCIAL_API_PATHS.bookmarkAdd,
+      auth,
+      { name },
+      apiEnvelopeSchema,
+    );
   }
 
   bookmarkRemove(auth: SocialAuth, name: string): Promise<ApiEnvelope> {
-    return this.#post(SOCIAL_API_PATHS.bookmarkRemove, auth, { name }, apiEnvelopeSchema);
+    return this.#post(
+      SOCIAL_API_PATHS.bookmarkRemove,
+      auth,
+      { name },
+      apiEnvelopeSchema,
+    );
   }
 
   friendList(auth: SocialAuth): Promise<FriendList> {
@@ -113,12 +128,22 @@ export class FlistApiClient {
 
   /** Incoming friend requests (account-wide). */
   requestList(auth: SocialAuth): Promise<FriendRequestList> {
-    return this.#post(SOCIAL_API_PATHS.requestList, auth, {}, friendRequestListSchema);
+    return this.#post(
+      SOCIAL_API_PATHS.requestList,
+      auth,
+      {},
+      friendRequestListSchema,
+    );
   }
 
   /** Outgoing friend requests (account-wide). */
   requestPending(auth: SocialAuth): Promise<FriendRequestList> {
-    return this.#post(SOCIAL_API_PATHS.requestPending, auth, {}, friendRequestListSchema);
+    return this.#post(
+      SOCIAL_API_PATHS.requestPending,
+      auth,
+      {},
+      friendRequestListSchema,
+    );
   }
 
   requestSend(

@@ -1,6 +1,10 @@
 // The M1 step-9 gate: register → login → see the character list with
 // avatars. Runs against the real server + fchat-sim (see global-setup.ts);
 // avatar images are intercepted so static.f-list.net isn't hit from CI.
+// Owns aspen@example.test — sharing an ACCOUNT between parallel specs makes
+// their ticket managers invalidate each other (every new ticket kills all
+// previous ones account-wide), so accounts are spec-exclusive like
+// characters and channels.
 
 import { expect, test, type Page } from "@playwright/test";
 
@@ -49,7 +53,7 @@ test("register, connect an F-List account, and pick a character with avatars", a
 
   // Add the F-List account (verified against the sim, vaulted in memory).
   await page.getByRole("button", { name: "Add a server identity" }).click();
-  await page.getByLabel("F-List account name").fill("amber@example.test");
+  await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
 
@@ -58,18 +62,18 @@ test("register, connect an F-List account, and pick a character with avatars", a
   // parallel on multi-core machines, so this fetch can queue behind the
   // other specs' registrations — give it the same window as session-online
   // waits, not the 5s expect default.
-  const amber = page.getByRole("listitem").filter({ hasText: "Amber Vale" });
-  const cindral = page.getByRole("listitem").filter({ hasText: "Cindral" });
-  await expect(amber).toBeVisible({ timeout: 15_000 });
+  const aspen = page.getByRole("listitem").filter({ hasText: "Aspen Vale" });
+  const cindral = page.getByRole("listitem").filter({ hasText: "Aspen Brook" });
+  await expect(aspen).toBeVisible({ timeout: 15_000 });
   await expect(cindral).toBeVisible();
-  await expect(amber.locator("img")).toHaveAttribute(
+  await expect(aspen.locator("img")).toHaveAttribute(
     "src",
-    "https://static.f-list.net/images/avatar/amber vale.png",
+    "https://static.f-list.net/images/avatar/aspen vale.png",
   );
 
   // Picking a character creates the identity.
-  await amber.click();
-  const identityRow = page.getByText("Amber Vale", { exact: true });
+  await aspen.click();
+  const identityRow = page.getByText("Aspen Vale", { exact: true });
   await expect(identityRow).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Connect" }),
@@ -82,9 +86,9 @@ test("register, connect an F-List account, and pick a character with avatars", a
   await expect(page).toHaveURL(/\/app\//);
 
   // Log the character off again (MeBar power control) — sessions outlive
-  // tabs, and a later test in this file connects Amber Vale itself; a
+  // tabs, and a later test in this file connects Aspen Vale itself; a
   // character can hold only one sim connection.
-  await expect(page.getByText("Amber Vale · online")).toBeVisible({
+  await expect(page.getByText("Aspen Vale · online")).toBeVisible({
     timeout: 15_000,
   });
   await page.getByRole("button", { name: "Log off F-Chat" }).click();
@@ -105,10 +109,10 @@ test("login round trip sees the persisted identity again", async ({ page }) => {
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByRole("button", { name: "Add a server identity" }).click();
-  await page.getByLabel("F-List account name").fill("amber@example.test");
+  await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
-  await page.getByRole("listitem").filter({ hasText: "Cindral" }).click();
+  await page.getByRole("listitem").filter({ hasText: "Aspen Brook" }).click();
   await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
     timeout: 15_000,
   });
@@ -120,7 +124,7 @@ test("login round trip sees the persisted identity again", async ({ page }) => {
   await page.getByLabel("Password").fill(creds.password);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/identities$/);
-  await expect(page.getByText("Cindral", { exact: true })).toBeVisible();
+  await expect(page.getByText("Aspen Brook", { exact: true })).toBeVisible();
 });
 
 test("a persisted session survives a reload", async ({ page }) => {
@@ -155,10 +159,10 @@ test("identities can be connected, disconnected and removed from the picker", as
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByRole("button", { name: "Add a server identity" }).click();
-  await page.getByLabel("F-List account name").fill("amber@example.test");
+  await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
-  await page.getByRole("listitem").filter({ hasText: "Amber Vale" }).click();
+  await page.getByRole("listitem").filter({ hasText: "Aspen Vale" }).click();
   await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
     timeout: 15_000,
   });
@@ -166,26 +170,26 @@ test("identities can be connected, disconnected and removed from the picker", as
   // Connect from the picker; the shell reports the session online.
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page).toHaveURL(/\/app\//);
-  await expect(page.getByText("Amber Vale · online")).toBeVisible({
+  await expect(page.getByText("Aspen Vale · online")).toBeVisible({
     timeout: 15_000,
   });
 
   // Back on the picker the live session is visible and can be logged off —
   // the session outlives tabs (bouncer), so this is the deliberate way out.
   await page.goto("/identities");
-  await expect(page.getByText(/amber@example\.test · online/)).toBeVisible();
+  await expect(page.getByText(/aspen@example\.test · online/)).toBeVisible();
   await page.getByRole("button", { name: "Disconnect" }).click();
-  await expect(page.getByText(/amber@example\.test · offline/)).toBeVisible();
+  await expect(page.getByText(/aspen@example\.test · offline/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
     timeout: 15_000,
   });
 
   // Remove the identity: two-step confirm.
   await page
-    .getByRole("button", { name: "Remove identity Amber Vale and its history" })
+    .getByRole("button", { name: "Remove identity Aspen Vale and its history" })
     .click();
   await page
-    .getByRole("button", { name: /Confirm removing identity Amber Vale/ })
+    .getByRole("button", { name: /Confirm removing identity Aspen Vale/ })
     .click();
   await expect(page.getByRole("button", { name: "Connect" })).toHaveCount(0);
 
@@ -193,7 +197,7 @@ test("identities can be connected, disconnected and removed from the picker", as
   // reaches the chooser, where the account itself can be removed.
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await expect(
-    page.getByRole("listitem").filter({ hasText: "Amber Vale" }),
+    page.getByRole("listitem").filter({ hasText: "Aspen Vale" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Manage accounts" }).click();
   await expect(
@@ -202,11 +206,11 @@ test("identities can be connected, disconnected and removed from the picker", as
       .or(page.getByText("unlocked", { exact: true })),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: /Remove account amber@example.test/ })
+    .getByRole("button", { name: /Remove account aspen@example.test/ })
     .click();
   await page
     .getByRole("button", {
-      name: /Confirm removing account amber@example.test/,
+      name: /Confirm removing account aspen@example.test/,
     })
     .click();
 

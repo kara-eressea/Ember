@@ -12,10 +12,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
-import type {
-  FlistApiClient,
-  SocialAuth,
-} from "../flist-api/api-client.js";
+import type { FlistApiClient, SocialAuth } from "../flist-api/api-client.js";
 import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 
@@ -41,6 +38,13 @@ export interface SocialRoutesOptions {
   sessions: SessionRegistry;
   tickets: TicketManagerRegistry;
   flistApi: FlistApiClient;
+}
+
+/** Rate-limit key: the identity in the path (falls back to the IP for
+ * malformed requests that never reach the handler anyway). */
+function identityKey(request: { ip: string; params: unknown }): string {
+  const params = request.params as { identityId?: string } | undefined;
+  return params?.identityId ?? request.ip;
 }
 
 interface IdentityRow {
@@ -90,7 +94,10 @@ export async function socialRoutes(
     identity: IdentityRow,
     call: (auth: SocialAuth) => Promise<T>,
   ): Promise<T> {
-    const manager = tickets.managerFor(identity.accountId, identity.accountName);
+    const manager = tickets.managerFor(
+      identity.accountId,
+      identity.accountName,
+    );
     const auth = {
       account: identity.accountName,
       ticket: await manager.getTicket(),
@@ -111,10 +118,22 @@ export async function socialRoutes(
     {
       schema: {
         params: z.object({ identityId: z.uuid() }),
-        response: { 200: socialResponse, 404: errorResponse, 502: errorResponse },
+        response: {
+          200: socialResponse,
+          404: errorResponse,
+          502: errorResponse,
+        },
       },
       // Each hit is four upstream calls on the shared 1 req/s budget.
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      // Keyed per identity: per-IP buckets would pool everyone behind one
+      // NAT (and every E2E spec on loopback) into one allowance.
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+          keyGenerator: identityKey,
+        },
+      },
     },
     async (request, reply) => {
       const identity = await ownedIdentity(
@@ -175,7 +194,13 @@ export async function socialRoutes(
         }),
         response: { 200: okResponse, 404: errorResponse, 502: errorResponse },
       },
-      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+          keyGenerator: identityKey,
+        },
+      },
     },
     async (request, reply) => {
       const identity = await ownedIdentity(
@@ -212,13 +237,25 @@ export async function socialRoutes(
             action: z.literal("remove-friend"),
             character: z.string().min(1).max(64),
           }),
-          z.object({ action: z.literal("accept"), requestId: z.number().int() }),
+          z.object({
+            action: z.literal("accept"),
+            requestId: z.number().int(),
+          }),
           z.object({ action: z.literal("deny"), requestId: z.number().int() }),
-          z.object({ action: z.literal("cancel"), requestId: z.number().int() }),
+          z.object({
+            action: z.literal("cancel"),
+            requestId: z.number().int(),
+          }),
         ]),
         response: { 200: okResponse, 404: errorResponse, 502: errorResponse },
       },
-      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+          keyGenerator: identityKey,
+        },
+      },
     },
     async (request, reply) => {
       const identity = await ownedIdentity(
@@ -232,9 +269,17 @@ export async function socialRoutes(
       const result = await withTicket(identity, (auth) => {
         switch (body.action) {
           case "send":
-            return flistApi.requestSend(auth, identity.character, body.character);
+            return flistApi.requestSend(
+              auth,
+              identity.character,
+              body.character,
+            );
           case "remove-friend":
-            return flistApi.friendRemove(auth, identity.character, body.character);
+            return flistApi.friendRemove(
+              auth,
+              identity.character,
+              body.character,
+            );
           case "accept":
             return flistApi.requestAccept(auth, body.requestId);
           case "deny":

@@ -92,6 +92,25 @@ export interface IdentitySession {
   /** Pending channel invitations (inbound CIU) — volatile, actionable rows
    * in the sidebar. A missed invite stays joinable via its key anyway. */
   invites: ChannelInvite[];
+  /** Bookmarks/friends/requests (M6 step 7), lazily loaded through the
+   * social REST endpoint (loadSocial). Absent until first fetched. */
+  social?: SocialData;
+}
+
+/** One friend or bookmark row, presence-enriched by the server. */
+export interface SocialCharacter {
+  name: string;
+  online: boolean;
+  status: string;
+  statusmsg: string;
+}
+
+export interface SocialData {
+  bookmarks: SocialCharacter[];
+  friends: SocialCharacter[];
+  incoming: { id: number; name: string }[];
+  outgoing: { id: number; name: string }[];
+  fetchedAt: number;
 }
 
 export interface ChannelInvite {
@@ -151,6 +170,7 @@ interface SessionsState {
   /** Full pending-outbox overwrite (outbox.updated / snapshot). */
   applyOutbox(identityId: string, items: OutboxItemDto[]): void;
   applySendDelay(identityId: string, sendDelaySeconds: number): void;
+  applySocial(identityId: string, social: SocialData): void;
   /** Full resolved-prefs overwrite (prefs.updated). */
   applyPrefs(
     identityId: string,
@@ -413,6 +433,10 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyOutbox(identityId, items) {
       patch(identityId, (session) => ({ ...session, outbox: [...items] }));
+    },
+
+    applySocial(identityId, social) {
+      patch(identityId, (session) => ({ ...session, social }));
     },
 
     applySendDelay(identityId, sendDelaySeconds) {
