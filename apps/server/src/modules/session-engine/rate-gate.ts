@@ -11,7 +11,15 @@
  * unmetered. CHA and ORS are separate classes so one directory refresh puts
  * both frames on the wire together while repeat refreshes still pace. */
 export type RateGateClass =
-  "MSG" | "PRI" | "STA" | "IGN" | "TPN" | "CHA" | "ORS";
+  | "MSG"
+  | "PRI"
+  | "STA"
+  | "IGN"
+  | "TPN"
+  | "CHA"
+  | "ORS"
+  /** Room management (CCR/CIU/RST) shares one timeline — rare, user-clicked. */
+  | "ROOM";
 
 /**
  * Padding on top of the server's flood window. The server measures the

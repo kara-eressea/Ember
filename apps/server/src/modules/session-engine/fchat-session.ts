@@ -295,6 +295,46 @@ export class FchatSession {
     ]);
   }
 
+  /**
+   * Creates a private, invite-only room (CCR). The payload is the TITLE —
+   * the server mints the ADH- id and answers with a JCH into it, which
+   * flows through the ordinary join/persist path; watch conversation
+   * fan-out for the new key.
+   */
+  async createRoom(title: string): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send({ cmd: "CCR", payload: { channel: title } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  /** Invites a character to a channel (CIU, chanop). The server answers
+   * with a SYS; errors arrive as ERR — both already fan out. */
+  async inviteToChannel(channel: string, character: string): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send({ cmd: "CIU", payload: { channel, character } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  /** Sets a private room public (listed, freely joinable) or private
+   * (unlisted, invite-only) — RST, owner/op only. */
+  async setRoomStatus(
+    channel: string,
+    status: "public" | "private",
+  ): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send({ cmd: "RST", payload: { channel, status } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
   /** What the character's status should read as right now. */
   get ownStatus(): { status: ClientSettableStatus; statusmsg: string } {
     return this.#desiredStatus ?? { status: "online", statusmsg: "" };

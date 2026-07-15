@@ -191,6 +191,9 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "presence.bulk":
       sessions.applyPresenceBulk(identityId, event.d.characters);
       return;
+    case "channel.invite":
+      sessions.addInvite(identityId, event.d);
+      return;
     case "typing":
       sessions.applyTyping(identityId, event.d.character, event.d.status);
       return;

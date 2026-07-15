@@ -3,7 +3,7 @@
 // editable TOPIC row has no wire counterpart and is omitted. For DMs the
 // header shows the partner with presence and the TPN typing state.
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { presenceDot } from "../../lib/presence.js";
@@ -15,6 +15,7 @@ import {
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { RichText } from "./RichText.js";
+import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
 
 const DESCRIPTION_CLAMP = 140;
@@ -179,6 +180,164 @@ function PinChip({
   );
 }
 
+/**
+ * Room management for private rooms (owner/op viewers only): invite a
+ * character (CIU) and flip the room public/private (RST). F-Chat has no
+ * command reporting the current open/closed state, so both actions are
+ * always offered — the server's SYS response says what happened.
+ */
+function RoomChip({
+  identityId,
+  channelKey,
+}: {
+  identityId: string;
+  channelKey: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [character, setCharacter] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState<string>();
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open]);
+
+  async function invite(event: FormEvent) {
+    event.preventDefault();
+    const target = character.trim();
+    if (!target || busy) {
+      return;
+    }
+    setBusy(true);
+    setInfo(undefined);
+    try {
+      const ack = await gateway.cmd({
+        identityId,
+        action: "channel.invite",
+        d: { key: channelKey, character: target },
+      });
+      if (ack.ok) {
+        setCharacter("");
+        setInfo(`Invite sent to ${target}`);
+      } else {
+        setInfo(ack.error ?? "Could not invite");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setStatus(status: "public" | "private") {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setInfo(undefined);
+    try {
+      const ack = await gateway.cmd({
+        identityId,
+        action: "channel.status",
+        d: { key: channelKey, status },
+      });
+      setInfo(
+        ack.ok
+          ? status === "public"
+            ? "Room is now open and listed"
+            : "Room is now invite-only"
+          : (ack.error ?? "Could not change the room status"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className={styles.roomChipWrap} ref={containerRef}>
+      <button
+        className={styles.pinChip}
+        onClick={() => {
+          setOpen(!open);
+          setInfo(undefined);
+        }}
+        title="Room settings — invites and visibility"
+      >
+        ⚙ room
+      </button>
+      {open && (
+        <div
+          className={styles.roomMenu}
+          role="dialog"
+          aria-label="Room settings"
+        >
+          <form
+            className={styles.roomMenuForm}
+            onSubmit={(event) => {
+              void invite(event);
+            }}
+          >
+            <input
+              className={styles.miniInput}
+              value={character}
+              onChange={(e) => {
+                setCharacter(e.target.value);
+              }}
+              placeholder="Invite a character…"
+              aria-label="Invite a character"
+            />
+            <button className={styles.miniButton} type="submit" disabled={busy}>
+              Invite
+            </button>
+          </form>
+          <div className={styles.roomMenuActions}>
+            <button
+              className={styles.miniButton}
+              disabled={busy}
+              onClick={() => {
+                void setStatus("public");
+              }}
+            >
+              Make open
+            </button>
+            <button
+              className={styles.miniButton}
+              disabled={busy}
+              onClick={() => {
+                void setStatus("private");
+              }}
+            >
+              Make invite-only
+            </button>
+          </div>
+          {info && (
+            <p className={styles.roomMenuInfo} role="status">
+              {info}
+            </p>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function ChannelHeader({
   identityId,
   channel,
@@ -188,8 +347,16 @@ export function ChannelHeader({
 }) {
   const [expanded, setExpanded] = useState(false);
   const toggleMembers = useUiStore((s) => s.toggleMembers);
+  const ownCharacter = useSessionsStore(
+    (s) => s.sessions[identityId]?.character ?? "",
+  );
   const description = channel.description.trim();
   const clampable = description.length > DESCRIPTION_CLAMP;
+  // Room management is a private-room, owner/op affair (RST/CIU are
+  // chanop-restricted wire-side; the UI simply doesn't offer them to others).
+  const canManageRoom =
+    channel.key.startsWith("ADH-") &&
+    roleFor(ownCharacter, channel.oplist) !== null;
 
   return (
     <header className={styles.header}>
@@ -202,6 +369,9 @@ export function ChannelHeader({
           pinned={channel.pinned}
         />
         <MuteChip identityId={identityId} convId={channel.convId} />
+        {canManageRoom && (
+          <RoomChip identityId={identityId} channelKey={channel.key} />
+        )}
         <span className={styles.headerSpacer} />
         <button
           className={styles.headerButton}

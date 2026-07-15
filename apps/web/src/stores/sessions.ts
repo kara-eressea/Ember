@@ -87,6 +87,15 @@ export interface IdentitySession {
   synced: boolean;
   /** Latest transient global SYS / ERR, surfaced as a dismissable strip. */
   notice?: { kind: "sys" | "error"; text: string };
+  /** Pending channel invitations (inbound CIU) — volatile, actionable rows
+   * in the sidebar. A missed invite stays joinable via its key anyway. */
+  invites: ChannelInvite[];
+}
+
+export interface ChannelInvite {
+  sender: string;
+  title: string;
+  key: string;
 }
 
 export interface IdentitySummary {
@@ -197,6 +206,8 @@ interface SessionsState {
   applyTyping(identityId: string, character: string, status: string): void;
   applyNotice(identityId: string, kind: "sys" | "error", text: string): void;
   clearNotice(identityId: string): void;
+  addInvite(identityId: string, invite: ChannelInvite): void;
+  dismissInvite(identityId: string, key: string): void;
   bumpUnread(identityId: string, convId: string, mention?: boolean): void;
   /** Stamp the conversation's bump sort key (highlightBump pref). */
   bumpHighlight(identityId: string, convId: string): void;
@@ -237,6 +248,7 @@ function emptySession(identityId: string): IdentitySession {
     channels: {},
     dms: {},
     channelByConvId: {},
+    invites: [],
     synced: false,
   };
 }
@@ -678,6 +690,22 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       }));
     },
 
+    addInvite(identityId, invite) {
+      patch(identityId, (session) => ({
+        ...session,
+        // Re-invites to the same room replace instead of stacking.
+        invites: [
+          ...session.invites.filter((entry) => entry.key !== invite.key),
+          invite,
+        ],
+      }));
+    },
+    dismissInvite(identityId, key) {
+      patch(identityId, (session) => ({
+        ...session,
+        invites: session.invites.filter((entry) => entry.key !== key),
+      }));
+    },
     clearNotice(identityId) {
       patch(identityId, (session) => ({ ...session, notice: undefined }));
     },

@@ -7,7 +7,7 @@
 // connection, so specs never share one.
 
 import { expect, test } from "@playwright/test";
-import { interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
 
 test("channel browser: browse, filter, join, hidden-by-name", async ({
   page,
@@ -61,4 +61,45 @@ test("channel browser: browse, filter, join, hidden-by-name", async ({
   await expect(
     page.getByRole("heading", { name: "Root Cellar" }),
   ).toBeVisible();
+
+  // ── Room creation (M6 step 4): CCR through the dialog footer ──────────
+  await page.getByRole("button", { name: "Browse channels" }).click();
+  await dialog.getByLabel("Create a private room").fill("Quince Cellar");
+  await dialog.getByRole("button", { name: "Create" }).click();
+  // The server mints the ADH- id; the dialog closes and we land as owner.
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByRole("heading", { name: "Quince Cellar" }),
+  ).toBeVisible();
+  const members = page.getByRole("complementary", { name: "Members" });
+  await expect(members.getByText("Owner")).toBeVisible();
+  await expect(members.getByText("Laurel Quince")).toBeVisible();
+
+  // ── Inbound invite (CIU) is an actionable sidebar row ──────────────────
+  const pip = await SimClient.connect(
+    "laurel@example.test",
+    "hunter2",
+    "Quince Pip",
+  );
+  try {
+    pip.send("CCR", { channel: "Pip's Parlor" });
+    const jch = (await pip.waitFor(
+      "JCH",
+      (payload: { character: { identity: string } }) =>
+        payload.character.identity === "Quince Pip",
+    )) as { channel: string };
+    pip.send("CIU", { channel: jch.channel, character: "Laurel Quince" });
+
+    await expect(page.getByText("invited you to")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: "Join Pip's Parlor" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Pip's Parlor" }),
+    ).toBeVisible({ timeout: 15_000 });
+    // The invite row is consumed by joining.
+    await expect(page.getByText("invited you to")).not.toBeVisible();
+  } finally {
+    pip.close();
+  }
 });

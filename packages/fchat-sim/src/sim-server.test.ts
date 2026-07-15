@@ -879,3 +879,109 @@ describe("misbehavior controls", () => {
     });
   });
 });
+
+describe("private rooms (M6: CCR / CIU / RST)", () => {
+  it("CCR mints an ADH- room, owner-first COL, closed and unlisted", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Ember Attic" } });
+    const jch = parseServerCommand(await amber.waitFor("JCH"));
+    expect(jch).toMatchObject({
+      cmd: "JCH",
+      payload: {
+        channel: "ADH-sim0001",
+        title: "Ember Attic",
+        character: { identity: "Amber Vale" },
+      },
+    });
+    expect(parseServerCommand(await amber.waitFor("COL"))).toMatchObject({
+      cmd: "COL",
+      payload: { channel: "ADH-sim0001", oplist: ["Amber Vale"] },
+    });
+    // New rooms start unlisted…
+    amber.send({ cmd: "ORS" });
+    const ors = parseServerCommand(await amber.waitFor("ORS"));
+    if (ors.cmd === "ORS" && "payload" in ors) {
+      expect(ors.payload.channels.map((c) => c.name)).not.toContain(
+        "ADH-sim0001",
+      );
+    }
+    // …and closed: an uninvited character is refused with ERR 44.
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 44 },
+    });
+  });
+
+  it("CIU delivers the invite and admits the invitee", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    amber.send({ cmd: "CCR", payload: { channel: "Ember Attic" } });
+    await amber.waitFor("CDS");
+
+    // A non-op cannot invite; official channels cannot be invited to.
+    birch.send({
+      cmd: "CIU",
+      payload: { channel: "ADH-sim0001", character: "Amber Vale" },
+    });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 19 },
+    });
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: "Frontpage", character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 47 },
+    });
+
+    // The owner's invite reaches the target as CIU and admits them.
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: "ADH-sim0001", character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await birch.waitFor("CIU"))).toEqual({
+      cmd: "CIU",
+      payload: {
+        sender: "Amber Vale",
+        title: "Ember Attic",
+        name: "ADH-sim0001",
+      },
+    });
+    expect(parseServerCommand(await amber.waitFor("SYS"))).toMatchObject({
+      payload: {
+        message: "Your invitation to Ember Attic has been sent to Birch Rowan.",
+      },
+    });
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    expect(parseServerCommand(await birch.waitFor("JCH"))).toMatchObject({
+      payload: { channel: "ADH-sim0001", title: "Ember Attic" },
+    });
+  });
+
+  it("RST public lists the room and opens it to everyone", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Ember Attic" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RST",
+      payload: { channel: "ADH-sim0001", status: "public" },
+    });
+    expect(parseServerCommand(await amber.waitFor("SYS"))).toMatchObject({
+      payload: { message: "Ember Attic is now open." },
+    });
+    amber.send({ cmd: "ORS" });
+    const ors = parseServerCommand(await amber.waitFor("ORS"));
+    if (ors.cmd === "ORS" && "payload" in ors) {
+      expect(ors.payload.channels.map((c) => c.name)).toContain("ADH-sim0001");
+    }
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    expect(parseServerCommand(await birch.waitFor("JCH"))).toMatchObject({
+      payload: { channel: "ADH-sim0001" },
+    });
+  });
+});

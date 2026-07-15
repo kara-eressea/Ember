@@ -293,6 +293,10 @@
   outline: none;
 }
 
+.footerLabelSpaced {
+  margin-top: 12px;
+}
+
 .footerNote,
 .footerError {
   margin: 7px 0 0;

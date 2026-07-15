@@ -276,6 +276,43 @@
   color: var(--eb-text);
 }
 
+/* Actionable channel-invite row (inbound CIU). */
+.inviteRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px 5px 16px;
+  font-size: 12px;
+  color: var(--eb-dim);
+  background: var(--eb-accent-soft);
+}
+
+.inviteText {
+  flex: 1;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+.inviteText strong {
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.inviteDismiss {
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.inviteDismiss:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
 .navItem {
   display: flex;
   align-items: center;

@@ -555,6 +555,58 @@ export class GatewayConnection {
         }
         return;
       }
+      case "channel.create": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            // The ack confirms the CCR went out; the JCH echo into the new
+            // ADH- room flows through the ordinary join/persist fan-out and
+            // carries the minted key.
+            await session.createRoom(cmd.d.title);
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : "room create failed",
+            });
+          }
+        }
+        return;
+      }
+      case "channel.invite": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            await session.inviteToChannel(cmd.d.key, cmd.d.character);
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error: error instanceof Error ? error.message : "invite failed",
+            });
+          }
+        }
+        return;
+      }
+      case "channel.status": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          try {
+            await session.setRoomStatus(cmd.d.key, cmd.d.status);
+            this.#ack(id, { ok: true });
+          } catch (error) {
+            this.#ack(id, {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "room status change failed",
+            });
+          }
+        }
+        return;
+      }
       case "pm.open": {
         try {
           const row = await this.#ctx.history.ensurePmConversation(

@@ -421,6 +421,50 @@
   background: var(--eb-hover);
 }
 
+/* Room-settings popover (RoomChip, private rooms, op+ viewers). */
+
+.roomChipWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.roomMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 250px;
+  padding: 10px;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 2px);
+  box-shadow: 0 14px 40px -12px rgb(0 0 0 / 55%);
+}
+
+.roomMenuForm {
+  display: flex;
+  gap: 6px;
+}
+
+.roomMenuForm input {
+  flex: 1;
+  min-width: 0;
+}
+
+.roomMenuActions {
+  display: flex;
+  gap: 6px;
+}
+
+.roomMenuInfo {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--eb-dim);
+}
+
 /* ── MemberContextMenu (§10) ── */
 
 .memberMenuOverlay {
