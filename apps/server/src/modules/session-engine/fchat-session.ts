@@ -273,6 +273,28 @@ export class FchatSession {
     });
   }
 
+  /**
+   * Asks the server for both public channel listings (CHA + ORS). Resolves
+   * when the frames passed the flood gate onto the wire; the responses
+   * arrive as ordinary CHA/ORS commands on the event bus (the directory
+   * cache subscribes there).
+   */
+  async requestChannelLists(): Promise<void> {
+    this.#assertOnline();
+    await Promise.all([
+      this.#rateGate.schedule("CHA", () => {
+        if (!this.#send({ cmd: "CHA" })) {
+          throw new SessionNotOnlineError(this.#status);
+        }
+      }),
+      this.#rateGate.schedule("ORS", () => {
+        if (!this.#send({ cmd: "ORS" })) {
+          throw new SessionNotOnlineError(this.#status);
+        }
+      }),
+    ]);
+  }
+
   /** What the character's status should read as right now. */
   get ownStatus(): { status: ClientSettableStatus; statusmsg: string } {
     return this.#desiredStatus ?? { status: "online", statusmsg: "" };

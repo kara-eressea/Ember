@@ -43,6 +43,13 @@
       "when": 1784036327536,
       "tag": "0005_m5-highlight-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784084994905,
+      "tag": "0006_m6-channel-directory",
+      "breakpoints": true
     }
   ]
 }

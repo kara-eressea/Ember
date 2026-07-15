@@ -2,8 +2,8 @@
 // to snake_case via drizzle's `casing` option — keep it set in both
 // drizzle.config.ts and createDb().
 //
-// M6+ tables (channel_directory, email_tokens) arrive with their milestones;
-// outbox_messages exists from day one per the architecture.
+// M7+ tables (email_tokens) arrive with their milestones; outbox_messages
+// exists from day one per the architecture.
 
 import { sql } from "drizzle-orm";
 import {
@@ -218,6 +218,26 @@ export const highlightRules = pgTable(
     ),
   ],
 );
+
+export const channelDirectoryKind = pgEnum("channel_directory_kind", [
+  "official",
+  "open",
+]);
+
+// Server-wide cache of the public channel listings (M6). One F-Chat server,
+// one directory — rows are shared across every user and replaced wholesale
+// per kind on each CHA/ORS response. Counts are point-in-time; refreshed_at
+// lets the client display staleness honestly. Hidden/invite-only rooms never
+// appear in listings, so they never appear here either.
+export const channelDirectory = pgTable("channel_directory", {
+  /** F-Chat channel name (official) or ADH- id (open room). */
+  channelKey: text().primaryKey(),
+  kind: channelDirectoryKind().notNull(),
+  /** Display title; for official channels this equals the key. */
+  title: text().notNull(),
+  lastSeenCount: integer().notNull().default(0),
+  refreshedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 
 export const ignores = pgTable(
   "ignores",
