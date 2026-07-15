@@ -43,6 +43,34 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await expect(members.getByText("Old Greywhisker")).toBeVisible();
   await expect(members.getByText("Cindral")).toBeVisible();
 
+  // ── Member context menu (M6): right-click → §10 menu ──────────────────
+  await members.getByText("Nyx Firemane").click({ button: "right" });
+  const memberMenu = page.getByRole("menu", { name: "Nyx Firemane menu" });
+  await expect(memberMenu).toBeVisible();
+  // Frontpage is unowned ("" owner slot) — Nyx is a channel op.
+  await expect(memberMenu.getByText("channel op @")).toBeVisible();
+  await expect(
+    memberMenu.getByRole("menuitem", { name: /View profile/ }),
+  ).toHaveAttribute("href", "https://www.f-list.net/c/Nyx%20Firemane");
+  await expect(
+    memberMenu.getByRole("menuitem", { name: "Ignore" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(memberMenu).not.toBeVisible();
+
+  // Message opens (and routes to) the DM thread; back for the rest.
+  await members.getByText("Nyx Firemane").click({ button: "right" });
+  await memberMenu.getByRole("menuitem", { name: "Message" }).click();
+  await expect(page).toHaveURL(/\/dm\/Nyx%20Firemane$/);
+  await expect(
+    page.getByRole("heading", { name: "Nyx Firemane" }),
+  ).toBeVisible();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: /Frontpage/ })
+    .click();
+  await expect(page.getByRole("heading", { name: "Frontpage" })).toBeVisible();
+
   // ── Send a channel message (persisted, echoed back via the gateway) ───
   const log = page.getByTestId("message-log");
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
