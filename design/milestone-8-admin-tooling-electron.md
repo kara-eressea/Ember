@@ -1,8 +1,10 @@
-# Milestone 8 — Service Admin Tooling + Electron
+# Milestone 8 — Admin Tooling + Desktop Client
+
+> **Rescope pending (2026-07-16 tenancy pivot, decisions.md §2):** written for the managed-service model. The admin/moderation surface below shrinks to what a single-operator instance needs (much of it becomes the M7 admin CLI), and the "fully local bundle" variant at the bottom graduated from aside to **the chosen direction** — a standalone desktop app (Tauri/Electron) with the session engine extracted into a shared library. M7's standalone-split design pass (`design/standalone-client.md`) will rewrite this milestone; until then treat this file as historical.
 
 **Goal:** EmberChat-side administration (our service, not F-Chat moderation — that's M6) and the desktop wrapper.
 
-**Depends on:** Milestone 7 (admin tooling assumes the hardened public service); Electron only needs Milestone 1's client.
+**Depends on:** Milestone 7 (including its standalone design pass); Electron only needs Milestone 1's client.
 
 ## Scope
 

@@ -32,7 +32,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 ## Key decisions (do not relitigate without the user)
 
 - **TypeScript monorepo** (pnpm workspaces + Turborepo): `apps/server` (Fastify + ws), `apps/web` (Vite + React + Zustand), `packages/fchat-protocol`, `packages/protocol`, `packages/markdown-bbcode`, `packages/fchat-sim`.
-- **Public hosted service** — registration hardening (email verification, rate limits, abuse controls) is v1.0 scope (Milestone 7).
+- **Self-hostable software, admin-only instances (revised 2026-07-16)** — not a managed service: F-List's IP/household-based abuse management is incompatible with a multi-tenant bouncer. Registration disabled (admin CLI bootstrap); no email flows in v1.0. Exposure hardening + self-host docs are v1.0 scope (Milestone 7); an eventual standalone desktop client (Tauri/Electron, shared session library) is designed in M7 and built post-v1.0 (see `design/decisions.md` §2).
 - **F-List credentials are session-only, in memory ("bouncer-lite")** — never persisted. The in-memory vault lets sessions re-ticket and auto-reconnect while the server process lives; a server restart logs everyone out of F-Chat until passwords are re-entered. At-rest storage is a possible future opt-in (see `design/decisions.md` §3).
 - **Postgres + Drizzle ORM**, Docker deployment on a VPS (docker-compose).
 - **Public open-source repo (MIT)** — strict secrets hygiene: env files gitignored, `.env.example` only, no real credentials in fixtures.
