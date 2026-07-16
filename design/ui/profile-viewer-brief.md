@@ -86,8 +86,16 @@ consider ~900×640). Two zones:
      (the "we both fave this" glance) — design the tint against tokens,
      with a colorblind-safe secondary signal.
   4. **Compare** — see #3.
-  5. **Images** — thumbnail grid → lightbox/enlarged view.
-  6. **Guestbook** — comment list (author avatar/name/date/BBCode body).
+  5. **Insights** — dense label/value rows of *your own* relationship
+     stats with this character, computed from the client's stored history
+     (nothing fetched from F-List): messages exchanged, last chatted,
+     first encountered, last seen talking, currently online + shared
+     channels, times you've viewed this profile. Same visual language as
+     the Details tab (label/value rows), but it's "about you and them"
+     rather than "about them" — a subtle framing cue is welcome. Empty
+     state needed: "You haven't crossed paths yet."
+  6. **Images** — thumbnail grid → lightbox/enlarged view.
+  7. **Guestbook** — comment list (author avatar/name/date/BBCode body).
      May ship as a link-out if the API disappoints; design it anyway.
 - States: loading, stale/budget-exhausted banner, profile-not-found, tab
   empty states (no images, no guestbook posts).
