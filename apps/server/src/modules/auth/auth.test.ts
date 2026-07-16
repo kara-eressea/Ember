@@ -348,6 +348,30 @@ describe("session hygiene", () => {
   });
 });
 
+describe("version & meta surface", () => {
+  it("healthz carries the version; /api/meta requires auth and reports status", async () => {
+    const health = await app.inject({ method: "GET", url: "/healthz" });
+    expect(health.json()).toEqual({ status: "ok", version: "0.0.0" });
+
+    const anonymous = await app.inject({ method: "GET", url: "/api/meta" });
+    expect(anonymous.statusCode).toBe(401);
+
+    const { accessToken } = await registerUser();
+    const meta = await app.inject({
+      method: "GET",
+      url: "/api/meta",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(meta.statusCode).toBe(200);
+    // No check has run (tests never phone home) — no update announced.
+    expect(meta.json()).toEqual({
+      version: "0.0.0",
+      updateAvailable: false,
+      releasesUrl: "https://github.com/kara-eressea/Ember/releases",
+    });
+  });
+});
+
 describe("security headers", () => {
   it("sends helmet headers; CSP only in SPA-serving mode", async () => {
     // API-only mode (the shared app): headers yes, CSP no.

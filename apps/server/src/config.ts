@@ -48,6 +48,17 @@ const configSchema = z.object({
   WEB_DIST: z.string().optional(),
   CLIENT_NAME: z.string().default("EmberChat"),
   CLIENT_VERSION: z.string().default("0.0.0"),
+  /**
+   * Daily update check against the GitHub Releases API — a quiet "update
+   * available" hint in the UI. The check reveals the instance's existence
+   * to GitHub, nothing more; set false to disable the phone-home entirely.
+   */
+  UPDATE_CHECK_ENABLED: z.stringbool().default(true),
+  /** GitHub repo the update check reads releases from. */
+  UPDATE_CHECK_REPO: z
+    .string()
+    .regex(/^[\w.-]+\/[\w.-]+$/)
+    .default("kara-eressea/Ember"),
   /** Comma-separated browser origins allowed by CORS. */
   CORS_ORIGIN: z.string().optional(),
   /** Requests per minute per IP on the auth endpoints. */
