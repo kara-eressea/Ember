@@ -45,6 +45,12 @@ interface MessagesState {
 
   appendLive(convId: string, message: MessageDto): void;
   appendMany(convId: string, messages: MessageDto[]): void;
+  /**
+   * Replace a conversation's buffer with a fresh window (catchup gap): the
+   * old prefix is non-contiguous with the replay and would be an unreachable
+   * hole, so drop it and mark older history as REST-backfillable.
+   */
+  resetTo(convId: string, messages: MessageDto[]): void;
   appendPresence(
     convId: string,
     kind: PresenceLine["kind"],
@@ -113,6 +119,17 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
 
     appendMany(convId, messages) {
       put(convId, messages);
+    },
+
+    resetTo(convId, messages) {
+      patch(convId, (buffer) => ({
+        ...buffer,
+        messages: messages.slice(-BUFFER_WINDOW),
+        // Older history is on the server but not in this window — let
+        // scroll-up backfill fetch it contiguously via REST.
+        hasMoreBefore: true,
+        backfilled: false,
+      }));
     },
 
     appendPresence(convId, kind, character) {

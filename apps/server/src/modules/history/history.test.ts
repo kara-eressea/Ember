@@ -805,7 +805,8 @@ describe("history pagination", () => {
       .from(messages)
       .where(eq(messages.conversationId, conversationId));
     const maxId = row!.maxId;
-    // A cursor far beyond the budget is floored; a near cursor is honored.
+    // A cursor far beyond the budget is floored AND flagged as a gap (the
+    // client must reset, not merge into the unreachable interior hole).
     const plan = await catchupPlan(
       db,
       identityId,
@@ -813,15 +814,22 @@ describe("history pagination", () => {
       50,
     );
     expect(plan).toEqual([
-      { convId: conversationId, afterId: maxId - CATCHUP_REPLAY_BUDGET },
+      {
+        convId: conversationId,
+        afterId: maxId - CATCHUP_REPLAY_BUDGET,
+        gap: true,
+      },
     ]);
+    // A near cursor is honored verbatim and carries no gap.
     const near = await catchupPlan(
       db,
       identityId,
       { [conversationId]: maxId - 1 },
       50,
     );
-    expect(near).toEqual([{ convId: conversationId, afterId: maxId - 1 }]);
+    expect(near).toEqual([
+      { convId: conversationId, afterId: maxId - 1, gap: false },
+    ]);
   });
 
   it("exports the whole log as txt, html and json (M5 Away & logs)", async () => {

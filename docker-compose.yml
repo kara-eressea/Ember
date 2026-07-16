@@ -48,6 +48,7 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}
       RETENTION_POLICY: ${RETENTION_POLICY:-forever}
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-kara-eressea/Ember}
       CONFIRM_BREAKING_UPGRADE: ${CONFIRM_BREAKING_UPGRADE:-false}
     depends_on:
       postgres:
@@ -82,10 +83,20 @@ services:
       - |
         while true; do
           ts=$$(date -u +%Y%m%d-%H%M%S)
-          pg_dump -h postgres -U emberchat -d emberchat -Fc -f "/backups/emberchat-$$ts.dump" \
-            && echo "backup written: emberchat-$$ts.dump" \
-            || echo "BACKUP FAILED at $$ts" >&2
-          find /backups -name 'emberchat-*.dump' -mtime "+$$BACKUP_KEEP_DAYS" -delete
+          # Dump to a .tmp name and only rename on success, so a failed dump
+          # never leaves a truncated file that looks like a valid backup —
+          # and pruning is gated on the dump succeeding, so a persistently
+          # failing dump (rotated password, renamed host) can never delete
+          # the last good backup.
+          if pg_dump -h postgres -U emberchat -d emberchat -Fc \
+               -f "/backups/emberchat-$$ts.dump.tmp"; then
+            mv "/backups/emberchat-$$ts.dump.tmp" "/backups/emberchat-$$ts.dump"
+            echo "backup written: emberchat-$$ts.dump"
+            find /backups -name 'emberchat-*.dump' -mtime "+$$BACKUP_KEEP_DAYS" -delete
+          else
+            rm -f "/backups/emberchat-$$ts.dump.tmp"
+            echo "BACKUP FAILED at $$ts — keeping existing backups" >&2
+          fi
           sleep "$$BACKUP_INTERVAL_SECONDS"
         done
     depends_on:
@@ -102,4 +113,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  # Pinned name so the volume is `emberchat_pgdata` regardless of the
+  # directory the stack is launched from — the restore drill in
+  # docs/self-hosting.md refers to it by this exact name.
   pgdata:
+    name: emberchat_pgdata

@@ -258,19 +258,22 @@ export async function buildApp({
     outbox,
     highlights,
     // Browsers may open the gateway from the app's own origin or any
-    // configured CORS origin; anything else is a hostile page.
+    // configured CORS origin; anything else is a hostile page. The two
+    // loopback spellings are treated as one so a local `docker compose up`
+    // works whether the operator opens 127.0.0.1 or localhost (they resolve
+    // to the same socket and neither is a meaningful trust boundary).
     allowedOrigins: [
-      new URL(config.APP_BASE_URL).origin,
+      ...loopbackAliases(new URL(config.APP_BASE_URL).origin),
       ...(config.CORS_ORIGIN?.split(",").map((origin) => origin.trim()) ?? []),
     ],
   });
 
-  app.get("/healthz", () => ({
-    status: "ok",
-    version: config.CLIENT_VERSION,
-  }));
+  // Liveness probe — unauthenticated on purpose, so it must not disclose
+  // anything a scanner could fingerprint (the version lives on the
+  // authenticated /api/meta instead).
+  app.get("/healthz", () => ({ status: "ok" }));
   // Version/update surface for the UI (M7). Authenticated: the running
-  // version is nobody else's business, unlike the liveness probe above.
+  // version is nobody else's business.
   app.get("/api/meta", { preHandler: app.authenticate }, () => updates.status);
 
   if (config.WEB_DIST !== undefined) {
@@ -281,4 +284,22 @@ export async function buildApp({
   }
 
   return app;
+}
+
+/**
+ * Both loopback spellings of an origin (127.0.0.1 ⇄ localhost), or just the
+ * origin itself for any non-loopback host. Lets the gateway origin check
+ * accept a local browser regardless of which loopback name the operator
+ * typed; a real deployment sets APP_BASE_URL to its public origin and this
+ * is a no-op.
+ */
+function loopbackAliases(origin: string): string[] {
+  const url = new URL(origin);
+  if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
+    const other = url.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+    const alias = new URL(origin);
+    alias.hostname = other;
+    return [url.origin, alias.origin];
+  }
+  return [url.origin];
 }
