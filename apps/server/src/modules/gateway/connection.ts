@@ -484,9 +484,13 @@ export class GatewayConnection {
       cursors,
       CATCHUP_BATCH_SIZE,
     );
-    for (const { convId, afterId: planStart } of plan) {
+    for (const { convId, afterId: planStart, gap } of plan) {
       let afterId = planStart;
       sub.delivered.set(convId, afterId);
+      // The gap flag (budget clamped the cursor) rides only the FIRST frame
+      // of this conversation: it tells the client to reset the buffer once,
+      // then the remaining batches append onto the reset window.
+      let firstFrame = true;
       for (;;) {
         if (this.#subscriptions.get(identityId) !== sub) {
           return; // unsubscribed (or resynced) mid-catchup
@@ -505,8 +509,10 @@ export class GatewayConnection {
             convId,
             messages: rows.map(messageDto),
             done,
+            ...(gap && firstFrame ? { gap: true } : {}),
           },
         });
+        firstFrame = false;
         const last = rows.at(-1);
         if (last) {
           afterId = last.id;

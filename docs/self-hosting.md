@@ -42,10 +42,19 @@ docker compose exec -T server node apps/server/dist/cli/admin.js \
   create-user --email you@example.com --username you --password-stdin <<< 'your app password'
 ```
 
-Open `http://127.0.0.1:3000`, log in, add your F-List account, connect a
-character. The email is only your login name — the server sends no email,
-ever. Forgot the password? `reset-password --email you@example.com
---password-stdin`, same shape.
+Open `http://localhost:3000`, log in, add your F-List account, connect a
+character. (Use `localhost`, not `127.0.0.1` — the gateway's WebSocket
+origin check is keyed to `APP_BASE_URL`, whose default is `localhost:3000`;
+both loopback spellings are accepted, but a mismatched host closes the
+gateway with code 4403. On a remote VPS you'll reach it through the reverse
+proxy below, not loopback at all.) The email is only your login name — the
+server sends no email, ever. Forgot the password? `reset-password --email
+you@example.com --password-stdin`, same shape.
+
+> The `<<<` herestring above writes the password into your shell history.
+> For a one-off it's usually fine on a machine only you use; to avoid it,
+> pipe from a file you delete after (`--password-stdin < pw.txt`) or drop
+> the flag to be prompted interactively.
 
 By default the server binds loopback only (`BIND_ADDRESS=127.0.0.1`), so
 nothing is internet-reachable until you put a reverse proxy in front.
@@ -102,7 +111,8 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 |---|---|---|
 | `POSTGRES_PASSWORD` | — (required) | Password for the bundled Postgres |
 | `AUTH_SECRET` | — (required) | Access-token signing secret, ≥ 32 chars |
-| `IMAGE_TAG` | `latest` | ghcr tag to run: `vX.Y.Z` \| `vX.Y` \| `latest` \| `edge` |
+| `IMAGE_TAG` | `latest` | ghcr tag to run: `vX.Y.Z` \| `vX.Y` \| `vX` \| `latest` \| `edge` |
+| `UPDATE_CHECK_REPO` | `kara-eressea/Ember` | GitHub repo the update check reads releases from |
 | `BIND_ADDRESS` / `PORT` | `127.0.0.1` / `3000` | Host listen address |
 | `TRUST_PROXY` | unset | **Required behind a proxy** — hop count or CIDRs |
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
@@ -143,10 +153,14 @@ you re-enter your F-List password — credentials live only in memory
 
 ## Backups & the restore drill
 
-The bundled `backup` service writes a nightly `pg_dump` custom-format dump
-to `BACKUP_DIR` and prunes dumps older than `BACKUP_KEEP_DAYS`. Copy that
-directory somewhere off-host (object storage, another machine) — a backup
-on the same disk as the database only protects against your own mistakes.
+The bundled `backup` service writes a `pg_dump` custom-format dump to
+`BACKUP_DIR` every `BACKUP_INTERVAL_SECONDS` (default daily, counted from
+container start — not cron-aligned) and prunes dumps older than
+`BACKUP_KEEP_DAYS`. A failed dump never deletes existing backups and never
+leaves a truncated file (it writes to a `.tmp` name and renames on
+success). Copy that directory somewhere off-host (object storage, another
+machine) — a backup on the same disk as the database only protects against
+your own mistakes.
 
 Do this drill **once now**, not during a disaster:
 

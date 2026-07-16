@@ -567,6 +567,13 @@ export type ServerFrame =
         convId: string;
         messages: MessageDto[];
         done: boolean;
+        /**
+         * Set on the first frame when the replay budget clamped the resume
+         * cursor: the client must reset this conversation's buffer to the
+         * replayed window instead of merging (its prefix below the replay
+         * start is no longer reachable and would be a silent hole).
+         */
+        gap?: boolean;
       };
     }
   | {

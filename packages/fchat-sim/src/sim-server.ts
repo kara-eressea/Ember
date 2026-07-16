@@ -1005,8 +1005,6 @@ export class FchatSim {
     );
   }
 
-  /** RLL: the server computes the result and broadcasts it to everyone —
-   * including the roller (unlike MSG/LRP, which are never echoed). */
   /** SFC: records the report and acknowledges like the live server does. */
   #handleStaffReport(
     connection: Connection,
@@ -1024,6 +1022,8 @@ export class FchatSim {
     });
   }
 
+  /** RLL: the server computes the result and broadcasts it to everyone —
+   * including the roller (unlike MSG/LRP, which are never echoed). */
   #handleRoll(
     connection: Connection,
     character: string,

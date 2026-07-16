@@ -91,15 +91,24 @@ export function MemberContextMenu({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
+      if (event.key !== "Escape") {
+        return;
       }
+      // While drafting a report, the first Escape collapses the form back to
+      // the menu (so a reflexive tap doesn't discard the complaint); a
+      // second Escape closes the menu as usual.
+      if (reporting) {
+        setReporting(false);
+        setReportText("");
+        return;
+      }
+      onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, [onClose, reporting]);
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {
@@ -108,6 +117,11 @@ export function MemberContextMenu({
 
   function onMenuKeyDown(event: ReactKeyboardEvent) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+      return;
+    }
+    // Don't hijack arrow keys from the report textarea — the user is moving
+    // the caret through their complaint, not walking the menu.
+    if ((event.target as HTMLElement).tagName === "TEXTAREA") {
       return;
     }
     event.preventDefault();

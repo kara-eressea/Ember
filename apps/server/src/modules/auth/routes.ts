@@ -180,7 +180,7 @@ export async function authRoutes(
     },
     async (request, reply) => {
       const { email, password, deviceLabel } = request.body;
-      const lockedMs = lockout.lockedForMs(email);
+      const lockedMs = lockout.lockedForMs(email, request.ip);
       if (lockedMs > 0) {
         return reply
           .header("retry-after", String(Math.ceil(lockedMs / 1000)))
@@ -199,10 +199,10 @@ export async function authRoutes(
       if (!user || !validPassword) {
         // Unknown emails lock out too — diverging here would reveal which
         // accounts exist (same reasoning as the dummy-hash verify above).
-        lockout.recordFailure(email);
+        lockout.recordFailure(email, request.ip);
         return reply.code(401).send({ error: "Invalid email or password" });
       }
-      lockout.recordSuccess(email);
+      lockout.recordSuccess(email, request.ip);
       return reply.send(await issueSession(user, deviceLabel));
     },
   );
