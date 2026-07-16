@@ -127,10 +127,13 @@ messages on the user's behalf — same caution.
 
 1. **FKS character search — skipped for now, revisit later.** No in-app
    search for v1.0; recorded on the post-v1.0 wishlist in `milestones.md`.
+   *(Superseded 2026-07-16: scoped into **M10**,
+   `milestone-10-ads-and-search.md`.)*
 2. **In-app profile viewer — eventually, but not v1.0.** Website links
    stay for now; the viewer (character-data + mapping-list, memos riding
    along, <200 character-data requests/hour budget) joins the post-v1.0
-   wishlist.
+   wishlist. *(Superseded 2026-07-16: committed as **M8** scope —
+   `milestone-8-nice-to-haves.md`, decisions.md §11.)*
 3. **RTB note/notification bridge — surface as notifications.** Landed in
    M6 step 9: RTB parses, notes/friend requests/comment replies show as
    notices, notes + friend requests optionally raise desktop notifications

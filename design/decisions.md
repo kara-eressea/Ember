@@ -108,6 +108,83 @@ Settled with the user before M5 step 1:
 - **Detached auto-away (bouncer pattern, beyond milestone scope — added):** alongside the specced browser-idle auto-away, an opt-in server-side toggle sets the away status after N minutes with zero gateway subscribers; the first device to attach clears it. Off by default — appearing online while detached is the bouncer's point for many users; this is the honest-presence option for the rest.
 - **Highlight sound = one bundled chime** (short, unobtrusive, license-clean) with a global on/off. Per-rule/custom sounds are a possible later extension.
 
+## 11. In-app profile viewer — first-party, per-identity history (M8 kickoff, 2026-07-16)
+
+Supersedes the M6 parity-audit parking ("eventually, but not v1.0" —
+`feature-parity-audit.md` decision 2): the profile viewer is committed M8
+scope.
+
+- **First-party rendering, no iframe.** Rising/Horizon iframe the F-List
+  profile page; the user wants ours to feel native. We pull structured JSON
+  (`character-data.php` + the mapping lists) and render in our own design
+  language — which means `packages/markdown-bbcode` grows a profile-flavored
+  tag profile (collapse/heading/quote/…, graceful degradation) since profile
+  descriptions use a wider BBCode set than chat.
+- **View history is server-side, per identity** — a `profile_views` table
+  that doubles as the entry point to the cache: synced across devices,
+  consistent with per-identity message storage, browsable and prunable in
+  the viewer. (Horizon only keeps a performance cache; the user-facing
+  history is our addition.) The payload cache itself (`character_cache`) is
+  global per instance so identities never double-spend the budget.
+- **Self-imposed budget: 170 character-data-class requests/hour** (headroom
+  under F-List's 200/hr line), enforced by one counter in front of the
+  existing 1 req/s throttle; exhaustion serves stale-with-flag, never
+  upstream requests. Surfaces: full viewer, Discord-style mini profile card
+  on name click, compare view.
+- **Private character notes** (added at spec review): per-identity notes on
+  a character, stored server-side in their own table (separate from
+  history, so pruning one never loses the other); F-List memo import/sync
+  only if the memo endpoint verifies. Mini card and viewer also badge
+  friend/bookmark status from the already-loaded social lists.
+
+## 12. Third-party eicon search — xariah via proxy, off by default (2026-07-16)
+
+Amends §8's "no eicon search" for the picker: F-List still has no search
+API, but Horizon demonstrated the community answer — xariah.net's index.
+
+- Eicon picker (Favorites/Recents/Search) queries xariah **through a server
+  proxy**: the user's IP never reaches the third party, CORS is moot, one
+  LRU-cached polite egress, and the base URL is a config knob tests point
+  at fchat-sim.
+- Pref `eiconSearchEnabled` **defaults off** and is **enforced server-side**
+  — sending keystrokes to a community service is opt-in, not advisory.
+- Search returns **names only; rendering stays static.f-list.net** (§8
+  unchanged). **External eicon hosting** (arbitrary image hosts inside
+  `[eicon]`, Horizon issue #319) is rejected for now: other clients would
+  render broken tags, and the abuse/privacy surface isn't worth it.
+
+## 13. Compatibility matcher — clean-room, client-side (2026-07-16)
+
+Rising's profile match scoring, reimplemented **clean-room from documented
+behavior** (README/docs, never source — provenance note in the package):
+five tiers (match/weak/neutral/weak-mismatch/mismatch), six dimensions
+(orientation, gender, age, furry-vs-human, species, sub/dom) with
+kink-informed fallbacks, kink alignment; **missing data scores neutral,
+never mismatch**. Lives in `packages/matcher`, **runs client-side** on two
+ProfileDtos (zero server cost per comparison, instant re-score on identity
+switch, reusable unchanged by the desktop client). M8 surfaces: mini-card
+chips, profile score strip, compare view. Ads/search integration waits for
+M10 and its own budget-caution pass.
+
+## 14. Link previews — direct images + host rules, click-to-preview default (2026-07-16)
+
+Rising-style image-link previews: a floating preview beside the log.
+Client-side only: direct image/video URLs plus a small maintained per-host
+rewrite table (imgur/e621/redgifs-style page links → direct media) — no
+server proxy, no arbitrary-URL resolution.
+
+- **Pref is a mode, not a boolean**: `linkPreviewMode: off | hover |
+  click`, **default `click`** (chosen at spec review over hover) — nothing
+  loads until a deliberate click, which also suits touch devices; hover
+  mode (Rising muscle memory, ~250 ms delay) is one pref away.
+- In click mode, a plain click on a *previewable* link opens the preview
+  instead of navigating; **Ctrl/Cmd+click and middle-click follow the
+  link**. Only resolver-recognized media links are hijacked — ordinary web
+  links keep normal navigation in every mode.
+- Enabled by default (unlike §12's search, no typed text goes anywhere —
+  only a standard image fetch on explicit action); the pref note discloses
+  that the image host sees your IP when a preview loads.
+
 ## Other settled points
 
 - The server is a **bouncer**: it owns one F-Chat WebSocket per connected identity; browsers attach via our own gateway protocol and receive synchronized events. This is what makes "stay online when the app is closed", catch-up, and multi-device login possible.

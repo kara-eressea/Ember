@@ -155,4 +155,8 @@ pivot and this design:
   above (phases 1–4), scheduled post-v1.0 as its own effort.
 - What remains for an M8-shaped milestone is **client polish** (the
   parity-audit backlog: in-log search, BBCode toolbar, slash help) — to be
-  planned when v1.0 ships.
+  planned when v1.0 ships. *(Update 2026-07-16: M8 was subsequently specced
+  as the profile-viewer/compatibility/eicon-search round —
+  `milestone-8-nice-to-haves.md`; the polish pool moved to M9 and ad
+  tooling/character search to M10. This section's phasing conclusion —
+  desktop as MX, after those rounds — stands.)*
