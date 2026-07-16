@@ -35,7 +35,10 @@ RUN pnpm install --prod --frozen-lockfile --filter @emberchat/server...
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:24-slim AS runtime
-ENV NODE_ENV=production
+# Baked by the release workflow from the git tag; also the IDN cversion.
+ARG CLIENT_VERSION=0.0.0
+ENV NODE_ENV=production \
+    CLIENT_VERSION=$CLIENT_VERSION
 WORKDIR /app
 # The pnpm layout (symlinks into node_modules/.pnpm) must be copied whole.
 COPY --from=proddeps /repo/node_modules ./node_modules
