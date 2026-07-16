@@ -9,9 +9,10 @@ tooling and character search moved to **M10**
 (`milestone-10-ads-and-search.md`); the desktop client remains **MX**.*
 
 **Goal:** the features that make EmberChat pleasant to *live in* — an
-in-app character profile viewer with per-identity view history and private
-notes, Discord-style mini profile cards, Rising-style compatibility scoring,
-link previews, and an eicon picker with opt-in third-party search.
+in-app character profile viewer with per-identity view history, private
+notes, and relationship insights from our own stored history, Discord-style
+mini profile cards, Rising-style compatibility scoring, link previews, and
+an eicon picker with opt-in third-party search.
 
 **Depends on:** M7.
 
@@ -52,6 +53,18 @@ Routes:
 - `DELETE .../profile-history/:name` — prune one history entry.
 - `GET .../profile/:name/guestbook?page=` and `.../images` — thin
   passthroughs, **gated on the step-1 endpoint verification**.
+- `GET .../profile/:name/insights` — relationship stats derived from data
+  the bouncer already holds (added 2026-07-16, after the initial spec):
+  SQL aggregates over the per-identity `messages` table (DMs exchanged
+  sent/received, last chatted, first encountered, last message observed
+  from them in any shared channel or DM) plus live session state
+  (currently online + status, channels currently shared) and the
+  `profile_views` row (times viewed, first viewed). **No new tables, no
+  F-List traffic, zero budget cost.** Deliberately *not* presence
+  history: true last-seen-online would mean persisting the global NLN/FLN
+  firehose — heavy writes and surveillance of characters the user never
+  interacted with. "Last seen talking" + live online state is what we can
+  compute honestly; presence tracking stays out (future opt-in at most).
 
 Four new tables (`apps/server/src/db/schema.ts`):
 
@@ -168,7 +181,14 @@ it returns.
   4. **Compare** — side-by-side vs. the active identity: per-dimension
      score table with reasons, two-column kink alignment sorted
      worst-conflicts-first. Pure `@emberchat/matcher` output.
-  5. **Images** / **Guestbook** — gated on step-1 verification. Fallbacks
+  5. **Insights** — dense label/value rows of the viewing identity's own
+     relationship stats with this character, from the insights route:
+     messages exchanged, last chatted, first encountered, last seen
+     talking, currently-online + shared channels, times viewed. Empty
+     state: "You haven't crossed paths yet." Per-identity by
+     construction — it's a read over the user's own stored history, the
+     same privacy model as notes.
+  6. **Images** / **Guestbook** — gated on step-1 verification. Fallbacks
      if verification fails: Images renders the `images`/`inlines` arrays
      already inside character-data; Guestbook ships as a link-out.
 - **Entry points**: MemberContextMenu "View profile" opens the viewer (keep
@@ -243,7 +263,8 @@ log (see the CD brief). Client-only track:
   hit / miss / TTL-expired / force-refresh; history upsert, bump, list,
   delete; note put/get round-trip + survives history prune; budget
   exhaustion → stale-with-flag and 429-no-cache; locked-vault 409; ticket
-  retry.
+  retry; insights aggregates over seeded messages (counts, last-chatted,
+  never-crossed-paths empty shape) scoped to the requesting identity.
 - Matcher unit tests: golden profile pairs per dimension, missing-data →
   NEUTRAL, hard-mismatch domination, kink alignment weighting.
 - Web unit: profile lib cache/dedup; picker recents behavior; link-preview

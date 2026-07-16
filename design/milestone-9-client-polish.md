@@ -33,6 +33,15 @@ candidate pool, to be scoped when M9 becomes active.
   + shape/glyph reinforcement), sibling of the light-theme token work; the
   M8 match chips are already specced glyph-coded, this extends the idea
   app-wide.
+- **Activity heatmap on Insights** (user idea 2026-07-16, explicitly "a
+  much later thing") — on the profile viewer's Insights tab (M8), a
+  "when is this character usually active" heatmap: hour-of-day and
+  day-of-week grids aggregated from the message timestamps the bouncer
+  has observed for them. Great for scheduling RP. Honest-data caveat
+  (same stance as M8's insights/decisions.md §11): it reflects only
+  activity we've *seen* — shared channels and DMs — not global presence;
+  no NLN/FLN presence-history tracking. Rides entirely on the M8
+  insights route; zero F-List traffic.
 - **Graduated audit LOWs** — promote deserving items from the M2–M8 audit
   backlogs in `milestones.md` § Standing to-dos.
 

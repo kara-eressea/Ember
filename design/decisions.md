@@ -136,6 +136,14 @@ scope.
   history, so pruning one never loses the other); F-List memo import/sync
   only if the memo endpoint verifies. Mini card and viewer also badge
   friend/bookmark status from the already-loaded social lists.
+- **Relationship insights** (added post-spec, same day): an Insights tab of
+  the viewing identity's own stats with a character (messages exchanged,
+  last chatted, first encountered, last seen talking, shared channels,
+  times viewed), computed from the message store + live session state —
+  no new tables, zero budget cost. Explicitly **no presence-history
+  tracking**: recording the global NLN/FLN firehose would be heavy writes
+  and surveillance of characters the user never interacted with; "last
+  seen" means last *observed* activity, plus live online state.
 
 ## 12. Third-party eicon search — xariah via proxy, off by default (2026-07-16)
 
