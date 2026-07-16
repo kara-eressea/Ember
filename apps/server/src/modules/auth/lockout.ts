@@ -53,10 +53,7 @@ export class LoginLockout {
     entry.lastFailureAt = now;
     if (entry.failures >= LOCKOUT_THRESHOLD) {
       const doublings = entry.failures - LOCKOUT_THRESHOLD;
-      const window = Math.min(
-        LOCKOUT_BASE_MS * 2 ** doublings,
-        LOCKOUT_MAX_MS,
-      );
+      const window = Math.min(LOCKOUT_BASE_MS * 2 ** doublings, LOCKOUT_MAX_MS);
       entry.lockedUntil = now + window;
       return window;
     }
