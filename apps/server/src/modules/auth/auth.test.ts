@@ -566,9 +566,15 @@ describe("rate limiting", () => {
           payload: { email: "nobody@example.test", password: "wrong password" },
         });
       for (let i = 0; i < 3; i += 1) {
-        expect((await attempt()).statusCode).toBe(401);
+        const allowed = await attempt();
+        expect(allowed.statusCode).toBe(401);
+        // Clients can pace themselves from the standard headers.
+        expect(Number(allowed.headers["x-ratelimit-limit"])).toBe(3);
+        expect(allowed.headers["x-ratelimit-remaining"]).toBeDefined();
       }
-      expect((await attempt()).statusCode).toBe(429);
+      const limited429 = await attempt();
+      expect(limited429.statusCode).toBe(429);
+      expect(Number(limited429.headers["retry-after"])).toBeGreaterThan(0);
     } finally {
       await limited.close();
     }
