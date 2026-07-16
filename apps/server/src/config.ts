@@ -59,6 +59,12 @@ const configSchema = z.object({
     .string()
     .regex(/^[\w.-]+\/[\w.-]+$/)
     .default("kara-eressea/Ember"),
+  /**
+   * One-boot acknowledgment for migrations flagged in drizzle/breaking.json
+   * — the upgrade gate refuses them otherwise. Back up first; remove the
+   * flag after the upgrade.
+   */
+  CONFIRM_BREAKING_UPGRADE: z.stringbool().default(false),
   /** Comma-separated browser origins allowed by CORS. */
   CORS_ORIGIN: z.string().optional(),
   /** Requests per minute per IP on the auth endpoints. */

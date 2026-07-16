@@ -1,0 +1,4 @@
+{
+  "comment": "Migration tags listed here are BREAKING: the boot-time upgrade gate (src/db/upgrade-gate.ts) refuses to apply them without CONFIRM_BREAKING_UPGRADE=true. Flag any destructive or incompatible migration when you generate it, and make its release a major version bump.",
+  "breaking": []
+}
