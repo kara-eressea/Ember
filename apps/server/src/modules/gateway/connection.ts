@@ -725,6 +725,24 @@ export class GatewayConnection {
         }
         return;
       }
+      // Alert Staff (M7): same non-stalling ack shape as channel.roll.
+      case "user.report": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          session.reportToStaff(cmd.d.character, cmd.d.report).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error: error instanceof Error ? error.message : "report failed",
+              });
+            },
+          );
+        }
+        return;
+      }
       // Channel moderation (M6): one shared shape — put the frame on the
       // wire behind the ROOM gate, ack the send. Refusals (not an op, ERR
       // 21/41/42…) come back as ERR frames and fan out as error events.

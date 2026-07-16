@@ -21,6 +21,8 @@ export type RateGateClass =
   | "STA"
   | "IGN"
   | "TPN"
+  /** Alert Staff reports — rare, user-clicked; msg_flood discipline. */
+  | "SFC"
   | "CHA"
   | "ORS"
   /** Room management (CCR/CIU/RST) shares one timeline — rare, user-clicked. */

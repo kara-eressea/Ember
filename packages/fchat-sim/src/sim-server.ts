@@ -168,6 +168,12 @@ export class FchatSim {
   readonly #online = new Map<string, CharacterState>();
   /** Misbehavior toggle: stop sending server PINs. */
   dropPings = false;
+  /** Alert Staff reports received (SFC) — inspectable by tests. */
+  readonly staffReports: {
+    reporter: string;
+    character: string;
+    report: string;
+  }[] = [];
   /** Misbehavior control: channels whose JCH fails with the mapped ERR. */
   readonly #joinRejections = new Map<string, number>();
   /** Counter behind CCR's minted ADH- ids. */
@@ -656,6 +662,9 @@ export class FchatSim {
       case "RLL":
         this.#handleRoll(connection, character, command.payload);
         return;
+      case "SFC":
+        this.#handleStaffReport(connection, character, command.payload);
+        return;
       case "RMO":
         this.#handleRoomMode(connection, character, command.payload);
         return;
@@ -998,6 +1007,23 @@ export class FchatSim {
 
   /** RLL: the server computes the result and broadcasts it to everyone —
    * including the roller (unlike MSG/LRP, which are never echoed). */
+  /** SFC: records the report and acknowledges like the live server does. */
+  #handleStaffReport(
+    connection: Connection,
+    character: string,
+    payload: { action: "report"; report: string; character: string },
+  ): void {
+    this.staffReports.push({
+      reporter: character,
+      character: payload.character,
+      report: payload.report,
+    });
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: { message: "The moderators have been alerted." },
+    });
+  }
+
   #handleRoll(
     connection: Connection,
     character: string,

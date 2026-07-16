@@ -985,3 +985,45 @@
   font-size: 11px;
   cursor: pointer;
 }
+
+/* Alert Staff report form (M7): inline in the member menu. */
+.reportForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+
+.reportInput {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: 8px;
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font-size: 12.5px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.reportInput::placeholder {
+  color: var(--eb-faint);
+}
+
+.reportSend {
+  align-self: flex-end;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 13px;
+  background: var(--eb-danger);
+  color: var(--eb-bg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reportSend:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

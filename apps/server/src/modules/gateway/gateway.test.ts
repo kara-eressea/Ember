@@ -2393,3 +2393,39 @@ describe("gateway hardening", () => {
     expect(closed.reason).toContain("hello rate limit");
   }, 30_000);
 });
+
+describe("alert staff (SFC)", () => {
+  it("user.report puts the SFC on the wire and the sim records it", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "user.report",
+        d: {
+          character: "Nyx Firemane",
+          report:
+            "Current Tab/Channel: Frontpage | Reporting User: Nyx Firemane | test complaint",
+        },
+      },
+    });
+    const ack = await client.nextOfType("ack");
+    expect(ack.d).toMatchObject({ ok: true });
+    expect(sim.staffReports.at(-1)).toMatchObject({
+      character: "Nyx Firemane",
+      report: expect.stringContaining("test complaint") as string,
+    });
+    // The live server answers with a SYS — the sim mirrors it, and it
+    // reaches the client as a notice-bearing event.
+    const sys = await client.nextEvent("sys");
+    expect(eventPayload<{ message: string }>(sys).message).toContain(
+      "The moderators have been alerted.",
+    );
+  });
+});
