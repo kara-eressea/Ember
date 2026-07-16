@@ -1,47 +1,273 @@
-# Milestone 8 — Nice-to-haves
+# Milestone 8 — Nice-to-haves: profiles, compatibility, eicon search
 
-*Reshaped 2026-07-16 with the user. History: originally "service admin
-tooling + Electron" (managed-service era); rewritten to "client polish" by
-the M7 standalone design pass when the tenancy pivot killed the multi-user
-admin surface; now the nice-to-haves milestone — the user wants a round of
-quality-of-life features (an in-app profile viewer, plus features borrowed
-from the third-party client Horizon) **before** committing to the desktop
-app, which moves out to **MX** (undated, after M8).*
+*Specced 2026-07-16 with the user. History: originally "service admin tooling
++ Electron" (managed-service era); rewritten to "client polish" by the M7
+standalone design pass; reshaped to the nice-to-haves slot at M7 close; now
+committed after a Horizon feature survey and scope session. The carried-over
+client-polish pool moved to **M9** (`milestone-9-client-polish.md`); ad
+tooling and character search moved to **M10**
+(`milestone-10-ads-and-search.md`); the desktop client remains **MX**.*
 
-**Goal:** the quality-of-life round that makes EmberChat pleasant to live
-in day to day — user-facing niceties over infrastructure.
+**Goal:** the features that make EmberChat pleasant to *live in* — an
+in-app character profile viewer with per-identity view history, Discord-style
+mini profile cards, Rising-style compatibility scoring, link hover-previews,
+and an eicon picker with opt-in third-party search.
 
-**Depends on:** M7. **Not yet specced** — the list below is a candidate
-pool to scope with the user when M8 becomes active, not a committed plan.
+**Depends on:** M7.
 
-## Candidate scope (unspecced)
+## Background: the Horizon survey (2026-07-16)
 
-- **In-app profile viewer** — view an F-List character's profile inside the
-  client (pulled up from the post-v1.0 wishlist, where the M6 parity audit
-  had parked it as "eventually, not v1.0"). Character-data budget rules from
-  the developer policy apply; scope the depth (basic card vs. full profile)
-  when we plan it.
-- **Horizon-inspired features** — mine the third-party client
-  [Horizon](https://horizn.moe/) for quality-of-life features worth
-  adopting. **To be surveyed with the user** — they'll point at what they
-  liked, or I'll do a feature pass at M8 kickoff (the way the M6 parity
-  audit mined chat3client). Do not spec until then.
-- **Client polish (carried from the previous rewrite):** in-log search
-  (server-side over the messages table); composer affordances (BBCode/
-  Markdown toolbar, `/help` slash reference, warn-code support); a light
-  theme (the full token-set pass deferred from M5, decisions.md §10);
-  graduated LOWs from the M2–M7 audit backlogs.
+[Horizon](https://horizn.moe/) (successor to F-Chat Rising) was surveyed with
+the user. Adopted, translated to our architecture: in-app profiles (Rising
+iframes the F-List page; **we render natively** — the user wants the viewer
+to feel first-party), the compatibility matcher (five-tier scoring), eicon
+search (Horizon uses xariah.net's community index; F-List has no search API),
+and link hover-previews. Explicitly rejected for now: external eicon
+*hosting* (Horizon issue #319 — non-Horizon clients would see broken tags).
+Deferred to M10: the Ad Center (authoring, auto-posting, rotation), smart
+ad/post filters, match scores on ads, FKS character search. Horizon's
+profile cache is performance-only; our **user-facing view history** is our
+own addition.
+
+## Scope
+
+### Server profile service
+
+New `apps/server/src/modules/profiles/` module. **REST, not gateway
+commands** — the codebase precedent (social, directory, history modules) is
+that request/response features backed by the F-List JSON API are Fastify
+routes under `/api/identities/:identityId/...`, cloning the social module's
+`ownedIdentity` + `withTicket` + `upstreamStatus` scaffolding; the gateway
+stays chat-wire commands and fan-out. Profile payloads are large (multi-KB
+descriptions, hundreds of kinks), concern one device, and map cleanly onto
+HTTP error semantics (409 locked vault / 429 budget / 502 upstream).
+
+Routes:
+
+- `GET .../profile/:name?refresh=1` → `{ profile, fetchedAt, stale, budgetExhausted? }`
+  — fetch-through-cache; upserts the cache row and bumps the history row.
+  `refresh=1` bypasses the cache TTL but never the budget.
+- `GET .../profile-history?limit&before` → recently-viewed list (name,
+  lastViewedAt, viewCount, cached flag), newest first.
+- `DELETE .../profile-history/:name` — prune one history entry.
+- `GET .../profile/:name/guestbook?page=` and `.../images` — thin
+  passthroughs, **gated on the step-1 endpoint verification**.
+
+Three new tables (`apps/server/src/db/schema.ts`):
+
+- **`character_cache`** — global payload cache, one row per character
+  (`character_lower` PK, canonical name, raw `character-data.php` payload
+  jsonb, `fetched_at`). Shared across identities so two identities viewing
+  the same character never double-spend the budget. Cache semantics:
+  serve when `fetched_at` < 24 h (`PROFILE_CACHE_TTL_MS`), else refetch
+  through the budget, always falling back to stale-with-flag.
+- **`profile_views`** — per-identity history. PK (identity_id,
+  character_lower), `first_viewed_at`, `last_viewed_at`, `view_count`,
+  index on (identity_id, last_viewed_at desc). **History = row existence**:
+  never TTL'd, user-prunable, synced across devices by construction.
+- **`flist_mappings`** — the global mapping payloads (`mapping-list.php`,
+  `kink-list.php`, `info-list.php`; all ticketless), one row per source,
+  refreshed when older than ~7 days.
+
+The server resolves raw character-data (numeric infotag/kink ids) against
+`flist_mappings` into a **`ProfileDto`** (`packages/protocol/src/profile.ts`)
+before it goes on the wire — ids kept alongside resolved names so the
+matcher can key on ids; the mapping bulk (hundreds of KB) never ships to
+clients. Guestbook/images pages are not cached in Postgres (paginated, low
+reuse) — in-memory LRU with a short TTL if at all.
+
+**Budget enforcement** — the load-bearing policy piece. New
+`CharacterDataBudget` (`apps/server/src/modules/flist-api/character-data-budget.ts`):
+an in-memory sliding one-hour window, soft cap **170** (headroom under
+F-List's 200/hour character-data limit; guestbook/images/character-data all
+count against it, tickets and mappings don't). Global per instance — the
+policy risk attaches to the egress IP, and the instance is single-user. Sits
+*in front of* the existing 1 req/s `FlistApiClient` throttle (which stays as
+the second, orthogonal gate). On exhaustion: serve the stale cached payload
+with `budgetExhausted: true`, or 429 + `retryAfterSeconds` when there is no
+cache. The counter resets on restart — accepted LOW (interactive browsing
+can't realistically hit 170/hr twice around a restart); noted in the module
+comment, not persisted.
+
+New upstream pieces in `packages/fchat-protocol/src/flist-api.ts` +
+`api-client.ts`: `CHARACTER_API_PATHS`, lenient zod schemas
+(`characterDataResponseSchema` etc. — F-List payloads are under-documented,
+`.passthrough()`/optionals per the existing convention), client methods
+`characterData(auth, name)` and ticketless `mappingList/kinkList/infoList`.
+Delete the stale "arrives with M6" comment in `api-client.ts`.
+
+### Compatibility matcher
+
+New **`packages/matcher`** (`@emberchat/matcher`) — pure scoring logic with
+its own test surface; imports only the `ProfileDto` type from
+`@emberchat/protocol`. **Clean-room reimplementation** of Rising's
+*documented* behavior (README/docs, not source) — a provenance note in the
+package header records that stance.
+
+- Five tiers: MATCH 1 · WEAK_MATCH 0.5 · NEUTRAL 0 · WEAK_MISMATCH −0.5 ·
+  MISMATCH −1.
+- Six dimensions: orientation, gender, age, furry-vs-human preference,
+  species, sub/dom role. Inputs come from infotags with kink-informed
+  fallbacks where an infotag is blank (e.g. gender-preference kinks refining
+  orientation). Kink-id constant tables live in
+  `packages/matcher/src/kink-ids.ts`, commented with their kink-list source.
+- `scoreMatch(you, them): MatchReport` — overall score (hard-mismatch
+  dominated: any MISMATCH caps it), per-dimension results with
+  human-readable reasons, and a kink alignment list (fave×fave > yes×yes;
+  no×fave hard-negative) with an aggregate. **Missing data scores NEUTRAL
+  with "not specified" — never MISMATCH.**
+- **Runs client-side**: both inputs are ProfileDtos the client already
+  holds; the own-character profile is fetched once per session through the
+  same cache path (one budgeted request, 24 h cache like any other). Zero
+  server cost per comparison, instant re-score on identity switch, and the
+  package works unchanged in the eventual desktop client.
+
+### Web UI — profile surfaces
+
+New `apps/web/src/components/profile/`; ui-store flags + AppShell
+conditional render per the existing modal pattern (`prefsOpen` /
+`channelBrowserOpen`). Data layer `apps/web/src/lib/profile.ts` (pattern:
+`lib/social.ts`): in-memory client cache keyed by lowercased name with
+in-flight dedup; `loadProfile(identityId, name, {refresh})`;
+`loadOwnProfile(identityId)` memoized for the matcher. Visual design comes
+from the CD brief (`design/ui/profile-viewer-brief.md`) — build to the specs
+it returns.
+
+- **Mini profile card** (`MiniProfileCard.tsx`) — Discord-style popover at
+  the click anchor (viewport-clamped, Escape/outside-click closes, the
+  member-menu overlay pattern). **Fetch-through-cache on open**: avatar +
+  name render instantly from what we have, the rest fills in (a server cache
+  hit costs nothing upstream; a miss is one budgeted request). Content:
+  avatar, name, 3–4 key infotags (orientation/age/species/role), overall
+  match chip + the two most notable dimension chips, actions **Open
+  profile** and **Message** (reuses the `pm.open` flow). Stale data shows a
+  "cached Xh ago" line.
+- **Full profile viewer** (`ProfileViewer.tsx`) — modal in the
+  Preferences/ChannelBrowser shell style. Left rail = the **history list**
+  (recently viewed, relative times, per-row prune — this is where history
+  lives; no separate surface). Header: avatar, name, fetched-ago + refresh
+  button (disabled with a tooltip when the server reports
+  `budgetExhausted`). Tabs:
+  1. **Overview** — description rendered natively (see profile BBCode
+     below), match summary strip.
+  2. **Details** — infotags grouped as F-List groups them.
+  3. **Kinks** — four choice columns (Fave/Yes/Maybe/No), custom kinks with
+     subkink children, each kink tinted by the *viewer's own* matching
+     choice.
+  4. **Compare** — side-by-side vs. the active identity: per-dimension
+     score table with reasons, two-column kink alignment sorted
+     worst-conflicts-first. Pure `@emberchat/matcher` output.
+  5. **Images** / **Guestbook** — gated on step-1 verification. Fallbacks
+     if verification fails: Images renders the `images`/`inlines` arrays
+     already inside character-data; Guestbook ships as a link-out.
+- **Entry points**: MemberContextMenu "View profile" opens the viewer (keep
+  "Open on f-list.net ↗" as a secondary item); `[user]` tags in RichText,
+  member-list rows (left-click; right-click keeps the menu), and message-log
+  sender nicks open the mini card.
+
+### Profile BBCode
+
+Profile descriptions use a wider BBCode set than the chat subset
+(`collapse`, `heading`, `quote`, `big`, `left/center/right/justify`, inline
+image references…). First-party rendering means extending
+`packages/markdown-bbcode` with a **profile-flavored tag profile** rendered
+in EmberChat's design language (our own collapse/heading/quote treatments —
+explicitly not mimicking F-List's site look); unsupported tags degrade
+gracefully to readable text, never raw markup.
+
+### Link hover-previews
+
+Rising-style: hover an image link in the log → large floating preview beside
+the log (see the CD brief). Client-only track:
+
+- `LinkPreview` hover component wired into `RichText.tsx` URL rendering
+  (`[url]` tags + autolinked URLs); resolver in
+  `apps/web/src/lib/link-preview.ts` — direct image/video extension test
+  (.jpg/.png/.gif/.webp/.webm) **plus a small maintained per-host rewrite
+  table** (imgur page → i.imgur.com direct, e621, redgifs, …; the table is
+  data, easy to extend). No server proxy.
+- ~250 ms hover delay before fetching so casual mouse travel doesn't
+  hotlink; failure = silent no-preview (no broken-image flash);
+  viewport-constrained.
+- Pref `linkPreviews` — **default true** (hovering is deliberate; only a
+  standard image fetch is sent — contrast xariah below), AppearancePane
+  toggle with an IP-disclosure note.
+
+### Eicon picker + third-party search
+
+- **`EiconPicker`** (`apps/web/src/components/chat/EiconPicker.tsx`)
+  replaces the inline composer eicon panel: popover anchored above the
+  composer button, tabs **Favorites** (existing `eiconFavorites` pref) /
+  **Recents** (new `eiconRecents` pref, max 50, client-maintained
+  whole-array patch per the existing convention) / **Search**. 60 px
+  preview grid via the existing `eiconUrl`; click inserts
+  `[eicon]name[/eicon]` at the caret; star toggles favorite. The Search tab,
+  when disabled, shows a one-line explainer + a link to the prefs pane.
+- **xariah search via server proxy**: `GET /api/eicons/search?q=` in a new
+  `apps/server/src/modules/eicons/routes.ts`. Proxy rather than
+  client-direct because (a) the user's IP never reaches the third party —
+  matching the privacy pref's promise; (b) immune to xariah's unknown CORS
+  posture; (c) single egress with a server-side LRU result cache (~500
+  queries, 15 min TTL) and one polite rate limit — a good citizen of a
+  community service; (d) the base URL is a config knob
+  (`EICON_SEARCH_BASE_URL`, default xariah) that tests point at fchat-sim.
+  Response `{ results: string[] }` — **names only; rendering stays
+  static.f-list.net**. Exact endpoint/shape is a step-1 verification item.
+- Pref `eiconSearchEnabled` — **default false**, toggle in AppearancePane
+  labeled explicitly ("Search sends your query to xariah.net, a third-party
+  service"), and **enforced server-side** (403 when off) so the privacy
+  gate is real, not advisory.
+
+## Verification
+
+- fchat-sim grows the character API (`character-data.php` ticketed;
+  mapping/kink/info lists ticketless; an eicon-search stub) with
+  `setCharacterProfile()` fixtures — the sim's existing HTTP side is the
+  attachment point.
+- Server integration (`profiles.test.ts`, pattern `social.test.ts`): cache
+  hit / miss / TTL-expired / force-refresh; history upsert, bump, list,
+  delete; budget exhaustion → stale-with-flag and 429-no-cache; locked-vault
+  409; ticket retry.
+- Matcher unit tests: golden profile pairs per dimension, missing-data →
+  NEUTRAL, hard-mismatch domination, kink alignment weighting.
+- Web unit: profile lib cache/dedup; picker recents behavior; link-preview
+  resolver table.
+- Playwright (`profile.spec.ts` + extended compose spec): context menu →
+  viewer renders a sim profile; nick click → mini card with match chip;
+  Compare tab shows dimension rows; history persists across reload; eicon
+  Search tab hidden until the pref is enabled, then returns sim-stubbed
+  results and inserts on click; link hover shows a fixture image preview.
+
+## Risks & policy notes
+
+- **Character-data budget (handle with care):** the 170/hr soft cap +
+  stale-serving makes suspension structurally unlikely; every
+  character-data-class request goes through the one counter. In-memory
+  reset on restart is an accepted LOW.
+- **Unverified endpoints (blocks two tabs):** `character-guestbook.php`,
+  `character-images.php`, memo endpoints, and the xariah API are
+  undocumented in-repo. Step 1 verifies them live (short, supervised, per
+  testing-strategy.md) and updates `design/chat-json-endpoints.md`;
+  Images/Guestbook and the xariah path are scoped to survive a negative
+  result (fallbacks above). Memos ship only if a stable endpoint is
+  confirmed; otherwise a wishlist note.
+- **xariah availability/ToS:** community service, no SLA — the proxy
+  degrades to an in-picker "search unavailable" error, never breaks the
+  picker. Off-by-default + server-enforced pref covers the privacy posture.
+- **Matcher provenance:** clean-room from documented behavior; header note
+  in `packages/matcher`.
+- **Payload drift:** all new F-List schemas lenient, per the `flist-api.ts`
+  convention.
 
 ## Explicitly elsewhere
 
-- **Desktop client** → **Milestone MX** (undated). The embedded-bouncer
-  plan in `standalone-client.md` (library extraction → pglite seam →
-  Electron shell → packaging) is deferred until after this nice-to-haves
-  round; the user does not want to build it at the M8 slot yet.
-  - *Exception, available anytime:* extracting the session engine into
-    `packages/session-engine` (standalone-client.md phase 1) is
-    independently useful — cleaner boundaries, isolatable tests — and is
-    **not gated behind MX**. It can be done as an ordinary refactor whenever
-    it helps, without committing to the desktop app.
-- **Admin tooling** — none needed at current tenancy; the admin CLI covers
-  account create/reset. Revisit only if multi-user instances ever return.
+- **Client polish** (in-log search, composer toolbar, light theme, audit
+  LOWs) → **M9** (`milestone-9-client-polish.md`).
+- **Ad Center, smart filters, match scores on ads, FKS character search** →
+  **M10** (`milestone-10-ads-and-search.md`).
+- **Desktop client** → **MX** (undated), per `standalone-client.md`. The
+  session-engine extraction (phase 1) remains available anytime as an
+  ordinary refactor.
+- **External eicon hosting** (arbitrary third-party image hosts inside
+  `[eicon]`) — rejected for now: non-EmberChat clients would render broken
+  tags, and the abuse/privacy surface isn't worth it (decisions.md §12).

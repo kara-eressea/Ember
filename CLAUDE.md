@@ -4,7 +4,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 
 ## Current state
 
-**Design phase complete — no application code exists yet.** The repo contains design documentation and throwaway HTML UI mockups. Implementation follows the milestone plan in `design/`: check `design/milestones.md` for current status, then work the next unchecked step (entry point: Milestone 1, step 1 — repo scaffold with CI). Update the tracker as steps complete.
+**Milestones 1–7 shipped (v0.6.0, 2026-07-16)** — the bouncer, web client, and self-host hardening are implemented and released. Work follows the milestone plan in `design/`: check `design/milestones.md` for current status, then work the next unchecked step (next up: Milestone 8 — profile viewer, compatibility matcher, eicon search). Update the tracker as steps complete.
 
 ## Dev environment
 
@@ -20,7 +20,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/decisions.md` | Locked architectural decisions (stack, tenancy, credentials, MVP scope) |
 | `design/architecture.md` | Monorepo layout, server/bouncer design, DB schema, client architecture, gateway protocol |
 | `design/milestones.md` | **Status tracker** — open/closed milestones, M1 step checklist, standing to-dos. Keep this updated as work progresses |
-| `design/milestone-*.md` | One file per milestone (1–8), dependency-ordered |
+| `design/milestone-*.md` | One file per milestone (1–10), dependency-ordered |
 | `design/standalone-client.md` | Desktop-client design (M7 step 8): embedded bouncer, session-library boundary, pglite, Electron — built post-v1.0 |
 | `design/testing-strategy.md` | fchat-sim, unit/integration/E2E strategy, responsible live testing |
 | `design/risks-and-open-questions.md` | ToS exposure, protocol gaps, scaling ceiling |
