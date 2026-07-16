@@ -67,6 +67,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     process.env["FCHAT_SIM_WS_URL"] = sim.wsUrl;
     process.env["FCHAT_SIM_TICKET_URL"] = sim.ticketUrl;
     container = await new PostgreSqlContainer("postgres:18-alpine").start();
+    // Specs provision app users through the admin CLI (registration is
+    // disabled — the E2E stack runs the production shape); the CLI needs
+    // the database directly.
+    process.env["E2E_DATABASE_URL"] = container.getConnectionUri();
     server = spawn(process.execPath, [SERVER_ENTRY], {
       env: {
         ...process.env,

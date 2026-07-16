@@ -7,7 +7,7 @@
 // connection, so specs never share one.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 test("channel browser: browse, filter, join, hidden-by-name", async ({
   page,
@@ -15,7 +15,7 @@ test("channel browser: browse, filter, join, hidden-by-name", async ({
   test.setTimeout(180_000);
   await interceptAvatars(page);
 
-  await registerAndConnect(page, "laurel@example.test", "Laurel Quince");
+  await provisionAndConnect(page, "laurel@example.test", "Laurel Quince");
 
   // Sidebar + opens the dialog.
   await page.getByRole("button", { name: "Browse channels" }).click();

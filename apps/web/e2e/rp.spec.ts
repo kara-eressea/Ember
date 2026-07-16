@@ -6,7 +6,7 @@
 // run in parallel, so specs never share characters or channels.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 const GREENHOUSE = "ADH-77aa88bb99cc00dd11ee";
 
@@ -15,7 +15,7 @@ test("RP messages: ads with visibility prefs, dice and bottle, RMO gating", asyn
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
-  await registerAndConnect(page, "ivy@example.test", "Ivy Bramblewood");
+  await provisionAndConnect(page, "ivy@example.test", "Ivy Bramblewood");
 
   // Moss (op) sits in the Greenhouse as the other member.
   const moss = await SimClient.connect(

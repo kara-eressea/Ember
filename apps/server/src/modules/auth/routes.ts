@@ -7,6 +7,7 @@ import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
 import { appUsers, authSessions } from "../../db/schema.js";
 import { ACCESS_TOKEN_TTL } from "../../plugins/auth.js";
+import { emailField, passwordField, usernameField } from "./account-fields.js";
 import {
   generateRefreshToken,
   hashRefreshToken,
@@ -27,13 +28,9 @@ const tokenResponse = z.object({
 });
 
 const registerBody = z.object({
-  email: z.email().max(254),
-  username: z
-    .string()
-    .min(3)
-    .max(32)
-    .regex(/^[a-zA-Z0-9_.-]+$/, "letters, digits, and _.- only"),
-  password: z.string().min(8).max(128),
+  email: emailField,
+  username: usernameField,
+  password: passwordField,
   deviceLabel: z.string().max(100).optional(),
 });
 
@@ -53,6 +50,8 @@ export interface AuthRoutesOptions {
   db: Db;
   /** Requests per minute per IP on these endpoints. */
   rateLimitMax: number;
+  /** Self-service signup; off on admin-only instances (decisions.md §2). */
+  registrationEnabled: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -61,7 +60,7 @@ export async function authRoutes(
   options: AuthRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, rateLimitMax } = options;
+  const { db, rateLimitMax, registrationEnabled } = options;
   const rateLimit = { max: rateLimitMax, timeWindow: "1 minute" };
 
   async function issueSession(
@@ -94,10 +93,19 @@ export async function authRoutes(
       config: { rateLimit },
       schema: {
         body: registerBody,
-        response: { 201: tokenResponse, 409: z.object({ error: z.string() }) },
+        response: {
+          201: tokenResponse,
+          404: z.object({ error: z.string() }),
+          409: z.object({ error: z.string() }),
+        },
       },
     },
     async (request, reply) => {
+      // 404 rather than 403: a disabled endpoint should not advertise
+      // itself to the public internet (admin-only instances are the norm).
+      if (!registrationEnabled) {
+        return reply.code(404).send({ error: "Registration is disabled" });
+      }
       const { email, username, password, deviceLabel } = request.body;
       const passwordHash = await argon2.hash(password);
       let user;

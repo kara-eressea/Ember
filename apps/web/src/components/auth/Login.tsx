@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../../lib/api.js";
 import { useAuthStore } from "../../stores/auth.js";
 import { AuthCard } from "./AuthCard.js";
@@ -61,7 +61,7 @@ export function Login() {
             <span className={styles.fieldLabel}>Password</span>
             <span
               className={styles.forgot}
-              title="Password reset arrives with email verification (v1.0)"
+              title="Password resets are done by the instance admin (admin CLI — see the self-hosting guide)"
             >
               Forgot?
             </span>
@@ -94,9 +94,6 @@ export function Login() {
       </form>
       <p className={styles.footNote}>
         Next: choose which identity to connect with.
-      </p>
-      <p className={styles.footNote}>
-        New here? <Link to="/register">Create an account</Link>
       </p>
     </AuthCard>
   );

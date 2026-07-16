@@ -28,10 +28,16 @@ const configSchema = z.object({
    * local fchat-sim don't serialize on a pointless throttle.
    */
   FLIST_API_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(1000),
-  /** Global per-IP request backstop (requests/minute). The default suits a
-   * public deployment; the E2E stack raises it — a whole parallel suite
-   * shares one loopback IP. */
+  /** Global per-IP request backstop (requests/minute). Generous for a
+   * single-tenant instance; the E2E stack raises it — a whole parallel
+   * suite shares one loopback IP. */
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  /**
+   * Self-service signup. Off by default — instances are admin-only
+   * (decisions.md §2); accounts are created with the admin CLI
+   * (`node dist/cli/admin.js`). Dev and test stacks may enable it.
+   */
+  REGISTRATION_ENABLED: z.stringbool().default(false),
   APP_NAME: z.string().default("EmberChat"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
   /**

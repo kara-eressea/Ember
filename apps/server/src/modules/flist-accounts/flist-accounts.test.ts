@@ -32,6 +32,7 @@ async function makeApp(): Promise<FastifyInstance> {
     DATABASE_URL: container.getConnectionUri(),
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
+    REGISTRATION_ENABLED: "true",
     FLIST_API_URL: sim.httpUrl,
     FCHAT_URL: sim.wsUrl,
   });

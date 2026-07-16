@@ -101,24 +101,6 @@
   padding: 4px;
 }
 
-.strength {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.strengthSegment {
-  flex: 1;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--eb-border);
-}
-
-.strengthOn {
-  composes: strengthSegment;
-  background: var(--eb-accent);
-}
-
 .checkboxRow {
   display: flex;
   align-items: center;

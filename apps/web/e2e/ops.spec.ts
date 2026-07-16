@@ -6,7 +6,7 @@
 // files run in parallel, so specs never share characters or channels.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 const SHED = "ADH-55ee66ff77aa88bb99cc";
 
@@ -15,7 +15,7 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
-  await registerAndConnect(page, "rue@example.test", "Rue Alder");
+  await provisionAndConnect(page, "rue@example.test", "Rue Alder");
 
   // Alder (owner) and Sorrel (moderation target) sit in the Potting Shed.
   const alder = await SimClient.connect(
