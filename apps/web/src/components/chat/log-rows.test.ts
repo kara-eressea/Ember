@@ -182,3 +182,22 @@ describe("buildRows presence lines (show join/part/quit pref)", () => {
     expect(shape(rows)).toEqual(["divider", "m1"]);
   });
 });
+
+describe("buildRows ad hiding", () => {
+  it("drops inbound ads when hideAds is set, keeping own ads", () => {
+    const rows = buildRows(
+      [msg(1), msg(2, false, { kind: "lrp" }), msg(3, true, { kind: "lrp" })],
+      null,
+      [],
+      { hideAds: true },
+    );
+    expect(shape(rows)).toEqual(["divider", "m1", "m3"]);
+  });
+
+  it("keeps ads when hideAds is off", () => {
+    const rows = buildRows([msg(1), msg(2, false, { kind: "lrp" })], null, [], {
+      hideAds: false,
+    });
+    expect(shape(rows)).toEqual(["divider", "m1", "m2"]);
+  });
+});

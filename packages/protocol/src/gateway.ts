@@ -104,15 +104,116 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
+    // CCR: the title of the new private room (the server mints the ADH- id;
+    // 64 is the wire's channel-title ceiling — ERR 67 past it).
+    action: z.literal("channel.create"),
+    d: z.object({ title: z.string().min(1).max(64) }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.invite"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // RST: public = listed + freely joinable, private = unlisted + invite-only.
+    action: z.literal("channel.status"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      status: z.enum(["public", "private"]),
+    }),
+  }),
+  // ── Channel moderation (M6 op tooling). All chanop-restricted on the
+  // wire; the UI additionally gates by viewer role. Errors come back as
+  // ERR events, SYS acks as persisted SystemLines.
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.kick"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.ban"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.unban"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CTU: the wire caps timeouts at 1-90 minutes.
+    action: z.literal("channel.timeout"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      character: characterName,
+      minutes: z.number().int().min(1).max(90),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.promote"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    action: z.literal("channel.demote"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CSO: hand the room to a new owner (current owner only).
+    action: z.literal("channel.owner"),
+    d: z.object({ key: z.string().min(1).max(128), character: characterName }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CDS: change the room description (chanop).
+    action: z.literal("channel.describe"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      description: z.string().max(50_000),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // RMO: room mode — chat (MSG only), ads (LRP only), or both.
+    action: z.literal("channel.mode"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      mode: z.enum(["chat", "ads", "both"]),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // CBL: the banlist arrives as a channel SYS (persisted SystemLine).
+    action: z.literal("channel.banlist"),
+    d: z.object({ key: z.string().min(1).max(128) }),
+  }),
+  z.object({
+    identityId: z.uuid(),
     action: z.literal("msg.send"),
-    // The live chat_max/priv_max VARs are enforced by the session at send
-    // time; this is only an anti-abuse ceiling, far above any real limit.
-    // `markdown` is the pre-translation source: stored with a delayed send
-    // so ArrowUp recall returns what the user typed, not the wire form.
+    // The live chat_max/priv_max/lfrp_max VARs are enforced by the session
+    // at send time; this is only an anti-abuse ceiling, far above any real
+    // limit. `markdown` is the pre-translation source: stored with a delayed
+    // send so ArrowUp recall returns what the user typed, not the wire form.
+    // kind "lrp" = a roleplay ad (channel conversations only).
     d: z.object({
       convId: z.uuid(),
       bbcode: z.string().min(1).max(65_536),
       markdown: z.string().max(65_536).optional(),
+      kind: z.enum(["msg", "lrp"]).optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // RLL: "bottle" or a dice expression ("2d6", "1d20+5", …). The server
+    // validates the grammar and broadcasts the computed result.
+    action: z.literal("channel.roll"),
+    d: z.object({
+      key: z.string().min(1).max(128),
+      dice: z.string().min(1).max(128),
     }),
   }),
   z.object({
@@ -334,6 +435,13 @@ export type GatewayEvent =
        * next status change. */
       d: { characters: [string, string, string, string][] };
     }
+  | {
+      kind: "channel.invite";
+      /** Inbound CIU: `sender` invited this identity to room `key`
+       * (ADH- id), displayed as `title`. Volatile — an invite missed while
+       * detached is joinable later via the key anyway. */
+      d: { sender: string; title: string; key: string };
+    }
   | { kind: "typing"; d: { character: string; status: string } }
   | {
       kind: "session.status";
@@ -368,6 +476,13 @@ export type GatewayEvent =
       d: { sendDelaySeconds: number; prefs: UserPrefs };
     }
   | { kind: "sys"; d: { message: string } }
+  // Real-time bridge: website events (notes, friend requests, comment
+  // replies) pushed over the chat socket. Volatile — the website remains
+  // the place to read/act; the client surfaces a notice + notification.
+  | {
+      kind: "rtb";
+      d: { type: string; character?: string; subject?: string };
+    }
   | { kind: "error"; d: { number: number; message: string } };
 
 export type ServerFrame =
@@ -411,10 +526,14 @@ export type ServerFrame =
            * hidden from render client-side but still persisted. */
           ignores: string[];
           /** Live server VARs (bytes) — composer limits, never hardcoded. */
-          limits: { chatMax: number; privMax: number };
+          limits: { chatMax: number; privMax: number; lfrpMax: number };
           /** Channels where the server disallows [icon]/[eicon] (the
            * icon_blacklist VAR) — the composer warns before inserting. */
           iconBlacklist: string[];
+          /** Own character is a chatop (global moderator, ADL at login) —
+           * unlocks the admin UI everywhere. Snapshot-only: promotions are
+           * rare enough that a reconnect picking it up is fine. */
+          chatop: boolean;
           /** The user's delayed-send window (user_preferences). */
           sendDelaySeconds: number;
           /** The user's resolved preferences (user_preferences.prefs). */

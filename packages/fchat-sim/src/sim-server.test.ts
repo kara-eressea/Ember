@@ -182,7 +182,7 @@ describe("getApiTicket.php", () => {
 });
 
 describe("login handshake", () => {
-  it("walks IDN → HLO → VAR → CON → IGN → LIS → NLN in order", async () => {
+  it("walks IDN → HLO → VAR → CON → ADL → FRL → IGN → LIS → NLN in order", async () => {
     const sim = await startSim();
     const client = await TestClient.connect(sim);
     client.send(
@@ -219,6 +219,16 @@ describe("login handshake", () => {
     ]);
     const con = parseServerCommand(await client.next());
     expect(con).toEqual({ cmd: "CON", payload: { count: 4 } });
+    // The chatop roster (M6) — the default world has none.
+    expect(parseServerCommand(await client.next())).toEqual({
+      cmd: "ADL",
+      payload: { ops: [] },
+    });
+    // Friends+bookmarks union (M6 step 7) — none seeded for this account.
+    expect(parseServerCommand(await client.next())).toEqual({
+      cmd: "FRL",
+      payload: { characters: [] },
+    });
     // The ignore list replays before the roster (real-server order).
     expect(parseServerCommand(await client.next())).toEqual({
       cmd: "IGN",
@@ -413,11 +423,14 @@ describe("channels", () => {
           { name: "Development", mode: "both", characters: 1 },
           { name: "Gardening", mode: "chat", characters: 1 },
           { name: "Terrarium", mode: "both", characters: 0 },
+          { name: "Orchard", mode: "chat", characters: 1 },
         ],
       },
     });
     client.send({ cmd: "ORS" });
     const ors = parseServerCommand(await client.waitFor("ORS"));
+    // Root Cellar (listed: false) must NOT appear — hidden rooms are
+    // joinable by exact id only.
     expect(ors).toMatchObject({
       cmd: "ORS",
       payload: {
@@ -428,6 +441,22 @@ describe("channels", () => {
             title: "Ember Lounge",
           },
         ],
+      },
+    });
+  });
+
+  it("keeps hidden rooms out of ORS but joinable by exact id", async () => {
+    const sim = await startSim();
+    const client = await login(sim, "amber@example.test", "Amber Vale");
+    client.send({
+      cmd: "JCH",
+      payload: { channel: "ADH-9f8e7d6c5b4a39281706" },
+    });
+    expect(parseServerCommand(await client.waitFor("JCH"))).toMatchObject({
+      cmd: "JCH",
+      payload: {
+        channel: "ADH-9f8e7d6c5b4a39281706",
+        title: "Root Cellar",
       },
     });
   });
@@ -858,5 +887,686 @@ describe("misbehavior controls", () => {
         message: "There are currently no free login slots.",
       },
     });
+  });
+});
+
+describe("private rooms (M6: CCR / CIU / RST)", () => {
+  it("CCR mints an ADH- room, owner-first COL, closed and unlisted", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Ember Attic" } });
+    const jch = parseServerCommand(await amber.waitFor("JCH"));
+    expect(jch).toMatchObject({
+      cmd: "JCH",
+      payload: {
+        channel: "ADH-sim0001",
+        title: "Ember Attic",
+        character: { identity: "Amber Vale" },
+      },
+    });
+    expect(parseServerCommand(await amber.waitFor("COL"))).toMatchObject({
+      cmd: "COL",
+      payload: { channel: "ADH-sim0001", oplist: ["Amber Vale"] },
+    });
+    // New rooms start unlisted…
+    amber.send({ cmd: "ORS" });
+    const ors = parseServerCommand(await amber.waitFor("ORS"));
+    if (ors.cmd === "ORS" && "payload" in ors) {
+      expect(ors.payload.channels.map((c) => c.name)).not.toContain(
+        "ADH-sim0001",
+      );
+    }
+    // …and closed: an uninvited character is refused with ERR 44.
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 44 },
+    });
+  });
+
+  it("CIU delivers the invite and admits the invitee", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    amber.send({ cmd: "CCR", payload: { channel: "Ember Attic" } });
+    await amber.waitFor("CDS");
+
+    // A non-op cannot invite; official channels cannot be invited to.
+    birch.send({
+      cmd: "CIU",
+      payload: { channel: "ADH-sim0001", character: "Amber Vale" },
+    });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 19 },
+    });
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: "Frontpage", character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 47 },
+    });
+
+    // The owner's invite reaches the target as CIU and admits them.
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: "ADH-sim0001", character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await birch.waitFor("CIU"))).toEqual({
+      cmd: "CIU",
+      payload: {
+        sender: "Amber Vale",
+        title: "Ember Attic",
+        name: "ADH-sim0001",
+      },
+    });
+    expect(parseServerCommand(await amber.waitFor("SYS"))).toMatchObject({
+      payload: {
+        message: "Your invitation to Ember Attic has been sent to Birch Rowan.",
+      },
+    });
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    expect(parseServerCommand(await birch.waitFor("JCH"))).toMatchObject({
+      payload: { channel: "ADH-sim0001", title: "Ember Attic" },
+    });
+  });
+
+  it("RST public lists the room and opens it to everyone", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Ember Attic" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RST",
+      payload: { channel: "ADH-sim0001", status: "public" },
+    });
+    expect(parseServerCommand(await amber.waitFor("SYS"))).toMatchObject({
+      payload: { message: "Ember Attic is now open." },
+    });
+    amber.send({ cmd: "ORS" });
+    const ors = parseServerCommand(await amber.waitFor("ORS"));
+    if (ors.cmd === "ORS" && "payload" in ors) {
+      expect(ors.payload.channels.map((c) => c.name)).toContain("ADH-sim0001");
+    }
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    expect(parseServerCommand(await birch.waitFor("JCH"))).toMatchObject({
+      payload: { channel: "ADH-sim0001" },
+    });
+  });
+});
+
+describe("RP message types (M6: LRP / RLL / RMO)", () => {
+  it("relays LRP to other members without echoing to the sender", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    for (const client of [amber, birch]) {
+      client.send({ cmd: "JCH", payload: { channel: "Development" } });
+      await client.waitFor("CDS");
+    }
+    await amber.waitFor("JCH"); // Birch's join
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Development", message: "Looking for a scene." },
+    });
+    expect(parseServerCommand(await birch.waitFor("LRP"))).toEqual({
+      cmd: "LRP",
+      payload: {
+        character: "Amber Vale",
+        message: "Looking for a scene.",
+        channel: "Development",
+      },
+    });
+    expect(amber.pendingCount()).toBe(0);
+  });
+
+  it("rejects LRP in a chat-only channel with ERR 59 and MSG in an ads-only room with ERR 60", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Frontpage" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Frontpage", message: "an ad" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 59 },
+    });
+    // Create a room (owner), flip it to ads-only, and watch MSG bounce.
+    amber.send({ cmd: "CCR", payload: { channel: "Ads Only Attic" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RMO",
+      payload: { channel: "ADH-sim0001", mode: "ads" },
+    });
+    expect(parseServerCommand(await amber.waitFor("RMO"))).toEqual({
+      cmd: "RMO",
+      payload: { channel: "ADH-sim0001", mode: "ads" },
+    });
+    amber.send({
+      cmd: "MSG",
+      payload: { channel: "ADH-sim0001", message: "hello?" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 60 },
+    });
+  });
+
+  it("rejects RMO from a non-op with ERR 19", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RMO",
+      payload: { channel: "Development", mode: "chat" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 19 },
+    });
+  });
+
+  it("enforces the lfrp_flood pace with ERR 56", async () => {
+    const sim = await startSim({ serverVars: { lfrp_flood: 600 } });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Development", message: "first ad" },
+    });
+    amber.send({
+      cmd: "LRP",
+      payload: { channel: "Development", message: "second ad" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 56 },
+    });
+  });
+
+  it("computes dice rolls and echoes the RLL to the roller", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RLL",
+      payload: { channel: "Development", dice: "2d6+10" },
+    });
+    const roll = parseServerCommand(await amber.waitFor("RLL"));
+    if (roll.cmd !== "RLL" || !("payload" in roll)) {
+      throw new Error("RLL did not parse");
+    }
+    expect(roll.payload).toMatchObject({
+      channel: "Development",
+      type: "dice",
+      character: "Amber Vale",
+      rolls: ["2d6", "10"],
+    });
+    const results = roll.payload.results!;
+    expect(results).toHaveLength(2);
+    expect(results[0]).toBeGreaterThanOrEqual(2);
+    expect(results[0]).toBeLessThanOrEqual(12);
+    expect(results[1]).toBe(10);
+    expect(roll.payload.endresult).toBe(results[0]! + 10);
+    expect(roll.payload.message).toContain("[b]Amber Vale[/b] rolls 2d6+10:");
+  });
+
+  it("spins the bottle at another member and rejects spinning alone", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    amber.send({ cmd: "JCH", payload: { channel: "Terrarium" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "RLL",
+      payload: { channel: "Terrarium", dice: "bottle" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 36 },
+    });
+    birch.send({ cmd: "JCH", payload: { channel: "Terrarium" } });
+    await birch.waitFor("CDS");
+    amber.send({
+      cmd: "RLL",
+      payload: { channel: "Terrarium", dice: "bottle" },
+    });
+    expect(parseServerCommand(await birch.waitFor("RLL"))).toEqual({
+      cmd: "RLL",
+      payload: {
+        channel: "Terrarium",
+        type: "bottle",
+        message: "[b]Amber Vale[/b] spins the bottle: [b]Birch Rowan[/b]",
+        character: "Amber Vale",
+        target: "Birch Rowan",
+      },
+    });
+    await amber.waitFor("RLL"); // the roller sees it too
+  });
+
+  it("rejects malformed dice expressions with ERR 36", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await amber.waitFor("CDS");
+    for (const dice of ["0d6", "1d501", "10001", "1d6+", "2x6"]) {
+      amber.send({ cmd: "RLL", payload: { channel: "Development", dice } });
+      expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+        payload: { number: 36 },
+      });
+    }
+  });
+});
+
+describe("channel moderation (M6: CKU / CBU / CTU / CUB / COA / COR / CSO / CDS / CBL)", () => {
+  /** Amber creates a room (becoming owner) and Birch joins it. */
+  async function roomWithTwo() {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Mod Attic" } });
+    await amber.waitFor("CDS");
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: "ADH-sim0001", character: "Birch Rowan" },
+    });
+    await amber.waitFor("SYS");
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: "ADH-sim0001" } });
+    await birch.waitFor("CDS");
+    await amber.waitFor("JCH"); // Birch's join echo
+    return { sim, amber, birch, channel: "ADH-sim0001" };
+  }
+
+  it("kicks: broadcast to everyone including the target, member removed", async () => {
+    const { amber, birch, channel } = await roomWithTwo();
+    amber.send({
+      cmd: "CKU",
+      payload: { channel, character: "Birch Rowan" },
+    });
+    const expected = {
+      cmd: "CKU",
+      payload: { operator: "Amber Vale", channel, character: "Birch Rowan" },
+    };
+    expect(parseServerCommand(await birch.waitFor("CKU"))).toEqual(expected);
+    expect(parseServerCommand(await amber.waitFor("CKU"))).toEqual(expected);
+    // Kicked ≠ banned: rejoining works (still on the invite list).
+    birch.send({ cmd: "JCH", payload: { channel } });
+    expect(parseServerCommand(await birch.waitFor("JCH"))).toMatchObject({
+      payload: { channel },
+    });
+  });
+
+  it("bans gate JCH with ERR 48 until CUB; CBL lists them via SYS", async () => {
+    const { amber, birch, channel } = await roomWithTwo();
+    amber.send({
+      cmd: "CBU",
+      payload: { channel, character: "Birch Rowan" },
+    });
+    await birch.waitFor("CBU");
+    birch.send({ cmd: "JCH", payload: { channel } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 48 },
+    });
+    // Double ban → ERR 41; banlist arrives as a channel SYS.
+    amber.send({
+      cmd: "CBU",
+      payload: { channel, character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 41 },
+    });
+    amber.send({ cmd: "CBL", payload: { channel } });
+    expect(parseServerCommand(await amber.waitFor("SYS"))).toEqual({
+      cmd: "SYS",
+      payload: {
+        message: "Channel bans for Mod Attic: Birch Rowan.",
+        channel,
+      },
+    });
+    // Unban → rejoin works (ERR 42 on a second unban).
+    amber.send({
+      cmd: "CUB",
+      payload: { channel, character: "Birch Rowan" },
+    });
+    await amber.waitFor("SYS");
+    amber.send({
+      cmd: "CUB",
+      payload: { channel, character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 42 },
+    });
+    birch.send({ cmd: "JCH", payload: { channel } });
+    expect(parseServerCommand(await birch.waitFor("JCH"))).toMatchObject({
+      payload: { channel },
+    });
+  });
+
+  it("timeouts block rejoining like a ban while active", async () => {
+    const { amber, birch, channel } = await roomWithTwo();
+    amber.send({
+      cmd: "CTU",
+      payload: { channel, character: "Birch Rowan", length: 30 },
+    });
+    expect(parseServerCommand(await birch.waitFor("CTU"))).toEqual({
+      cmd: "CTU",
+      payload: {
+        operator: "Amber Vale",
+        channel,
+        length: 30,
+        character: "Birch Rowan",
+      },
+    });
+    birch.send({ cmd: "JCH", payload: { channel } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 48 },
+    });
+  });
+
+  it("promote/demote broadcast COA/COR and ops are shielded from non-owner kicks", async () => {
+    const { amber, birch, channel } = await roomWithTwo();
+    amber.send({
+      cmd: "COA",
+      payload: { channel, character: "Birch Rowan" },
+    });
+    expect(parseServerCommand(await birch.waitFor("COA"))).toEqual({
+      cmd: "COA",
+      payload: { character: "Birch Rowan", channel },
+    });
+    // Birch (op, not owner) cannot kick Amber (the owner) — ERR 21.
+    birch.send({ cmd: "CKU", payload: { channel, character: "Amber Vale" } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 21 },
+    });
+    // The owner slot is not demotable — CSO moves ownership.
+    birch.send({ cmd: "COR", payload: { channel, character: "Amber Vale" } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 21 },
+    });
+    amber.send({ cmd: "COR", payload: { channel, character: "Birch Rowan" } });
+    expect(parseServerCommand(await birch.waitFor("COR"))).toEqual({
+      cmd: "COR",
+      payload: { character: "Birch Rowan", channel },
+    });
+  });
+
+  it("CSO hands ownership over (owner only) and CDS is op-gated", async () => {
+    const { amber, birch, channel } = await roomWithTwo();
+    // A plain member can neither set the owner nor the description.
+    birch.send({ cmd: "CSO", payload: { channel, character: "Birch Rowan" } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 19 },
+    });
+    birch.send({
+      cmd: "CDS",
+      payload: { channel, description: "hijacked" },
+    });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 19 },
+    });
+    amber.send({ cmd: "CSO", payload: { channel, character: "Birch Rowan" } });
+    expect(parseServerCommand(await birch.waitFor("CSO"))).toEqual({
+      cmd: "CSO",
+      payload: { character: "Birch Rowan", channel },
+    });
+    // The new owner can change the description; it broadcasts as CDS.
+    birch.send({
+      cmd: "CDS",
+      payload: { channel, description: "Under new management." },
+    });
+    expect(parseServerCommand(await amber.waitFor("CDS"))).toEqual({
+      cmd: "CDS",
+      payload: { channel, description: "Under new management." },
+    });
+  });
+
+  it("chatops moderate any channel and appear in the login ADL", async () => {
+    const sim = await startSim({
+      world: {
+        ...(await import("./world.js")).DEFAULT_WORLD,
+        chatops: ["Bramble Thorn"],
+      },
+    });
+    const bramble = await login(sim, "thorn@example.test", "Bramble Thorn");
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    for (const client of [bramble, amber]) {
+      client.send({ cmd: "JCH", payload: { channel: "Frontpage" } });
+      await client.waitFor("CDS");
+    }
+    // Bramble is no channel op in Frontpage, but chatops may still kick.
+    bramble.send({
+      cmd: "CKU",
+      payload: { channel: "Frontpage", character: "Amber Vale" },
+    });
+    expect(parseServerCommand(await amber.waitFor("CKU"))).toEqual({
+      cmd: "CKU",
+      payload: {
+        operator: "Bramble Thorn",
+        channel: "Frontpage",
+        character: "Amber Vale",
+      },
+    });
+  });
+});
+
+describe("social JSON API + FRL (M6 step 7)", () => {
+  async function socialCall(
+    sim: FchatSim,
+    path: string,
+    form: Record<string, string>,
+  ): Promise<Record<string, unknown>> {
+    const response = await fetch(new URL(path, sim.httpUrl), {
+      method: "POST",
+      body: new URLSearchParams(form),
+    });
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  function ticketFor(sim: FchatSim, account: string): Promise<string> {
+    return Promise.resolve(sim.issueTicketFor(account));
+  }
+
+  it("sends the seeded friends+bookmarks union as FRL at login", async () => {
+    const sim = await startSim();
+    const client = await TestClient.connect(sim);
+    client.send(
+      idn(
+        "fern@example.test",
+        sim.issueTicketFor("fern@example.test"),
+        "Fern Glade",
+      ),
+    );
+    expect(parseServerCommand(await client.waitFor("FRL"))).toEqual({
+      cmd: "FRL",
+      payload: { characters: ["Nyx Firemane", "Old Greywhisker"] },
+    });
+  });
+
+  it("rejects a stale ticket and serves the seeded lists with a fresh one", async () => {
+    const sim = await startSim();
+    const account = "fern@example.test";
+    const stale = await ticketFor(sim, account);
+    const fresh = await ticketFor(sim, account); // invalidates `stale`
+    expect(
+      await socialCall(sim, "/json/api/bookmark-list.php", {
+        account,
+        ticket: stale,
+      }),
+    ).toEqual({ error: "Invalid ticket." });
+    expect(
+      await socialCall(sim, "/json/api/bookmark-list.php", {
+        account,
+        ticket: fresh,
+      }),
+    ).toEqual({ error: "", characters: ["Old Greywhisker"] });
+    expect(
+      await socialCall(sim, "/json/api/friend-list.php", {
+        account,
+        ticket: fresh,
+      }),
+    ).toEqual({
+      error: "",
+      friends: [{ source: "Nyx Firemane", dest: "Fern Glade" }],
+    });
+  });
+
+  it("adds and removes bookmarks with envelope errors on misuse", async () => {
+    const sim = await startSim();
+    const account = "amber@example.test";
+    const ticket = await ticketFor(sim, account);
+    const call = (path: string, extra: Record<string, string>) =>
+      socialCall(sim, path, { account, ticket, ...extra });
+    expect(
+      await call("/json/api/bookmark-add.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "" });
+    expect(
+      await call("/json/api/bookmark-add.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "You already have this character bookmarked." });
+    expect(await call("/json/api/bookmark-list.php", {})).toEqual({
+      error: "",
+      characters: ["Tally Marsh"],
+    });
+    expect(
+      await call("/json/api/bookmark-remove.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "" });
+    expect(
+      await call("/json/api/bookmark-remove.php", { name: "Tally Marsh" }),
+    ).toEqual({ error: "You do not have this character bookmarked." });
+  });
+
+  it("walks a friend request end to end: send → pending/incoming → accept → symmetric friendship → remove", async () => {
+    const sim = await startSim();
+    const amber = "amber@example.test";
+    const birch = "birch@example.test";
+    const amberTicket = await ticketFor(sim, amber);
+    const birchTicket = await ticketFor(sim, birch);
+
+    // Amber Vale sends Birch Rowan a request.
+    expect(
+      await socialCall(sim, "/json/api/request-send.php", {
+        account: amber,
+        ticket: amberTicket,
+        source_name: "Amber Vale",
+        dest_name: "Birch Rowan",
+      }),
+    ).toEqual({ error: "" });
+    // Duplicate refused.
+    expect(
+      (
+        await socialCall(sim, "/json/api/request-send.php", {
+          account: amber,
+          ticket: amberTicket,
+          source_name: "Amber Vale",
+          dest_name: "Birch Rowan",
+        })
+      )["error"],
+    ).toContain("already a pending request");
+
+    const pending = await socialCall(sim, "/json/api/request-pending.php", {
+      account: amber,
+      ticket: amberTicket,
+    });
+    const incoming = await socialCall(sim, "/json/api/request-list.php", {
+      account: birch,
+      ticket: birchTicket,
+    });
+    expect(pending["requests"]).toEqual(incoming["requests"]);
+    const request = (
+      incoming["requests"] as { id: number; source: string; dest: string }[]
+    )[0]!;
+    expect(request).toMatchObject({
+      source: "Amber Vale",
+      dest: "Birch Rowan",
+    });
+
+    // Birch accepts: friendship lands on BOTH accounts.
+    expect(
+      await socialCall(sim, "/json/api/request-accept.php", {
+        account: birch,
+        ticket: birchTicket,
+        request_id: String(request.id),
+      }),
+    ).toEqual({ error: "" });
+    expect(
+      (
+        await socialCall(sim, "/json/api/friend-list.php", {
+          account: birch,
+          ticket: birchTicket,
+        })
+      )["friends"],
+    ).toEqual([{ source: "Amber Vale", dest: "Birch Rowan" }]);
+    expect(
+      (
+        await socialCall(sim, "/json/api/friend-list.php", {
+          account: amber,
+          ticket: amberTicket,
+        })
+      )["friends"],
+    ).toEqual([{ source: "Birch Rowan", dest: "Amber Vale" }]);
+
+    // Removing is symmetric too.
+    expect(
+      await socialCall(sim, "/json/api/friend-remove.php", {
+        account: amber,
+        ticket: amberTicket,
+        source_name: "Amber Vale",
+        dest_name: "Birch Rowan",
+      }),
+    ).toEqual({ error: "" });
+    expect(
+      (
+        await socialCall(sim, "/json/api/friend-list.php", {
+          account: birch,
+          ticket: birchTicket,
+        })
+      )["friends"],
+    ).toEqual([]);
+  });
+
+  it("denies and cancels requests", async () => {
+    const sim = await startSim();
+    const fern = "fern@example.test";
+    const ticket = await ticketFor(sim, fern);
+    // The seeded incoming request from Tally Marsh can be denied.
+    const incoming = await socialCall(sim, "/json/api/request-list.php", {
+      account: fern,
+      ticket,
+    });
+    const seeded = (incoming["requests"] as { id: number }[])[0]!;
+    expect(
+      await socialCall(sim, "/json/api/request-deny.php", {
+        account: fern,
+        ticket,
+        request_id: String(seeded.id),
+      }),
+    ).toEqual({ error: "" });
+    // Fern sends one and cancels it.
+    await socialCall(sim, "/json/api/request-send.php", {
+      account: fern,
+      ticket,
+      source_name: "Fern Glade",
+      dest_name: "Amber Vale",
+    });
+    const outgoing = await socialCall(sim, "/json/api/request-pending.php", {
+      account: fern,
+      ticket,
+    });
+    const sent = (outgoing["requests"] as { id: number }[])[0]!;
+    expect(
+      await socialCall(sim, "/json/api/request-cancel.php", {
+        account: fern,
+        ticket,
+        request_id: String(sent.id),
+      }),
+    ).toEqual({ error: "" });
+    expect(
+      (
+        await socialCall(sim, "/json/api/request-pending.php", {
+          account: fern,
+          ticket,
+        })
+      )["requests"],
+    ).toEqual([]);
   });
 });

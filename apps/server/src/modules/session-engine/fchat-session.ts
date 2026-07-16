@@ -49,6 +49,10 @@ export const MAX_IDENTIFY_REJECTIONS = 3;
  * set. See #unconfirmedJoins. */
 export const MAX_UNCONFIRMED_JOIN_ATTEMPTS = 2;
 
+/** An immediate ad may briefly wait out a short gate (tests, generous
+ * VARs) but never longer than the client's ack window can survive. */
+export const AD_IMMEDIATE_WAIT_CEILING_MS = 10_000;
+
 export interface BackoffOptions {
   readonly floorMs: number;
   readonly capMs: number;
@@ -127,6 +131,20 @@ export class MessageTooLongError extends Error {
   }
 }
 
+/** An immediate ad inside the channel's lfrp_flood window. Refusing beats
+ * queuing: the gateway ack would time out long before the 10-minute gate
+ * released the frame, and the ad would then ghost-post after a shown
+ * "failure" (M6 audit HIGH). */
+export class AdCooldownError extends Error {
+  constructor(paceSeconds: number, waitMs: number) {
+    const wait = Math.ceil(waitMs / 1000);
+    super(
+      `One ad per ${String(Math.round(paceSeconds / 60))} minutes per channel — next available in ${String(Math.floor(wait / 60))}m ${String(wait % 60)}s`,
+    );
+    this.name = "AdCooldownError";
+  }
+}
+
 export class FchatSession {
   readonly character: string;
   readonly accountName: string;
@@ -195,8 +213,13 @@ export class FchatSession {
     this.#watchdogMs = options.watchdogMs ?? WATCHDOG_MS;
     this.events = new SessionEventBus(this.#log);
     // MSG and PRI share the documented msg_flood value but the server tracks
-    // them separately; LRP (lfrp_flood) joins in M4+.
-    this.#rateGate = new RateGate(() => this.state.vars.msg_flood);
+    // them separately; ads pace on lfrp_flood (1/10 min live) per channel.
+    // Both come from live VARs at send time, never hardcoded.
+    this.#rateGate = new RateGate((cls) =>
+      cls.startsWith("LRP:")
+        ? this.state.vars.lfrp_flood
+        : this.state.vars.msg_flood,
+    );
   }
 
   get status(): SessionStatus {
@@ -262,6 +285,50 @@ export class FchatSession {
     });
   }
 
+  /**
+   * Sends a roleplay ad (LRP) — its own lfrp_max length and a per-channel
+   * lfrp_flood pace. An immediate send inside the window REFUSES with the
+   * remaining cooldown instead of queuing (the ack would time out and the
+   * ad would ghost-post minutes later — M6 audit); the outbox release path
+   * passes `wait: true`, where parking is the point and only that user's
+   * own queue waits behind it.
+   */
+  async sendChannelAd(
+    channel: string,
+    message: string,
+    options: { wait?: boolean } = {},
+  ): Promise<void> {
+    this.#assertOnline();
+    this.#assertLength(message, this.state.vars.lfrp_max);
+    const cls = `LRP:${channel}` as const;
+    if (options.wait !== true) {
+      const waitMs = this.#rateGate.waitMs(cls);
+      if (waitMs > AD_IMMEDIATE_WAIT_CEILING_MS) {
+        throw new AdCooldownError(this.state.vars.lfrp_flood, waitMs);
+      }
+    }
+    await this.#rateGate.schedule(cls, () => {
+      if (!this.#send({ cmd: "LRP", payload: { channel, message } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+      this.events.emit("sent", { kind: "ad", channel, message });
+    });
+  }
+
+  /**
+   * Rolls dice or spins the bottle (RLL). No "sent" event: the server
+   * computes the result and echoes the RLL back to us — persisting that
+   * echo is the only truthful record. Rides the MSG pace.
+   */
+  async rollDice(channel: string, dice: string): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("MSG", () => {
+      if (!this.#send({ cmd: "RLL", payload: { channel, dice } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
   async sendPrivateMessage(recipient: string, message: string): Promise<void> {
     this.#assertOnline();
     this.#assertLength(message, this.state.vars.priv_max);
@@ -271,6 +338,139 @@ export class FchatSession {
       }
       this.events.emit("sent", { kind: "pm", recipient, message });
     });
+  }
+
+  /**
+   * Asks the server for both public channel listings (CHA + ORS). Resolves
+   * when the frames passed the flood gate onto the wire; the responses
+   * arrive as ordinary CHA/ORS commands on the event bus (the directory
+   * cache subscribes there).
+   */
+  async requestChannelLists(): Promise<void> {
+    this.#assertOnline();
+    await Promise.all([
+      this.#rateGate.schedule("CHA", () => {
+        if (!this.#send({ cmd: "CHA" })) {
+          throw new SessionNotOnlineError(this.#status);
+        }
+      }),
+      this.#rateGate.schedule("ORS", () => {
+        if (!this.#send({ cmd: "ORS" })) {
+          throw new SessionNotOnlineError(this.#status);
+        }
+      }),
+    ]);
+  }
+
+  /**
+   * Creates a private, invite-only room (CCR). The payload is the TITLE —
+   * the server mints the ADH- id and answers with a JCH into it, which
+   * flows through the ordinary join/persist path; watch conversation
+   * fan-out for the new key.
+   */
+  async createRoom(title: string): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send({ cmd: "CCR", payload: { channel: title } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  /** Invites a character to a channel (CIU, chanop). The server answers
+   * with a SYS; errors arrive as ERR — both already fan out. */
+  async inviteToChannel(channel: string, character: string): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send({ cmd: "CIU", payload: { channel, character } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  /** Sets a private room public (listed, freely joinable) or private
+   * (unlisted, invite-only) — RST, owner/op only. */
+  async setRoomStatus(
+    channel: string,
+    status: "public" | "private",
+  ): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send({ cmd: "RST", payload: { channel, status } })) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  /**
+   * Moderation commands (M6 op tooling) share one shape: chanop-restricted,
+   * rare, user-clicked — they ride the ROOM rate class like the other room
+   * management. Errors come back as ERR frames; SYS acks fan out normally.
+   */
+  async #roomCommand(command: ClientCommand): Promise<void> {
+    this.#assertOnline();
+    await this.#rateGate.schedule("ROOM", () => {
+      if (!this.#send(command)) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
+  async kickFromChannel(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CKU", payload: { channel, character } });
+  }
+
+  async banFromChannel(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CBU", payload: { channel, character } });
+  }
+
+  async unbanFromChannel(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CUB", payload: { channel, character } });
+  }
+
+  /** Channel timeout — a temporary ban of 1-90 minutes. */
+  async timeoutFromChannel(
+    channel: string,
+    character: string,
+    length: number,
+  ): Promise<void> {
+    await this.#roomCommand({
+      cmd: "CTU",
+      payload: { channel, character, length },
+    });
+  }
+
+  async promoteOp(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "COA", payload: { channel, character } });
+  }
+
+  async demoteOp(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "COR", payload: { channel, character } });
+  }
+
+  /** Hands the room to a new owner (current owner only). */
+  async setRoomOwner(channel: string, character: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CSO", payload: { channel, character } });
+  }
+
+  async setRoomDescription(
+    channel: string,
+    description: string,
+  ): Promise<void> {
+    await this.#roomCommand({ cmd: "CDS", payload: { channel, description } });
+  }
+
+  /** Sets the room mode: chat, ads, or both (chanop). */
+  async setRoomMode(
+    channel: string,
+    mode: "ads" | "both" | "chat",
+  ): Promise<void> {
+    await this.#roomCommand({ cmd: "RMO", payload: { channel, mode } });
+  }
+
+  /** Requests the channel banlist — the answer arrives as a channel SYS. */
+  async requestBanlist(channel: string): Promise<void> {
+    await this.#roomCommand({ cmd: "CBL", payload: { channel } });
   }
 
   /** What the character's status should read as right now. */
@@ -566,6 +766,23 @@ export class FchatSession {
         this.events.emit("command", command);
         return;
       }
+      // Kick / ban / timeout: the frame is the leave signal (no LCH). Our
+      // own removal must also leave the desired set — a reconnect would
+      // otherwise walk straight back into a room we were just thrown out
+      // of (and churn ERR 48 forever on a ban).
+      case "CKU":
+      case "CBU":
+      case "CTU":
+        if (command.payload.character === this.character) {
+          this.#desiredChannels.delete(command.payload.channel);
+          this.#unconfirmedJoins.delete(command.payload.channel);
+          // A kick racing our own just-issued LCH must not leave a stale
+          // pending-leave count that would swallow a later real LCH.
+          this.#pendingLeaves.delete(command.payload.channel);
+        }
+        this.state.apply(command);
+        this.events.emit("command", command);
+        return;
       default:
         this.state.apply(command);
         this.events.emit("command", command);

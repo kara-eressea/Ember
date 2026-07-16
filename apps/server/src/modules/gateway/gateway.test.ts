@@ -20,8 +20,12 @@ import {
   it,
   vi,
 } from "vitest";
-import { FchatSim } from "@emberchat/fchat-sim";
-import { serializeServerCommand } from "@emberchat/fchat-protocol";
+import { FchatSim, rawDataToString } from "@emberchat/fchat-sim";
+import {
+  serializeClientCommand,
+  serializeServerCommand,
+  type ClientCommand,
+} from "@emberchat/fchat-protocol";
 import {
   GATEWAY_CLOSE,
   PREFS_DEFAULTS,
@@ -60,7 +64,10 @@ let app: FastifyInstance;
 let gatewayUrl: string;
 
 beforeAll(async () => {
-  sim = new FchatSim();
+  // lfrp_flood is zeroed: the RP-messages test sends several ads and would
+  // otherwise wait out the live 10-minute pace (pacing itself is covered in
+  // fchat-session.test.ts against a dedicated sim).
+  sim = new FchatSim({ serverVars: { lfrp_flood: 0 } });
   await sim.start();
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
@@ -149,7 +156,11 @@ class TestClient {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         throw new Error(
-          `timed out; buffered: ${JSON.stringify(this.#frames.map((f) => f.t))}`,
+          `timed out; buffered: ${JSON.stringify(
+            this.#frames.map((f) =>
+              f.t === "event" ? `event:${(f.d as { kind: string }).kind}` : f.t,
+            ),
+          )}`,
         );
       }
       await new Promise<void>((resolve) => {
@@ -233,6 +244,86 @@ afterEach(() => {
 // ── Production-path setup helpers (mirrors history.test.ts) ─────────────────
 
 let userCounter = 0;
+/** A bare second participant on the sim (the "other side" of moderation). */
+class SimClient {
+  readonly #socket: WebSocket;
+  readonly #queue: string[] = [];
+  readonly #waiters: Array<(raw: string) => void> = [];
+
+  private constructor(socket: WebSocket) {
+    this.#socket = socket;
+    socket.on("message", (data) => {
+      const raw = rawDataToString(data);
+      const waiter = this.#waiters.shift();
+      if (waiter) {
+        waiter(raw);
+      } else {
+        this.#queue.push(raw);
+      }
+    });
+  }
+
+  static async connect(
+    fchat: FchatSim,
+    account: string,
+    character: string,
+  ): Promise<SimClient> {
+    const socket = new WebSocket(fchat.wsUrl);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    const client = new SimClient(socket);
+    client.send({
+      cmd: "IDN",
+      payload: {
+        method: "ticket",
+        account,
+        ticket: fchat.issueTicketFor(account),
+        character,
+        cname: "EmberChat-test-observer",
+        cversion: "0.0.0",
+      },
+    });
+    await client.waitFor("IDN");
+    return client;
+  }
+
+  send(command: ClientCommand): void {
+    this.#socket.send(serializeClientCommand(command));
+  }
+
+  async next(timeoutMs = 5000): Promise<string> {
+    const queued = this.#queue.shift();
+    if (queued !== undefined) {
+      return queued;
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("timed out waiting for a sim frame"));
+      }, timeoutMs);
+      this.#waiters.push((raw) => {
+        clearTimeout(timer);
+        resolve(raw);
+      });
+    });
+  }
+
+  /** Skips frames until one starts with the given command name. */
+  async waitFor(cmd: string): Promise<string> {
+    for (;;) {
+      const raw = await this.next();
+      if (raw === cmd || raw.startsWith(`${cmd} `)) {
+        return raw;
+      }
+    }
+  }
+
+  close(): void {
+    this.#socket.terminate();
+  }
+}
+
 async function registerUser(): Promise<string> {
   userCounter += 1;
   const response = await app.inject({
@@ -853,12 +944,13 @@ describe("gateway fan-out", () => {
       status: "online",
       statusmsg: "",
       ignores: [],
+      chatop: false,
       iconBlacklist: [],
       sendDelaySeconds: 0,
       prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
-      limits: { chatMax: 4096, privMax: 50000 },
+      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
     });
     expect(snapshot.d.channels).toHaveLength(2);
     const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
@@ -1447,6 +1539,438 @@ describe("gateway commands", () => {
         sentByUs: true,
       });
     }
+  });
+
+  it("creates a private room, invites, and admits the invitee (M6 rooms)", async () => {
+    const { identityId, token } = await createIdentity();
+    // A second identity on the same account receives the invite.
+    const [row] = await db
+      .select({ accountId: identities.flistAccountId })
+      .from(identities)
+      .where(eq(identities.id, identityId));
+    const [cindral] = await db
+      .insert(identities)
+      .values({ flistAccountId: row!.accountId, characterName: "Cindral" })
+      .returning({ id: identities.id });
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    await client.nextOfType("ack");
+
+    const invitee = await connectClient();
+    await invitee.hello(token);
+    await invitee.subscribe(cindral!.id);
+    invitee.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId: cindral!.id, action: "session.connect" },
+    });
+    await invitee.nextOfType("ack");
+
+    // CCR: the ack confirms the send; the minted ADH- key arrives through
+    // the ordinary join fan-out.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "channel.create",
+        d: { title: "Gateway Attic" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    const room = await nextConversationUpdate<{
+      id: string;
+      channelKey: string | null;
+      title: string;
+      joined: boolean;
+      lastReadMessageId: number | null;
+    }>(client, (c) => c.joined);
+    expect(room.channelKey).toMatch(/^ADH-/);
+    expect(room.title).toBe("Gateway Attic");
+    const key = room.channelKey!;
+
+    // Invite → the other identity's subscribers get the actionable event.
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "channel.invite",
+        d: { key, character: "Cindral" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 3,
+      d: { ok: true },
+    });
+    const invite = await invitee.nextEvent("channel.invite");
+    expect(eventPayload<object>(invite)).toEqual({
+      sender: CHARACTER,
+      title: "Gateway Attic",
+      key,
+    });
+
+    // The invitee is admitted to the closed room…
+    invitee.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId: cindral!.id, action: "channel.join", d: { key } },
+    });
+    await invitee.nextOfType("ack");
+    const joined = await nextConversationUpdate<{
+      id: string;
+      channelKey: string | null;
+      joined: boolean;
+      lastReadMessageId: number | null;
+    }>(invitee, (c) => c.joined && c.channelKey === key);
+    expect(joined.channelKey).toBe(key);
+
+    // …and RST flips the room public without an error.
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: {
+        identityId,
+        action: "channel.status",
+        d: { key, status: "public" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 4,
+      d: { ok: true },
+    });
+
+    app.sessions.stop(cindral!.id);
+  });
+
+  it("moderates a room: promote/demote, describe, kick with SystemLine, ban/banlist/unban (M6 op tooling)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Own room (owner role) with Birch as the second member.
+    await session.createRoom("Mod Bench");
+    const room = await nextConversationUpdate<{
+      channelKey: string | null;
+      joined: boolean;
+    }>(client, (c) => c.joined);
+    const key = room.channelKey!;
+    await session.inviteToChannel(key, "Birch Rowan");
+    const birch = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+    birch.send({ cmd: "JCH", payload: { channel: key } });
+    await birch.waitFor("CDS");
+    await client.nextEvent("member.join");
+
+    let cmdId = 0;
+    const cmd = (action: string, d: unknown) => {
+      cmdId += 1;
+      client.send({
+        t: "cmd",
+        id: cmdId,
+        d: { identityId, action, d } as never,
+      });
+      return client.nextOfType("ack");
+    };
+    // Content-matched channel.info wait — the join flow already queued
+    // earlier channel.info frames (COL/CDS on join), so kind alone is
+    // ambiguous here.
+    const nextInfo = (
+      match: (d: {
+        key: string;
+        oplist?: string[];
+        description?: string;
+      }) => boolean,
+    ) =>
+      client.next(
+        (frame): frame is Extract<ServerFrame, { t: "event" }> =>
+          frame.t === "event" &&
+          (frame.d as { kind: string }).kind === "channel.info" &&
+          match(eventPayload(frame as { d: unknown })),
+      );
+
+    // Promote → the post-fold oplist fans out as channel.info.
+    expect(
+      (await cmd("channel.promote", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    await nextInfo(
+      (d) =>
+        d.key === key &&
+        JSON.stringify(d.oplist) === JSON.stringify([CHARACTER, "Birch Rowan"]),
+    );
+    expect(
+      (await cmd("channel.demote", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    await nextInfo(
+      (d) =>
+        d.key === key &&
+        JSON.stringify(d.oplist) === JSON.stringify([CHARACTER]),
+    );
+
+    // Describe → CDS broadcast → channel.info carries the new description.
+    expect(
+      (await cmd("channel.describe", { key, description: "House rules." })).d
+        .ok,
+    ).toBe(true);
+    await nextInfo((d) => d.key === key && d.description === "House rules.");
+
+    // Kick → member.leave + a persisted SystemLine naming operator+target.
+    expect(
+      (await cmd("channel.kick", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    expect(
+      eventPayload<object>(await client.nextEvent("member.leave")),
+    ).toEqual({ channelKey: key, character: "Birch Rowan" });
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({
+      kind: "sys",
+      bbcode: `Birch Rowan was kicked from the channel by ${CHARACTER}.`,
+    });
+
+    // Ban (Birch can rejoin after a kick, so ban while absent), list, unban.
+    expect(
+      (await cmd("channel.ban", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({
+      kind: "sys",
+      bbcode: `Birch Rowan was banned from the channel by ${CHARACTER}.`,
+    });
+    expect((await cmd("channel.banlist", { key })).d.ok).toBe(true);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(
+        await client.nextEvent("message.new"),
+      ).message.bbcode,
+    ).toBe("Channel bans for Mod Bench: Birch Rowan.");
+    // A second ban is refused by the sim — the ERR fans out as an error.
+    expect(
+      (await cmd("channel.ban", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+    expect(
+      eventPayload<{ number: number }>(await client.nextEvent("error")).number,
+    ).toBe(41);
+    expect(
+      (await cmd("channel.unban", { key, character: "Birch Rowan" })).d.ok,
+    ).toBe(true);
+
+    birch.close();
+  }, 30_000);
+
+  it("being kicked drops the channel from the session and stops rejoins (M6)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Birch owns a room; Amber gets invited, joins, then is kicked.
+    const birch = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+    birch.send({ cmd: "CCR", payload: { channel: "Birch's Bench" } });
+    const jchRaw = await birch.waitFor("JCH");
+    const key = (JSON.parse(jchRaw.slice(4)) as { channel: string }).channel;
+    birch.send({ cmd: "CIU", payload: { channel: key, character: CHARACTER } });
+    await client.nextEvent("channel.invite");
+    session.joinChannel(key);
+    await nextConversationUpdate<{
+      channelKey: string | null;
+      joined: boolean;
+    }>(client, (c) => c.joined && c.channelKey === key);
+
+    birch.send({ cmd: "CKU", payload: { channel: key, character: CHARACTER } });
+    // The conversation un-joins (sink flag) and the SystemLine lands.
+    await nextConversationUpdate<{
+      channelKey: string | null;
+      joined: boolean;
+    }>(client, (c) => !c.joined && c.channelKey === key);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(
+        await client.nextEvent("message.new"),
+      ).message.bbcode,
+    ).toBe(`${CHARACTER} was kicked from the channel by Birch Rowan.`);
+    // The session forgot the channel — no rejoin on reconnect.
+    expect(session.state.channels.has(key)).toBe(false);
+
+    birch.close();
+  }, 30_000);
+
+  it("sends ads and rolls, tracks room mode, and releases delayed ads as LRP (M6 RP messages)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Development"); // mode "both": ads allowed
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Development"),
+        ),
+      );
+    const convId = conv!.id;
+
+    // An ad goes out as LRP and persists with its own kind.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "Seeking a scene partner.", kind: "lrp" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: true },
+    });
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({
+      kind: "lrp",
+      senderCharacter: CHARACTER,
+      bbcode: "Seeking a scene partner.",
+      sentByUs: true,
+    });
+
+    // A roll comes back as the sim-computed RLL, persisted as our own.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "channel.roll",
+        d: { key: "Development", dice: "2d6" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    const roll = eventPayload<{ message: { kind: string; bbcode: string } }>(
+      await client.nextEvent("message.new"),
+    ).message;
+    expect(roll).toMatchObject({ kind: "rll", sentByUs: true });
+    expect(roll.bbcode).toContain(`[b]${CHARACTER}[/b] rolls 2d6:`);
+
+    // Ads never go to PM conversations.
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: { identityId, action: "pm.open", d: { character: "Nyx Firemane" } },
+    });
+    const pmAck = await client.nextOfType("ack");
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId: pmAck.d.conversation!.id, bbcode: "ad?", kind: "lrp" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 4,
+      d: { ok: false, error: "ads can only go to channels" },
+    });
+
+    // RMO fans out as channel.info so the composer can re-gate live.
+    await inject(session, {
+      cmd: "RMO",
+      payload: { channel: "Development", mode: "chat" },
+    });
+    expect(
+      eventPayload<{ key: string; mode: string }>(
+        await client.nextEvent("channel.info"),
+      ),
+    ).toEqual({ key: "Development", mode: "chat" });
+
+    // A due outbox row with kind "lrp" (a delayed ad) releases as an LRP
+    // frame and persists as an lrp message, not a msg. (The RMO above was
+    // injected at our session only — the sim's room stayed "both", so the
+    // ad is accepted on the wire.)
+    await db.insert(outboxMessages).values({
+      identityId,
+      conversationId: convId,
+      markdown: "delayed ad",
+      bbcode: "delayed ad",
+      kind: "lrp",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    const released = await client.nextEvent("message.new", 15_000);
+    expect(eventPayload<{ message: object }>(released).message).toMatchObject({
+      kind: "lrp",
+      bbcode: "delayed ad",
+      sentByUs: true,
+    });
+  }, 30_000);
+
+  it("surfaces BRO broadcasts and RTB website events (M6 step 9)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    await inject(session, {
+      cmd: "BRO",
+      payload: { message: "The server restarts in 30 minutes." },
+    });
+    expect(
+      eventPayload<{ message: string }>(await client.nextEvent("sys")),
+    ).toEqual({
+      message: "Server broadcast: The server restarts in 30 minutes.",
+    });
+
+    await inject(session, {
+      cmd: "RTB",
+      payload: {
+        type: "note",
+        sender: "Nyx Firemane",
+        subject: "About that scene",
+        id: 42,
+      },
+    });
+    expect(eventPayload<object>(await client.nextEvent("rtb"))).toEqual({
+      type: "note",
+      character: "Nyx Firemane",
+      subject: "About that scene",
+    });
+
+    await inject(session, {
+      cmd: "RTB",
+      payload: { type: "friendrequest", name: "Tally Marsh" },
+    });
+    expect(eventPayload<object>(await client.nextEvent("rtb"))).toEqual({
+      type: "friendrequest",
+      character: "Tally Marsh",
+    });
   });
 
   it("opens a PM conversation and advances the read cursor across clients", async () => {

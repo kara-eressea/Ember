@@ -68,9 +68,11 @@ export interface IdentitySession {
    * persisted but are hidden from render. */
   ignores: string[];
   /** Live server VARs (bytes) from the snapshot — composer limits. */
-  limits: { chatMax: number; privMax: number };
+  limits: { chatMax: number; privMax: number; lfrpMax: number };
   /** Channels where the server disallows [icon]/[eicon] (icon_blacklist). */
   iconBlacklist: string[];
+  /** Own character is a chatop (global moderator) — unlocks the admin UI. */
+  chatop: boolean;
   /** The user's delayed-send window (per-user; mirrored per slice). */
   sendDelaySeconds: number;
   /** The user's resolved preferences (per-user; mirrored per slice). */
@@ -87,6 +89,34 @@ export interface IdentitySession {
   synced: boolean;
   /** Latest transient global SYS / ERR, surfaced as a dismissable strip. */
   notice?: { kind: "sys" | "error"; text: string };
+  /** Pending channel invitations (inbound CIU) — volatile, actionable rows
+   * in the sidebar. A missed invite stays joinable via its key anyway. */
+  invites: ChannelInvite[];
+  /** Bookmarks/friends/requests (M6 step 7), lazily loaded through the
+   * social REST endpoint (loadSocial). Absent until first fetched. */
+  social?: SocialData;
+}
+
+/** One friend or bookmark row, presence-enriched by the server. */
+export interface SocialCharacter {
+  name: string;
+  online: boolean;
+  status: string;
+  statusmsg: string;
+}
+
+export interface SocialData {
+  bookmarks: SocialCharacter[];
+  friends: SocialCharacter[];
+  incoming: { id: number; name: string }[];
+  outgoing: { id: number; name: string }[];
+  fetchedAt: number;
+}
+
+export interface ChannelInvite {
+  sender: string;
+  title: string;
+  key: string;
 }
 
 export interface IdentitySummary {
@@ -127,8 +157,9 @@ interface SessionsState {
       status: string;
       statusmsg: string;
       ignores: string[];
-      limits: { chatMax: number; privMax: number };
+      limits: { chatMax: number; privMax: number; lfrpMax: number };
       iconBlacklist: string[];
+      chatop: boolean;
       sendDelaySeconds: number;
       prefs: UserPrefs;
       outbox: OutboxItemDto[];
@@ -139,6 +170,7 @@ interface SessionsState {
   /** Full pending-outbox overwrite (outbox.updated / snapshot). */
   applyOutbox(identityId: string, items: OutboxItemDto[]): void;
   applySendDelay(identityId: string, sendDelaySeconds: number): void;
+  applySocial(identityId: string, social: SocialData): void;
   /** Full resolved-prefs overwrite (prefs.updated). */
   applyPrefs(
     identityId: string,
@@ -197,6 +229,8 @@ interface SessionsState {
   applyTyping(identityId: string, character: string, status: string): void;
   applyNotice(identityId: string, kind: "sys" | "error", text: string): void;
   clearNotice(identityId: string): void;
+  addInvite(identityId: string, invite: ChannelInvite): void;
+  dismissInvite(identityId: string, key: string): void;
   bumpUnread(identityId: string, convId: string, mention?: boolean): void;
   /** Stamp the conversation's bump sort key (highlightBump pref). */
   bumpHighlight(identityId: string, convId: string): void;
@@ -229,14 +263,16 @@ function emptySession(identityId: string): IdentitySession {
     ownStatusmsg: "",
     ignores: [],
     // Placeholder until the snapshot delivers the live VARs.
-    limits: { chatMax: 4096, privMax: 50000 },
+    limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
     iconBlacklist: [],
+    chatop: false,
     sendDelaySeconds: 0,
     prefs: PREFS_DEFAULTS,
     outbox: [],
     channels: {},
     dms: {},
     channelByConvId: {},
+    invites: [],
     synced: false,
   };
 }
@@ -384,6 +420,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ignores: [...d.self.ignores],
         limits: d.self.limits,
         iconBlacklist: [...d.self.iconBlacklist],
+        chatop: d.self.chatop,
         sendDelaySeconds: d.self.sendDelaySeconds,
         prefs: d.self.prefs,
         outbox: [...d.self.outbox],
@@ -396,6 +433,10 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyOutbox(identityId, items) {
       patch(identityId, (session) => ({ ...session, outbox: [...items] }));
+    },
+
+    applySocial(identityId, social) {
+      patch(identityId, (session) => ({ ...session, social }));
     },
 
     applySendDelay(identityId, sendDelaySeconds) {
@@ -678,6 +719,22 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       }));
     },
 
+    addInvite(identityId, invite) {
+      patch(identityId, (session) => ({
+        ...session,
+        // Re-invites to the same room replace instead of stacking.
+        invites: [
+          ...session.invites.filter((entry) => entry.key !== invite.key),
+          invite,
+        ],
+      }));
+    },
+    dismissInvite(identityId, key) {
+      patch(identityId, (session) => ({
+        ...session,
+        invites: session.invites.filter((entry) => entry.key !== key),
+      }));
+    },
     clearNotice(identityId) {
       patch(identityId, (session) => ({ ...session, notice: undefined }));
     },

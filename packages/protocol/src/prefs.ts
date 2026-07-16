@@ -108,11 +108,26 @@ const prefsShape = {
   /** Off = notifications show the sender only, never the message body
    * (privacy toggle, decisions.md §10). */
   notifyShowContent: z.boolean(),
+  /** Desktop notifications for website events pushed over RTB — new notes
+   * and friend requests (M6 step 9, feature-parity audit decision 3). The
+   * notice strip shows them regardless. */
+  desktopNotifyNotes: z.boolean(),
   /** Mute overrides — alerts only (chime, title flash, desktop
    * notifications); badges and tint still accrue (decisions.md §10).
    * Patches replace the whole array. */
   mutedIdentityIds: z.array(z.uuid()).max(64),
   mutedConvIds: z.array(z.uuid()).max(500),
+  /** Never show roleplay ads (LRP) — the account-wide default every channel
+   * inherits. Hidden ads neither render nor count as unread. */
+  hideAds: z.boolean(),
+  /** Per-channel override of hideAds, keyed by lowercased channel key.
+   * Absent key = inherit the global default. Patches replace the whole
+   * record (same convention as the muted lists). */
+  channelAdVisibility: z
+    .record(z.string().min(1).max(128), z.enum(["show", "hide"]))
+    .refine((value) => Object.keys(value).length <= 500, {
+      message: "too many channel overrides",
+    }),
 } as const;
 
 /** The full resolved prefs shape — every field present. */
@@ -156,8 +171,11 @@ export const PREFS_DEFAULTS: UserPrefs = {
   desktopNotifyMentions: false,
   desktopNotifyPms: false,
   notifyShowContent: true,
+  desktopNotifyNotes: false,
   mutedIdentityIds: [],
   mutedConvIds: [],
+  hideAds: false,
+  channelAdVisibility: {},
 };
 
 /**

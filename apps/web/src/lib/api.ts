@@ -46,6 +46,32 @@ export interface HistoryMessageDto {
   createdAt: string;
 }
 
+export interface DirectoryChannelDto {
+  /** F-Chat channel name (official) or ADH- id (open room). */
+  key: string;
+  kind: "official" | "open";
+  title: string;
+  /** Member count as of refreshedAt — point-in-time by nature. */
+  characters: number;
+}
+
+/** One friend or bookmark, presence-enriched by the server (M6 step 7). */
+export interface SocialCharacterDto {
+  name: string;
+  online: boolean;
+  status: string;
+  statusmsg: string;
+}
+
+export interface SocialDto {
+  bookmarks: SocialCharacterDto[];
+  friends: SocialCharacterDto[];
+  /** Friend requests addressed to this character. */
+  incoming: { id: number; name: string }[];
+  /** Friend requests this character has sent. */
+  outgoing: { id: number; name: string }[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -277,6 +303,44 @@ export const api = {
     return apiDownload(
       `/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
     );
+  },
+
+  /** Bookmarks, friends and friend requests (M6 step 7), scoped to the
+   * identity's character and presence-enriched by the server. Four F-List
+   * API calls upstream on a 1 req/s budget — call sparingly. */
+  getSocial(identityId: string) {
+    return apiRequest<SocialDto>(`/identities/${identityId}/social`, {
+      auth: true,
+    });
+  },
+
+  postBookmark(identityId: string, action: "add" | "remove", name: string) {
+    return apiRequest<{ ok: true }>(
+      `/identities/${identityId}/social/bookmark`,
+      { method: "POST", auth: true, body: { action, name } },
+    );
+  },
+
+  postFriendRequest(
+    identityId: string,
+    body:
+      | { action: "remove-friend" | "send"; character: string }
+      | { action: "accept" | "cancel" | "deny"; requestId: number },
+  ) {
+    return apiRequest<{ ok: true }>(
+      `/identities/${identityId}/social/request`,
+      { method: "POST", auth: true, body },
+    );
+  },
+
+  /** Shared channel listings (M6 channel browser). The server refreshes the
+   * cache over the identity's live session when it is past the cooldown;
+   * refreshedAt says how stale the point-in-time counts are. */
+  getDirectory(identityId: string) {
+    return apiRequest<{
+      channels: DirectoryChannelDto[];
+      refreshedAt: string | null;
+    }>(`/identities/${identityId}/directory`, { auth: true });
   },
 
   listHighlightRules() {

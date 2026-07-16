@@ -5,7 +5,9 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
+import { adsHidden } from "../components/chat/ads.js";
 import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
+import { loadSocial } from "../lib/social.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
@@ -93,6 +95,15 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // alerts only: badges, tint and the bump still accrue (decisions.md
       // §10).
       const prefs = sessions.sessions[identityId]?.prefs;
+      // A hidden ad is invisible end to end: no unread, no alerts (the
+      // buffer keeps it, so flipping ads back on reveals it in place).
+      if (
+        message.kind === "lrp" &&
+        prefs &&
+        adsHidden(prefs, sessions.sessions[identityId]?.channelByConvId[convId])
+      ) {
+        return;
+      }
       const muted =
         prefs !== undefined &&
         (prefs.mutedIdentityIds.includes(identityId) ||
@@ -191,6 +202,9 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "presence.bulk":
       sessions.applyPresenceBulk(identityId, event.d.characters);
       return;
+    case "channel.invite":
+      sessions.addInvite(identityId, event.d);
+      return;
     case "typing":
       sessions.applyTyping(identityId, event.d.character, event.d.status);
       return;
@@ -218,6 +232,31 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;
+    case "rtb": {
+      // Website events over the chat socket (M6 step 9): a notice always;
+      // a desktop notification for notes/friend requests behind its pref.
+      // The website stays the place to read and act.
+      const line = rtbNoticeText(event.d);
+      if (line === undefined) {
+        return; // an RTB type not worth a notice (e.g. silent list syncs)
+      }
+      sessions.applyNotice(identityId, "sys", line);
+      if (event.d.type === "friendrequest") {
+        // The sidebar's request rows should appear without a manual ↻.
+        void loadSocial(identityId, true).catch(() => undefined);
+      }
+      const prefs = sessions.sessions[identityId]?.prefs;
+      if (
+        prefs?.desktopNotifyNotes === true &&
+        (event.d.type === "note" || event.d.type === "friendrequest")
+      ) {
+        showMessageNotification({
+          title: line,
+          tag: `rtb:${event.d.type}`,
+        });
+      }
+      return;
+    }
     case "error":
       sessions.applyNotice(
         identityId,
@@ -225,5 +264,28 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         `${event.d.message} (${String(event.d.number)})`,
       );
       return;
+  }
+}
+
+/**
+ * Human line for an RTB event; undefined = not notice-worthy. Only the
+ * types with obvious user value get text — unknown types stay silent
+ * rather than leaking raw enum names into the notice strip.
+ */
+export function rtbNoticeText(d: {
+  type: string;
+  character?: string;
+  subject?: string;
+}): string | undefined {
+  const who = d.character ?? "someone";
+  switch (d.type) {
+    case "note":
+      return `New note from ${who}${d.subject ? `: ${d.subject}` : ""} — read it on f-list.net`;
+    case "friendrequest":
+      return `${who} sent a friend request`;
+    case "comment":
+      return `${who} replied to a comment thread you follow — see f-list.net`;
+    default:
+      return undefined;
   }
 }

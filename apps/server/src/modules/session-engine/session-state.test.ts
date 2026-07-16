@@ -222,3 +222,104 @@ describe("SessionState", () => {
     expect(state.ignoresSeeded).toBe(false);
   });
 });
+
+describe("SessionState moderation folds (M6)", () => {
+  function joined(): SessionState {
+    const state = new SessionState();
+    state.apply({ cmd: "IDN", payload: { character: "Amber Vale" } });
+    state.apply({
+      cmd: "JCH",
+      payload: {
+        channel: "ADH-1",
+        character: { identity: "Amber Vale" },
+        title: "Attic",
+      },
+    });
+    state.apply({
+      cmd: "JCH",
+      payload: {
+        channel: "ADH-1",
+        character: { identity: "Birch Rowan" },
+        title: "Attic",
+      },
+    });
+    state.apply({
+      cmd: "COL",
+      payload: { channel: "ADH-1", oplist: ["Amber Vale"] },
+    });
+    return state;
+  }
+
+  it("folds COA/COR/CSO into the oplist, protecting the owner slot", () => {
+    const state = joined();
+    state.apply({
+      cmd: "COA",
+      payload: { character: "Birch Rowan", channel: "ADH-1" },
+    });
+    expect(state.channels.get("ADH-1")?.oplist).toEqual([
+      "Amber Vale",
+      "Birch Rowan",
+    ]);
+    // COR never strips index 0 — CSO moves ownership.
+    state.apply({
+      cmd: "COR",
+      payload: { character: "Amber Vale", channel: "ADH-1" },
+    });
+    expect(state.channels.get("ADH-1")?.oplist).toEqual([
+      "Amber Vale",
+      "Birch Rowan",
+    ]);
+    state.apply({
+      cmd: "CSO",
+      payload: { character: "Birch Rowan", channel: "ADH-1" },
+    });
+    expect(state.channels.get("ADH-1")?.oplist).toEqual(["Birch Rowan"]);
+    state.apply({
+      cmd: "COR",
+      payload: { character: "Birch Rowan", channel: "ADH-1" },
+    });
+    expect(state.channels.get("ADH-1")?.oplist).toEqual(["Birch Rowan"]);
+  });
+
+  it("treats CKU/CBU/CTU as leaves — own removal drops the channel", () => {
+    const state = joined();
+    state.apply({
+      cmd: "CKU",
+      payload: {
+        operator: "Amber Vale",
+        channel: "ADH-1",
+        character: "Birch Rowan",
+      },
+    });
+    expect(state.channels.get("ADH-1")?.members.has("Birch Rowan")).toBe(false);
+    state.apply({
+      cmd: "CBU",
+      payload: {
+        operator: "Nyx Firemane",
+        channel: "ADH-1",
+        character: "Amber Vale",
+      },
+    });
+    expect(state.channels.has("ADH-1")).toBe(false);
+  });
+
+  it("captures chatops from ADL and exposes ownIsChatop", () => {
+    const state = new SessionState();
+    state.apply({ cmd: "IDN", payload: { character: "Amber Vale" } });
+    state.apply({ cmd: "ADL", payload: { ops: ["Amber Vale", "Silver"] } });
+    expect(state.ownIsChatop).toBe(true);
+    state.resetVolatile();
+    expect(state.ownIsChatop).toBe(false);
+  });
+
+  it("captures the FRL friends+bookmarks union (M6 step 7)", () => {
+    const state = new SessionState();
+    state.apply({
+      cmd: "FRL",
+      payload: { characters: ["Nyx Firemane", "Old Greywhisker"] },
+    });
+    expect([...state.frl]).toEqual(["Nyx Firemane", "Old Greywhisker"]);
+    state.resetVolatile();
+    expect(state.frl.size).toBe(0);
+  });
+});

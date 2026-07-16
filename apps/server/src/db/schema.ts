@@ -2,8 +2,8 @@
 // to snake_case via drizzle's `casing` option — keep it set in both
 // drizzle.config.ts and createDb().
 //
-// M6+ tables (channel_directory, email_tokens) arrive with their milestones;
-// outbox_messages exists from day one per the architecture.
+// M7+ tables (email_tokens) arrive with their milestones; outbox_messages
+// exists from day one per the architecture.
 
 import { sql } from "drizzle-orm";
 import {
@@ -165,6 +165,9 @@ export const outboxMessages = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     markdown: text().notNull(),
     bbcode: text().notNull(),
+    /** What the release puts on the wire: "msg" (or "pm" — the conversation
+     * kind decides) or "lrp" for a delayed roleplay ad (M6). */
+    kind: messageKind().notNull().default("msg"),
     releaseAt: timestamp({ withTimezone: true }).notNull(),
     /** "scheduled" | "releasing" (claimed by the worker — no longer
      * recallable) | "failed" (release refused; failureReason says why). */
@@ -218,6 +221,26 @@ export const highlightRules = pgTable(
     ),
   ],
 );
+
+export const channelDirectoryKind = pgEnum("channel_directory_kind", [
+  "official",
+  "open",
+]);
+
+// Server-wide cache of the public channel listings (M6). One F-Chat server,
+// one directory — rows are shared across every user and replaced wholesale
+// per kind on each CHA/ORS response. Counts are point-in-time; refreshed_at
+// lets the client display staleness honestly. Hidden/invite-only rooms never
+// appear in listings, so they never appear here either.
+export const channelDirectory = pgTable("channel_directory", {
+  /** F-Chat channel name (official) or ADH- id (open room). */
+  channelKey: text().primaryKey(),
+  kind: channelDirectoryKind().notNull(),
+  /** Display title; for official channels this equals the key. */
+  title: text().notNull(),
+  lastSeenCount: integer().notNull().default(0),
+  refreshedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 
 export const ignores = pgTable(
   "ignores",

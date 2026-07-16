@@ -3,7 +3,7 @@
 // editable TOPIC row has no wire counterpart and is omitted. For DMs the
 // header shows the partner with presence and the TPN typing state.
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { presenceDot } from "../../lib/presence.js";
@@ -14,7 +14,9 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { adsHidden, toggleChannelAds } from "./ads.js";
 import { RichText } from "./RichText.js";
+import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
 
 const DESCRIPTION_CLAMP = 140;
@@ -127,6 +129,40 @@ function MuteChip({
 
 const EMPTY_MUTES = PREFS_DEFAULTS.mutedConvIds;
 
+/**
+ * Ads visibility for this channel (M6): every channel inherits the global
+ * hideAds preference; this chip stores a per-channel exception in the
+ * synced prefs document. Render-side only — history keeps hidden ads.
+ */
+function AdsChip({
+  identityId,
+  channelKey,
+}: {
+  identityId: string;
+  channelKey: string;
+}) {
+  const prefs = useSessionsStore(
+    (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
+  );
+  const hidden = adsHidden(prefs, channelKey);
+
+  return (
+    <button
+      className={`${styles.pinChip} ${hidden ? (styles.ignoreChipActive ?? "") : ""}`}
+      onClick={() => {
+        void patchPrefs(identityId, toggleChannelAds(prefs, channelKey));
+      }}
+      title={
+        hidden
+          ? "Ads are hidden in this channel — click to show them"
+          : "Ads are shown in this channel — click to hide them"
+      }
+    >
+      {hidden ? "♥ ads off" : "♥ ads on"}
+    </button>
+  );
+}
+
 function PinChip({
   identityId,
   convId,
@@ -179,6 +215,265 @@ function PinChip({
   );
 }
 
+/**
+ * Room management for op+ viewers: invites and public/private (private
+ * rooms only — RST/CIU have no meaning on official channels), plus the op
+ * tooling that works everywhere: room mode (RMO), description (CDS), and
+ * the banlist (CBL — the answer lands in the log as a SystemLine). F-Chat
+ * has no command reporting the open/closed state, so both of those actions
+ * are always offered — the server's SYS response says what happened.
+ */
+function RoomChip({
+  identityId,
+  channelKey,
+  isPrivateRoom,
+  mode,
+  description,
+}: {
+  identityId: string;
+  channelKey: string;
+  isPrivateRoom: boolean;
+  mode: string;
+  description: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [character, setCharacter] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState<string>();
+  const [draft, setDraft] = useState<string>();
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open]);
+
+  async function invite(event: FormEvent) {
+    event.preventDefault();
+    const target = character.trim();
+    if (!target || busy) {
+      return;
+    }
+    setBusy(true);
+    setInfo(undefined);
+    try {
+      const ack = await gateway.cmd({
+        identityId,
+        action: "channel.invite",
+        d: { key: channelKey, character: target },
+      });
+      if (ack.ok) {
+        setCharacter("");
+        setInfo(`Invite sent to ${target}`);
+      } else {
+        setInfo(ack.error ?? "Could not invite");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setStatus(status: "public" | "private") {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setInfo(undefined);
+    try {
+      const ack = await gateway.cmd({
+        identityId,
+        action: "channel.status",
+        d: { key: channelKey, status },
+      });
+      setInfo(
+        ack.ok
+          ? status === "public"
+            ? "Room is now open and listed"
+            : "Room is now invite-only"
+          : (ack.error ?? "Could not change the room status"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Shared shape for the op commands whose feedback is just the result. */
+  async function run(
+    label: string,
+    command: Parameters<typeof gateway.cmd>[0],
+  ) {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setInfo(undefined);
+    try {
+      const ack = await gateway.cmd(command);
+      setInfo(ack.ok ? label : (ack.error ?? "Command failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className={styles.roomChipWrap} ref={containerRef}>
+      <button
+        className={styles.pinChip}
+        onClick={() => {
+          setOpen(!open);
+          setInfo(undefined);
+        }}
+        title="Room settings — invites and visibility"
+      >
+        ⚙ room
+      </button>
+      {open && (
+        <div
+          className={styles.roomMenu}
+          role="dialog"
+          aria-label="Room settings"
+        >
+          {isPrivateRoom && (
+            <>
+              <form
+                className={styles.roomMenuForm}
+                onSubmit={(event) => {
+                  void invite(event);
+                }}
+              >
+                <input
+                  className={styles.miniInput}
+                  value={character}
+                  onChange={(e) => {
+                    setCharacter(e.target.value);
+                  }}
+                  placeholder="Invite a character…"
+                  aria-label="Invite a character"
+                />
+                <button
+                  className={styles.miniButton}
+                  type="submit"
+                  disabled={busy}
+                >
+                  Invite
+                </button>
+              </form>
+              <div className={styles.roomMenuActions}>
+                <button
+                  className={styles.miniButton}
+                  disabled={busy}
+                  onClick={() => {
+                    void setStatus("public");
+                  }}
+                >
+                  Make open
+                </button>
+                <button
+                  className={styles.miniButton}
+                  disabled={busy}
+                  onClick={() => {
+                    void setStatus("private");
+                  }}
+                >
+                  Make invite-only
+                </button>
+              </div>
+            </>
+          )}
+          {/* Room mode (RMO): which message kinds the room accepts. The
+              active segment reflects the live mode via channel.info. */}
+          <div
+            className={styles.roomMenuActions}
+            role="radiogroup"
+            aria-label="Room mode"
+          >
+            {(["chat", "ads", "both"] as const).map((option) => (
+              <button
+                key={option}
+                className={`${styles.miniButton} ${mode === option ? (styles.miniButtonActive ?? "") : ""}`}
+                role="radio"
+                aria-checked={mode === option}
+                disabled={busy || mode === option}
+                onClick={() => {
+                  void run(`Room mode set to ${option}`, {
+                    identityId,
+                    action: "channel.mode",
+                    d: { key: channelKey, mode: option },
+                  });
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <form
+            className={styles.roomMenuForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run("Description updated", {
+                identityId,
+                action: "channel.describe",
+                d: { key: channelKey, description: draft ?? description },
+              });
+            }}
+          >
+            <textarea
+              className={styles.roomMenuTextarea}
+              value={draft ?? description}
+              onChange={(e) => {
+                setDraft(e.target.value);
+              }}
+              rows={3}
+              aria-label="Channel description"
+            />
+            <button className={styles.miniButton} type="submit" disabled={busy}>
+              Save
+            </button>
+          </form>
+          <div className={styles.roomMenuActions}>
+            <button
+              className={styles.miniButton}
+              disabled={busy}
+              onClick={() => {
+                setOpen(false);
+                void run("", {
+                  identityId,
+                  action: "channel.banlist",
+                  d: { key: channelKey },
+                });
+              }}
+            >
+              View banlist
+            </button>
+          </div>
+          {info && (
+            <p className={styles.roomMenuInfo} role="status">
+              {info}
+            </p>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function ChannelHeader({
   identityId,
   channel,
@@ -188,8 +483,20 @@ export function ChannelHeader({
 }) {
   const [expanded, setExpanded] = useState(false);
   const toggleMembers = useUiStore((s) => s.toggleMembers);
+  const ownCharacter = useSessionsStore(
+    (s) => s.sessions[identityId]?.character ?? "",
+  );
+  const chatop = useSessionsStore(
+    (s) => s.sessions[identityId]?.chatop ?? false,
+  );
   const description = channel.description.trim();
   const clampable = description.length > DESCRIPTION_CLAMP;
+  // Room management is an op+ affair (the commands are chanop-restricted
+  // wire-side; the UI simply doesn't offer them to others). Chatops manage
+  // any channel; the private-room actions (invite, open/close) only render
+  // for ADH rooms.
+  const canManageRoom =
+    roleFor(ownCharacter, channel.oplist) !== null || chatop;
 
   return (
     <header className={styles.header}>
@@ -202,6 +509,18 @@ export function ChannelHeader({
           pinned={channel.pinned}
         />
         <MuteChip identityId={identityId} convId={channel.convId} />
+        {channel.mode !== "chat" && (
+          <AdsChip identityId={identityId} channelKey={channel.key} />
+        )}
+        {canManageRoom && (
+          <RoomChip
+            identityId={identityId}
+            channelKey={channel.key}
+            isPrivateRoom={channel.key.startsWith("ADH-")}
+            mode={channel.mode}
+            description={channel.description}
+          />
+        )}
         <span className={styles.headerSpacer} />
         <button
           className={styles.headerButton}

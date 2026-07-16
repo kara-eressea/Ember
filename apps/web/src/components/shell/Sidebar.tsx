@@ -1,7 +1,7 @@
 // Sidebar (COMPONENTS.md §2–4): ServerHead · sections (Pinned, Channels,
-// Direct Messages) · MeBar. Channel discovery is the M6 ChannelBrowser;
-// until then joining happens through the join-by-name mini form. Friends/
-// Bookmarks sections arrive with their milestones.
+// Direct Messages, Friends, Bookmarks) · MeBar. The social sections load
+// lazily (four upstream F-List calls) and refresh on demand; incoming
+// friend requests render as actionable rows like channel invites.
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
@@ -10,14 +10,18 @@ import {
   type ClientSettableStatus,
 } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
+import { api } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
+import { loadSocial } from "../../lib/social.js";
 import {
   useSessionsStore,
+  type ChannelInvite,
   type ChannelView,
   type DmView,
   type IdentitySession,
+  type SocialCharacter,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { Avatar } from "../common/Avatar.js";
@@ -137,9 +141,22 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
         <div className={styles.sectionHeader}>
           <span>Channels</span>
-          <span>{channels.length || ""}</span>
+          <button
+            type="button"
+            className={styles.sectionAction}
+            title="Browse channels"
+            aria-label="Browse channels"
+            onClick={() => {
+              useUiStore.getState().setChannelBrowserOpen(true);
+            }}
+          >
+            +
+          </button>
         </div>
         {channels.map((channel) => channelRow(channel, false))}
+        {session.invites.map((invite) => (
+          <InviteRow key={invite.key} session={session} invite={invite} />
+        ))}
         <JoinChannelForm session={session} />
 
         <div className={styles.sectionHeader}>
@@ -148,6 +165,8 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         </div>
         {dms.map((dm) => dmRow(dm, false))}
         <NewDmForm session={session} />
+
+        <SocialSections session={session} />
       </div>
 
       <div className={styles.meBar}>
@@ -432,6 +451,269 @@ function NavRow({
         )
       )}
     </Link>
+  );
+}
+
+/**
+ * An inbound channel invitation (CIU) as an actionable row: join or
+ * dismiss. Volatile by design — a dismissed or missed invite stays joinable
+ * later through the channel browser's hidden-by-name footer.
+ */
+function InviteRow({
+  session,
+  invite,
+}: {
+  session: IdentitySession;
+  invite: ChannelInvite;
+}) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  async function join() {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const ack = await gateway.cmd({
+        identityId: session.identityId,
+        action: "channel.join",
+        d: { key: invite.key },
+      });
+      if (!ack.ok) {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            session.identityId,
+            "error",
+            ack.error ?? "Could not join",
+          );
+        return;
+      }
+      const channel = await waitForJoin(session.identityId, invite.key);
+      if (!channel) {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            session.identityId,
+            "error",
+            "No response from the channel — the invite may have expired",
+          );
+        return;
+      }
+      useSessionsStore.getState().dismissInvite(session.identityId, invite.key);
+      void navigate(channelPath(session.character, channel.key));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.inviteRow}>
+      <span
+        className={styles.inviteText}
+        title={`${invite.title} (${invite.key})`}
+      >
+        ✉ <strong>{invite.sender}</strong> invited you to{" "}
+        <strong>{invite.title}</strong>
+      </span>
+      <button
+        type="button"
+        className={styles.miniButton}
+        aria-label={`Join ${invite.title}`}
+        disabled={busy || session.sessionStatus !== "online"}
+        onClick={() => {
+          void join();
+        }}
+      >
+        Join
+      </button>
+      <button
+        type="button"
+        className={styles.inviteDismiss}
+        aria-label={`Dismiss invite to ${invite.title}`}
+        onClick={() => {
+          useSessionsStore
+            .getState()
+            .dismissInvite(session.identityId, invite.key);
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Friends and Bookmarks (M6 step 7): lazily loaded through the social REST
+ * endpoint (four upstream F-List calls behind the shared 1 req/s budget —
+ * hence load-once + explicit ↻). Rows open a DM; incoming friend requests
+ * are actionable like channel invites.
+ */
+function SocialSections({ session }: { session: IdentitySession }) {
+  const identityId = session.identityId;
+  const social = session.social;
+  const [loadError, setLoadError] = useState<string>();
+
+  useEffect(() => {
+    // No synchronous state write here (lint): the load either resolves
+    // (social data replaces any stale error implicitly on render) or
+    // rejects and sets a fresh error.
+    loadSocial(identityId).then(
+      () => {
+        setLoadError(undefined);
+      },
+      (error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : "Couldn't load");
+      },
+    );
+  }, [identityId]);
+
+  async function respond(requestId: number, action: "accept" | "deny") {
+    try {
+      await api.postFriendRequest(identityId, { action, requestId });
+      await loadSocial(identityId, true);
+    } catch (error) {
+      useSessionsStore
+        .getState()
+        .applyNotice(
+          identityId,
+          "error",
+          error instanceof Error ? error.message : "Request failed",
+        );
+    }
+  }
+
+  const refresh = (
+    <button
+      type="button"
+      className={styles.sectionAction}
+      title="Refresh friends and bookmarks"
+      aria-label="Refresh friends and bookmarks"
+      onClick={() => {
+        setLoadError(undefined);
+        loadSocial(identityId, true).catch((error: unknown) => {
+          setLoadError(
+            error instanceof Error ? error.message : "Couldn't load",
+          );
+        });
+      }}
+    >
+      ↻
+    </button>
+  );
+
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <span>Friends</span>
+        {refresh}
+      </div>
+      {loadError !== undefined && (
+        <div className={styles.socialEmpty} role="alert">
+          Couldn't load — {loadError}. Use ↻ to retry.
+        </div>
+      )}
+      {social?.incoming.map((request) => (
+        <div className={styles.inviteRow} key={`fr:${String(request.id)}`}>
+          <span className={styles.inviteText}>
+            ♥ <strong>{request.name}</strong> sent a friend request
+          </span>
+          <button
+            type="button"
+            className={styles.miniButton}
+            aria-label={`Accept friend request from ${request.name}`}
+            onClick={() => {
+              void respond(request.id, "accept");
+            }}
+          >
+            Accept
+          </button>
+          <button
+            type="button"
+            className={styles.inviteDismiss}
+            aria-label={`Deny friend request from ${request.name}`}
+            onClick={() => {
+              void respond(request.id, "deny");
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      {social?.friends.map((friend) => (
+        <SocialRow key={friend.name} session={session} character={friend} />
+      ))}
+      {social !== undefined && social.friends.length === 0 && (
+        <div className={styles.socialEmpty}>No friends yet.</div>
+      )}
+
+      <div className={styles.sectionHeader}>
+        <span>Bookmarks</span>
+        <span>{social?.bookmarks.length ?? ""}</span>
+      </div>
+      {social?.bookmarks.map((bookmark) => (
+        <SocialRow key={bookmark.name} session={session} character={bookmark} />
+      ))}
+      {social !== undefined && social.bookmarks.length === 0 && (
+        <div className={styles.socialEmpty}>No bookmarks yet.</div>
+      )}
+    </>
+  );
+}
+
+/** One friend/bookmark: presence dot + name; clicking opens the DM. */
+function SocialRow({
+  session,
+  character,
+}: {
+  session: IdentitySession;
+  character: SocialCharacter;
+}) {
+  const navigate = useNavigate();
+
+  async function open() {
+    const ack = await gateway.cmd({
+      identityId: session.identityId,
+      action: "pm.open",
+      d: { character: character.name },
+    });
+    if (!ack.ok || !ack.conversation) {
+      useSessionsStore
+        .getState()
+        .applyNotice(
+          session.identityId,
+          "error",
+          ack.error ?? "Could not open the conversation",
+        );
+      return;
+    }
+    useSessionsStore
+      .getState()
+      .applyConversation(session.identityId, ack.conversation);
+    void navigate(
+      dmPath(session.character, ack.conversation.partnerCharacter ?? ""),
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={`${styles.navItem} ${styles.socialRow ?? ""} ${character.online ? "" : (styles.offlineRow ?? "")}`}
+      onClick={() => {
+        void open();
+      }}
+      title={
+        character.online
+          ? `${character.status}${character.statusmsg ? ` — ${character.statusmsg}` : ""}`
+          : "offline"
+      }
+    >
+      <span
+        className={`${styles.navDot} ${DOT_CLASS[presenceDot(character.online, character.status)]}`}
+      />
+      <span className={styles.navLabel}>{character.name}</span>
+    </button>
   );
 }
 

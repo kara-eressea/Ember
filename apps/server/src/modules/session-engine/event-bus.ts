@@ -12,6 +12,7 @@ import type { SessionStatus } from "./session-state.js";
  * echoes MSG/PRI back to the sender, so history and fan-out need this. */
 export type OutboundMessage =
   | { kind: "channel"; channel: string; message: string }
+  | { kind: "ad"; channel: string; message: string }
   | { kind: "pm"; recipient: string; message: string };
 
 export interface SessionEvents {

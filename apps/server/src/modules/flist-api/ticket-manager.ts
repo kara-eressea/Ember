@@ -80,8 +80,18 @@ export class TicketManager {
     });
   }
 
-  /** Drop the cached ticket (e.g. after the chat server rejects an IDN). */
-  invalidate(): void {
+  /**
+   * Drop the cached ticket (e.g. after the chat server rejects an IDN).
+   * With `failedTicket`, the drop only happens while the cache still holds
+   * that exact ticket — a LATE "invalid ticket" response for an old ticket
+   * must not evict a fresh one another call already fetched: issuing yet
+   * another ticket would invalidate the fresh one account-wide and cascade
+   * failures across every call in flight with it (M6 audit).
+   */
+  invalidate(failedTicket?: string): void {
+    if (failedTicket !== undefined && this.#cached?.ticket !== failedTicket) {
+      return;
+    }
     this.#cached = undefined;
   }
 

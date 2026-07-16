@@ -13,6 +13,12 @@ import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { DetachedAway } from "./modules/away/detached-away.js";
+import {
+  ChannelDirectory,
+  type ChannelDirectoryOptions,
+} from "./modules/directory/directory.js";
+import { directoryRoutes } from "./modules/directory/routes.js";
+import { socialRoutes } from "./modules/social/routes.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
@@ -38,6 +44,7 @@ declare module "fastify" {
     history: HistorySink;
     outbox: Outbox;
     detachedAway: DetachedAway;
+    directory: ChannelDirectory;
   }
 }
 
@@ -51,6 +58,8 @@ export interface BuildAppOptions {
   sessionTuning?: SessionTuning;
   /** Test-only clock for the detached-away sweep. */
   detachedAwayNow?: () => number;
+  /** Test-only directory cooldown/timeout knobs. */
+  directoryTuning?: ChannelDirectoryOptions;
 }
 
 export async function buildApp({
@@ -60,6 +69,7 @@ export async function buildApp({
   flistApiClient,
   sessionTuning,
   detachedAwayNow,
+  directoryTuning,
 }: BuildAppOptions): Promise<FastifyInstance> {
   // Without the right trustProxy, every client behind a reverse proxy shares
   // the proxy's IP and the per-IP rate limits become one global bucket.
@@ -72,11 +82,20 @@ export async function buildApp({
 
   const vault = new CredentialVault();
   const flistApi =
-    flistApiClient ?? new FlistApiClient({ baseUrl: config.FLIST_API_URL });
+    flistApiClient ??
+    new FlistApiClient({
+      baseUrl: config.FLIST_API_URL,
+      minRequestIntervalMs: config.FLIST_API_MIN_INTERVAL_MS,
+    });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const highlights = new HighlightMatcher(db, app.log);
   const history = new HistorySink(db, app.log, { highlights });
   const hub = new GatewayHub({ history, logger: app.log });
+  const directory = new ChannelDirectory(
+    db,
+    app.log,
+    process.env.NODE_ENV === "test" ? directoryTuning : undefined,
+  );
   const sessions = new SessionRegistry({
     tickets,
     wsUrl: config.FCHAT_URL,
@@ -91,10 +110,12 @@ export async function buildApp({
       // sink's bus, so the sink must see every command the hub translates.
       history.attach(identityId, session);
       hub.attachSession(identityId, session);
+      directory.attach(session);
     },
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
+  app.decorate("directory", directory);
   const outbox = new Outbox({ db, sessions, hub, logger: app.log });
   outbox.start();
   app.decorate("outbox", outbox);
@@ -128,7 +149,10 @@ export async function buildApp({
     origin: config.CORS_ORIGIN ? config.CORS_ORIGIN.split(",") : false,
   });
   // Global backstop; the auth endpoints set stricter per-route limits.
-  await app.register(fastifyRateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(fastifyRateLimit, {
+    max: config.RATE_LIMIT_MAX,
+    timeWindow: "1 minute",
+  });
   await app.register(authPlugin, { secret: config.AUTH_SECRET, db });
   await app.register(authRoutes, {
     prefix: "/api/auth",
@@ -148,6 +172,19 @@ export async function buildApp({
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(directoryRoutes, {
+    prefix: "/api/identities",
+    db,
+    sessions,
+    directory,
+  });
+  await app.register(socialRoutes, {
+    prefix: "/api/identities",
+    db,
+    sessions,
+    tickets,
+    flistApi,
+  });
   await app.register(highlightsRoutes, {
     prefix: "/api/highlight-rules",
     db,

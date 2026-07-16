@@ -28,6 +28,7 @@ import {
   type ServerCommand,
   type ServerVars,
 } from "@emberchat/fchat-protocol";
+import { SocialService } from "./social-service.js";
 import { TicketService } from "./ticket-service.js";
 import { DEFAULT_WORLD, type SimWorld } from "./world.js";
 
@@ -57,16 +58,33 @@ interface Connection {
   lastClientPinAt: number;
   lastMsgAt: number;
   lastPriAt: number;
+  /** Per-channel ad timestamps — the lfrp pace reads as per channel
+   * (ERR 56: "to a channel"); confirm on the supervised live pass. */
+  readonly lastLrpAt: Map<string, number>;
 }
 
 interface ChannelState {
   readonly name: string;
   readonly title: string;
-  readonly mode: string;
+  /** chat = MSG only, ads = LRP only, both = either. RMO changes it live. */
+  mode: string;
   readonly official: boolean;
+  /** In ORS listings. RST public/private flips this together with `open`. */
+  listed: boolean;
+  /** Joinable without an invite. Seeded rooms default open (a `listed:
+   * false` seed stays joinable by exact name — deliberate leniency for the
+   * hidden-join tests); CCR-created rooms start closed. */
+  open: boolean;
+  /** Characters invited via CIU — they may join while the room is closed. */
+  readonly invited: Set<string>;
   description: string;
-  oplist: readonly string[];
+  oplist: string[];
   readonly members: Set<string>;
+  /** Characters banned via CBU — JCH refuses with ERR 48 until CUB. */
+  readonly banned: Set<string>;
+  /** Character → timeout expiry (epoch ms). Expired entries are pruned on
+   * the next join attempt. */
+  readonly timeouts: Map<string, number>;
 }
 
 interface CharacterState {
@@ -78,6 +96,37 @@ interface CharacterState {
 
 const MAX_PING_MISSES = 3;
 const UNSOLICITED_PIN_WINDOW_MS = 10_000;
+
+/**
+ * Parses an RLL dice expression per the documented grammar: up to 20 "+"-
+ * joined terms, each "#d##" (1-9 dice of 1-500 sides) or a flat number up
+ * to 10000 (modeled as sides 0). Undefined = malformed (RollError).
+ */
+function parseDice(
+  dice: string,
+): { count: number; sides: number }[] | undefined {
+  const terms = dice.split("+");
+  if (terms.length === 0 || terms.length > 20) {
+    return undefined;
+  }
+  const rolls: { count: number; sides: number }[] = [];
+  for (const term of terms) {
+    const die = /^([1-9])d([1-9]\d{0,2})$/.exec(term);
+    if (die) {
+      const sides = Number(die[2]);
+      if (sides > 500) {
+        return undefined;
+      }
+      rolls.push({ count: Number(die[1]), sides });
+      continue;
+    }
+    if (!/^\d{1,5}$/.test(term) || Number(term) > 10_000) {
+      return undefined;
+    }
+    rolls.push({ count: Number(term), sides: 0 });
+  }
+  return rolls;
+}
 
 /** Best-effort extraction of the "method" field from a schema-invalid IDN. */
 function extractIdnMethod(raw: string): unknown {
@@ -111,6 +160,7 @@ export class FchatSim {
   readonly #host: string;
   readonly #log: (line: string) => void;
   readonly #tickets: TicketService;
+  readonly #social: SocialService;
   readonly #http: Server;
   readonly #wss: WebSocketServer;
   readonly #connections = new Set<Connection>();
@@ -120,6 +170,8 @@ export class FchatSim {
   dropPings = false;
   /** Misbehavior control: channels whose JCH fails with the mapped ERR. */
   readonly #joinRejections = new Map<string, number>();
+  /** Counter behind CCR's minted ADH- ids. */
+  #createdRooms = 0;
   /** Server-stored ignore lists (character → ignored names), like the real
    * server: they survive reconnects and are replayed via IGN init. */
   readonly #ignores = new Map<string, Set<string>>();
@@ -134,15 +186,21 @@ export class FchatSim {
     this.#host = options.host ?? "127.0.0.1";
     this.#log = options.log ?? (() => {});
     this.#tickets = new TicketService(this.#world.accounts);
+    this.#social = new SocialService(this.#world.accounts);
     for (const seed of this.#world.channels) {
       this.#channels.set(seed.name, {
         name: seed.name,
         title: seed.title ?? seed.name,
         mode: seed.mode,
         official: !seed.name.startsWith("ADH-"),
+        listed: seed.listed ?? true,
+        open: true,
+        invited: new Set(),
         description: seed.description,
-        oplist: seed.oplist ?? [""],
+        oplist: [...(seed.oplist ?? [""])],
         members: new Set(seed.npcs),
+        banned: new Set(),
+        timeouts: new Map(),
       });
     }
     for (const npc of this.#world.npcs) {
@@ -259,7 +317,11 @@ export class FchatSim {
 
   #handleHttp(request: IncomingMessage, response: ServerResponse): void {
     const url = new URL(request.url ?? "/", this.httpUrl);
-    if (request.method !== "POST" || url.pathname !== API_TICKET_PATH) {
+    const isSocial = url.pathname.startsWith("/json/api/");
+    if (
+      request.method !== "POST" ||
+      (url.pathname !== API_TICKET_PATH && !isSocial)
+    ) {
       response.writeHead(404, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "Not found." }));
       return;
@@ -274,28 +336,84 @@ export class FchatSim {
     });
     request.on("end", () => {
       const form = new URLSearchParams(body);
-      const account = form.get("account") ?? "";
-      const ticket = this.#tickets.issue(account, form.get("password") ?? "");
-      let payload: ApiTicketResponse;
-      if (!ticket) {
-        payload = { error: "Invalid username or password." };
-      } else {
-        const characters = [
-          ...(this.#tickets.account(account)?.characters ?? []),
-        ];
-        payload = {
-          error: "",
-          ticket,
-          ...(form.get("no_characters") === "true"
-            ? {}
-            : { characters, default_character: characters[0] }),
-          ...(form.get("no_friends") === "true" ? {} : { friends: [] }),
-          ...(form.get("no_bookmarks") === "true" ? {} : { bookmarks: [] }),
-        };
-      }
+      const payload = isSocial
+        ? this.#handleSocialApi(url.pathname, form)
+        : this.#handleTicketApi(form);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(payload));
     });
+  }
+
+  #handleTicketApi(form: URLSearchParams): ApiTicketResponse {
+    const account = form.get("account") ?? "";
+    const ticket = this.#tickets.issue(account, form.get("password") ?? "");
+    if (!ticket) {
+      return { error: "Invalid username or password." };
+    }
+    const characters = [...(this.#tickets.account(account)?.characters ?? [])];
+    return {
+      error: "",
+      ticket,
+      ...(form.get("no_characters") === "true"
+        ? {}
+        : { characters, default_character: characters[0] }),
+      ...(form.get("no_friends") === "true" ? {} : { friends: [] }),
+      ...(form.get("no_bookmarks") === "true" ? {} : { bookmarks: [] }),
+    };
+  }
+
+  /** The social JSON endpoints (M6 step 7). Envelope: {"error": ""} on
+   * success; every endpoint requires a valid account+ticket pair. */
+  #handleSocialApi(pathname: string, form: URLSearchParams): object {
+    const account = form.get("account") ?? "";
+    if (!this.#tickets.validate(account, form.get("ticket") ?? "")) {
+      return { error: "Invalid ticket." };
+    }
+    const name = form.get("name") ?? "";
+    const requestId = Number(form.get("request_id") ?? "");
+    switch (pathname) {
+      case "/json/api/bookmark-list.php":
+        return { error: "", characters: this.#social.bookmarks(account) };
+      case "/json/api/bookmark-add.php":
+        return { error: this.#social.bookmarkAdd(account, name) };
+      case "/json/api/bookmark-remove.php":
+        return { error: this.#social.bookmarkRemove(account, name) };
+      case "/json/api/friend-list.php":
+        return {
+          error: "",
+          friends: this.#social
+            .friends(account)
+            .map((pair) => ({ source: pair.friend, dest: pair.own })),
+        };
+      case "/json/api/friend-remove.php":
+        return {
+          error: this.#social.friendRemove(
+            account,
+            form.get("source_name") ?? "",
+            form.get("dest_name") ?? "",
+          ),
+        };
+      case "/json/api/request-list.php":
+        return { error: "", requests: this.#social.incoming(account) };
+      case "/json/api/request-pending.php":
+        return { error: "", requests: this.#social.outgoing(account) };
+      case "/json/api/request-send.php":
+        return {
+          error: this.#social.requestSend(
+            account,
+            form.get("source_name") ?? "",
+            form.get("dest_name") ?? "",
+          ),
+        };
+      case "/json/api/request-accept.php":
+        return { error: this.#social.requestAccept(account, requestId) };
+      case "/json/api/request-deny.php":
+        return { error: this.#social.requestDeny(account, requestId) };
+      case "/json/api/request-cancel.php":
+        return { error: this.#social.requestCancel(account, requestId) };
+      default:
+        return { error: "Not found." };
+    }
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -308,6 +426,7 @@ export class FchatSim {
       lastClientPinAt: 0,
       lastMsgAt: 0,
       lastPriAt: 0,
+      lastLrpAt: new Map(),
     };
     this.#connections.add(connection);
     socket.on("message", (data: RawData) => {
@@ -411,6 +530,15 @@ export class FchatSim {
       payload: { count: this.#online.size },
     });
     this.#send(connection, {
+      cmd: "ADL",
+      payload: { ops: [...(this.#world.chatops ?? [])] },
+    });
+    // Friends+bookmarks union, like the real login flow (M6 step 7).
+    this.#send(connection, {
+      cmd: "FRL",
+      payload: { characters: this.#social.frlFor(account) },
+    });
+    this.#send(connection, {
       cmd: "IGN",
       payload: {
         action: "init",
@@ -495,7 +623,7 @@ export class FchatSim {
           cmd: "ORS",
           payload: {
             channels: [...this.#channels.values()]
-              .filter((channel) => !channel.official)
+              .filter((channel) => !channel.official && channel.listed)
               .map((channel) => ({
                 name: channel.name,
                 characters: channel.members.size,
@@ -503,6 +631,15 @@ export class FchatSim {
               })),
           },
         });
+        return;
+      case "CCR":
+        this.#handleCreateRoom(connection, character, command.payload.channel);
+        return;
+      case "CIU":
+        this.#handleInvite(connection, character, command.payload);
+        return;
+      case "RST":
+        this.#handleRoomStatus(connection, character, command.payload);
         return;
       case "JCH":
         this.#handleJoin(connection, character, command.payload.channel);
@@ -512,6 +649,42 @@ export class FchatSim {
         return;
       case "MSG":
         this.#handleChannelMessage(connection, character, command.payload);
+        return;
+      case "LRP":
+        this.#handleChannelAd(connection, character, command.payload);
+        return;
+      case "RLL":
+        this.#handleRoll(connection, character, command.payload);
+        return;
+      case "RMO":
+        this.#handleRoomMode(connection, character, command.payload);
+        return;
+      case "CKU":
+        this.#handleKick(connection, character, command.payload);
+        return;
+      case "CBU":
+        this.#handleBan(connection, character, command.payload);
+        return;
+      case "CTU":
+        this.#handleTimeout(connection, character, command.payload);
+        return;
+      case "CUB":
+        this.#handleUnban(connection, character, command.payload);
+        return;
+      case "COA":
+        this.#handlePromote(connection, character, command.payload);
+        return;
+      case "COR":
+        this.#handleDemote(connection, character, command.payload);
+        return;
+      case "CSO":
+        this.#handleSetOwner(connection, character, command.payload);
+        return;
+      case "CDS":
+        this.#handleSetDescription(connection, character, command.payload);
+        return;
+      case "CBL":
+        this.#handleBanlist(connection, character, command.payload.channel);
         return;
       case "PRI":
         this.#handlePrivateMessage(connection, character, command.payload);
@@ -585,6 +758,22 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.AlreadyInChannel);
       return;
     }
+    const timeoutUntil = channel.timeouts.get(character);
+    if (timeoutUntil !== undefined && timeoutUntil <= Date.now()) {
+      channel.timeouts.delete(character); // expired — prune and allow
+    }
+    if (channel.banned.has(character) || channel.timeouts.has(character)) {
+      this.#sendError(connection, FchatErrorCode.BannedFromChannel);
+      return;
+    }
+    if (
+      !channel.open &&
+      !channel.invited.has(character) &&
+      !channel.oplist.includes(character)
+    ) {
+      this.#sendError(connection, FchatErrorCode.InviteRequired);
+      return;
+    }
     channel.members.add(character);
     this.#broadcastToChannel(channel, {
       cmd: "JCH",
@@ -609,6 +798,100 @@ export class FchatSim {
     this.#send(connection, {
       cmd: "CDS",
       payload: { channel: channel.name, description: channel.description },
+    });
+  }
+
+  /** CCR: the payload is the TITLE; the sim mints an ADH- id, makes the
+   * creator owner, and walks them through the normal join flow. Created
+   * rooms start closed and unlisted (invite-only) like the real server. */
+  #handleCreateRoom(
+    connection: Connection,
+    character: string,
+    title: string,
+  ): void {
+    this.#createdRooms += 1;
+    const name = `ADH-sim${String(this.#createdRooms).padStart(4, "0")}`;
+    this.#channels.set(name, {
+      name,
+      title,
+      mode: "both",
+      official: false,
+      listed: false,
+      open: false,
+      invited: new Set(),
+      description: "",
+      oplist: [character],
+      members: new Set(),
+      banned: new Set(),
+      timeouts: new Map(),
+    });
+    this.#handleJoin(connection, character, name);
+  }
+
+  #handleInvite(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (channel.official) {
+      this.#sendError(connection, FchatErrorCode.CannotInviteToPublicChannel);
+      return;
+    }
+    if (!channel.oplist.includes(character)) {
+      // No dedicated "chanop required" code is documented; the real server
+      // answers with a moderation error — 19 is the closest modeled one.
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    channel.invited.add(payload.character);
+    const target = this.#online.get(payload.character)?.connection;
+    if (target) {
+      this.#send(target, {
+        cmd: "CIU",
+        payload: {
+          sender: character,
+          title: channel.title,
+          name: channel.name,
+        },
+      });
+    }
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message: `Your invitation to ${channel.title} has been sent to ${payload.character}.`,
+      },
+    });
+  }
+
+  #handleRoomStatus(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; status: "public" | "private" },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    // Official channels live outside the private-room namespace.
+    if (!channel || channel.official) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.oplist.includes(character)) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    const open = payload.status === "public";
+    channel.open = open;
+    channel.listed = open;
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message: `${channel.title} is now ${open ? "open" : "invite-only"}.`,
+        channel: channel.name,
+      },
     });
   }
 
@@ -647,6 +930,10 @@ export class FchatSim {
       this.#sendError(connection, FchatErrorCode.NotInChannel);
       return;
     }
+    if (channel.mode === "ads") {
+      this.#sendError(connection, FchatErrorCode.AdsOnlyChannel);
+      return;
+    }
     const now = Date.now();
     if (now - connection.lastMsgAt < this.#vars.msg_flood * 1000) {
       this.#sendError(connection, FchatErrorCode.MessageFlood);
@@ -666,6 +953,415 @@ export class FchatSim {
       },
       character,
     );
+  }
+
+  /** LRP: like MSG, but on the lfrp pace/length and blocked in chat-only
+   * rooms (the mirror of MSG being blocked in ads-only ones). */
+  #handleChannelAd(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; message: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.members.has(character)) {
+      this.#sendError(connection, FchatErrorCode.NotInChannel);
+      return;
+    }
+    if (channel.mode === "chat") {
+      this.#sendError(connection, FchatErrorCode.ChatOnlyChannel);
+      return;
+    }
+    const now = Date.now();
+    const lastAt = connection.lastLrpAt.get(channel.name) ?? 0;
+    if (now - lastAt < this.#vars.lfrp_flood * 1000) {
+      this.#sendError(connection, FchatErrorCode.AdFlood);
+      return;
+    }
+    if (Buffer.byteLength(payload.message, "utf8") > this.#vars.lfrp_max) {
+      this.#sendError(connection, FchatErrorCode.MessageTooLong);
+      return;
+    }
+    connection.lastLrpAt.set(channel.name, now);
+    this.#broadcastToChannel(
+      channel,
+      {
+        cmd: "LRP",
+        payload: { character, message: payload.message, channel: channel.name },
+      },
+      character,
+    );
+  }
+
+  /** RLL: the server computes the result and broadcasts it to everyone —
+   * including the roller (unlike MSG/LRP, which are never echoed). */
+  #handleRoll(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; dice: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.members.has(character)) {
+      this.#sendError(connection, FchatErrorCode.NotInChannel);
+      return;
+    }
+    if (payload.dice === "bottle") {
+      const candidates = [...channel.members].filter(
+        (member) => member !== character,
+      );
+      const target = candidates[Math.floor(Math.random() * candidates.length)];
+      if (target === undefined) {
+        this.#sendError(connection, FchatErrorCode.RollError);
+        return;
+      }
+      this.#broadcastToChannel(channel, {
+        cmd: "RLL",
+        payload: {
+          channel: channel.name,
+          type: "bottle",
+          message: `[b]${character}[/b] spins the bottle: [b]${target}[/b]`,
+          character,
+          target,
+        },
+      });
+      return;
+    }
+    const rolls = parseDice(payload.dice);
+    if (!rolls) {
+      this.#sendError(connection, FchatErrorCode.RollError);
+      return;
+    }
+    const results = rolls.map((roll) =>
+      roll.sides === 0
+        ? roll.count
+        : Array.from(
+            { length: roll.count },
+            () => 1 + Math.floor(Math.random() * roll.sides),
+          ).reduce((sum, value) => sum + value, 0),
+    );
+    const endresult = results.reduce((sum, value) => sum + value, 0);
+    const breakdown =
+      results.length > 1 ? `${results.map(String).join(" + ")} = ` : "";
+    this.#broadcastToChannel(channel, {
+      cmd: "RLL",
+      payload: {
+        channel: channel.name,
+        type: "dice",
+        message: `[b]${character}[/b] rolls ${payload.dice}: ${breakdown}[b]${String(endresult)}[/b]`,
+        character,
+        results,
+        rolls: rolls.map((roll) =>
+          roll.sides === 0
+            ? String(roll.count)
+            : `${String(roll.count)}d${String(roll.sides)}`,
+        ),
+        endresult,
+      },
+    });
+  }
+
+  /** Chanop check shared by the moderation handlers: channel op or global
+   * chatop. Answers ERR 19 itself; returns the channel on success. */
+  #requireOp(
+    connection: Connection,
+    character: string,
+    channelName: string,
+  ): ChannelState | undefined {
+    const channel = this.#channels.get(channelName);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return undefined;
+    }
+    if (
+      !channel.oplist.includes(character) &&
+      !(this.#world.chatops ?? []).includes(character)
+    ) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return undefined;
+    }
+    return channel;
+  }
+
+  /** Ops are shielded from kick/ban/timeout unless the actor is the owner
+   * or a chatop — the real server answers with ERR 21. */
+  #targetIsShielded(
+    channel: ChannelState,
+    actor: string,
+    target: string,
+  ): boolean {
+    return (
+      channel.oplist.includes(target) &&
+      channel.oplist[0] !== actor &&
+      !(this.#world.chatops ?? []).includes(actor)
+    );
+  }
+
+  #handleKick(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (!channel.members.has(payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CharacterNotInChannel);
+      return;
+    }
+    if (this.#targetIsShielded(channel, character, payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    this.#broadcastToChannel(channel, {
+      cmd: "CKU",
+      payload: {
+        operator: character,
+        channel: channel.name,
+        character: payload.character,
+      },
+    });
+    // The invite (if any) survives: bans gate via the banned set, and an
+    // unban or expired timeout lets an invited character straight back in.
+    channel.members.delete(payload.character);
+  }
+
+  #handleBan(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (channel.banned.has(payload.character)) {
+      this.#sendError(connection, FchatErrorCode.AlreadyBannedFromChannel);
+      return;
+    }
+    if (this.#targetIsShielded(channel, character, payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    channel.banned.add(payload.character);
+    this.#broadcastToChannel(channel, {
+      cmd: "CBU",
+      payload: {
+        operator: character,
+        channel: channel.name,
+        character: payload.character,
+      },
+    });
+    // The invite (if any) survives: bans gate via the banned set, and an
+    // unban or expired timeout lets an invited character straight back in.
+    channel.members.delete(payload.character);
+  }
+
+  #handleTimeout(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string; length: number },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (this.#targetIsShielded(channel, character, payload.character)) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    channel.timeouts.set(
+      payload.character,
+      Date.now() + payload.length * 60_000,
+    );
+    this.#broadcastToChannel(channel, {
+      cmd: "CTU",
+      payload: {
+        operator: character,
+        channel: channel.name,
+        length: payload.length,
+        character: payload.character,
+      },
+    });
+    // The invite (if any) survives: bans gate via the banned set, and an
+    // unban or expired timeout lets an invited character straight back in.
+    channel.members.delete(payload.character);
+  }
+
+  #handleUnban(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (!channel.banned.delete(payload.character)) {
+      this.#sendError(connection, FchatErrorCode.NotBannedFromChannel);
+      return;
+    }
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message: `Channel ban removed on ${payload.character}.`,
+        channel: channel.name,
+      },
+    });
+  }
+
+  #handlePromote(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    if (channel.oplist.includes(payload.character)) {
+      this.#send(connection, {
+        cmd: "SYS",
+        payload: {
+          message: `${payload.character} is already a channel operator.`,
+          channel: channel.name,
+        },
+      });
+      return;
+    }
+    channel.oplist.push(payload.character);
+    this.#broadcastToChannel(channel, {
+      cmd: "COA",
+      payload: { character: payload.character, channel: channel.name },
+    });
+  }
+
+  #handleDemote(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    const index = channel.oplist.indexOf(payload.character);
+    if (index === -1) {
+      this.#send(connection, {
+        cmd: "SYS",
+        payload: {
+          message: `${payload.character} is not a channel operator.`,
+          channel: channel.name,
+        },
+      });
+      return;
+    }
+    // The owner slot is not a demotable op entry — CSO moves ownership.
+    if (index === 0) {
+      this.#sendError(connection, FchatErrorCode.CannotTargetModerator);
+      return;
+    }
+    channel.oplist.splice(index, 1);
+    this.#broadcastToChannel(channel, {
+      cmd: "COR",
+      payload: { character: payload.character, channel: channel.name },
+    });
+  }
+
+  /** CSO: only the current owner (or a chatop) may hand the room over. */
+  #handleSetOwner(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; character: string },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (
+      channel.oplist[0] !== character &&
+      !(this.#world.chatops ?? []).includes(character)
+    ) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    channel.oplist = [
+      payload.character,
+      ...channel.oplist.slice(1).filter((op) => op !== payload.character),
+    ];
+    this.#broadcastToChannel(channel, {
+      cmd: "CSO",
+      payload: { character: payload.character, channel: channel.name },
+    });
+  }
+
+  #handleSetDescription(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; description: string },
+  ): void {
+    const channel = this.#requireOp(connection, character, payload.channel);
+    if (!channel) {
+      return;
+    }
+    channel.description = payload.description;
+    this.#broadcastToChannel(channel, {
+      cmd: "CDS",
+      payload: { channel: channel.name, description: payload.description },
+    });
+  }
+
+  /** CBL has no dedicated response command — the list arrives as a SYS. */
+  #handleBanlist(
+    connection: Connection,
+    character: string,
+    channelName: string,
+  ): void {
+    const channel = this.#requireOp(connection, character, channelName);
+    if (!channel) {
+      return;
+    }
+    const names = [...channel.banned];
+    this.#send(connection, {
+      cmd: "SYS",
+      payload: {
+        message:
+          names.length === 0
+            ? `There are no bans set on ${channel.title}.`
+            : `Channel bans for ${channel.title}: ${names.join(", ")}.`,
+        channel: channel.name,
+      },
+    });
+  }
+
+  /** RMO: chanop changes which message kinds the room accepts. */
+  #handleRoomMode(
+    connection: Connection,
+    character: string,
+    payload: { channel: string; mode: "ads" | "both" | "chat" },
+  ): void {
+    const channel = this.#channels.get(payload.channel);
+    if (!channel) {
+      this.#sendError(connection, FchatErrorCode.ChannelNotFound);
+      return;
+    }
+    if (!channel.oplist.includes(character)) {
+      this.#sendError(connection, FchatErrorCode.ModeratorRequired);
+      return;
+    }
+    channel.mode = payload.mode;
+    this.#broadcastToChannel(channel, {
+      cmd: "RMO",
+      payload: { channel: channel.name, mode: payload.mode },
+    });
   }
 
   #handlePrivateMessage(

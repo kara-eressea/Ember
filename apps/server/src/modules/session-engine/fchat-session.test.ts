@@ -437,6 +437,130 @@ describe("FchatSession against fchat-sim", () => {
     expect(session.status).toBe("online");
   });
 
+  it("paces LRP on lfrp_flood, separately from MSG, and emits sent ads", async () => {
+    // A fast msg_flood next to a slow lfrp_flood: if LRP rode the MSG pace
+    // (or vice versa) the timings below would not hold.
+    const sim = await startSim({
+      serverVars: { msg_flood: 0.05, lfrp_flood: 0.5 },
+    });
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    const joined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    session.joinChannel("Development");
+    await joined;
+
+    const sentAds: unknown[] = [];
+    session.events.on("sent", (sent) => {
+      if (sent.kind === "ad") {
+        sentAds.push(sent);
+      }
+    });
+    const observer = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+    observer.send({ cmd: "JCH", payload: { channel: "Development" } });
+    await observer.waitFor("CDS");
+
+    const sent: { label: string; at: number }[] = [];
+    const mark = (label: string) => () => {
+      sent.push({ label, at: Date.now() });
+    };
+    await Promise.all([
+      session.sendChannelAd("Development", "ad one").then(mark("ad-1")),
+      session.sendChannelAd("Development", "ad two").then(mark("ad-2")),
+      session.sendChannelMessage("Development", "chatter").then(mark("msg")),
+    ]);
+    // MSG is on its own timeline — it went out before the gated second ad.
+    expect(sent.map((s) => s.label)).toEqual(["ad-1", "msg", "ad-2"]);
+    expect(sent[2]!.at - sent[0]!.at).toBeGreaterThanOrEqual(500);
+    expect(sentAds).toEqual([
+      { kind: "ad", channel: "Development", message: "ad one" },
+      { kind: "ad", channel: "Development", message: "ad two" },
+    ]);
+    expect(await observer.waitFor("LRP")).toContain('"ad one"');
+
+    // The ad length limit is lfrp_max, not chat_max.
+    await expect(
+      session.sendChannelAd("Development", "a".repeat(60_000)),
+    ).rejects.toThrow(MessageTooLongError);
+  });
+
+  it("refuses a second immediate ad inside the window, per channel (M6 audit)", async () => {
+    // A gate this long outlives any ack window — the old behavior parked
+    // the frame and ghost-posted it minutes after the client showed an
+    // error; now the send fails fast with the remaining cooldown.
+    const sim = await startSim({ serverVars: { lfrp_flood: 3600 } });
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    for (const channel of ["Development", "Terrarium"]) {
+      const joined = waitForCommand(
+        session,
+        (c) => c.cmd === "CDS" && c.payload.channel === channel,
+      );
+      session.joinChannel(channel);
+      await joined;
+    }
+
+    await session.sendChannelAd("Development", "first ad");
+    await expect(
+      session.sendChannelAd("Development", "second ad"),
+    ).rejects.toThrow(/next available in (59|60)m/);
+    // The pace is per channel: another room's ad is unaffected.
+    await session.sendChannelAd("Terrarium", "other room");
+  });
+
+  it("sends RLL and receives the computed roll back", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    const joined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    session.joinChannel("Development");
+    await joined;
+
+    const roll = waitForCommand(session, (c) => c.cmd === "RLL");
+    await session.rollDice("Development", "2d6");
+    expect(await roll).toMatchObject({
+      cmd: "RLL",
+      payload: { channel: "Development", type: "dice", character: CHARACTER },
+    });
+  });
+
+  it("folds RMO into channel state", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    const joined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    session.joinChannel("Development");
+    await joined;
+    expect(session.state.channels.get("Development")?.mode).toBe("both");
+
+    const mode = waitForCommand(session, (c) => c.cmd === "RMO");
+    sim.sendRawTo(
+      CHARACTER,
+      serializeServerCommand({
+        cmd: "RMO",
+        payload: { channel: "Development", mode: "chat" },
+      }),
+    );
+    await mode;
+    expect(session.state.channels.get("Development")?.mode).toBe("chat");
+  });
+
   it("answers PIN but never sends more than one per 10s", async () => {
     const logs: string[] = [];
     const sim = await startSim({ log: (line) => logs.push(line) });

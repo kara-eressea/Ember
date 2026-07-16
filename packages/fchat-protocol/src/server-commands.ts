@@ -10,22 +10,62 @@ import { z } from "zod";
 import { parseFrame, serializeFrame, type RawCommand } from "./codec.js";
 
 export const serverCommandSchemas = {
+  /** The current list of chatops (global moderators), sent at login. */
+  ADL: z.object({ ops: z.array(z.string()) }),
+  /** A character was banned from a channel (removes them like a leave). */
+  CBU: z.object({
+    operator: z.string(),
+    channel: z.string(),
+    character: z.string(),
+  }),
   /** Channel description changed. Sent after every JCH. */
   CDS: z.object({ channel: z.string(), description: z.string() }),
+  /** A character was kicked from a channel (removes them like a leave). */
+  CKU: z.object({
+    operator: z.string(),
+    channel: z.string(),
+    character: z.string(),
+  }),
+  /** A character was promoted to channel operator. */
+  COA: z.object({ character: z.string(), channel: z.string() }),
   /** List of all public channels. */
   CHA: z.object({
     channels: z.array(
       z.object({ name: z.string(), mode: z.string(), characters: z.int() }),
     ),
   }),
+  /** A channel invitation: `sender` invites us to room `name` ("ADH-…"),
+   * displayed as `title`. */
+  CIU: z.object({
+    sender: z.string(),
+    title: z.string(),
+    name: z.string(),
+  }),
+  /** An admin broadcast to every connected user. Rare and server-critical
+   * — never swallowed (feature-parity audit, decision 5). */
+  BRO: z.object({ message: z.string(), character: z.string().optional() }),
   /** List of channel ops. First entry is the owner (may be ""). */
   COL: z.object({ channel: z.string(), oplist: z.array(z.string()) }),
   /** Connected-user count, sent after identification and before the LIS batches. */
   CON: z.object({ count: z.int() }),
+  /** A channel operator was demoted. */
+  COR: z.object({ character: z.string(), channel: z.string() }),
+  /** The channel changed owner. */
+  CSO: z.object({ character: z.string(), channel: z.string() }),
+  /** A character was timed out of a channel for `length` minutes. */
+  CTU: z.object({
+    operator: z.string(),
+    channel: z.string(),
+    length: z.int(),
+    character: z.string(),
+  }),
   /** An error occurred. See src/error-codes.ts. */
   ERR: z.object({ number: z.int(), message: z.string() }),
   /** A character went offline. Treat as a global LCH for that character. */
   FLN: z.object({ character: z.string() }),
+  /** Initial friends list, sent at login — the union of the account's
+   * friends and bookmarks (the JSON API distinguishes them). */
+  FRL: z.object({ characters: z.array(z.string()) }),
   /** Server hello, sent after successful identification. */
   HLO: z.object({ message: z.string() }),
   /** Initial channel data, in response to JCH (along with CDS). */
@@ -52,6 +92,12 @@ export const serverCommandSchemas = {
   }),
   /** A character left a channel (possibly our own). */
   LCH: z.object({ channel: z.string(), character: z.string() }),
+  /** A roleplay ad in a channel. Same shape as MSG. */
+  LRP: z.object({
+    channel: z.string(),
+    message: z.string(),
+    character: z.string(),
+  }),
   /** Online characters: [name, gender, status, status message]. Sent in batches. */
   LIS: z.object({
     characters: z.array(
@@ -80,6 +126,33 @@ export const serverCommandSchemas = {
   PIN: z.undefined(),
   /** A private message. */
   PRI: z.object({ character: z.string(), message: z.string() }),
+  /** A dice roll or bottle spin. `message` is the display BBCode; the typed
+   * extras differ by `type` (dice: results/rolls/endresult, bottle: target)
+   * and are optional here so either shape parses. */
+  RLL: z.object({
+    channel: z.string(),
+    type: z.string(),
+    message: z.string(),
+    character: z.string(),
+    results: z.array(z.int()).optional(),
+    rolls: z.array(z.string()).optional(),
+    endresult: z.int().optional(),
+    target: z.string().optional(),
+  }),
+  /** The room mode changed: chat (MSG only), ads (LRP only), or both. */
+  RMO: z.object({ channel: z.string(), mode: z.string() }),
+  /** Real-time bridge: website events pushed over the chat socket (notes,
+   * friend requests, comment replies…). Deliberately lenient — the type
+   * set is undocumented and per-type extras vary (feature-parity audit,
+   * decision 3). */
+  RTB: z.object({
+    type: z.string(),
+    character: z.string().optional(),
+    name: z.string().optional(),
+    sender: z.string().optional(),
+    subject: z.string().optional(),
+    id: z.union([z.number(), z.string()]).optional(),
+  }),
   /** A character changed status. */
   STA: z.object({
     status: z.string(),

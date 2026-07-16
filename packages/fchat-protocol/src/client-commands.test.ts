@@ -40,7 +40,34 @@ describe("serializeClientCommand", () => {
 
 describe("parseClientCommand", () => {
   const COMMANDS: readonly ClientCommand[] = [
+    { cmd: "CBL", payload: { channel: "ADH-c7fc4c15c858dd76d860" } },
+    {
+      cmd: "CBU",
+      payload: {
+        channel: "ADH-c7fc4c15c858dd76d860",
+        character: "Pas un Caractere",
+      },
+    },
+    {
+      cmd: "CDS",
+      payload: { channel: "Looking for RP", description: "New description." },
+    },
     { cmd: "CHA" },
+    { cmd: "CKU", payload: { channel: "Frontpage", character: "Teal Deer" } },
+    { cmd: "COA", payload: { channel: "Frontpage", character: "Teal Deer" } },
+    { cmd: "COR", payload: { channel: "Frontpage", character: "Teal Deer" } },
+    {
+      cmd: "CSO",
+      payload: {
+        channel: "ADH-3875a3c8c11325b49992",
+        character: "Jinni Wicked",
+      },
+    },
+    {
+      cmd: "CTU",
+      payload: { channel: "Frontpage", character: "Treebob", length: 30 },
+    },
+    { cmd: "CUB", payload: { channel: "Frontpage", character: "Treebob" } },
     {
       cmd: "IDN",
       payload: {
@@ -54,10 +81,23 @@ describe("parseClientCommand", () => {
     },
     { cmd: "JCH", payload: { channel: "Frontpage" } },
     { cmd: "LCH", payload: { channel: "ADH-c7fc4c15c858dd76d860" } },
+    {
+      cmd: "LRP",
+      payload: { channel: "Frontpage", message: "Right, evenin'" },
+    },
     { cmd: "MSG", payload: { channel: "Frontpage", message: "héllo 世界 🦊" } },
     { cmd: "ORS" },
     { cmd: "PIN" },
     { cmd: "PRI", payload: { recipient: "Hexxy", message: "Hi there." } },
+    {
+      cmd: "RLL",
+      payload: { channel: "ADH-dce8eb7af86213ac4c15", dice: "1d6+1d20" },
+    },
+    { cmd: "RLL", payload: { channel: "Frontpage", dice: "bottle" } },
+    {
+      cmd: "RMO",
+      payload: { channel: "ADH-c7fc4c15c858dd76d860", mode: "ads" },
+    },
     {
       cmd: "STA",
       payload: {
@@ -76,6 +116,13 @@ describe("parseClientCommand", () => {
       );
     },
   );
+
+  it("rejects a CTU timeout outside the documented 1-90 minutes", () => {
+    for (const length of [0, 91]) {
+      const raw = `CTU {"channel":"Frontpage","character":"Treebob","length":${String(length)}}`;
+      expect(parseClientCommand(raw)).toEqual({ cmd: "CTU", raw });
+    }
+  });
 
   it("rejects a client STA with the server-only crown status", () => {
     const raw = 'STA {"status":"crown","statusmsg":""}';

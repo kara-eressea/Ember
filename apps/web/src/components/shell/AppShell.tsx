@@ -30,6 +30,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
+import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { Sidebar } from "./Sidebar.js";
@@ -54,6 +55,7 @@ export function AppShell() {
   );
   const membersOpen = useUiStore((s) => s.membersOpen);
   const prefsOpen = useUiStore((s) => s.prefsOpen);
+  const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -254,6 +256,7 @@ export function AppShell() {
               session={session}
               convId={convId}
               channelKey={channel?.key}
+              channelMode={channel?.mode}
               partner={
                 conversation.kind === "pm" ? conversation.dm.partner : undefined
               }
@@ -278,12 +281,26 @@ export function AppShell() {
           </>
         )}
       </main>
-      {showMembers && channel && <MemberList channel={channel} />}
+      {showMembers && channel && (
+        <MemberList
+          identityId={activeId}
+          ownCharacter={session.character}
+          channel={channel}
+        />
+      )}
       {prefsOpen && (
         <PreferencesWindow
           identityId={activeId}
           onClose={() => {
             useUiStore.getState().setPrefsOpen(false);
+          }}
+        />
+      )}
+      {channelBrowserOpen && (
+        <ChannelBrowser
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setChannelBrowserOpen(false);
           }}
         />
       )}

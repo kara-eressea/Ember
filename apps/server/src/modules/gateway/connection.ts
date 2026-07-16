@@ -433,8 +433,13 @@ export class GatewayConnection {
           status: ownStatus.status,
           statusmsg: ownStatus.statusmsg,
           ignores,
-          limits: { chatMax: vars.chat_max, privMax: vars.priv_max },
+          limits: {
+            chatMax: vars.chat_max,
+            privMax: vars.priv_max,
+            lfrpMax: vars.lfrp_max,
+          },
           iconBlacklist: [...(session?.state.vars.icon_blacklist ?? [])],
+          chatop: session?.state.ownIsChatop ?? false,
           sendDelaySeconds,
           prefs,
           outbox: await this.#ctx.outbox.list(identityId),
@@ -555,6 +560,69 @@ export class GatewayConnection {
         }
         return;
       }
+      case "channel.create": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          // The ack confirms the CCR went out; the JCH echo into the new
+          // ADH- room flows through the ordinary join/persist fan-out and
+          // carries the minted key. Not awaited: the ROOM gate must not
+          // stall the serial inbound queue (M6 audit).
+          session.createRoom(cmd.d.title).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error:
+                  error instanceof Error ? error.message : "room create failed",
+              });
+            },
+          );
+        }
+        return;
+      }
+      case "channel.invite": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          // Not awaited: the ROOM gate can hold a frame and must not stall
+          // the serial inbound queue (M6 audit) — the promise's outcome
+          // becomes the ack, like msg.send.
+          session.inviteToChannel(cmd.d.key, cmd.d.character).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error: error instanceof Error ? error.message : "invite failed",
+              });
+            },
+          );
+        }
+        return;
+      }
+      case "channel.status": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          // Same non-awaiting pattern as channel.create (M6 audit).
+          session.setRoomStatus(cmd.d.key, cmd.d.status).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "room status change failed",
+              });
+            },
+          );
+        }
+        return;
+      }
       case "pm.open": {
         try {
           const row = await this.#ctx.history.ensurePmConversation(
@@ -626,6 +694,82 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "channel.roll": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          // Like msg.send: the flood-gate wait must not stall the inbound
+          // queue, so the promise's outcome becomes the ack instead.
+          session.rollDice(cmd.d.key, cmd.d.dice).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error: error instanceof Error ? error.message : "roll failed",
+              });
+            },
+          );
+        }
+        return;
+      }
+      // Channel moderation (M6): one shared shape — put the frame on the
+      // wire behind the ROOM gate, ack the send. Refusals (not an op, ERR
+      // 21/41/42…) come back as ERR frames and fan out as error events.
+      case "channel.kick":
+      case "channel.ban":
+      case "channel.unban":
+      case "channel.timeout":
+      case "channel.promote":
+      case "channel.demote":
+      case "channel.owner":
+      case "channel.describe":
+      case "channel.mode":
+      case "channel.banlist": {
+        const session = this.#requireSession(identity.id, id);
+        if (!session) {
+          return;
+        }
+        const send =
+          cmd.action === "channel.kick"
+            ? session.kickFromChannel(cmd.d.key, cmd.d.character)
+            : cmd.action === "channel.ban"
+              ? session.banFromChannel(cmd.d.key, cmd.d.character)
+              : cmd.action === "channel.unban"
+                ? session.unbanFromChannel(cmd.d.key, cmd.d.character)
+                : cmd.action === "channel.timeout"
+                  ? session.timeoutFromChannel(
+                      cmd.d.key,
+                      cmd.d.character,
+                      cmd.d.minutes,
+                    )
+                  : cmd.action === "channel.promote"
+                    ? session.promoteOp(cmd.d.key, cmd.d.character)
+                    : cmd.action === "channel.demote"
+                      ? session.demoteOp(cmd.d.key, cmd.d.character)
+                      : cmd.action === "channel.owner"
+                        ? session.setRoomOwner(cmd.d.key, cmd.d.character)
+                        : cmd.action === "channel.describe"
+                          ? session.setRoomDescription(
+                              cmd.d.key,
+                              cmd.d.description,
+                            )
+                          : cmd.action === "channel.mode"
+                            ? session.setRoomMode(cmd.d.key, cmd.d.mode)
+                            : session.requestBanlist(cmd.d.key);
+        send.then(
+          () => {
+            this.#ack(id, { ok: true });
+          },
+          (error: unknown) => {
+            this.#ack(id, {
+              ok: false,
+              error: error instanceof Error ? error.message : "send failed",
+            });
+          },
+        );
+        return;
+      }
       case "typing.set": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
@@ -738,7 +882,12 @@ export class GatewayConnection {
 
   async #handleMsgSend(
     identityId: string,
-    d: { convId: string; bbcode: string; markdown?: string },
+    d: {
+      convId: string;
+      bbcode: string;
+      markdown?: string;
+      kind?: "lrp" | "msg";
+    },
     id: number | undefined,
   ): Promise<void> {
     const session = this.#requireSession(identityId, id);
@@ -759,6 +908,11 @@ export class GatewayConnection {
       this.#ack(id, { ok: false, error: "conversation not found" });
       return;
     }
+    const ad = d.kind === "lrp";
+    if (ad && conversation.kind !== "channel") {
+      this.#ack(id, { ok: false, error: "ads can only go to channels" });
+      return;
+    }
     // A non-zero send delay parks the message in the server-side outbox —
     // the release worker puts it on the wire when due, tab or no tab.
     const { sendDelaySeconds: delaySeconds } = await this.#userPrefs();
@@ -766,8 +920,9 @@ export class GatewayConnection {
       // Validate against the live VAR limit NOW, like the immediate path —
       // deferring the check to release time would fail silently long after
       // the user could react (audit).
-      const limit =
-        conversation.kind === "channel"
+      const limit = ad
+        ? session.state.vars.lfrp_max
+        : conversation.kind === "channel"
           ? session.state.vars.chat_max
           : session.state.vars.priv_max;
       if (Buffer.byteLength(d.bbcode, "utf8") > limit) {
@@ -784,13 +939,15 @@ export class GatewayConnection {
         // separate source form.
         markdown: d.markdown ?? d.bbcode,
         bbcode: d.bbcode,
+        kind: ad ? "lrp" : "msg",
         releaseAt: new Date(Date.now() + delaySeconds * 1000),
       });
       this.#ack(id, { ok: true });
       return;
     }
-    const send =
-      conversation.kind === "channel"
+    const send = ad
+      ? session.sendChannelAd(conversation.channelKey ?? "", d.bbcode)
+      : conversation.kind === "channel"
         ? session.sendChannelMessage(conversation.channelKey ?? "", d.bbcode)
         : session.sendPrivateMessage(
             conversation.partnerCharacter ?? "",

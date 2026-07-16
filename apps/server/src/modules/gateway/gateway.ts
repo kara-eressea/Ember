@@ -195,6 +195,17 @@ function translateCommand(
           ),
         },
       };
+    case "CIU":
+      // An invitation to a private room — actionable client-side (join /
+      // dismiss). Volatile: a missed invite is joinable later via the key.
+      return {
+        kind: "channel.invite",
+        d: {
+          sender: command.payload.sender,
+          title: command.payload.title,
+          key: command.payload.name,
+        },
+      };
     case "CDS":
       return {
         kind: "channel.info",
@@ -211,6 +222,43 @@ function translateCommand(
           oplist: [...command.payload.oplist],
         },
       };
+    case "RMO":
+      // Room mode changed (chat/ads/both) — gates what the composer offers.
+      return {
+        kind: "channel.info",
+        d: {
+          key: command.payload.channel,
+          mode: command.payload.mode,
+        },
+      };
+    // Kick / ban / timeout remove the member (no LCH follows); the
+    // who-did-what SystemLine is persisted by the sink and arrives as
+    // message.new.
+    case "CKU":
+    case "CBU":
+    case "CTU":
+      return {
+        kind: "member.leave",
+        d: {
+          channelKey: command.payload.channel,
+          character: command.payload.character,
+        },
+      };
+    // Op roster changes: state already folded the command, so the map
+    // holds the post-change oplist (same pattern as IGN).
+    case "COA":
+    case "COR":
+    case "CSO": {
+      const oplist = session.state.channels.get(
+        command.payload.channel,
+      )?.oplist;
+      return oplist
+        ? {
+            kind: "channel.info",
+            d: { key: command.payload.channel, oplist: [...oplist] },
+          }
+        : undefined;
+    }
     case "IGN":
       // Any list change (init at login, add/delete acks) fans the whole
       // list out — session state already folded this command in, so the
@@ -276,6 +324,37 @@ function translateCommand(
       return command.payload.channel === undefined
         ? { kind: "sys", d: { message: command.payload.message } }
         : undefined;
+    case "BRO":
+      // Admin broadcasts are rare and server-critical — the one frame that
+      // must never be swallowed (feature-parity audit, decision 5).
+      return {
+        kind: "sys",
+        d: {
+          message: `Server broadcast${
+            command.payload.character !== undefined
+              ? ` from ${command.payload.character}`
+              : ""
+          }: ${command.payload.message}`,
+        },
+      };
+    case "RTB": {
+      // Website events (notes, friend requests…). The website stays the
+      // place to read and act; the client shows a notice + notification.
+      const character =
+        command.payload.character ??
+        command.payload.name ??
+        command.payload.sender;
+      return {
+        kind: "rtb",
+        d: {
+          type: command.payload.type,
+          ...(character !== undefined ? { character } : {}),
+          ...(command.payload.subject !== undefined
+            ? { subject: command.payload.subject }
+            : {}),
+        },
+      };
+    }
     case "ERR":
       return {
         kind: "error",

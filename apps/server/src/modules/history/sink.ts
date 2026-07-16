@@ -112,6 +112,27 @@ export class HistorySink {
             ownCharacter: session.character,
           });
           return;
+        case "LRP":
+          this.#enqueueMessage(identityId, {
+            target: this.#channelTarget(session, command.payload.channel),
+            senderCharacter: command.payload.character,
+            kind: "lrp",
+            bbcode: command.payload.message,
+            sentByUs: false,
+            ownCharacter: session.character,
+          });
+          return;
+        case "RLL":
+          // The server computes rolls and echoes the RLL to everyone, the
+          // roller included — own rolls arrive here, not via "sent".
+          this.#enqueueMessage(identityId, {
+            target: this.#channelTarget(session, command.payload.channel),
+            senderCharacter: command.payload.character,
+            kind: "rll",
+            bbcode: command.payload.message,
+            sentByUs: command.payload.character === session.character,
+          });
+          return;
         case "PRI":
           this.#enqueueMessage(identityId, {
             target: pmTarget(command.payload.character),
@@ -135,6 +156,35 @@ export class HistorySink {
             bbcode: command.payload.message,
             sentByUs: false,
           });
+          return;
+        }
+        // Moderation actions render as SystemLines (M6): persisted like a
+        // channel SYS so history and every attached device agree.
+        case "CKU":
+        case "CBU":
+        case "CTU": {
+          const verb =
+            command.cmd === "CKU"
+              ? "was kicked from the channel by"
+              : command.cmd === "CBU"
+                ? "was banned from the channel by"
+                : `was timed out of the channel for ${String(command.payload.length)} minutes by`;
+          this.#enqueueMessage(identityId, {
+            target: this.#channelTarget(session, command.payload.channel),
+            senderCharacter: "",
+            kind: "sys",
+            bbcode: `${command.payload.character} ${verb} ${command.payload.operator}.`,
+            sentByUs: false,
+          });
+          // Our own removal un-joins the conversation, exactly like an LCH
+          // (the server sends no separate leave for a kick/ban).
+          if (command.payload.character === session.character) {
+            this.#enqueueJoinedFlag(
+              identityId,
+              this.#channelTarget(session, command.payload.channel),
+              false,
+            );
+          }
           return;
         }
         case "IGN":
@@ -172,11 +222,12 @@ export class HistorySink {
     const offSent = session.events.on("sent", (sent: OutboundMessage) => {
       this.#enqueueMessage(identityId, {
         target:
-          sent.kind === "channel"
-            ? this.#channelTarget(session, sent.channel)
-            : pmTarget(sent.recipient),
+          sent.kind === "pm"
+            ? pmTarget(sent.recipient)
+            : this.#channelTarget(session, sent.channel),
         senderCharacter: session.character,
-        kind: sent.kind === "channel" ? "msg" : "pm",
+        kind:
+          sent.kind === "channel" ? "msg" : sent.kind === "ad" ? "lrp" : "pm",
         bbcode: sent.message,
         sentByUs: true,
       });
@@ -361,7 +412,7 @@ export class HistorySink {
     entry: {
       target: ConversationTarget;
       senderCharacter: string;
-      kind: "msg" | "pm" | "sys";
+      kind: "lrp" | "msg" | "pm" | "rll" | "sys";
       bbcode: string;
       sentByUs: boolean;
       /** Set for inbound channel messages: enables highlight matching. */

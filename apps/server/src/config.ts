@@ -21,6 +21,17 @@ const configSchema = z.object({
     .url({ protocol: /^wss?$/ })
     .default("wss://chat.f-list.net/chat2"),
   FLIST_API_URL: z.url().default("https://www.f-list.net"),
+  /**
+   * Minimum ms between F-List JSON API request starts. The default IS the
+   * developer-policy budget (<= 1 request/second) — never lower it against
+   * the real F-List. It exists so dev stacks and E2E runs against the
+   * local fchat-sim don't serialize on a pointless throttle.
+   */
+  FLIST_API_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(1000),
+  /** Global per-IP request backstop (requests/minute). The default suits a
+   * public deployment; the E2E stack raises it — a whole parallel suite
+   * shares one loopback IP. */
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   APP_NAME: z.string().default("EmberChat"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
   /**
@@ -61,7 +72,19 @@ export type AppConfig = z.infer<typeof configSchema>;
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): AppConfig {
-  return configSchema.parse(env);
+  const config = configSchema.parse(env);
+  // Guardrail, not just documentation: the sub-budget interval exists for
+  // local fchat-sim stacks only. Refusing to boot beats silently violating
+  // the F-List developer policy in production (M6 audit).
+  if (
+    config.FLIST_API_MIN_INTERVAL_MS < 1000 &&
+    new URL(config.FLIST_API_URL).hostname.endsWith("f-list.net")
+  ) {
+    throw new Error(
+      "FLIST_API_MIN_INTERVAL_MS below 1000 is only allowed against a local fchat-sim, never the real F-List API",
+    );
+  }
+  return config;
 }
 
 /** Translates TRUST_PROXY into the value Fastify's trustProxy option takes. */
