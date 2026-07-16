@@ -2331,3 +2331,65 @@ describe("gateway commands", () => {
     }
   }, 45_000);
 });
+
+// ── M7 exposure hardening ─────────────────────────────────────────────────────
+
+describe("gateway hardening", () => {
+  it("refuses a browser Origin outside the allow-list, admits the app's own", async () => {
+    // Hostile page: Origin present but unknown → policy close before hello.
+    const evil = new WebSocket(gatewayUrl, {
+      headers: { origin: "https://evil.example" },
+    });
+    const closed = await new Promise<{ code: number }>((resolve, reject) => {
+      evil.on("close", (code) => {
+        resolve({ code });
+      });
+      evil.on("error", reject);
+    });
+    expect(closed.code).toBe(GATEWAY_CLOSE.badOrigin);
+
+    // The app's own origin (APP_BASE_URL default) handshakes normally.
+    const token = await registerUser();
+    const friendly = new WebSocket(gatewayUrl, {
+      headers: { origin: "http://localhost:3000" },
+    });
+    await new Promise<void>((resolve, reject) => {
+      friendly.once("open", () => {
+        resolve();
+      });
+      friendly.once("error", reject);
+    });
+    friendly.send(
+      JSON.stringify({
+        t: "hello",
+        d: { token, protocolVersion: PROTOCOL_VERSION },
+      }),
+    );
+    const ready = await new Promise<{ t: string }>((resolve) => {
+      friendly.once("message", (data: WebSocket.RawData) => {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- RawData decode
+        resolve(JSON.parse(data.toString()) as { t: string });
+      });
+    });
+    expect(ready.t).toBe("ready");
+    friendly.close();
+  });
+
+  it("closes the connection once a user exhausts the hello budget", async () => {
+    const token = await registerUser(); // no identities — hellos are cheap
+    // Budget is 20/min per user; the 21st authenticated hello is refused.
+    for (let i = 0; i < 20; i += 1) {
+      const client = await connectClient();
+      await client.hello(token);
+      client.close();
+    }
+    const overBudget = await connectClient();
+    overBudget.send({
+      t: "hello",
+      d: { token, protocolVersion: PROTOCOL_VERSION },
+    });
+    const closed = await overBudget.waitForClose();
+    expect(closed.code).toBe(GATEWAY_CLOSE.rateLimited);
+    expect(closed.reason).toContain("hello rate limit");
+  }, 30_000);
+});

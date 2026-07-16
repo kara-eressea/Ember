@@ -35,6 +35,8 @@ export const GATEWAY_CLOSE = {
   slowConsumer: 4429,
   /** Inbound frame quota exceeded. */
   rateLimited: 4430,
+  /** Browser Origin header not on the instance's allow-list. */
+  badOrigin: 4403,
 } as const;
 
 /** The F-List character-name charset (FLIST_NAME_RE, highlights.ts). */

@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { FchatSim } from "@emberchat/fchat-sim";
-import { API_PORT } from "../playwright.config.js";
+import { API_PORT, WEB_PORT } from "../playwright.config.js";
 
 const SERVER_ENTRY = fileURLToPath(
   new URL("../../server/dist/main.js", import.meta.url),
@@ -87,6 +87,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // The whole parallel suite arrives from one loopback IP; the
         // production per-IP backstop would 429 innocent specs.
         RATE_LIMIT_MAX: "100000",
+        // Browser pages originate from the Vite dev server; the gateway's
+        // WS origin check must know it (Vite proxies /api same-origin, but
+        // the Origin header still names the page's origin).
+        CORS_ORIGIN: `http://127.0.0.1:${String(WEB_PORT)}`,
       },
       stdio: ["ignore", "inherit", "inherit"],
     });

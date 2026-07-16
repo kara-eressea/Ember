@@ -1,4 +1,5 @@
 import fastifyCors from "@fastify/cors";
+import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, {
@@ -12,6 +13,7 @@ import {
 import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { SessionJanitor } from "./modules/auth/session-janitor.js";
 import { DetachedAway } from "./modules/away/detached-away.js";
 import {
   ChannelDirectory,
@@ -138,13 +140,47 @@ export async function buildApp({
   };
   detachedAway.start();
   app.decorate("detachedAway", detachedAway);
+  const sessionJanitor = new SessionJanitor({ db, logger: app.log });
+  sessionJanitor.start();
   app.addHook("onClose", () => {
+    sessionJanitor.stop();
     detachedAway.stop();
     retention.stop();
     outbox.stop();
     sessions.stopAll();
   });
 
+  // Security headers (M7 exposure hardening). The CSP only matters when this
+  // process serves the SPA (WEB_DIST) — in API-only/dev mode Vite serves the
+  // pages and a CSP here would just decorate JSON. Note on CSRF: auth is a
+  // bearer token in the Authorization header (no cookies anywhere), so
+  // cross-site requests never carry credentials — no CSRF tokens needed;
+  // revisit if cookie auth ever lands.
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy:
+      config.WEB_DIST !== undefined
+        ? {
+            directives: {
+              "default-src": ["'self'"],
+              "script-src": ["'self'"],
+              // React style attributes need inline styles allowed.
+              "style-src": ["'self'", "'unsafe-inline'"],
+              // Avatars/eicons hotlink from F-List's static host (§6/§8).
+              "img-src": ["'self'", "data:", "https://static.f-list.net"],
+              "connect-src": ["'self'"],
+              "font-src": ["'self'"],
+              "object-src": ["'none'"],
+              "frame-ancestors": ["'none'"],
+              "base-uri": ["'self'"],
+              "form-action": ["'self'"],
+            },
+          }
+        : false,
+    // F-List's static host serves images without CORP headers; embedder
+    // policies would block them, so keep the helmet defaults that allow
+    // plain cross-origin subresource loads.
+    crossOriginEmbedderPolicy: false,
+  });
   await app.register(fastifyCors, {
     origin: config.CORS_ORIGIN ? config.CORS_ORIGIN.split(",") : false,
   });
@@ -211,6 +247,12 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    // Browsers may open the gateway from the app's own origin or any
+    // configured CORS origin; anything else is a hostile page.
+    allowedOrigins: [
+      new URL(config.APP_BASE_URL).origin,
+      ...(config.CORS_ORIGIN?.split(",").map((origin) => origin.trim()) ?? []),
+    ],
   });
 
   app.get("/healthz", () => ({ status: "ok" }));

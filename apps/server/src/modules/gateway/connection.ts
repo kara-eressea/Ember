@@ -81,6 +81,12 @@ export interface GatewayConnectionContext {
   ) => Promise<{ userId: string; sid: string } | undefined>;
   /** True while the auth session row exists and is unexpired. */
   readonly sessionAlive: (sid: string) => Promise<boolean>;
+  /**
+   * Per-user hello budget (M3 audit backlog): every hello runs one capped
+   * count query per identity, so a scripted connect→hello→disconnect loop
+   * multiplies them unmetered. False = over budget, close the connection.
+   */
+  readonly helloBudget: (userId: string) => boolean;
   readonly log: SessionLogger;
 }
 
@@ -278,6 +284,12 @@ export class GatewayConnection {
     const auth = await this.#ctx.verifyToken(d.token);
     if (!auth) {
       this.#close(GATEWAY_CLOSE.unauthorized, "invalid token");
+      return;
+    }
+    // Post-verify on purpose: only authenticated hellos spend the budget, so
+    // a third party can't exhaust someone's budget with garbage tokens.
+    if (!this.#ctx.helloBudget(auth.userId)) {
+      this.#close(GATEWAY_CLOSE.rateLimited, "hello rate limit");
       return;
     }
     if (this.#helloTimer) {

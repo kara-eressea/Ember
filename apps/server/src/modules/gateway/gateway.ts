@@ -10,7 +10,7 @@ import { and, eq, gt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type WebSocket from "ws";
 import type { ServerCommand } from "@emberchat/fchat-protocol";
-import type { GatewayEvent } from "@emberchat/protocol";
+import { GATEWAY_CLOSE, type GatewayEvent } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
@@ -375,6 +375,15 @@ export interface GatewayRoutesOptions {
   hub: GatewayHub;
   outbox: Outbox;
   highlights: HighlightMatcher;
+  /**
+   * Origins allowed to open the gateway from a browser (M7 exposure
+   * hardening). A request WITHOUT an Origin header is allowed — non-browser
+   * clients (tests, tooling, the future desktop shell) don't send one, and
+   * the hello token is the real gate. A browser always sends it, and a
+   * cross-site page's WebSocket carries no CORS preflight — this check is
+   * what stops a hostile page from riding a victim's network position.
+   */
+  allowedOrigins: readonly string[];
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -382,7 +391,12 @@ export async function gatewayRoutes(
   instance: FastifyInstance,
   options: GatewayRoutesOptions,
 ): Promise<void> {
-  const { db, sessions, history, hub, outbox, highlights } = options;
+  const { db, sessions, history, hub, outbox, highlights, allowedOrigins } =
+    options;
+  const originAllowList = new Set(
+    allowedOrigins.map((origin) => origin.toLowerCase()),
+  );
+  const HELLO_BUDGET_PER_MINUTE = 20;
 
   /** True while the auth session row exists and is unexpired. */
   async function sessionAlive(sid: string): Promise<boolean> {
@@ -394,6 +408,26 @@ export async function gatewayRoutes(
       )
       .limit(1);
     return session !== undefined;
+  }
+
+  // Fixed-window hello budget per user (see GatewayConnectionContext).
+  const helloWindows = new Map<string, { count: number; resetAt: number }>();
+  function helloBudget(userId: string): boolean {
+    const now = Date.now();
+    if (helloWindows.size > 10_000) {
+      for (const [key, window] of helloWindows) {
+        if (now >= window.resetAt) {
+          helloWindows.delete(key);
+        }
+      }
+    }
+    let window = helloWindows.get(userId);
+    if (!window || now >= window.resetAt) {
+      window = { count: 0, resetAt: now + 60_000 };
+      helloWindows.set(userId, window);
+    }
+    window.count += 1;
+    return window.count <= HELLO_BUDGET_PER_MINUTE;
   }
 
   /** Same trust chain as the REST `authenticate` guard: valid JWT whose sid
@@ -413,7 +447,13 @@ export async function gatewayRoutes(
       : undefined;
   }
 
-  instance.get("/gateway", { websocket: true }, (socket: WebSocket) => {
+  instance.get("/gateway", { websocket: true }, (socket: WebSocket, req) => {
+    const origin = req.headers.origin?.toLowerCase();
+    if (origin !== undefined && !originAllowList.has(origin)) {
+      instance.log.warn({ origin }, "gateway origin refused");
+      socket.close(GATEWAY_CLOSE.badOrigin, "origin not allowed");
+      return;
+    }
     new GatewayConnection(socket, {
       db,
       sessions,
@@ -423,6 +463,7 @@ export async function gatewayRoutes(
       highlights,
       verifyToken,
       sessionAlive,
+      helloBudget,
       log: instance.log,
     });
   });
