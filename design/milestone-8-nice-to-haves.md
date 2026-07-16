@@ -9,9 +9,9 @@ tooling and character search moved to **M10**
 (`milestone-10-ads-and-search.md`); the desktop client remains **MX**.*
 
 **Goal:** the features that make EmberChat pleasant to *live in* — an
-in-app character profile viewer with per-identity view history, Discord-style
-mini profile cards, Rising-style compatibility scoring, link hover-previews,
-and an eicon picker with opt-in third-party search.
+in-app character profile viewer with per-identity view history and private
+notes, Discord-style mini profile cards, Rising-style compatibility scoring,
+link previews, and an eicon picker with opt-in third-party search.
 
 **Depends on:** M7.
 
@@ -53,7 +53,7 @@ Routes:
 - `GET .../profile/:name/guestbook?page=` and `.../images` — thin
   passthroughs, **gated on the step-1 endpoint verification**.
 
-Three new tables (`apps/server/src/db/schema.ts`):
+Four new tables (`apps/server/src/db/schema.ts`):
 
 - **`character_cache`** — global payload cache, one row per character
   (`character_lower` PK, canonical name, raw `character-data.php` payload
@@ -68,6 +68,14 @@ Three new tables (`apps/server/src/db/schema.ts`):
 - **`flist_mappings`** — the global mapping payloads (`mapping-list.php`,
   `kink-list.php`, `info-list.php`; all ticketless), one row per source,
   refreshed when older than ~7 days.
+- **`character_notes`** — private per-identity notes on a character
+  ("what we RP'd last time"): PK (identity_id, character_lower), `note`
+  text, `updated_at`. Deliberately separate from `profile_views` so pruning
+  history never deletes a note. Routes: `GET`/`PUT
+  .../profile/:name/note` (the GET rides along in the profile response).
+  If step 1 verifies a stable F-List memo endpoint, offer one-way **memo
+  import** (and possibly sync) on top; ours works regardless — unlike
+  Rising's memo surface, notes don't depend on the API.
 
 The server resolves raw character-data (numeric infotag/kink ids) against
 `flist_mappings` into a **`ProfileDto`** (`packages/protocol/src/profile.ts`)
@@ -139,15 +147,18 @@ it returns.
   name render instantly from what we have, the rest fills in (a server cache
   hit costs nothing upstream; a miss is one budgeted request). Content:
   avatar, name, 3–4 key infotags (orientation/age/species/role), overall
-  match chip + the two most notable dimension chips, actions **Open
-  profile** and **Message** (reuses the `pm.open` flow). Stale data shows a
-  "cached Xh ago" line.
+  match chip + the two most notable dimension chips, **★ friend / ⚑
+  bookmark badges** (the social lists are already client-side — zero new
+  fetches), actions **Open profile** and **Message** (reuses the `pm.open`
+  flow). Stale data shows a "cached Xh ago" line.
 - **Full profile viewer** (`ProfileViewer.tsx`) — modal in the
   Preferences/ChannelBrowser shell style. Left rail = the **history list**
   (recently viewed, relative times, per-row prune — this is where history
-  lives; no separate surface). Header: avatar, name, fetched-ago + refresh
-  button (disabled with a tooltip when the server reports
-  `budgetExhausted`). Tabs:
+  lives; no separate surface). Header: avatar, name, friend/bookmark
+  badges, fetched-ago + refresh button (disabled with a tooltip when the
+  server reports `budgetExhausted`), and a **private note** affordance
+  (inline edit, autosaved via the note route, visible only to the viewing
+  identity). Tabs:
   1. **Overview** — description rendered natively (see profile BBCode
      below), match summary strip.
   2. **Details** — infotags grouped as F-List groups them.
@@ -175,23 +186,27 @@ in EmberChat's design language (our own collapse/heading/quote treatments —
 explicitly not mimicking F-List's site look); unsupported tags degrade
 gracefully to readable text, never raw markup.
 
-### Link hover-previews
+### Link previews
 
-Rising-style: hover an image link in the log → large floating preview beside
-the log (see the CD brief). Client-only track:
+Rising-style: an image link in the log → large floating preview beside the
+log (see the CD brief). Client-only track:
 
-- `LinkPreview` hover component wired into `RichText.tsx` URL rendering
-  (`[url]` tags + autolinked URLs); resolver in
-  `apps/web/src/lib/link-preview.ts` — direct image/video extension test
-  (.jpg/.png/.gif/.webp/.webm) **plus a small maintained per-host rewrite
-  table** (imgur page → i.imgur.com direct, e621, redgifs, …; the table is
-  data, easy to extend). No server proxy.
-- ~250 ms hover delay before fetching so casual mouse travel doesn't
-  hotlink; failure = silent no-preview (no broken-image flash);
-  viewport-constrained.
-- Pref `linkPreviews` — **default true** (hovering is deliberate; only a
-  standard image fetch is sent — contrast xariah below), AppearancePane
-  toggle with an IP-disclosure note.
+- `LinkPreview` component wired into `RichText.tsx` URL rendering (`[url]`
+  tags + autolinked URLs); resolver in `apps/web/src/lib/link-preview.ts` —
+  direct image/video extension test (.jpg/.png/.gif/.webp/.webm) **plus a
+  small maintained per-host rewrite table** (imgur page → i.imgur.com
+  direct, e621, redgifs, …; the table is data, easy to extend). No server
+  proxy.
+- Pref `linkPreviewMode: off | hover | click` — **default `click`**: a
+  plain click on a *previewable* link opens the preview instead of
+  navigating; **Ctrl/Cmd+click and middle-click follow the link** as
+  normal. Only links the resolver recognizes as media are hijacked —
+  ordinary web links keep click-to-navigate everywhere. Click is also the
+  touch behavior (hover mode falls back to click on touch devices). Hover
+  mode uses a ~250 ms delay so casual mouse travel doesn't hotlink.
+- Failure = silent no-preview (no broken-image flash); viewport-
+  constrained; Escape/click-away dismisses. AppearancePane control with an
+  IP-disclosure note (the image host sees your IP when a preview loads).
 
 ### Eicon picker + third-party search
 
@@ -226,8 +241,9 @@ the log (see the CD brief). Client-only track:
   attachment point.
 - Server integration (`profiles.test.ts`, pattern `social.test.ts`): cache
   hit / miss / TTL-expired / force-refresh; history upsert, bump, list,
-  delete; budget exhaustion → stale-with-flag and 429-no-cache; locked-vault
-  409; ticket retry.
+  delete; note put/get round-trip + survives history prune; budget
+  exhaustion → stale-with-flag and 429-no-cache; locked-vault 409; ticket
+  retry.
 - Matcher unit tests: golden profile pairs per dimension, missing-data →
   NEUTRAL, hard-mismatch domination, kink alignment weighting.
 - Web unit: profile lib cache/dedup; picker recents behavior; link-preview
@@ -236,7 +252,9 @@ the log (see the CD brief). Client-only track:
   viewer renders a sim profile; nick click → mini card with match chip;
   Compare tab shows dimension rows; history persists across reload; eicon
   Search tab hidden until the pref is enabled, then returns sim-stubbed
-  results and inserts on click; link hover shows a fixture image preview.
+  results and inserts on click; clicking a fixture image link opens the
+  preview while Ctrl-click navigates; a saved character note survives
+  reload.
 
 ## Risks & policy notes
 

@@ -131,6 +131,11 @@ scope.
   existing 1 req/s throttle; exhaustion serves stale-with-flag, never
   upstream requests. Surfaces: full viewer, Discord-style mini profile card
   on name click, compare view.
+- **Private character notes** (added at spec review): per-identity notes on
+  a character, stored server-side in their own table (separate from
+  history, so pruning one never loses the other); F-List memo import/sync
+  only if the memo endpoint verifies. Mini card and viewer also badge
+  friend/bookmark status from the already-loaded social lists.
 
 ## 12. Third-party eicon search — xariah via proxy, off by default (2026-07-16)
 
@@ -161,16 +166,24 @@ switch, reusable unchanged by the desktop client). M8 surfaces: mini-card
 chips, profile score strip, compare view. Ads/search integration waits for
 M10 and its own budget-caution pass.
 
-## 14. Link hover-previews — direct images + host rules, on by default (2026-07-16)
+## 14. Link previews — direct images + host rules, click-to-preview default (2026-07-16)
 
-Rising-style hover-an-image-link → floating preview beside the log.
+Rising-style image-link previews: a floating preview beside the log.
 Client-side only: direct image/video URLs plus a small maintained per-host
 rewrite table (imgur/e621/redgifs-style page links → direct media) — no
-server proxy, no arbitrary-URL resolution. **Default on** with a disable
-pref: unlike §12's search (which sends typed query text to a third party),
-hovering a link someone posted performs only a standard image fetch, and a
-~250 ms hover delay keeps accidental fetches rare; the pref note discloses
-that the image host sees your IP.
+server proxy, no arbitrary-URL resolution.
+
+- **Pref is a mode, not a boolean**: `linkPreviewMode: off | hover |
+  click`, **default `click`** (chosen at spec review over hover) — nothing
+  loads until a deliberate click, which also suits touch devices; hover
+  mode (Rising muscle memory, ~250 ms delay) is one pref away.
+- In click mode, a plain click on a *previewable* link opens the preview
+  instead of navigating; **Ctrl/Cmd+click and middle-click follow the
+  link**. Only resolver-recognized media links are hijacked — ordinary web
+  links keep normal navigation in every mode.
+- Enabled by default (unlike §12's search, no typed text goes anywhere —
+  only a standard image fetch on explicit action); the pref note discloses
+  that the image host sees your IP when a preview loads.
 
 ## Other settled points
 

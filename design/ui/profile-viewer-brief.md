@@ -40,17 +40,19 @@ log nick, member list row, `[user]` mention). Anchored at the click point,
 viewport-clamped.
 
 Content: avatar (~64px), character name, gender-appropriate accent (F-List
-convention colors gender names; we may restyle within tokens), 3–4 key
-infotags (orientation · age · species · dom/sub role), a **compatibility
-summary** — one overall match chip plus the two most notable dimension chips
-(see the five-tier system below) — and two actions: **Open profile**
-(primary) and **Message**.
+convention colors gender names; we may restyle within tokens), **★ friend /
+⚑ bookmark badges** (the sidebar already uses these glyph semantics), 3–4
+key infotags (orientation · age · species · dom/sub role), a
+**compatibility summary** — one overall match chip plus the two most
+notable dimension chips (see the five-tier system below) — and two actions:
+**Open profile** (primary) and **Message**.
 
 Data shape:
 
 ```
-{ name, avatarUrl, infotags: [{label, value}], match?: { overall: Tier,
-  highlights: [{dimension, tier, reason}] }, stale?: "cached 3h ago" }
+{ name, avatarUrl, isFriend, isBookmarked, infotags: [{label, value}],
+  match?: { overall: Tier, highlights: [{dimension, tier, reason}] },
+  stale?: "cached 3h ago" }
 ```
 
 States: skeleton (avatar + name paint instantly, rest fills in), loaded,
@@ -66,9 +68,14 @@ consider ~900×640). Two zones:
   relative last-viewed time, per-row remove (×) affordance. Clicking loads
   that profile. This rail is the *only* history surface in the app. Empty
   state needed ("Profiles you view will appear here").
-- **Main pane:** header (avatar, name, "fetched 12m ago" + refresh button —
-  including a disabled-with-tooltip state for "hourly profile budget
-  exhausted, showing cached copy") over a tab strip:
+- **Main pane:** header (avatar, name, friend/bookmark badges, "fetched
+  12m ago" + refresh button — including a disabled-with-tooltip state for
+  "hourly profile budget exhausted, showing cached copy") over a tab strip.
+  The header also carries a **private note** affordance: a per-character
+  note visible only to the viewing identity ("what we RP'd last time") —
+  design both the collapsed state (note exists: a peek/indicator; no note:
+  a quiet "add note") and the inline editor (autosave, no modal-in-modal).
+  Tabs:
   1. **Overview** — the BBCode description (see rendering mandate below) +
      a compact match summary strip when own-profile data exists.
   2. **Details** — infotags in their F-List groups (General, Appearance,
@@ -113,18 +120,24 @@ MatchReport { overall: Tier, dimensions: {orientation|gender|age|
   kinks: [{name, yours: Choice, theirs: Choice, tier}] }
 ```
 
-### 4. Link hover-preview
+### 4. Link preview
 
-Hovering an image link in the message log pops a **large floating preview
-beside the log** (reference: F-Chat Rising — preview appears at the side,
-message stays visible; screenshots available on request). Design:
+An image link in the message log pops a **large floating preview beside the
+log** (reference: F-Chat Rising — preview appears at the side, message
+stays visible; screenshots available on request). Trigger is a user
+preference: **click (default)** — a plain click on a media link opens the
+preview (Ctrl/Cmd+click follows the link); or hover. Design:
 
 - The link treatment itself in messages: link icon + label + dimmed
   `[host.com]` suffix (already close to current styling — refine as
-  needed).
+  needed). Consider whether a *previewable* link warrants a subtle extra
+  affordance (e.g. a tiny image glyph) so click-mode users know a click
+  previews rather than navigates.
 - The preview panel: max bounds (tall images, wide images), positioning
-  rules relative to the log/viewport, loading shimmer, no-preview =
-  *nothing* (failures must not flash broken-image chrome).
+  rules relative to the log/viewport, loading shimmer, dismissal
+  (Escape/click-away — click mode keeps it open until dismissed, hover
+  mode follows the pointer), no-preview = *nothing* (failures must not
+  flash broken-image chrome).
 
 ### 5. Eicon picker (secondary — may be a second pass)
 

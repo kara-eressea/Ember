@@ -19,6 +19,15 @@ candidate pool, to be scoped when M9 becomes active.
   slash-command reference, warn-code support.
 - **Light theme** — the full token-set design pass deferred from M5
   (decisions.md §10 committed to dark variants only at the time).
+- **Quick-switcher** — a Ctrl/Cmd+K palette to jump to any channel, DM, or
+  identity by typing; pairs naturally with the in-log search work.
+- **Status-message history** — recent status messages offered for one-click
+  reuse when setting status (Rising had this); a small pref-backed recents
+  list, same convention as eicon recents.
+- **Colorblind mode** — a token-level pass (alternative ok/warn/danger hues
+  + shape/glyph reinforcement), sibling of the light-theme token work; the
+  M8 match chips are already specced glyph-coded, this extends the idea
+  app-wide.
 - **Graduated audit LOWs** — promote deserving items from the M2–M8 audit
   backlogs in `milestones.md` § Standing to-dos.
 
