@@ -158,6 +158,7 @@ export async function buildApp({
     prefix: "/api/auth",
     db,
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
+    registrationEnabled: config.REGISTRATION_ENABLED,
   });
   await app.register(flistAccountsRoutes, {
     prefix: "/api/flist-accounts",

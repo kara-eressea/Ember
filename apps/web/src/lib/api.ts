@@ -175,12 +175,6 @@ export async function apiRequest<T>(
 }
 
 export const api = {
-  register(input: { email: string; username: string; password: string }) {
-    return apiRequest<TokenResponse>("/auth/register", {
-      method: "POST",
-      body: input,
-    });
-  },
   login(input: { email: string; password: string }) {
     return apiRequest<TokenResponse>("/auth/login", {
       method: "POST",

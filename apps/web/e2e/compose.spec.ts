@@ -6,7 +6,7 @@
 // is shared but never member-counted (only chat.spec counts, on Frontpage).
 
 import { expect, test } from "@playwright/test";
-import { interceptAvatars, registerAndConnect } from "./helpers.js";
+import { interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 test("markdown compose: preview = render, eicons, delayed send + recall", async ({
   page,
@@ -14,7 +14,7 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   test.setTimeout(180_000);
   await interceptAvatars(page);
 
-  await registerAndConnect(page, "sage@example.test", "Sage Willowmere");
+  await provisionAndConnect(page, "sage@example.test", "Sage Willowmere");
   await page.getByLabel("Join a channel").fill("Development");
   await page.getByRole("button", { name: "Join", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Development" })).toBeVisible({

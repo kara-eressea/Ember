@@ -1,9 +1,6 @@
 // Database schema (design/architecture.md §Database schema). Column names map
 // to snake_case via drizzle's `casing` option — keep it set in both
 // drizzle.config.ts and createDb().
-//
-// M7+ tables (email_tokens) arrive with their milestones; outbox_messages
-// exists from day one per the architecture.
 
 import { sql } from "drizzle-orm";
 import {
@@ -30,7 +27,6 @@ export const appUsers = pgTable("app_users", {
   email: text().notNull().unique(),
   username: text().notNull().unique(),
   passwordHash: text().notNull(),
-  emailVerifiedAt: timestamp({ withTimezone: true }),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 

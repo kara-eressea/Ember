@@ -1,0 +1,1 @@
+ALTER TABLE "app_users" DROP COLUMN "email_verified_at";

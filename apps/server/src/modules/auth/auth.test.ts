@@ -8,6 +8,7 @@ import {
 } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -31,6 +32,7 @@ function testConfig(
     DATABASE_URL: databaseUrl,
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
+    REGISTRATION_ENABLED: "true",
     ...overrides,
   });
 }
@@ -254,6 +256,151 @@ describe("logout", () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     expect(after.statusCode).toBe(401);
+  });
+});
+
+describe("registration gate", () => {
+  it("404s when REGISTRATION_ENABLED is off (the default)", async () => {
+    const gated = await buildApp({
+      config: testConfig(container.getConnectionUri(), {
+        REGISTRATION_ENABLED: "false",
+      }),
+      db,
+      logger: false,
+    });
+    try {
+      const response = await gated.inject({
+        method: "POST",
+        url: "/api/auth/register",
+        payload: {
+          email: "gated@example.test",
+          username: "gated",
+          password: "correct horse battery staple",
+        },
+      });
+      expect(response.statusCode).toBe(404);
+      // Login remains reachable on the same instance.
+      const login = await gated.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: "gated@example.test", password: "whatever else" },
+      });
+      expect(login.statusCode).toBe(401);
+    } finally {
+      await gated.close();
+    }
+  });
+
+  it("defaults REGISTRATION_ENABLED to false", () => {
+    expect(
+      loadConfig({
+        DATABASE_URL: "postgres://x",
+        AUTH_SECRET: "integration-test-secret-0123456789abcdef",
+      }).REGISTRATION_ENABLED,
+    ).toBe(false);
+  });
+});
+
+describe("admin CLI", () => {
+  const CLI = fileURLToPath(
+    new URL("../../../dist/cli/admin.js", import.meta.url),
+  );
+  const run = (args: string[]) =>
+    new Promise<{ code: number | null; stdout: string; stderr: string }>(
+      (resolve) => {
+        execFile(
+          process.execPath,
+          [CLI, ...args],
+          {
+            env: { ...process.env, DATABASE_URL: container.getConnectionUri() },
+          },
+          (error, stdout, stderr) => {
+            resolve({
+              code: error && "code" in error ? (error.code as number) : 0,
+              stdout,
+              stderr,
+            });
+          },
+        );
+      },
+    );
+
+  it("create-user then reset-password round-trips through login", async () => {
+    const created = await run([
+      "create-user",
+      "--email",
+      "cli-admin@example.test",
+      "--username",
+      "cli-admin",
+      "--password",
+      "first password here",
+    ]);
+    expect(created.stderr).toBe("");
+    expect(created.code).toBe(0);
+    expect(created.stdout).toContain("Created user cli-admin");
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        email: "cli-admin@example.test",
+        password: "first password here",
+      },
+    });
+    expect(login.statusCode).toBe(200);
+
+    const reset = await run([
+      "reset-password",
+      "--email",
+      "cli-admin@example.test",
+      "--password",
+      "second password here",
+    ]);
+    expect(reset.code).toBe(0);
+    expect(reset.stdout).toContain("Password reset for cli-admin");
+
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        email: "cli-admin@example.test",
+        password: "first password here",
+      },
+    });
+    expect(stale.statusCode).toBe(401);
+    const fresh = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        email: "cli-admin@example.test",
+        password: "second password here",
+      },
+    });
+    expect(fresh.statusCode).toBe(200);
+  });
+
+  it("refuses duplicates and unknown emails with a nonzero exit", async () => {
+    const dupe = await run([
+      "create-user",
+      "--email",
+      "cli-admin@example.test",
+      "--username",
+      "cli-admin",
+      "--password",
+      "first password here",
+    ]);
+    expect(dupe.code).toBe(1);
+    expect(dupe.stderr).toContain("already taken");
+
+    const missing = await run([
+      "reset-password",
+      "--email",
+      "nobody-here@example.test",
+      "--password",
+      "does not matter 1",
+    ]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain("No user");
   });
 });
 

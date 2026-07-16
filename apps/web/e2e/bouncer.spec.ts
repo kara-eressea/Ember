@@ -6,7 +6,7 @@
 // share characters.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 test("two devices: unread badges converge; catch-up shows the new divider", async ({
   page,
@@ -16,7 +16,7 @@ test("two devices: unread badges converge; catch-up shows the new divider", asyn
   await interceptAvatars(page);
 
   // ── Device A: register → Willow Reed → connect → sit in a channel ─────
-  const creds = await registerAndConnect(
+  const creds = await provisionAndConnect(
     page,
     "willow@example.test",
     "Willow Reed",

@@ -77,6 +77,7 @@ beforeAll(async () => {
       DATABASE_URL: container.getConnectionUri(),
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
+      REGISTRATION_ENABLED: "true",
       FCHAT_URL: sim.wsUrl,
       FLIST_API_URL: sim.httpUrl,
     }),
