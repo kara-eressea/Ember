@@ -8,7 +8,7 @@ import {
   SimClient,
   delay,
   interceptAvatars,
-  registerAndConnect,
+  provisionAndConnect,
 } from "./helpers.js";
 
 /** How many channel messages Birch pumps in to force history pagination
@@ -24,7 +24,7 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await interceptAvatars(page);
 
   // Register → identity → connect; the server-held session reaches the sim.
-  await registerAndConnect(page, "amber@example.test", "Cindral");
+  await provisionAndConnect(page, "amber@example.test", "Cindral");
 
   // ── Join a channel ────────────────────────────────────────────────────
   await page.getByLabel("Join a channel").fill("Frontpage");

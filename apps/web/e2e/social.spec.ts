@@ -6,7 +6,7 @@
 // channels.
 
 import { expect, test } from "@playwright/test";
-import { interceptAvatars, registerAndConnect } from "./helpers.js";
+import { interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 const FERNERY = "ADH-33cc44dd55ee66ff77aa";
 
@@ -15,7 +15,7 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
-  await registerAndConnect(page, "fern@example.test", "Fern Glade");
+  await provisionAndConnect(page, "fern@example.test", "Fern Glade");
 
   // The seeded lists render: a friend with a presence dot, a bookmark, and
   // the incoming request as an actionable row.

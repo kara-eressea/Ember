@@ -81,6 +81,12 @@ export interface GatewayConnectionContext {
   ) => Promise<{ userId: string; sid: string } | undefined>;
   /** True while the auth session row exists and is unexpired. */
   readonly sessionAlive: (sid: string) => Promise<boolean>;
+  /**
+   * Per-user hello budget (M3 audit backlog): every hello runs one capped
+   * count query per identity, so a scripted connect→hello→disconnect loop
+   * multiplies them unmetered. False = over budget, close the connection.
+   */
+  readonly helloBudget: (userId: string) => boolean;
   readonly log: SessionLogger;
 }
 
@@ -280,6 +286,12 @@ export class GatewayConnection {
       this.#close(GATEWAY_CLOSE.unauthorized, "invalid token");
       return;
     }
+    // Post-verify on purpose: only authenticated hellos spend the budget, so
+    // a third party can't exhaust someone's budget with garbage tokens.
+    if (!this.#ctx.helloBudget(auth.userId)) {
+      this.#close(GATEWAY_CLOSE.rateLimited, "hello rate limit");
+      return;
+    }
     if (this.#helloTimer) {
       clearTimeout(this.#helloTimer);
       this.#helloTimer = undefined;
@@ -472,9 +484,13 @@ export class GatewayConnection {
       cursors,
       CATCHUP_BATCH_SIZE,
     );
-    for (const { convId, afterId: planStart } of plan) {
+    for (const { convId, afterId: planStart, gap } of plan) {
       let afterId = planStart;
       sub.delivered.set(convId, afterId);
+      // The gap flag (budget clamped the cursor) rides only the FIRST frame
+      // of this conversation: it tells the client to reset the buffer once,
+      // then the remaining batches append onto the reset window.
+      let firstFrame = true;
       for (;;) {
         if (this.#subscriptions.get(identityId) !== sub) {
           return; // unsubscribed (or resynced) mid-catchup
@@ -493,8 +509,10 @@ export class GatewayConnection {
             convId,
             messages: rows.map(messageDto),
             done,
+            ...(gap && firstFrame ? { gap: true } : {}),
           },
         });
+        firstFrame = false;
         const last = rows.at(-1);
         if (last) {
           afterId = last.id;
@@ -707,6 +725,24 @@ export class GatewayConnection {
               this.#ack(id, {
                 ok: false,
                 error: error instanceof Error ? error.message : "roll failed",
+              });
+            },
+          );
+        }
+        return;
+      }
+      // Alert Staff (M7): same non-stalling ack shape as channel.roll.
+      case "user.report": {
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          session.reportToStaff(cmd.d.character, cmd.d.report).then(
+            () => {
+              this.#ack(id, { ok: true });
+            },
+            (error: unknown) => {
+              this.#ack(id, {
+                ok: false,
+                error: error instanceof Error ? error.message : "report failed",
               });
             },
           );

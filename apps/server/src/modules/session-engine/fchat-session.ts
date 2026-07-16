@@ -562,6 +562,27 @@ export class FchatSession {
     });
   }
 
+  /**
+   * Alert Staff (SFC, M7): reports a character to F-List's global
+   * moderators. The report string arrives pre-formatted (official-client
+   * shape: tab + reported user + complaint); the server answers with a SYS
+   * "The moderators have been alerted."
+   */
+  async reportToStaff(character: string, report: string): Promise<void> {
+    this.#assertOnline();
+    this.#assertLength(report, this.state.vars.chat_max);
+    await this.#rateGate.schedule("SFC", () => {
+      if (
+        !this.#send({
+          cmd: "SFC",
+          payload: { action: "report", report, character },
+        })
+      ) {
+        throw new SessionNotOnlineError(this.#status);
+      }
+    });
+  }
+
   #assertOnline(): void {
     if (this.#status !== "online") {
       throw new SessionNotOnlineError(this.#status);

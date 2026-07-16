@@ -39,8 +39,16 @@ export function dispatchFrame(frame: ServerFrame): void {
       return;
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
-      // these rows (both derive from lastReadMessageId), so no bump.
-      useMessagesStore.getState().appendMany(frame.d.convId, frame.d.messages);
+      // these rows (both derive from lastReadMessageId), so no bump. A gap
+      // frame (replay budget clamped the cursor) resets the buffer instead
+      // of merging — the old prefix is non-contiguous with this window.
+      if (frame.d.gap) {
+        useMessagesStore.getState().resetTo(frame.d.convId, frame.d.messages);
+      } else {
+        useMessagesStore
+          .getState()
+          .appendMany(frame.d.convId, frame.d.messages);
+      }
       return;
     case "event":
       dispatchEvent(frame.d.identityId, frame.d);

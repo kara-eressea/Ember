@@ -186,7 +186,22 @@ export interface CatchupPlanEntry {
   convId: string;
   /** Replay strictly-after this messages.id. */
   afterId: number;
+  /**
+   * True when the resume cursor was clamped by the replay budget — the
+   * replay starts ABOVE the client's cursor, so its buffer prefix is no
+   * longer contiguous with what we send. The client must reset that
+   * conversation to the replayed window (older history stays reachable via
+   * REST backfill) rather than merging into an unreachable interior gap.
+   */
+  gap: boolean;
 }
+
+/**
+ * Id-space ceiling on how much one conversation replays for a resuming
+ * cursor (M7). Ids are global, so this is an upper bound, usually far fewer
+ * rows — big enough that any realistic overnight gap replays in full.
+ */
+export const CATCHUP_REPLAY_BUDGET = 2_000;
 
 /**
  * Which conversations to replay on sub, and from where. Two regimes:
@@ -231,12 +246,25 @@ export async function catchupPlan(
   for (const row of rows) {
     const cursor = cursors[row.id];
     if (cursor !== undefined) {
-      plan.push({ convId: row.id, afterId: cursor });
+      // Replay budget (M2 audit backlog): a cursor from a device that was
+      // detached for weeks would otherwise replay everything since — floor
+      // it in id-space like the no-cursor path. Deeper history stays
+      // reachable through REST backfill on open. Clamp only, never drop:
+      // an up-to-date cursor still gets its empty done frame (the client's
+      // per-conversation sync marker). When the clamp actually moves the
+      // start above the cursor, flag it so the client resets rather than
+      // merging into an interior hole.
+      const clampedStart = Math.max(cursor, row.maxId - CATCHUP_REPLAY_BUDGET);
+      plan.push({
+        convId: row.id,
+        afterId: clampedStart,
+        gap: clampedStart > cursor,
+      });
       continue;
     }
     const afterId = Math.max(row.lastRead ?? 0, row.maxId - batchSize);
     if (afterId < row.maxId) {
-      plan.push({ convId: row.id, afterId });
+      plan.push({ convId: row.id, afterId, gap: false });
     }
   }
   return plan;

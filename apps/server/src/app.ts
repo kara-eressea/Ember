@@ -1,4 +1,5 @@
 import fastifyCors from "@fastify/cors";
+import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, {
@@ -12,6 +13,7 @@ import {
 import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { SessionJanitor } from "./modules/auth/session-janitor.js";
 import { DetachedAway } from "./modules/away/detached-away.js";
 import {
   ChannelDirectory,
@@ -24,6 +26,7 @@ import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
+import { UpdateChecker } from "./modules/meta/update-check.js";
 import { HighlightMatcher } from "./modules/highlights/matcher.js";
 import { highlightsRoutes } from "./modules/highlights/routes.js";
 import { historyRoutes } from "./modules/history/routes.js";
@@ -138,13 +141,56 @@ export async function buildApp({
   };
   detachedAway.start();
   app.decorate("detachedAway", detachedAway);
+  const sessionJanitor = new SessionJanitor({ db, logger: app.log });
+  sessionJanitor.start();
+  const updates = new UpdateChecker({
+    currentVersion: config.CLIENT_VERSION,
+    repo: config.UPDATE_CHECK_REPO,
+    // Test runs never phone home, whatever the config says.
+    enabled: config.UPDATE_CHECK_ENABLED && process.env.NODE_ENV !== "test",
+    logger: app.log,
+  });
+  updates.start();
   app.addHook("onClose", () => {
+    updates.stop();
+    sessionJanitor.stop();
     detachedAway.stop();
     retention.stop();
     outbox.stop();
     sessions.stopAll();
   });
 
+  // Security headers (M7 exposure hardening). The CSP only matters when this
+  // process serves the SPA (WEB_DIST) — in API-only/dev mode Vite serves the
+  // pages and a CSP here would just decorate JSON. Note on CSRF: auth is a
+  // bearer token in the Authorization header (no cookies anywhere), so
+  // cross-site requests never carry credentials — no CSRF tokens needed;
+  // revisit if cookie auth ever lands.
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy:
+      config.WEB_DIST !== undefined
+        ? {
+            directives: {
+              "default-src": ["'self'"],
+              "script-src": ["'self'"],
+              // React style attributes need inline styles allowed.
+              "style-src": ["'self'", "'unsafe-inline'"],
+              // Avatars/eicons hotlink from F-List's static host (§6/§8).
+              "img-src": ["'self'", "data:", "https://static.f-list.net"],
+              "connect-src": ["'self'"],
+              "font-src": ["'self'"],
+              "object-src": ["'none'"],
+              "frame-ancestors": ["'none'"],
+              "base-uri": ["'self'"],
+              "form-action": ["'self'"],
+            },
+          }
+        : false,
+    // F-List's static host serves images without CORP headers; embedder
+    // policies would block them, so keep the helmet defaults that allow
+    // plain cross-origin subresource loads.
+    crossOriginEmbedderPolicy: false,
+  });
   await app.register(fastifyCors, {
     origin: config.CORS_ORIGIN ? config.CORS_ORIGIN.split(",") : false,
   });
@@ -158,6 +204,7 @@ export async function buildApp({
     prefix: "/api/auth",
     db,
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
+    registrationEnabled: config.REGISTRATION_ENABLED,
   });
   await app.register(flistAccountsRoutes, {
     prefix: "/api/flist-accounts",
@@ -210,9 +257,24 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    // Browsers may open the gateway from the app's own origin or any
+    // configured CORS origin; anything else is a hostile page. The two
+    // loopback spellings are treated as one so a local `docker compose up`
+    // works whether the operator opens 127.0.0.1 or localhost (they resolve
+    // to the same socket and neither is a meaningful trust boundary).
+    allowedOrigins: [
+      ...loopbackAliases(new URL(config.APP_BASE_URL).origin),
+      ...(config.CORS_ORIGIN?.split(",").map((origin) => origin.trim()) ?? []),
+    ],
   });
 
+  // Liveness probe — unauthenticated on purpose, so it must not disclose
+  // anything a scanner could fingerprint (the version lives on the
+  // authenticated /api/meta instead).
   app.get("/healthz", () => ({ status: "ok" }));
+  // Version/update surface for the UI (M7). Authenticated: the running
+  // version is nobody else's business.
+  app.get("/api/meta", { preHandler: app.authenticate }, () => updates.status);
 
   if (config.WEB_DIST !== undefined) {
     await app.register(webStatic, {
@@ -222,4 +284,22 @@ export async function buildApp({
   }
 
   return app;
+}
+
+/**
+ * Both loopback spellings of an origin (127.0.0.1 ⇄ localhost), or just the
+ * origin itself for any non-loopback host. Lets the gateway origin check
+ * accept a local browser regardless of which loopback name the operator
+ * typed; a real deployment sets APP_BASE_URL to its public origin and this
+ * is a no-op.
+ */
+function loopbackAliases(origin: string): string[] {
+  const url = new URL(origin);
+  if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
+    const other = url.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+    const alias = new URL(origin);
+    alias.hostname = other;
+    return [url.origin, alias.origin];
+  }
+  return [url.origin];
 }

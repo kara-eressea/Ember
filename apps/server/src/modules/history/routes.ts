@@ -3,7 +3,8 @@
 // ?before=<msgId> walks toward older history, pages come back ascending so
 // the client can prepend them directly.
 
-import { and, desc, eq, lt } from "drizzle-orm";
+import { Readable } from "node:stream";
+import { and, desc, eq, gt, lt } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -178,14 +179,13 @@ export async function historyRoutes(
 
   // Log export (M5, developer policy: log location must be known and
   // accessible to the user). Whole-conversation download, ascending, as
-  // .txt / .html / .json. Buffered in memory — fine at the current scale;
-  // revisit with streaming alongside the M7 retention policies.
+  // .txt / .html / .json — streamed in id-keyset pages (M7), so a years-long
+  // log never materializes in memory.
   app.get(
     "/:identityId/conversations/:conversationId/export",
     {
-      // Exports buffer the whole conversation in memory — a dedicated
-      // (tight) limit keeps repeated large exports from becoming a heap
-      // DoS while streaming waits for M7.
+      // Streaming still reads the whole conversation from Postgres — the
+      // limit keeps repeated large exports from monopolizing the pool.
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
         params: z.object({
@@ -224,35 +224,38 @@ export async function historyRoutes(
       if (!conversation) {
         return reply.code(404).send({ error: "Conversation not found" });
       }
-      const rows = await db
-        .select({
-          id: messages.id,
-          senderCharacter: messages.senderCharacter,
-          kind: messages.kind,
-          bbcode: messages.bbcode,
-          sentByUs: messages.sentByUs,
-          createdAt: messages.createdAt,
-        })
-        .from(messages)
-        .where(eq(messages.conversationId, conversation.id))
-        .orderBy(messages.id);
-
       const { format } = request.query;
       const filename = `${exportSlug(conversation.title)}.${format}`;
-      const { contentType, body } = renderExport(
-        format,
-        conversation.title,
-        rows,
-      );
+      const readPage = (afterId: number) =>
+        db
+          .select({
+            id: messages.id,
+            senderCharacter: messages.senderCharacter,
+            kind: messages.kind,
+            bbcode: messages.bbcode,
+            sentByUs: messages.sentByUs,
+            createdAt: messages.createdAt,
+          })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.conversationId, conversation.id),
+              gt(messages.id, afterId),
+            ),
+          )
+          .orderBy(messages.id)
+          .limit(EXPORT_PAGE_SIZE);
       return reply
-        .header("content-type", contentType)
+        .header("content-type", EXPORT_CONTENT_TYPES[format])
         .header("content-disposition", `attachment; filename="${filename}"`)
-        .send(body);
+        .send(
+          Readable.from(exportChunks(format, conversation.title, readPage)),
+        );
     },
   );
 }
 
-interface ExportRow {
+export interface ExportRow {
   id: number;
   senderCharacter: string;
   kind: string;
@@ -283,61 +286,85 @@ function exportTimestamp(date: Date): string {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-function renderExport(
+/** Messages fetched per streamed page (keyset on messages.id). */
+export const EXPORT_PAGE_SIZE = 1000;
+
+const EXPORT_CONTENT_TYPES = {
+  json: "application/json; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  html: "text/html; charset=utf-8",
+} as const;
+
+function renderTxtRow(row: ExportRow): string {
+  return row.kind === "sys"
+    ? `[${exportTimestamp(row.createdAt)}] * ${row.bbcode}`
+    : `[${exportTimestamp(row.createdAt)}] ${row.senderCharacter}: ${row.bbcode}`;
+}
+
+function renderHtmlRow(row: ExportRow): string {
+  return row.kind === "sys"
+    ? `<div class="sys"><time>[${exportTimestamp(row.createdAt)}]</time> * ${escapeHtml(row.bbcode)}</div>`
+    : `<div><time>[${exportTimestamp(row.createdAt)}]</time> <b>${escapeHtml(row.senderCharacter)}</b>: ${escapeHtml(row.bbcode)}</div>`;
+}
+
+function renderJsonRow(row: ExportRow): string {
+  // Message bodies stay wire BBCode in every format — the export is the
+  // log as it happened, not a re-render.
+  return JSON.stringify({
+    id: row.id,
+    sender: row.senderCharacter,
+    kind: row.kind,
+    bbcode: row.bbcode,
+    sentByUs: row.sentByUs,
+    createdAt: row.createdAt.toISOString(),
+  });
+}
+
+/** Streams the export document: header → keyset pages → footer. */
+export async function* exportChunks(
   format: "txt" | "html" | "json",
   title: string,
-  rows: ExportRow[],
-): { contentType: string; body: string } {
-  switch (format) {
-    case "json":
-      // Message bodies stay wire BBCode in every format — the export is the
-      // log as it happened, not a re-render.
-      return {
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify(
-          {
-            title,
-            exportedAt: new Date().toISOString(),
-            messages: rows.map((row) => ({
-              id: row.id,
-              sender: row.senderCharacter,
-              kind: row.kind,
-              bbcode: row.bbcode,
-              sentByUs: row.sentByUs,
-              createdAt: row.createdAt.toISOString(),
-            })),
-          },
-          null,
-          2,
-        ),
-      };
-    case "txt":
-      return {
-        contentType: "text/plain; charset=utf-8",
-        body:
-          rows
-            .map((row) =>
-              row.kind === "sys"
-                ? `[${exportTimestamp(row.createdAt)}] * ${row.bbcode}`
-                : `[${exportTimestamp(row.createdAt)}] ${row.senderCharacter}: ${row.bbcode}`,
-            )
-            .join("\n") + "\n",
-      };
-    case "html":
-      return {
-        contentType: "text/html; charset=utf-8",
-        body: [
-          "<!doctype html>",
-          `<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>`,
-          "<style>body{font-family:monospace;white-space:pre-wrap;margin:2em}time{color:#888}.sys{font-style:italic;color:#666}</style>",
-          `</head><body><h1>${escapeHtml(title)}</h1>`,
-          ...rows.map((row) =>
-            row.kind === "sys"
-              ? `<div class="sys"><time>[${exportTimestamp(row.createdAt)}]</time> * ${escapeHtml(row.bbcode)}</div>`
-              : `<div><time>[${exportTimestamp(row.createdAt)}]</time> <b>${escapeHtml(row.senderCharacter)}</b>: ${escapeHtml(row.bbcode)}</div>`,
-          ),
-          "</body></html>",
-        ].join("\n"),
-      };
+  readPage: (afterId: number) => Promise<ExportRow[]>,
+  pageSize = EXPORT_PAGE_SIZE,
+): AsyncGenerator<string> {
+  if (format === "json") {
+    yield `{\n  "title": ${JSON.stringify(title)},\n  "exportedAt": ${JSON.stringify(new Date().toISOString())},\n  "messages": [`;
+  } else if (format === "html") {
+    yield [
+      "<!doctype html>",
+      `<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>`,
+      "<style>body{font-family:monospace;white-space:pre-wrap;margin:2em}time{color:#888}.sys{font-style:italic;color:#666}</style>",
+      `</head><body><h1>${escapeHtml(title)}</h1>`,
+      "",
+    ].join("\n");
+  }
+  let afterId = 0;
+  let first = true;
+  for (;;) {
+    const rows = await readPage(afterId);
+    if (rows.length > 0) {
+      afterId = rows[rows.length - 1]!.id;
+      switch (format) {
+        case "txt":
+          yield rows.map(renderTxtRow).join("\n") + "\n";
+          break;
+        case "html":
+          yield rows.map(renderHtmlRow).join("\n") + "\n";
+          break;
+        case "json":
+          yield (first ? "\n    " : ",\n    ") +
+            rows.map(renderJsonRow).join(",\n    ");
+          break;
+      }
+      first = false;
+    }
+    if (rows.length < pageSize) {
+      break;
+    }
+  }
+  if (format === "json") {
+    yield "\n  ]\n}\n";
+  } else if (format === "html") {
+    yield "</body></html>\n";
   }
 }

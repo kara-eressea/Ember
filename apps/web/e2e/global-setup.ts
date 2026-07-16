@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { FchatSim } from "@emberchat/fchat-sim";
-import { API_PORT } from "../playwright.config.js";
+import { API_PORT, WEB_PORT } from "../playwright.config.js";
 
 const SERVER_ENTRY = fileURLToPath(
   new URL("../../server/dist/main.js", import.meta.url),
@@ -67,6 +67,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     process.env["FCHAT_SIM_WS_URL"] = sim.wsUrl;
     process.env["FCHAT_SIM_TICKET_URL"] = sim.ticketUrl;
     container = await new PostgreSqlContainer("postgres:18-alpine").start();
+    // Specs provision app users through the admin CLI (registration is
+    // disabled — the E2E stack runs the production shape); the CLI needs
+    // the database directly.
+    process.env["E2E_DATABASE_URL"] = container.getConnectionUri();
     server = spawn(process.execPath, [SERVER_ENTRY], {
       env: {
         ...process.env,
@@ -83,6 +87,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // The whole parallel suite arrives from one loopback IP; the
         // production per-IP backstop would 429 innocent specs.
         RATE_LIMIT_MAX: "100000",
+        // Browser pages originate from the Vite dev server; the gateway's
+        // WS origin check must know it (Vite proxies /api same-origin, but
+        // the Origin header still names the page's origin).
+        CORS_ORIGIN: `http://127.0.0.1:${String(WEB_PORT)}`,
+        // No phone-home from CI runs.
+        UPDATE_CHECK_ENABLED: "false",
       },
       stdio: ["ignore", "inherit", "inherit"],
     });

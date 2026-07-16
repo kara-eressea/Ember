@@ -77,6 +77,7 @@ beforeAll(async () => {
       DATABASE_URL: container.getConnectionUri(),
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
+      REGISTRATION_ENABLED: "true",
       FCHAT_URL: sim.wsUrl,
       FLIST_API_URL: sim.httpUrl,
     }),
@@ -1820,6 +1821,11 @@ describe("gateway commands", () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
     await joinAndSettle(session, "Development"); // mode "both": ads allowed
+    // The CDS that joinAndSettle waits on precedes the sink's async persist;
+    // flush so the conversation row exists before we query it (matches every
+    // other DB-reading test — without it the query races under CI load and
+    // `conv` is undefined).
+    await app.history.flush();
 
     const client = await connectClient();
     await client.hello(token);
@@ -2329,4 +2335,102 @@ describe("gateway commands", () => {
       }
     }
   }, 45_000);
+});
+
+// ── M7 exposure hardening ─────────────────────────────────────────────────────
+
+describe("gateway hardening", () => {
+  it("refuses a browser Origin outside the allow-list, admits the app's own", async () => {
+    // Hostile page: Origin present but unknown → policy close before hello.
+    const evil = new WebSocket(gatewayUrl, {
+      headers: { origin: "https://evil.example" },
+    });
+    const closed = await new Promise<{ code: number }>((resolve, reject) => {
+      evil.on("close", (code) => {
+        resolve({ code });
+      });
+      evil.on("error", reject);
+    });
+    expect(closed.code).toBe(GATEWAY_CLOSE.badOrigin);
+
+    // The app's own origin (APP_BASE_URL default) handshakes normally.
+    const token = await registerUser();
+    const friendly = new WebSocket(gatewayUrl, {
+      headers: { origin: "http://localhost:3000" },
+    });
+    await new Promise<void>((resolve, reject) => {
+      friendly.once("open", () => {
+        resolve();
+      });
+      friendly.once("error", reject);
+    });
+    friendly.send(
+      JSON.stringify({
+        t: "hello",
+        d: { token, protocolVersion: PROTOCOL_VERSION },
+      }),
+    );
+    const ready = await new Promise<{ t: string }>((resolve) => {
+      friendly.once("message", (data: WebSocket.RawData) => {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- RawData decode
+        resolve(JSON.parse(data.toString()) as { t: string });
+      });
+    });
+    expect(ready.t).toBe("ready");
+    friendly.close();
+  });
+
+  it("closes the connection once a user exhausts the hello budget", async () => {
+    const token = await registerUser(); // no identities — hellos are cheap
+    // Budget is 20/min per user; the 21st authenticated hello is refused.
+    for (let i = 0; i < 20; i += 1) {
+      const client = await connectClient();
+      await client.hello(token);
+      client.close();
+    }
+    const overBudget = await connectClient();
+    overBudget.send({
+      t: "hello",
+      d: { token, protocolVersion: PROTOCOL_VERSION },
+    });
+    const closed = await overBudget.waitForClose();
+    expect(closed.code).toBe(GATEWAY_CLOSE.rateLimited);
+    expect(closed.reason).toContain("hello rate limit");
+  }, 30_000);
+});
+
+describe("alert staff (SFC)", () => {
+  it("user.report puts the SFC on the wire and the sim records it", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "user.report",
+        d: {
+          character: "Nyx Firemane",
+          report:
+            "Current Tab/Channel: Frontpage | Reporting User: Nyx Firemane | test complaint",
+        },
+      },
+    });
+    const ack = await client.nextOfType("ack");
+    expect(ack.d).toMatchObject({ ok: true });
+    expect(sim.staffReports.at(-1)).toMatchObject({
+      character: "Nyx Firemane",
+      report: expect.stringContaining("test complaint") as string,
+    });
+    // The live server answers with a SYS — the sim mirrors it, and it
+    // reaches the client as a notice-bearing event.
+    const sys = await client.nextEvent("sys");
+    expect(eventPayload<{ message: string }>(sys).message).toContain(
+      "The moderators have been alerted.",
+    );
+  });
 });

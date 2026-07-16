@@ -57,6 +57,13 @@
       "when": 1784137744580,
       "tag": "0007_m6-outbox-kind",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784187885382,
+      "tag": "0008_m7-drop-email-verified",
+      "breakpoints": true
     }
   ]
 }

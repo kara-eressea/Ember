@@ -27,11 +27,6 @@ interface AuthState {
   /** "restoring" while a persisted session revalidates on boot. */
   status: "restoring" | "anonymous" | "authenticated";
 
-  register: (input: {
-    email: string;
-    username: string;
-    password: string;
-  }) => Promise<void>;
   login: (input: {
     email: string;
     password: string;
@@ -77,18 +72,6 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   refreshToken: undefined,
   remember: false,
   status: loadPersisted() ? "restoring" : "anonymous",
-
-  async register(input) {
-    const session = await api.register(input);
-    set({
-      user: session.user,
-      accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
-      remember: true,
-      status: "authenticated",
-    });
-    persist(get());
-  },
 
   async login({ email, password, remember }) {
     const session = await api.login({ email, password });

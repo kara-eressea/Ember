@@ -35,11 +35,8 @@ export function Landing() {
           {appName.toLowerCase()}
         </span>
         <span className={styles.navSpacer} />
-        <Link className={styles.ghostButton} to="/login">
+        <Link className={styles.accentButton} to="/login">
           Log in
-        </Link>
-        <Link className={styles.accentButton} to="/register">
-          Create account
         </Link>
       </nav>
 
@@ -54,10 +51,7 @@ export function Landing() {
           login on top.
         </p>
         <div className={styles.ctaRow}>
-          <Link className={styles.accentButton} to="/register">
-            Create account
-          </Link>
-          <Link className={styles.ghostButton} to="/login">
+          <Link className={styles.accentButton} to="/login">
             Log in ↗
           </Link>
         </div>

@@ -1,12 +1,16 @@
-// The M1 step-9 gate: register → login → see the character list with
-// avatars. Runs against the real server + fchat-sim (see global-setup.ts);
-// avatar images are intercepted so static.f-list.net isn't hit from CI.
+// The auth gate journeys: provision (admin CLI) → login → see the character
+// list with avatars. Registration is disabled — the E2E stack runs the
+// production shape (decisions.md §2), so this spec also proves the signup
+// surfaces are really gone. Runs against the real server + fchat-sim (see
+// global-setup.ts); avatar images are intercepted so static.f-list.net
+// isn't hit from CI.
 // Owns aspen@example.test — sharing an ACCOUNT between parallel specs makes
 // their ticket managers invalidate each other (every new ticket kills all
 // previous ones account-wide), so accounts are spec-exclusive like
 // characters and channels.
 
 import { expect, test, type Page } from "@playwright/test";
+import { provisionUser } from "./helpers.js";
 
 // 1×1 transparent PNG — stands in for every F-List avatar.
 const TINY_PNG = Buffer.from(
@@ -20,32 +24,53 @@ async function interceptAvatars(page: Page): Promise<void> {
   );
 }
 
-function credentials() {
-  const unique = `${String(Date.now())}${String(Math.floor(Math.random() * 1000))}`;
-  return {
-    username: `e2e${unique}`,
-    email: `e2e-${unique}@example.test`,
-    password: "correct-horse-battery",
-  };
+// The login journey is this spec's test subject, so it stays spelled out
+// here rather than reusing the helpers.ts convenience wrapper.
+async function login(page: Page, creds: { email: string; password: string }) {
+  await page.getByLabel("Email").fill(creds.email);
+  await page.getByLabel("Password").fill(creds.password);
+  await page.getByRole("button", { name: "Log in" }).click();
 }
 
-test("register, connect an F-List account, and pick a character with avatars", async ({
+test("registration is disabled: no route, no endpoint, no signup links", async ({
+  page,
+}) => {
+  // The old /register route falls through the catch-all back to the landing.
+  await page.goto("/register");
+  await expect(page).toHaveURL(/\/$/);
+  // No signup affordances anywhere on the public surfaces.
+  await expect(page.getByRole("link", { name: "Create account" })).toHaveCount(
+    0,
+  );
+  await page.goto("/login");
+  await expect(page.getByRole("link", { name: "Create account" })).toHaveCount(
+    0,
+  );
+  // And the endpoint itself is unreachable (404, not 403 — it doesn't
+  // advertise its existence).
+  const response = await page.request.post("/api/auth/register", {
+    data: {
+      email: "nobody@example.test",
+      username: "nobody",
+      password: "correct-horse-battery",
+    },
+  });
+  expect(response.status()).toBe(404);
+});
+
+test("provision, log in, connect an F-List account, and pick a character with avatars", async ({
   page,
 }) => {
   await interceptAvatars(page);
-  const creds = credentials();
+  const creds = await provisionUser();
 
-  // Landing → create account.
+  // Landing → log in with the CLI-provisioned account.
   await page.goto("/");
   await page
     .getByRole("navigation")
-    .getByRole("link", { name: "Create account" })
+    .getByRole("link", { name: "Log in" })
     .click();
-  await page.getByLabel("Username").fill(creds.username);
-  await page.getByLabel("Email").fill(creds.email);
-  await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create account" }).click();
+  await login(page, creds);
 
   // Straight into the identity picker.
   await expect(page).toHaveURL(/\/identities$/);
@@ -60,7 +85,7 @@ test("register, connect an F-List account, and pick a character with avatars", a
   // The character list — with avatar images — is the step gate. The server
   // honors the real ≤1 req/s F-List ticket budget, and spec files run in
   // parallel on multi-core machines, so this fetch can queue behind the
-  // other specs' registrations — give it the same window as session-online
+  // other specs' account setups — give it the same window as session-online
   // waits, not the 5s expect default.
   const aspen = page.getByRole("listitem").filter({ hasText: "Aspen Vale" });
   const cindral = page.getByRole("listitem").filter({ hasText: "Aspen Brook" });
@@ -99,15 +124,11 @@ test("register, connect an F-List account, and pick a character with avatars", a
 
 test("login round trip sees the persisted identity again", async ({ page }) => {
   await interceptAvatars(page);
-  const creds = credentials();
+  const creds = await provisionUser();
 
-  // Register + create an identity through the UI.
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(creds.username);
-  await page.getByLabel("Email").fill(creds.email);
-  await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create account" }).click();
+  // Log in + create an identity through the UI.
+  await page.goto("/login");
+  await login(page, creds);
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
@@ -120,21 +141,15 @@ test("login round trip sees the persisted identity again", async ({ page }) => {
   // Sign out, log back in: the identity persisted server-side.
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
-  await page.getByLabel("Email").fill(creds.email);
-  await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await login(page, creds);
   await expect(page).toHaveURL(/\/identities$/);
   await expect(page.getByText("Aspen Brook", { exact: true })).toBeVisible();
 });
 
 test("a persisted session survives a reload", async ({ page }) => {
-  const creds = credentials();
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(creds.username);
-  await page.getByLabel("Email").fill(creds.email);
-  await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create account" }).click();
+  const creds = await provisionUser();
+  await page.goto("/login");
+  await login(page, creds);
   await expect(page).toHaveURL(/\/identities$/);
 
   // Reload: restore() revalidates the persisted refresh token (rotating it)
@@ -151,13 +166,9 @@ test("identities can be connected, disconnected and removed from the picker", as
   page,
 }) => {
   await interceptAvatars(page);
-  const creds = credentials();
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(creds.username);
-  await page.getByLabel("Email").fill(creds.email);
-  await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create account" }).click();
+  const creds = await provisionUser();
+  await page.goto("/login");
+  await login(page, creds);
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");

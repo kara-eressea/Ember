@@ -28,10 +28,16 @@ const configSchema = z.object({
    * local fchat-sim don't serialize on a pointless throttle.
    */
   FLIST_API_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(1000),
-  /** Global per-IP request backstop (requests/minute). The default suits a
-   * public deployment; the E2E stack raises it — a whole parallel suite
-   * shares one loopback IP. */
+  /** Global per-IP request backstop (requests/minute). Generous for a
+   * single-tenant instance; the E2E stack raises it — a whole parallel
+   * suite shares one loopback IP. */
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  /**
+   * Self-service signup. Off by default — instances are admin-only
+   * (decisions.md §2); accounts are created with the admin CLI
+   * (`node dist/cli/admin.js`). Dev and test stacks may enable it.
+   */
+  REGISTRATION_ENABLED: z.stringbool().default(false),
   APP_NAME: z.string().default("EmberChat"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
   /**
@@ -42,6 +48,23 @@ const configSchema = z.object({
   WEB_DIST: z.string().optional(),
   CLIENT_NAME: z.string().default("EmberChat"),
   CLIENT_VERSION: z.string().default("0.0.0"),
+  /**
+   * Daily update check against the GitHub Releases API — a quiet "update
+   * available" hint in the UI. The check reveals the instance's existence
+   * to GitHub, nothing more; set false to disable the phone-home entirely.
+   */
+  UPDATE_CHECK_ENABLED: z.stringbool().default(true),
+  /** GitHub repo the update check reads releases from. */
+  UPDATE_CHECK_REPO: z
+    .string()
+    .regex(/^[\w.-]+\/[\w.-]+$/)
+    .default("kara-eressea/Ember"),
+  /**
+   * One-boot acknowledgment for migrations flagged in drizzle/breaking.json
+   * — the upgrade gate refuses them otherwise. Back up first; remove the
+   * flag after the upgrade.
+   */
+  CONFIRM_BREAKING_UPGRADE: z.stringbool().default(false),
   /** Comma-separated browser origins allowed by CORS. */
   CORS_ORIGIN: z.string().optional(),
   /** Requests per minute per IP on the auth endpoints. */
@@ -54,11 +77,11 @@ const configSchema = z.object({
    */
   TRUST_PROXY: z.string().optional(),
   /**
-   * Message retention policy. "forever" (the default) never deletes
-   * anything; age/size policies join in M7 and extend this enum — an
-   * unrecognized value is refused at boot rather than silently kept forever.
+   * Message retention policy: how long history stays before the sweep
+   * deletes it. An unrecognized value is refused at boot rather than
+   * silently kept forever.
    */
-  RETENTION_POLICY: z.literal("forever").default("forever"),
+  RETENTION_POLICY: z.enum(["forever", "30d", "90d", "1y"]).default("forever"),
   /** How often the retention sweep runs (a no-op under "forever"). */
   RETENTION_SWEEP_INTERVAL_MS: z.coerce
     .number()

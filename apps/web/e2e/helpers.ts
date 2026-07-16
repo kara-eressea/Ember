@@ -2,7 +2,19 @@
 // tests), unique app credentials, and a bare F-Chat client speaking straight
 // to fchat-sim for the "other side" of relays.
 
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { expect, type Page } from "@playwright/test";
+
+const execFileAsync = promisify(execFile);
+
+// The E2E stack runs the production shape: registration is disabled
+// (decisions.md §2), so accounts are born through the admin CLI, exactly
+// like on a real instance.
+const ADMIN_CLI = fileURLToPath(
+  new URL("../../server/dist/cli/admin.js", import.meta.url),
+);
 
 const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -28,25 +40,43 @@ export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Creates a fresh app user via the admin CLI against the E2E database. */
+export async function provisionUser() {
+  const creds = credentials();
+  await execFileAsync(
+    process.execPath,
+    [
+      ADMIN_CLI,
+      "create-user",
+      "--email",
+      creds.email,
+      "--username",
+      creds.username,
+      "--password",
+      creds.password,
+    ],
+    { env: { ...process.env, DATABASE_URL: process.env["E2E_DATABASE_URL"] } },
+  );
+  return creds;
+}
+
 /**
- * The standard journey into the shell: register a fresh app user, add the
- * F-List account, pick the character, connect — resolves once the
- * server-held session is online. Returns the credentials (for logging the
- * same account in elsewhere). auth.spec keeps its own copy on purpose: this
- * flow is its test subject, not its setup.
+ * The standard journey into the shell: provision a fresh app user (admin
+ * CLI), log in, add the F-List account, pick the character, connect —
+ * resolves once the server-held session is online. Returns the credentials
+ * (for logging the same account in elsewhere). auth.spec keeps its own copy
+ * on purpose: this flow is its test subject, not its setup.
  */
-export async function registerAndConnect(
+export async function provisionAndConnect(
   page: Page,
   account: string,
   character: string,
 ) {
-  const creds = credentials();
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(creds.username);
+  const creds = await provisionUser();
+  await page.goto("/login");
   await page.getByLabel("Email").fill(creds.email);
   await page.getByLabel("Password").fill(creds.password);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Log in" }).click();
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill(account);
   await page.getByLabel("F-List password").fill("hunter2");

@@ -8,7 +8,6 @@ import {
 } from "react-router";
 import { IdentityPicker } from "./components/auth/IdentityPicker.js";
 import { Login } from "./components/auth/Login.js";
-import { Register } from "./components/auth/Register.js";
 import { Landing } from "./components/landing/Landing.js";
 import { AppShell } from "./components/shell/AppShell.js";
 import { useAuthStore } from "./stores/auth.js";
@@ -38,7 +37,6 @@ export function AppRouter() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route
           path="/identities"
           element={

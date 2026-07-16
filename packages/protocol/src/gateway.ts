@@ -35,6 +35,8 @@ export const GATEWAY_CLOSE = {
   slowConsumer: 4429,
   /** Inbound frame quota exceeded. */
   rateLimited: 4430,
+  /** Browser Origin header not on the instance's allow-list. */
+  badOrigin: 4403,
 } as const;
 
 /** The F-List character-name charset (FLIST_NAME_RE, highlights.ts). */
@@ -214,6 +216,18 @@ const cmdSchema = z.discriminatedUnion("action", [
     d: z.object({
       key: z.string().min(1).max(128),
       dice: z.string().min(1).max(128),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // Alert Staff (SFC): report a character to F-List's global moderators.
+    // The report text is composed client-side (official-client shape:
+    // tab + reported user + complaint); logs cannot be uploaded by
+    // third-party clients, so the text is the whole report.
+    action: z.literal("user.report"),
+    d: z.object({
+      character: characterName,
+      report: z.string().min(1).max(4096),
     }),
   }),
   z.object({
@@ -553,6 +567,13 @@ export type ServerFrame =
         convId: string;
         messages: MessageDto[];
         done: boolean;
+        /**
+         * Set on the first frame when the replay budget clamped the resume
+         * cursor: the client must reset this conversation's buffer to the
+         * replayed window instead of merging (its prefix below the replay
+         * start is no longer reachable and would be a silent hole).
+         */
+        gap?: boolean;
       };
     }
   | {

@@ -6,7 +6,7 @@
 // files run in parallel, so specs never share characters or channels.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 const SHED = "ADH-55ee66ff77aa88bb99cc";
 
@@ -15,7 +15,7 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
-  await registerAndConnect(page, "rue@example.test", "Rue Alder");
+  await provisionAndConnect(page, "rue@example.test", "Rue Alder");
 
   // Alder (owner) and Sorrel (moderation target) sit in the Potting Shed.
   const alder = await SimClient.connect(
@@ -59,7 +59,17 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
   await expect(menu).toBeVisible();
   await expect(menu.getByText("admin")).not.toBeVisible();
   await expect(menu.getByText("Kick")).not.toBeVisible();
-  await page.keyboard.press("Escape");
+
+  // Alert Staff (M7): the report form sends an SFC and the server's SYS
+  // acknowledgment surfaces as a notice.
+  await menu.getByRole("menuitem", { name: "Report to staff…" }).click();
+  await menu
+    .getByLabel("Report Sorrel Vane to staff")
+    .fill("Being a test fixture.");
+  await menu.getByRole("button", { name: "Send report" }).click();
+  await expect(
+    page.getByText("The moderators have been alerted.").first(),
+  ).toBeVisible({ timeout: 15_000 });
 
   // The owner promotes Rue live (COA → channel.info): the admin
   // affordances appear without a reload.

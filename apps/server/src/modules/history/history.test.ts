@@ -19,7 +19,10 @@ import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { conversations, identities, messages } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
+import { CATCHUP_REPLAY_BUDGET, catchupPlan } from "../gateway/snapshot.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
+import { RetentionJob } from "./retention.js";
+import { exportChunks, type ExportRow } from "./routes.js";
 import { SessionEventBus } from "../session-engine/event-bus.js";
 import {
   ConversationLimitError,
@@ -48,6 +51,7 @@ beforeAll(async () => {
       DATABASE_URL: container.getConnectionUri(),
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
+      REGISTRATION_ENABLED: "true",
       FCHAT_URL: sim.wsUrl,
       FLIST_API_URL: sim.httpUrl,
     }),
@@ -730,6 +734,102 @@ describe("history pagination", () => {
       token,
     );
     expect(wrongConversation.statusCode).toBe(404);
+  });
+
+  it("streams multi-page exports as well-formed documents (M7)", async () => {
+    const at = (i: number): ExportRow => ({
+      id: i,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: `line ${String(i)}`,
+      sentByUs: false,
+      createdAt: new Date(1_700_000_000_000 + i),
+    });
+    // 5 rows through 2-row pages: 3 reads, the last one short.
+    const all = [1, 2, 3, 4, 5].map(at);
+    const readPage = (afterId: number) =>
+      Promise.resolve(all.filter((row) => row.id > afterId).slice(0, 2));
+
+    const collect = async (format: "txt" | "html" | "json") => {
+      let out = "";
+      for await (const chunk of exportChunks(format, "Paged", readPage, 2)) {
+        out += chunk;
+      }
+      return out;
+    };
+
+    const json = JSON.parse(await collect("json")) as {
+      title: string;
+      messages: { id: number }[];
+    };
+    expect(json.title).toBe("Paged");
+    expect(json.messages.map((m) => m.id)).toEqual([1, 2, 3, 4, 5]);
+
+    const txt = await collect("txt");
+    expect(txt.split("\n").filter(Boolean)).toHaveLength(5);
+    expect(txt).toContain("Nyx Firemane: line 5");
+
+    const html = await collect("html");
+    expect(html).toContain("<!doctype html>");
+    expect(html.trimEnd().endsWith("</body></html>")).toBe(true);
+    expect(html.match(/<div>/g)).toHaveLength(5);
+  });
+
+  it("retention sweep deletes only messages older than the policy cutoff (M7)", async () => {
+    const { conversationId } = await seedConversation(2); // two fresh rows
+    await db.insert(messages).values({
+      conversationId,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "ancient history",
+      createdAt: new Date(Date.now() - 40 * 86_400_000),
+    });
+    const job = new RetentionJob({
+      db,
+      policy: "30d",
+      sweepIntervalMs: 60_000,
+    });
+    const { deleted } = await job.sweepOnce();
+    expect(deleted).toBeGreaterThanOrEqual(1);
+    const remaining = await db
+      .select({ bbcode: messages.bbcode })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId));
+    expect(remaining.map((r) => r.bbcode)).toEqual(["message 1", "message 2"]);
+  });
+
+  it("caps a resuming cursor's replay at the budget (M7)", async () => {
+    const { identityId, conversationId } = await seedConversation(3);
+    const [row] = await db
+      .select({ maxId: sql<number>`max(${messages.id})`.mapWith(Number) })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId));
+    const maxId = row!.maxId;
+    // A cursor far beyond the budget is floored AND flagged as a gap (the
+    // client must reset, not merge into the unreachable interior hole).
+    const plan = await catchupPlan(
+      db,
+      identityId,
+      { [conversationId]: maxId - CATCHUP_REPLAY_BUDGET - 500 },
+      50,
+    );
+    expect(plan).toEqual([
+      {
+        convId: conversationId,
+        afterId: maxId - CATCHUP_REPLAY_BUDGET,
+        gap: true,
+      },
+    ]);
+    // A near cursor is honored verbatim and carries no gap.
+    const near = await catchupPlan(
+      db,
+      identityId,
+      { [conversationId]: maxId - 1 },
+      50,
+    );
+    expect(near).toEqual([
+      { convId: conversationId, afterId: maxId - 1, gap: false },
+    ]);
   });
 
   it("exports the whole log as txt, html and json (M5 Away & logs)", async () => {

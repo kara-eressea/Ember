@@ -21,6 +21,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/architecture.md` | Monorepo layout, server/bouncer design, DB schema, client architecture, gateway protocol |
 | `design/milestones.md` | **Status tracker** — open/closed milestones, M1 step checklist, standing to-dos. Keep this updated as work progresses |
 | `design/milestone-*.md` | One file per milestone (1–8), dependency-ordered |
+| `design/standalone-client.md` | Desktop-client design (M7 step 8): embedded bouncer, session-library boundary, pglite, Electron — built post-v1.0 |
 | `design/testing-strategy.md` | fchat-sim, unit/integration/E2E strategy, responsible live testing |
 | `design/risks-and-open-questions.md` | ToS exposure, protocol gaps, scaling ceiling |
 | `design/chat-protocol.md` | F-Chat wire protocol (copied from F-List wiki) |

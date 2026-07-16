@@ -31,6 +31,10 @@ export interface OutboxOptions {
 }
 
 const POLL_INTERVAL_MS = 1000;
+/** Failed rows older than this are swept (their text is gone with them). */
+export const FAILED_ROW_TTL_MS = 7 * 86_400_000;
+/** How often the failed-row sweep runs (piggybacked on the poll). */
+const FAILED_SWEEP_INTERVAL_MS = 60 * 60_000;
 
 type OutboxRow = typeof outboxMessages.$inferSelect;
 
@@ -57,6 +61,7 @@ export class Outbox {
   readonly #pollMs: number;
   #timer: NodeJS.Timeout | undefined;
   #releasing = false;
+  #lastFailedSweepAt = 0;
   /** Identities with a release chain in flight — skipped by the poll so a
    * slow flood gate (a queued ad) only ever delays its own user. */
   readonly #releasingIdentities = new Set<string>();
@@ -162,6 +167,7 @@ export class Outbox {
     }
     this.#releasing = true;
     try {
+      await this.#sweepFailed();
       const due = await this.#db
         .select({ row: outboxMessages, conversation: conversations })
         .from(outboxMessages)
@@ -213,6 +219,36 @@ export class Outbox {
       this.#log.error({ err: error }, "outbox poll failed");
     } finally {
       this.#releasing = false;
+    }
+  }
+
+  /**
+   * Failed rows exist so the user can recall the text — but nothing removed
+   * them, ever (M4 audit backlog). A week-old failure has been seen or
+   * abandoned; sweep it. Hourly, piggybacked on the poll.
+   */
+  async #sweepFailed(): Promise<void> {
+    const now = Date.now();
+    if (now - this.#lastFailedSweepAt < FAILED_SWEEP_INTERVAL_MS) {
+      return;
+    }
+    this.#lastFailedSweepAt = now;
+    try {
+      const swept = await this.#db
+        .delete(outboxMessages)
+        .where(
+          and(
+            eq(outboxMessages.state, "failed"),
+            lte(outboxMessages.releaseAt, new Date(now - FAILED_ROW_TTL_MS)),
+          ),
+        )
+        .returning({ identityId: outboxMessages.identityId });
+      // Keep attached devices' pending lists truthful.
+      for (const identityId of new Set(swept.map((row) => row.identityId))) {
+        await this.#fan(identityId);
+      }
+    } catch (error) {
+      this.#log.error({ err: error }, "outbox failed-row sweep failed");
     }
   }
 

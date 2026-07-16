@@ -8,7 +8,7 @@
 // channels.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 test("identity rail: full context swap, background badges, @me alias", async ({
   page,
@@ -17,7 +17,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
   await interceptAvatars(page);
 
   // ── Rowan Redleaf: register → connect → join Gardening ────────────────
-  await registerAndConnect(page, "rowan@example.test", "Rowan Redleaf");
+  await provisionAndConnect(page, "rowan@example.test", "Rowan Redleaf");
   await page.getByLabel("Join a channel").fill("Gardening");
   await page.getByRole("button", { name: "Join", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Gardening" })).toBeVisible({

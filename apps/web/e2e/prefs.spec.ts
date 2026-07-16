@@ -7,7 +7,7 @@
 
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { SimClient, interceptAvatars, registerAndConnect } from "./helpers.js";
+import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 /** The applied accent, straight from the theme's CSS custom property. */
 function appliedAccent(page: Page): Promise<string> {
@@ -27,7 +27,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   test.setTimeout(180_000);
   await interceptAvatars(page);
 
-  const creds = await registerAndConnect(
+  const creds = await provisionAndConnect(
     page,
     "hazel@example.test",
     "Hazel Fenwick",
@@ -41,6 +41,8 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await expect(
     dialog.getByText("Account & profile live on the server website"),
   ).toBeVisible();
+  // The About surface shows the running version (M7 step 5).
+  await expect(dialog.getByText(/EmberChat v0\.0\.0/)).toBeVisible();
 
   // Rail nav switches the pane.
   await dialog.getByRole("button", { name: "Appearance" }).click();

@@ -63,6 +63,13 @@ export interface SocialCharacterDto {
   statusmsg: string;
 }
 
+export interface MetaDto {
+  version: string;
+  updateAvailable: boolean;
+  latestVersion?: string;
+  releasesUrl: string;
+}
+
 export interface SocialDto {
   bookmarks: SocialCharacterDto[];
   friends: SocialCharacterDto[];
@@ -175,12 +182,6 @@ export async function apiRequest<T>(
 }
 
 export const api = {
-  register(input: { email: string; username: string; password: string }) {
-    return apiRequest<TokenResponse>("/auth/register", {
-      method: "POST",
-      body: input,
-    });
-  },
   login(input: { email: string; password: string }) {
     return apiRequest<TokenResponse>("/auth/login", {
       method: "POST",
@@ -303,6 +304,11 @@ export const api = {
     return apiDownload(
       `/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
     );
+  },
+
+  /** Running version + update-check status (M7 about surface). */
+  getMeta() {
+    return apiRequest<MetaDto>("/meta", { auth: true });
   },
 
   /** Bookmarks, friends and friend requests (M6 step 7), scoped to the
