@@ -6,6 +6,12 @@ Headline features over the official client: staying online when the app closes, 
 
 > "EmberChat" is a working title. Status: **pre-alpha, under construction** — see [`design/milestones.md`](design/milestones.md).
 
+EmberChat is **self-hostable software, not a hosted service** — each instance serves one person (or one real household), because F-List's abuse management correlates households by IP and a shared multi-user bouncer would misrepresent everyone behind it. Running your own is designed to be painless: see [`docs/self-hosting.md`](docs/self-hosting.md).
+
+## Self-hosting
+
+Docker + compose, one `.env` with two secrets, `docker compose up -d`, create your account with the bundled admin CLI. The full walkthrough — reverse proxy/TLS, upgrades (with a boot-time gate so a `docker pull` can never ruin your database), backups and the restore drill — is in [`docs/self-hosting.md`](docs/self-hosting.md).
+
 ## Repository layout
 
 - `apps/server` — Fastify + ws bouncer server

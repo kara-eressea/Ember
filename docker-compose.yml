@@ -1,6 +1,11 @@
-# Production-shaped deployment (decisions.md §5: VPS + docker-compose).
-# Copy .env.example to .env and set real values first. TLS termination is a
-# reverse proxy's job (set TRUST_PROXY when one is in front).
+# Self-host deployment (decisions.md §2/§5: one instance, one person, on a
+# VPS). Copy .env.example to .env, set the two secrets, `docker compose up
+# -d` — the full walkthrough lives in docs/self-hosting.md. TLS termination
+# is a reverse proxy's job (set TRUST_PROXY and APP_BASE_URL when one is in
+# front). Accounts are created with the admin CLI (registration is off):
+#
+#   docker compose exec server node apps/server/dist/cli/admin.js \
+#     create-user --email you@example.com --username you --password-stdin
 #
 # The `sim` profile adds fchat-sim for smoke testing against a fake F-Chat:
 #   docker compose --profile sim up  (with FCHAT_URL/FLIST_API_URL pointed at it)
@@ -24,9 +29,11 @@ services:
     restart: unless-stopped
 
   server:
-    build:
-      context: .
-      target: runtime
+    # Pin your risk appetite: vX.Y.Z (exact), vX.Y (compatible bugfixes),
+    # latest (newest release), edge (every main commit — pre-release).
+    # Building from source instead: replace `image:` with
+    #   build: { context: ., target: runtime }
+    image: ghcr.io/kara-eressea/ember:${IMAGE_TAG:-latest}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
     environment:
@@ -37,8 +44,11 @@ services:
       APP_NAME: ${APP_NAME:-EmberChat}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       CLIENT_NAME: ${CLIENT_NAME:-EmberChat}
-      CLIENT_VERSION: ${CLIENT_VERSION:-0.0.0}
+      # CLIENT_VERSION is baked into the image by the release workflow.
       TRUST_PROXY: ${TRUST_PROXY:-}
+      RETENTION_POLICY: ${RETENTION_POLICY:-forever}
+      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      CONFIRM_BREAKING_UPGRADE: ${CONFIRM_BREAKING_UPGRADE:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +63,34 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    restart: unless-stopped
+
+  # Nightly pg_dump into ./backups, pruning after BACKUP_KEEP_DAYS. No
+  # third-party image — the postgres image itself runs the loop. Restore
+  # drill: docs/self-hosting.md §Backups.
+  backup:
+    image: postgres:18-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        while true; do
+          ts=$$(date -u +%Y%m%d-%H%M%S)
+          pg_dump -h postgres -U emberchat -d emberchat -Fc -f "/backups/emberchat-$$ts.dump" \
+            && echo "backup written: emberchat-$$ts.dump" \
+            || echo "BACKUP FAILED at $$ts" >&2
+          find /backups -name 'emberchat-*.dump' -mtime "+$$BACKUP_KEEP_DAYS" -delete
+          sleep "$$BACKUP_INTERVAL_SECONDS"
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   # Fake F-Chat for smoke tests only (fixture accounts, no persistence).
