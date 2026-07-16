@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.pv *{box-sizing:border-box}
+.pvscroll::-webkit-scrollbar{width:8px;height:8px}
+.pvscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.pvscroll::-webkit-scrollbar-track{background:transparent}
+.pvcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:520px;line-height:1.5}
+.pvcap b{color:#a892c6;font-weight:600}
+@keyframes pvshimmer{0%{background-position:-240px 0}100%{background-position:340px 0}}
+.pvskel{background:linear-gradient(90deg,#2a2725 0%,#332f2b 40%,#2a2725 80%);background-size:340px 100%;animation:pvshimmer 1.15s linear infinite;border-radius:5px}
+</style>
+</helmet>
+<div class="pv" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="12">
+  <div style="display:flex;flex-direction:column">
+    <div class="pvcap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  attr(props,...kids){return React.createElement(props.tag||'div',props,...kids);}
+
+  // ===================== five-tier match primitive (shared with Mini Profile Viewer) =====================
+  tiers(){
+    const t=this.T();
+    return {
+      match:       {frac:1,   label:'Match',        color:t.ok},
+      weakMatch:   {frac:.75, label:'Weak match',   color:this.mix(t.ok,t.warn,.55)},
+      neutral:     {frac:.5,  label:'Neutral',      color:this.mix(t.dim,t.faint,.4)},
+      weakMismatch:{frac:.25, label:'Weak mismatch',color:t.warn},
+      mismatch:    {frac:0,   label:'Mismatch',     color:t.danger},
+    };
+  }
+  pie(key,size,color){
+    const T=this.tiers()[key];const c=color||T.color;const r=size/2,cx=r,cy=r,sw=1.4,rr=r-sw/2;
+    const frac=T.frac;let fill=null;
+    if(frac>=1){fill=React.createElement('circle',{cx,cy,r:rr,fill:c,stroke:'none'});}
+    else if(frac>0){
+      const a=frac*2*Math.PI-Math.PI/2;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);
+      const large=frac>0.5?1:0;
+      const d=`M ${cx} ${cy} L ${cx} ${cy-rr} A ${rr} ${rr} 0 ${large} 1 ${x} ${y} Z`;
+      fill=React.createElement('path',{d,fill:c,stroke:'none'});
+    }
+    return React.createElement('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,
+      style:{display:'inline-block',flexShrink:0,verticalAlign:'middle'}},fill,
+      React.createElement('circle',{cx,cy,r:rr,fill:'none',stroke:c,strokeWidth:sw}));
+  }
+  matchPill(key,opts){
+    const t=this.T(),T=this.tiers()[key];const short=opts&&opts.short;
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'4px 11px 4px 9px',
+      borderRadius:'20px',fontFamily:t.ui,fontSize:'11.5px',fontWeight:600,whiteSpace:'nowrap',
+      color:T.color,background:this.mix(T.color,t.bg,.83),border:`1px solid ${this.mix(T.color,t.bg,.58)}`},
+      this.pie(key,11),short?T.label.replace(' match','').replace(' mismatch',''):T.label);
+  }
+  dimChip(dim,key){
+    const t=this.T(),T=this.tiers()[key];
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'3px 8px',borderRadius:'5px',
+      fontFamily:t.ui,fontSize:'11px',fontWeight:500,whiteSpace:'nowrap',color:t.dim,
+      background:this.mix(T.color,t.side,.86),border:`1px solid ${this.mix(T.color,t.side,.6)}`},dim,this.pie(key,10));
+  }
+  gl(txt,mb){const t=this.T();return this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',
+    textTransform:'uppercase',color:t.faint,margin:`0 0 ${mb==null?8:mb}px`},txt);}
+  avatar(size,color,initial,radius){
+    const t=this.T();
+    return this.h('div',{width:size+'px',height:size+'px',borderRadius:(radius==null?t.radius:radius)+'px',flexShrink:0,
+      background:`linear-gradient(150deg,${this.mix(color,t.text,.15)},${color})`,display:'flex',alignItems:'center',
+      justifyContent:'center',fontFamily:t.mono,fontWeight:600,fontSize:(size*0.4)+'px',color:t.bg,
+      boxShadow:'inset 0 1px 0 rgba(255,255,255,.14)'},initial);
+  }
+  badge(glyph,color){
+    const t=this.T();
+    return this.h('span',{width:'22px',height:'22px',borderRadius:'6px',flexShrink:0,display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontSize:'12px',color:color,
+      background:this.mix(color,t.bg,.84),border:`1px solid ${this.mix(color,t.bg,.62)}`},glyph);
+  }
+  iconBtn(glyph,opts){
+    opts=opts||{};const t=this.T();
+    return this.h('span',{width:'30px',height:'30px',borderRadius:t.radius+'px',display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'14px',flexShrink:0,cursor:'pointer',
+      color:opts.disabled?this.mix(t.faint,t.side,.35):t.dim,background:t.bg,border:`1px solid ${t.border}`,
+      opacity:opts.disabled?.6:1},glyph);
+  }
+  data(){
+    const t=this.T();
+    // viewer's own active identity + the character being viewed
+    const you={name:'Sable Renn',initial:'S',color:'#5f7a86'};
+    const them={name:'Vesna Marlowe',gender:'female',accent:'#c294b0',avatarColor:'#7a5c86',initial:'V',
+      isFriend:true,isBookmarked:false,fetched:'12m ago'};
+    return {you,them};
+  }
+
+  // ===================== modal chrome =====================
+  histRow(d,active){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'9px',padding:'6px 8px',borderRadius:t.radius+'px',
+      cursor:'pointer',background:active?t.accentSoft:'transparent',
+      boxShadow:active?`inset 2px 0 0 ${t.accent}`:'none'},
+      this.avatar(28,d.color,d.initial,6),
+      this.h('div',{minWidth:0,flex:1},
+        this.h('div',{fontSize:'12.5px',fontWeight:active?600:500,color:active?t.text:t.dim,overflow:'hidden',
+          textOverflow:'ellipsis',whiteSpace:'nowrap'},d.name),
+        this.h('div',{fontFamily:t.mono,fontSize:'10px',color:t.faint,marginTop:'1px'},d.ago)),
+      this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.faint,opacity:active?1:.5,padding:'0 2px'},'×'));
+  }
+  rail(empty){
+    const t=this.T();
+    const hist=[
+      {name:'Vesna Marlowe',initial:'V',color:'#7a5c86',ago:'now'},
+      {name:'Kolvarr',initial:'K',color:'#4f6d7a',ago:'8m ago'},
+      {name:'Thistle Ardent',initial:'T',color:'#6d7a4f',ago:'1h ago'},
+      {name:'Marisol Vane',initial:'M',color:'#86685f',ago:'yesterday'},
+      {name:'Orin Fell',initial:'O',color:'#5f6486',ago:'2d ago'},
+    ];
+    let body;
+    if(empty){
+      body=this.h('div',{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+        textAlign:'center',padding:'0 22px',gap:'10px'},
+        this.h('div',{width:'40px',height:'40px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+          display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'16px',color:t.faint},'◷'),
+        this.h('div',{fontSize:'12px',color:t.faint,lineHeight:1.5},'Profiles you view will appear here.'));
+    }else{
+      body=this.h('div',{flex:1,overflow:'auto',padding:'2px 8px 8px',display:'flex',flexDirection:'column',gap:'1px'},
+        ...hist.map((d,i)=>this.hk(i,'div',{},this.histRow(d,i===0))));
+      body.props.className='pvscroll';
+    }
+    return this.h('div',{width:'208px',flexShrink:0,background:t.side2,borderRight:`1px solid ${t.border}`,
+      display:'flex',flexDirection:'column'},
+      this.h('div',{padding:'15px 16px 9px',borderBottom:`1px solid ${t.border}`},
+        this.gl('Recently viewed',0)),
+      body);
+  }
+  noteBlock(mode){
+    const t=this.T();
+    if(mode==='none'){
+      return this.h('div',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'6px 11px',borderRadius:t.radius+'px',
+        border:`1px dashed ${t.border}`,cursor:'pointer',fontSize:'11.5px',fontWeight:500,color:t.faint,background:'transparent'},
+        this.h('span',{fontFamily:t.mono,fontSize:'12px'},'+'),'Add private note');
+    }
+    if(mode==='edit'){
+      return this.h('div',{width:'240px',background:t.bg,border:`1px solid ${t.accentMed}`,borderRadius:t.radius+'px',
+        boxShadow:`0 0 0 3px ${t.accentSoft}`,padding:'9px 10px'},
+        this.h('div',{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'},
+          this.gl('Private note',0),
+          this.h('span',{fontFamily:t.mono,fontSize:'9.5px',color:t.ok},'Saved ✓')),
+        this.h('div',{fontSize:'12px',color:t.text,lineHeight:1.5,minHeight:'44px'},
+          'Met in Cabin Fever. We RP’d the storm-shelter thread — owes me a reply.',
+          this.h('span',{display:'inline-block',width:'1.5px',height:'13px',background:t.accent,marginLeft:'1px',
+            verticalAlign:'-2px'})),
+        this.h('div',{fontFamily:t.mono,fontSize:'9.5px',color:t.faint,marginTop:'6px'},'autosaves · only you can see this'));
+    }
+    // peek (note exists, collapsed)
+    return this.h('div',{width:'232px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      padding:'8px 10px',cursor:'pointer'},
+      this.h('div',{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'3px'},
+        this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'9.5px',fontWeight:700,
+          letterSpacing:'.1em',textTransform:'uppercase',color:t.accent},
+          this.h('span',{width:'5px',height:'5px',borderRadius:'50%',background:t.accent}),'Private note'),
+        this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.faint},'✎')),
+      this.h('div',{fontSize:'11.5px',color:t.dim,lineHeight:1.45,overflow:'hidden',textOverflow:'ellipsis',
+        whiteSpace:'nowrap'},'Met in Cabin Fever — owes me a reply.'));
+  }
+  header(cfg){
+    const t=this.T(),{them}=this.data();
+    const badges=[];
+    if(them.isFriend)badges.push(this.hk('f','span',{},this.badge('★',t.warn)));
+    badges.push(this.hk('b','span',{},this.badge('⚑',cfg.bookmarked?t.accent:t.faint)));
+    const budget=cfg.budget;
+    const showTip=cfg.tooltip;
+    const meta=this.h('div',{display:'flex',alignItems:'center',gap:'10px',marginTop:'7px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.faint},budget?'cached · fetched 1h ago':'fetched 12m ago'),
+      budget
+        ? this.h('span',{position:'relative',display:'inline-flex'},
+            this.iconBtn('⟳',{disabled:true}),
+            showTip?this.h('span',{position:'absolute',left:'50%',top:'calc(100% + 7px)',transform:'translateX(-50%)',
+              whiteSpace:'nowrap',background:t.head,border:`1px solid ${t.border}`,borderRadius:'6px',padding:'5px 9px',
+              fontSize:'10.5px',color:t.dim,boxShadow:'0 8px 24px -6px rgba(0,0,0,.7)',zIndex:5},
+              'Hourly profile budget exhausted — refresh available in 48m'):null)
+        : this.iconBtn('⟳'),
+      this.h('div',{flex:1}),
+      cfg.note==='peek'?this.noteBlock('peek'):(cfg.note==='none'?this.noteBlock('none'):null));
+    return this.h('div',{padding:'16px 22px 0',background:`linear-gradient(180deg,${this.mix(them.accent,t.side,.9)},${t.side})`},
+      this.h('div',{display:'flex',gap:'15px',alignItems:'flex-start'},
+        this.avatar(56,them.avatarColor,them.initial),
+        this.h('div',{flex:1,minWidth:0},
+          this.h('div',{display:'flex',alignItems:'center',gap:'10px'},
+            this.h('div',{fontSize:'20px',fontWeight:700,color:them.accent,lineHeight:1.2},them.name),
+            this.h('div',{display:'flex',gap:'6px'},...badges)),
+          meta)));
+  }
+  tabStrip(active){
+    const t=this.T();
+    const tabs=['Overview','Details','Kinks','Compare','Insights','Images','Guestbook'];
+    return this.h('div',{display:'flex',gap:'2px',padding:'0 22px',background:this.mix(t.side,t.bg,.35),
+      borderBottom:`1px solid ${t.border}`},
+      ...tabs.map((tab,i)=>{const on=tab===active;
+        return this.hk(i,'div',{padding:'11px 13px 10px',fontSize:'12.5px',fontWeight:on?600:500,cursor:'pointer',
+          color:on?t.text:t.dim,boxShadow:on?`inset 0 -2px 0 ${t.accent}`:'none'},tab);}));
+  }
+  modal(cfg){
+    const t=this.T();
+    const content=this.h('div',{flex:1,overflow:'auto',minHeight:0},cfg.body);
+    content.props.className='pvscroll';
+    return this.h('div',{width:'900px',height:'640px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:'14px',boxShadow:'0 40px 100px -20px rgba(0,0,0,.7)',overflow:'hidden',display:'flex',
+      fontFamily:t.ui,color:t.text},
+      this.rail(cfg.railEmpty),
+      this.h('div',{flex:1,minWidth:0,display:'flex',flexDirection:'column'},
+        this.header(cfg),
+        cfg.banner?cfg.banner:null,
+        this.tabStrip(cfg.tab),
+        content));
+  }
+  banner(kind){
+    const t=this.T();
+    const c=kind==='budget'?t.warn:t.dim;
+    return this.h('div',{display:'flex',alignItems:'center',gap:'9px',padding:'8px 22px',
+      background:this.mix(c,t.side,.86),borderBottom:`1px solid ${this.mix(c,t.side,.62)}`,
+      fontSize:'11.5px',color:this.mix(c,t.text,.35)},
+      this.h('span',{fontFamily:t.mono,fontSize:'12px',color:c},'⚠'),
+      kind==='budget'
+        ?'Hourly profile budget exhausted. Showing the cached copy from 1h ago — refresh available in 48m.'
+        :'Served from cache. This copy may be out of date.');
+  }
+
+  // ===================== BBCode native rendering =====================
+  bbHeading(txt){const t=this.T();return this.h('div',{fontSize:'15px',fontWeight:700,color:t.text,
+    margin:'20px 0 9px',display:'flex',alignItems:'center',gap:'9px'},
+    this.h('span',{width:'3px',height:'15px',borderRadius:'2px',background:t.accent,flexShrink:0}),txt);}
+  bbQuote(txt,who){const t=this.T();return this.h('div',{margin:'12px 0',padding:'9px 13px',background:t.bg,
+    borderLeft:`2px solid ${t.accentMed}`,borderRadius:'0 6px 6px 0'},
+    this.h('div',{fontSize:'12.5px',fontStyle:'italic',color:t.dim,lineHeight:1.55},txt),
+    who?this.h('div',{fontFamily:t.mono,fontSize:'10px',color:t.faint,marginTop:'5px'},'— '+who):null);}
+  bbCollapse(title,open,body){
+    const t=this.T();
+    return this.h('div',{margin:'12px 0',border:`1px solid ${t.border}`,borderRadius:t.radius+'px',overflow:'hidden'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',background:t.side2,cursor:'pointer',
+        fontSize:'12px',fontWeight:600,color:t.text},
+        this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.accent,transform:open?'rotate(90deg)':'none',
+          transition:'transform .15s'},'▶'),title,
+        this.h('div',{flex:1}),
+        this.h('span',{fontFamily:t.mono,fontSize:'9.5px',color:t.faint,textTransform:'uppercase',letterSpacing:'.08em'},'collapse')),
+      open?this.h('div',{padding:'11px 13px',fontSize:'12.5px',color:t.dim,lineHeight:1.6,borderTop:`1px solid ${t.border}`},body):null);
+  }
+  eicon(label){const t=this.T();return this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',
+    width:'60px',height:'60px',borderRadius:'6px',background:this.mix(t.accent,t.bg,.8),border:`1px solid ${t.border}`,
+    fontFamily:t.mono,fontSize:'9px',color:t.faint,verticalAlign:'middle',margin:'0 4px'},label);}
+  bbBody(){
+    const t=this.T();
+    const p=(txt,style)=>this.h('div',Object.assign({fontSize:'13px',lineHeight:1.65,color:t.text,margin:'0 0 10px'},style||{}),txt);
+    return this.h('div',{},
+      this.h('div',{display:'flex',alignItems:'center',gap:'14px',margin:'0 0 14px'},
+        this.eicon('arcticfox'),
+        this.h('div',{fontSize:'22px',fontWeight:700,color:t.text,lineHeight:1.2},'Vesna, the wandering cartographer')),
+      p('A silver-furred arctic fox with ink-stained paws and a coat two sizes too warm for anywhere she actually travels. Curious to a fault; keeps a journal she never lets anyone read.'),
+      this.bbQuote('“Every map is out of date the moment you draw it. That’s the fun part.”','her, most mornings'),
+      this.bbHeading('Personality'),
+      p('Warm but guarded. Slow to trust, fiercely loyal once she does. Reads the room before she reads the map.'),
+      this.bbCollapse('Backstory (long — click to expand)',true,
+        'Raised in a coastal survey town, apprenticed to a mapmaker who vanished on an expedition north. She took his unfinished atlas and has been filling in the blank quarters ever since — partly to find him, mostly because she can’t stand a blank space on a page.'),
+      this.bbCollapse('RP hooks & limits',false,''),
+      this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,marginTop:'6px'},
+        'Unknown BBCode tags degrade to plain text — the viewer never shows raw ',
+        this.h('span',{color:t.dim},'[tags]'),'.'));
+  }
+
+  // ===================== TAB: Overview =====================
+  matchStrip(){
+    const t=this.T();
+    return this.h('div',{margin:'0 0 4px',padding:'12px 14px',background:t.bg,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+'px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'},
+        this.gl('Compatibility with Sable Renn',0),
+        this.h('div',{flex:1}),
+        this.h('span',{fontSize:'11px',fontWeight:600,color:t.accent,cursor:'pointer'},'Full compare →')),
+      this.h('div',{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'7px'},
+        this.matchPill('weakMatch'),
+        this.dimChip('Kinks','match'),
+        this.dimChip('Species','match'),
+        this.dimChip('Dom/sub','weakMismatch'),
+        this.dimChip('Age','neutral')));
+  }
+  tabOverview(){
+    const t=this.T();
+    return this.h('div',{padding:'16px 22px 26px'},
+      this.matchStrip(),
+      this.h('div',{height:'1px',background:t.border,margin:'18px 0 4px'}),
+      this.bbBody());
+  }
+
+  // ===================== TAB: Insights (§2 tab 5 — your own relationship stats, nothing fetched) =====================
+  insightRow(l,v,accent,last){
+    const t=this.T();
+    return this.h('div',{display:'grid',gridTemplateColumns:'168px 1fr',gap:'12px',padding:'7px 0',
+      borderBottom:last?'none':`1px solid ${this.mix(t.border,t.side,.45)}`},
+      this.h('div',{fontSize:'12px',color:t.faint},l),
+      this.h('div',{fontSize:'12.5px',color:accent?t.accent:t.text,fontWeight:accent?600:500},v));
+  }
+  tabInsights(empty){
+    const t=this.T();
+    if(empty){
+      return this.h('div',{padding:'64px 22px',display:'flex',flexDirection:'column',alignItems:'center',
+        textAlign:'center',gap:'11px'},
+        this.h('div',{width:'46px',height:'46px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+          display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'18px',color:t.faint},'⇄'),
+        this.h('div',{fontSize:'13px',fontWeight:600,color:t.dim},'You haven’t crossed paths yet'),
+        this.h('div',{fontSize:'12px',color:t.faint,maxWidth:'280px',lineHeight:1.5},
+          'Once you share a channel or exchange messages with Vesna, your history together will show up here.'));
+    }
+    const groups=[
+      {g:'Conversation',rows:[['Messages exchanged','1,284',true],['First encountered','Mar 3, 2026 · #Cabin Fever'],
+        ['Last chatted','2 days ago'],['Last seen talking','yesterday · #Northreach RP']]},
+      {g:'Right now',rows:[['Currently','Online — in 2 shared channels',true],
+        ['Shared channels','#Cabin Fever, #Northreach RP']]},
+      {g:'This profile',rows:[['Times you’ve viewed','7'],['First viewed','5 weeks ago'],['Bookmarked','No'],['Friend','Yes — since Apr 2026']]},
+    ];
+    return this.h('div',{padding:'16px 22px 26px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px',padding:'0 0 14px'},
+        this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',fontSize:'9.5px',fontWeight:700,
+          letterSpacing:'.09em',textTransform:'uppercase',color:t.accent},
+          this.h('span',{width:'5px',height:'5px',borderRadius:'50%',background:t.accent}),'You × Vesna'),
+        this.h('span',{fontSize:'11.5px',color:t.faint},'— from your local history, never fetched from F-List')),
+      this.h('div',{columnCount:2,columnGap:'34px'},
+        ...groups.map((grp,gi)=>this.hk(gi,'div',{breakInside:'avoid',marginBottom:'20px'},
+          this.gl(grp.g,10),
+          ...grp.rows.map((r,i)=>this.hk(i,'div',{},this.insightRow(r[0],r[1],r[2],i===grp.rows.length-1)))))));
+  }
+
+  // ===================== TAB: Details =====================
+  tabDetails(){
+    const t=this.T();
+    const groups=[
+      {g:'General',rows:[['Orientation','Bisexual'],['Gender','Female'],['Age','24'],['Dom/sub role','Switch'],
+        ['Position','Versatile'],['Language','English']]},
+      {g:'Appearance',rows:[['Species','Arctic fox (anthro)'],['Height','5′6″'],['Body type','Athletic'],
+        ['Build','Fluffy'],['Fur','Silver / white'],['Eyes','Pale amber']]},
+      {g:'RP preferences',rows:[['Furry preference','Anthro only'],['Post length','Multi-paragraph'],['Tense','Past'],
+        ['Perspective','Third person'],['Will play','MxF, FxF, groups'],['Won’t play','Extreme gore']]},
+    ];
+    const row=(l,v,last)=>this.h('div',{display:'grid',gridTemplateColumns:'150px 1fr',gap:'12px',padding:'7px 0',
+      borderBottom:last?'none':`1px solid ${this.mix(t.border,t.side,.45)}`},
+      this.h('div',{fontSize:'12px',color:t.faint},l),
+      this.h('div',{fontSize:'12.5px',color:t.text,fontWeight:500},v));
+    return this.h('div',{padding:'18px 22px 26px',columnCount:2,columnGap:'34px'},
+      ...groups.map((grp,gi)=>this.hk(gi,'div',{breakInside:'avoid',marginBottom:'20px'},
+        this.gl(grp.g,10),
+        ...grp.rows.map((r,i)=>this.hk(i,'div',{},row(r[0],r[1],i===grp.rows.length-1))))));
+  }
+
+  // ===================== TAB: Kinks =====================
+  // viewer's own choice marker: glyph + tint (colorblind-safe secondary channel)
+  choiceMark(yours){
+    const t=this.T();
+    const map={fave:{g:'♥',c:t.ok},yes:{g:'+',c:this.mix(t.ok,t.warn,.5)},maybe:{g:'~',c:t.warn},
+      no:{g:'×',c:t.danger},none:{g:'·',c:t.faint}};
+    const m=map[yours]||map.none;
+    return this.h('span',{width:'15px',height:'15px',borderRadius:'4px',flexShrink:0,display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'10px',fontWeight:600,
+      color:m.c,background:this.mix(m.c,t.side,.82),border:`1px solid ${this.mix(m.c,t.side,.55)}`,
+      title:'your choice: '+yours},m.g);
+  }
+  kinkRow(name,yours,custom,expanded){
+    const t=this.T();
+    // tint the row by the viewer's own choice for that kink
+    const map={fave:t.ok,yes:this.mix(t.ok,t.warn,.5),maybe:t.warn,no:t.danger,none:null};
+    const tint=map[yours];
+    const base=this.h('div',{display:'flex',alignItems:'center',gap:'8px',padding:'6px 9px',borderRadius:'6px',
+      background:tint?this.mix(tint,t.bg,.9):'transparent',
+      boxShadow:tint?`inset 2px 0 0 ${this.mix(tint,t.bg,.5)}`:'none'},
+      this.choiceMark(yours),
+      this.h('div',{flex:1,fontSize:'12px',color:t.text,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',
+        whiteSpace:custom&&expanded?'normal':'nowrap',display:'flex',alignItems:'center',gap:'6px'},
+        name,
+        custom?this.h('span',{fontFamily:t.mono,fontSize:'8.5px',fontWeight:700,letterSpacing:'.06em',color:t.accent,
+          background:t.accentSoft,borderRadius:'3px',padding:'1px 4px'},'CUSTOM'):null,
+        custom?this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint,marginLeft:'auto'},expanded?'−':'+'):null));
+    if(custom&&expanded){
+      return this.h('div',{background:this.mix(t.accent,t.bg,.92),borderRadius:'6px',border:`1px solid ${t.border}`,
+        boxShadow:tint?`inset 2px 0 0 ${this.mix(tint,t.bg,.5)}`:'none'},base,
+        this.h('div',{padding:'0 9px 8px 32px'},
+          this.h('div',{fontSize:'11.5px',color:t.dim,lineHeight:1.5,margin:'0 0 6px'},
+            'Only with characters she’s mapped a route with first — slow burn, no strangers.'),
+          this.h('div',{display:'flex',flexWrap:'wrap',gap:'5px'},
+            ...['Rope','Cuffs','Blindfold'].map((s,i)=>this.hk(i,'span',{fontSize:'10.5px',color:t.faint,
+              background:t.bg,border:`1px solid ${t.border}`,borderRadius:'4px',padding:'2px 7px'},s)))));
+    }
+    return base;
+  }
+  tabKinks(){
+    const t=this.T();
+    const cols=[
+      {label:'Fave',color:t.ok,items:[['Sensory play','fave'],['Cartography roleplay','fave',true,true],['Praise','yes'],
+        ['Marking','maybe'],['Cuddling','fave']]},
+      {label:'Yes',color:this.mix(t.ok,t.warn,.5),items:[['Bondage','yes'],['Teasing','fave'],['Biting','yes'],
+        ['Temperature play','maybe'],['Roughhousing','no']]},
+      {label:'Maybe',color:t.warn,items:[['Public play','maybe'],['Voyeurism','none'],['Overstimulation','yes'],
+        ['Predator/prey','maybe']]},
+      {label:'No',color:t.danger,items:[['Gore','no'],['Scat','no'],['Permanent harm','no'],['Non-con','maybe']]},
+    ];
+    return this.h('div',{padding:'14px 20px 24px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',padding:'0 2px 12px'},
+        this.h('div',{fontSize:'11.5px',color:t.dim},'Row tint & glyph show ',
+          this.h('b',{style:{color:t.text,fontWeight:600}},'your own'),' choice for each kink — the “we both fave this” glance.'),
+        this.h('div',{flex:1}),
+        this.h('div',{display:'flex',alignItems:'center',gap:'11px',fontFamily:t.mono,fontSize:'10px',color:t.faint},
+          ...[['♥','fave'],['+','yes'],['~','maybe'],['×','no']].map((m,i)=>
+            this.hk(i,'span',{display:'inline-flex',alignItems:'center',gap:'4px'},this.choiceMark(m[1]),m[1])))),
+      this.h('div',{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',alignItems:'start'},
+        ...cols.map((c,ci)=>this.hk(ci,'div',{background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+          padding:'10px 8px'},
+          this.h('div',{display:'flex',alignItems:'center',gap:'7px',padding:'0 4px 8px',marginBottom:'4px',
+            borderBottom:`1px solid ${t.border}`},
+            this.h('span',{width:'8px',height:'8px',borderRadius:'2px',background:c.color}),
+            this.h('span',{fontSize:'11px',fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:t.text},c.label),
+            this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint,marginLeft:'auto'},c.items.length)),
+          this.h('div',{display:'flex',flexDirection:'column',gap:'2px'},
+            ...c.items.map((it,i)=>this.hk(i,'div',{},this.kinkRow(it[0],it[1],it[2],it[3]))))))));
+  }
+
+  // ===================== TAB: Compare (§3) =====================
+  cmpDimTable(){
+    const t=this.T();
+    const rows=[
+      {dim:'Orientation',you:'Bisexual',them:'Bisexual',tier:'match',reason:'Both open to your pairing'},
+      {dim:'Gender',you:'Male',them:'Female',tier:'match',reason:'Complementary to both preferences'},
+      {dim:'Age',you:'27',them:'24',tier:'neutral',reason:'No stated age preference either side'},
+      {dim:'Anthro / human',you:'Anthro only',them:'Anthro only',tier:'match',reason:'Exact preference overlap'},
+      {dim:'Species',you:'Red wolf',them:'Arctic fox',tier:'weakMatch',reason:'Both anthro canids — close'},
+      {dim:'Sub / Dom role',you:'Dominant',them:'Switch',tier:'weakMismatch',reason:'You prefer subs; they switch'},
+    ];
+    const head=this.h('div',{display:'grid',gridTemplateColumns:'118px 1fr 1fr 132px',gap:'12px',
+      padding:'0 12px 8px',borderBottom:`1px solid ${t.border}`},
+      this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:t.faint},'Dimension'),
+      this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:this.mix('#5f7a86',t.text,.3)},'Sable (you)'),
+      this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:'#c294b0'},'Vesna'),
+      this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:t.faint,textAlign:'right'},'Match'));
+    return this.h('div',{},head,
+      ...rows.map((r,i)=>{const T=this.tiers()[r.tier];
+        return this.hk(i,'div',{display:'grid',gridTemplateColumns:'118px 1fr 1fr 132px',gap:'12px',padding:'9px 12px',
+          alignItems:'center',borderBottom:i===rows.length-1?'none':`1px solid ${this.mix(t.border,t.side,.5)}`,
+          background:this.mix(T.color,t.side,.94)},
+          this.h('div',{fontSize:'12px',color:t.dim},r.dim),
+          this.h('div',{fontSize:'12.5px',color:t.text,fontWeight:500},r.you),
+          this.h('div',{fontSize:'12.5px',color:t.text,fontWeight:500},r.them),
+          this.h('div',{display:'flex',justifyContent:'flex-end'},this.matchPill(r.tier,{short:true})));
+      }),
+      // reason line beneath the mismatch row example
+      this.h('div',{padding:'8px 12px 0'},
+        this.h('div',{fontSize:'11px',color:t.faint,fontStyle:'italic',lineHeight:1.5},
+          'Hover any row for its reason — e.g. “You prefer submissives; Vesna plays as a switch.”')));
+  }
+  cmpKinkRow(name,yours,theirs,tier){
+    const t=this.T(),T=this.tiers()[tier];
+    const cm=(ch,align)=>{const map={fave:{g:'♥',c:t.ok,l:'Fave'},yes:{g:'+',c:this.mix(t.ok,t.warn,.5),l:'Yes'},
+      maybe:{g:'~',c:t.warn,l:'Maybe'},no:{g:'×',c:t.danger,l:'No'}};const m=map[ch];
+      return this.h('div',{display:'flex',alignItems:'center',gap:'6px',justifyContent:align,fontSize:'11px',color:m.c,fontWeight:600},
+        align==='flex-end'?[this.hk('l','span',{color:t.faint,fontWeight:500},m.l),this.hk('g','span',{fontFamily:t.mono},m.g)]
+          :[this.hk('g','span',{fontFamily:t.mono},m.g),this.hk('l','span',{color:t.faint,fontWeight:500},m.l)]);};
+    return this.h('div',{display:'grid',gridTemplateColumns:'104px 1fr 104px',gap:'10px',alignItems:'center',
+      padding:'7px 12px',borderRadius:'6px',background:this.mix(T.color,t.bg,.9),
+      boxShadow:`inset 2px 0 0 ${this.mix(T.color,t.bg,.45)}`,marginBottom:'3px'},
+      cm(yours,'flex-start'),
+      this.h('div',{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',minWidth:0},
+        this.pie(tier,11),
+        this.h('span',{fontSize:'12px',color:t.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},name)),
+      cm(theirs,'flex-end'));
+  }
+  cmpKinkList(conflictsOnly){
+    const t=this.T();
+    let rows=[
+      {n:'Non-con',y:'no',th:'maybe',tier:'mismatch'},
+      {n:'Roughhousing',y:'fave',th:'no',tier:'mismatch'},
+      {n:'Predator/prey',y:'yes',th:'maybe',tier:'weakMismatch'},
+      {n:'Overstimulation',y:'maybe',th:'yes',tier:'weakMismatch'},
+      {n:'Public play',y:'no',th:'maybe',tier:'weakMismatch'},
+      {n:'Marking',y:'yes',th:'maybe',tier:'neutral'},
+      {n:'Temperature play',y:'yes',th:'maybe',tier:'neutral'},
+      {n:'Bondage',y:'yes',th:'yes',tier:'weakMatch'},
+      {n:'Praise',y:'fave',th:'yes',tier:'weakMatch'},
+      {n:'Teasing',y:'fave',th:'fave',tier:'match'},
+      {n:'Sensory play',y:'fave',th:'fave',tier:'match'},
+      {n:'Cuddling',y:'fave',th:'fave',tier:'match'},
+    ];
+    if(conflictsOnly)rows=rows.filter(r=>r.tier==='mismatch'||r.tier==='weakMismatch');
+    const list=this.h('div',{overflow:'auto',maxHeight:conflictsOnly?'none':'196px',padding:'2px'},
+      ...rows.map((r,i)=>this.hk(i,'div',{},this.cmpKinkRow(r.n,r.y,r.th,r.tier))));
+    list.props.className='pvscroll';
+    return this.h('div',{},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'},
+        this.gl('Kink alignment',0),
+        this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint},'sorted worst-first · '+rows.length+' shown'),
+        this.h('div',{flex:1}),
+        this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'4px 10px',borderRadius:'20px',
+          fontSize:'11px',fontWeight:600,cursor:'pointer',
+          color:conflictsOnly?t.danger:t.dim,
+          background:conflictsOnly?this.mix(t.danger,t.bg,.85):t.bg,
+          border:`1px solid ${conflictsOnly?this.mix(t.danger,t.bg,.55):t.border}`},
+          this.pie(conflictsOnly?'mismatch':'neutral',10),'Conflicts only')),
+      this.h('div',{display:'flex',justifyContent:'space-between',padding:'0 12px 6px',fontFamily:t.mono,fontSize:'9px',
+        color:t.faint,letterSpacing:'.06em',textTransform:'uppercase'},
+        this.h('span',{},'You'),this.h('span',{},'Kink'),this.h('span',{},'Vesna')),
+      list);
+  }
+  tabCompare(conflictsOnly){
+    const t=this.T();
+    return this.h('div',{padding:'16px 22px 24px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'},
+        this.matchPill('weakMatch'),
+        this.h('span',{fontSize:'12px',color:t.dim},'overall — strong dimension fit, a few kink conflicts to talk through')),
+      this.cmpDimTable(),
+      this.h('div',{height:'1px',background:t.border,margin:'20px 0 16px'}),
+      this.cmpKinkList(conflictsOnly));
+  }
+
+  // ===================== TAB: Images =====================
+  tabImages(lightbox){
+    const t=this.T();
+    const colors=['#7a5c86','#4f6d7a','#6d7a4f','#86685f','#5f6486','#867a4f','#4f8676','#7a4f6d'];
+    const grid=this.h('div',{padding:'18px 22px 26px'},
+      this.h('div',{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px'},
+        ...colors.map((c,i)=>this.hk(i,'div',{aspectRatio:'1',borderRadius:t.radius+'px',cursor:'pointer',
+          background:`linear-gradient(150deg,${this.mix(c,t.text,.1)},${c})`,border:`1px solid ${t.border}`,
+          boxShadow:i===1&&lightbox?`0 0 0 2px ${t.accent}`:'none',position:'relative',overflow:'hidden'},
+          this.h('div',{position:'absolute',left:'8px',bottom:'7px',fontFamily:t.mono,fontSize:'9.5px',color:'rgba(255,255,255,.7)'},
+            (i+1)+'/8')))));
+    if(!lightbox)return grid;
+    return this.h('div',{position:'relative'},grid,
+      this.h('div',{position:'absolute',inset:0,background:'rgba(10,9,8,.86)',display:'flex',alignItems:'center',
+        justifyContent:'center',padding:'22px'},
+        this.h('div',{position:'relative',width:'380px',maxWidth:'100%'},
+          this.h('div',{aspectRatio:'4/3',borderRadius:t.radius+'px',border:`1px solid ${t.border}`,
+            background:`linear-gradient(150deg,${this.mix('#4f6d7a',t.text,.1)},#4f6d7a)`,boxShadow:'0 30px 70px -20px rgba(0,0,0,.8)'}),
+          this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'10px'},
+            this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.dim},'2 / 8'),
+            this.h('div',{display:'flex',gap:'8px'},
+              this.iconBtn('‹'),this.iconBtn('›'),this.iconBtn('✕'))))));
+  }
+
+  // ===================== TAB: Guestbook =====================
+  gbPost(d,last){
+    const t=this.T();
+    return this.h('div',{display:'flex',gap:'11px',padding:'13px 0',
+      borderBottom:last?'none':`1px solid ${this.mix(t.border,t.side,.5)}`},
+      this.avatar(32,d.color,d.initial,7),
+      this.h('div',{flex:1,minWidth:0},
+        this.h('div',{display:'flex',alignItems:'baseline',gap:'8px'},
+          this.h('span',{fontSize:'13px',fontWeight:600,color:d.accent},d.name),
+          this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint},d.date)),
+        this.h('div',{fontSize:'12.5px',color:t.text,lineHeight:1.55,marginTop:'4px'},d.body)));
+  }
+  tabGuestbook(empty){
+    const t=this.T();
+    if(empty){
+      return this.h('div',{padding:'60px 22px',display:'flex',flexDirection:'column',alignItems:'center',
+        textAlign:'center',gap:'11px'},
+        this.h('div',{width:'46px',height:'46px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+          display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'18px',color:t.faint},'“'),
+        this.h('div',{fontSize:'13px',fontWeight:600,color:t.dim},'No guestbook posts yet'),
+        this.h('div',{fontSize:'12px',color:t.faint,maxWidth:'260px',lineHeight:1.5},
+          'Be the first to leave a comment on Vesna’s profile.'),
+        this.h('span',{marginTop:'4px',padding:'7px 15px',borderRadius:t.radius+'px',fontSize:'12px',fontWeight:600,
+          color:t.bg,background:t.accent,cursor:'pointer'},'Sign guestbook'));
+    }
+    const posts=[
+      {name:'Kolvarr',initial:'K',color:'#4f6d7a',accent:'#8f9bc9',date:'3 days ago',
+        body:'Ran into you in Cabin Fever — that storm-shelter thread was some of the best writing I’ve had all month. Around next weekend?'},
+      {name:'Thistle Ardent',initial:'T',color:'#6d7a4f',accent:'#a6bd94',date:'2 weeks ago',
+        body:'Your cartographer hook is genuinely one of the more original setups I’ve seen. Faved.'},
+      {name:'Marisol Vane',initial:'M',color:'#86685f',accent:'#c294b0',date:'1 month ago',
+        body:'Lovely to map the northern reach with you. Until next expedition. ❄'},
+    ];
+    return this.h('div',{padding:'8px 22px 24px'},
+      this.h('div',{display:'flex',alignItems:'center',padding:'12px 0 4px'},
+        this.gl('Guestbook',0),this.h('div',{flex:1}),
+        this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint},'12 comments')),
+      ...posts.map((p,i)=>this.hk(i,'div',{},this.gbPost(p,false))),
+      this.h('div',{marginTop:'14px',padding:'11px 12px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+        fontSize:'12px',color:t.faint},'Leave a comment…',
+        this.h('div',{display:'flex',justifyContent:'flex-end',marginTop:'9px'},
+          this.h('span',{padding:'6px 14px',borderRadius:t.radius+'px',fontSize:'11.5px',fontWeight:600,color:t.bg,
+            background:t.accent},'Post'))));
+  }
+
+  // ===================== loading / not-found modal bodies =====================
+  loadingBody(){
+    const t=this.T();
+    const bar=(w,h,mt)=>React.createElement('div',{className:'pvskel',style:{width:w,height:h+'px',marginTop:(mt||0)+'px'}});
+    return this.h('div',{padding:'20px 22px'},
+      this.h('div',{display:'flex',gap:'15px',marginBottom:'22px'},
+        React.createElement('div',{className:'pvskel',style:{width:'56px',height:'56px',borderRadius:t.radius+'px'}}),
+        this.h('div',{flex:1},bar('34%',18,4),bar('22%',11,10))),
+      bar('26%',10),this.h('div',{display:'flex',gap:'8px',marginTop:'10px'},bar('120px',26),bar('90px',26),bar('104px',26)),
+      this.h('div',{height:'1px',background:t.border,margin:'20px 0'}),
+      bar('92%',13,0),bar('98%',13,8),bar('86%',13,8),bar('70%',13,8),
+      this.h('div',{marginTop:'18px'},bar('40%',13),bar('95%',13,9),bar('90%',13,8)));
+  }
+  notFoundBody(){
+    const t=this.T();
+    return this.h('div',{padding:'70px 22px',display:'flex',flexDirection:'column',alignItems:'center',
+      textAlign:'center',gap:'13px'},
+      this.h('div',{width:'62px',height:'62px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+        background:t.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'26px',color:t.faint},'?'),
+      this.h('div',{fontSize:'15px',fontWeight:600,color:t.text},'Profile not found'),
+      this.h('div',{fontSize:'12.5px',color:t.faint,maxWidth:'320px',lineHeight:1.55},
+        'This character may have been renamed or deleted on the server. Your recently-viewed list is unaffected.'),
+      this.h('div',{display:'flex',gap:'9px',marginTop:'4px'},
+        this.h('span',{padding:'8px 16px',borderRadius:t.radius+'px',fontSize:'12px',fontWeight:600,color:t.bg,
+          background:t.accent,cursor:'pointer'},'Retry'),
+        this.h('span',{padding:'8px 16px',borderRadius:t.radius+'px',fontSize:'12px',fontWeight:600,color:t.text,
+          background:t.bg,border:`1px solid ${t.border}`,cursor:'pointer'},'Open on website ↗')));
+  }
+
+  // ===================== isolated detail frames =====================
+  detailShell(w,...kids){const t=this.T();
+    return this.h('div',{width:w+'px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      padding:'18px 20px',fontFamily:t.ui,color:t.text},...kids);}
+  noteFrame(){
+    const t=this.T();
+    const row=(lab,el)=>this.h('div',{display:'flex',flexDirection:'column',gap:'8px'},
+      this.h('div',{fontSize:'10px',fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:t.faint},lab),
+      this.h('div',{},el));
+    return this.detailShell(300,
+      this.gl('Private note · three states',14),
+      this.h('div',{display:'flex',flexDirection:'column',gap:'18px'},
+        row('No note yet',this.noteBlock('none')),
+        row('Note exists (collapsed peek)',this.noteBlock('peek')),
+        row('Inline editor (autosaves)',this.noteBlock('edit'))));
+  }
+  linkFrame(){
+    const t=this.T();
+    return this.detailShell(360,
+      this.gl('Match chip — reused across surfaces',14),
+      this.h('div',{fontSize:'12px',color:t.dim,lineHeight:1.55,marginBottom:'14px'},
+        'The same five-tier primitive shipped on the mini card returns here on the compare table, kink rows, and (future) ad rows — pill, short pill, and dimension-chip forms.'),
+      this.h('div',{display:'flex',flexWrap:'wrap',gap:'8px',marginBottom:'12px'},
+        this.matchPill('match'),this.matchPill('weakMatch'),this.matchPill('neutral'),
+        this.matchPill('weakMismatch'),this.matchPill('mismatch')),
+      this.h('div',{display:'flex',flexWrap:'wrap',gap:'6px'},
+        this.matchPill('match',{short:true}),this.matchPill('weakMatch',{short:true}),
+        this.matchPill('neutral',{short:true}),this.matchPill('weakMismatch',{short:true}),
+        this.matchPill('mismatch',{short:true})));
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'P·A',cap:'Full profile viewer — Overview tab, loaded. Preferences-scale modal (900×640): history rail (left) + header (avatar, gender-accented name, ★friend/⚑bookmark, “fetched 12m ago” + refresh, private-note peek) over the tab strip. Overview = compact compatibility strip + first-party BBCode description (heading, quote, collapse accordions, inline eicon).',el:this.modal({tab:'Overview',bookmarked:false,note:'peek',body:this.tabOverview()})},
+      {id:'P·B',cap:'Details tab — infotags in their F-List groups (General / Appearance / RP preferences), dense two-column label/value rows.',el:this.modal({tab:'Details',bookmarked:false,note:'peek',body:this.tabDetails()})},
+      {id:'P·C',cap:'Kinks tab — four columns Fave/Yes/Maybe/No. Each row is tinted + glyph-marked by YOUR own choice for that kink (colorblind-safe: ♥/+/~/× glyph, not colour alone). Custom kinks expand to a description + nested subkinks.',el:this.modal({tab:'Kinks',bookmarked:false,note:'peek',body:this.tabKinks()})},
+      {id:'P·D',cap:'Compare tab (§3) — your active character vs. theirs. Six-row dimension table (both values + tier chip + hover reason, row tinted by tier) over the kink-alignment list, sorted worst-conflicts-first in its own scroll region.',el:this.modal({tab:'Compare',bookmarked:false,note:'peek',body:this.tabCompare(false)})},
+      {id:'P·E',cap:'Compare — “Conflicts only” filter chip active: the kink list collapses to just the mis/weak-mismatch rows for a fast “what do we need to talk about” read.',el:this.modal({tab:'Compare',bookmarked:false,note:'peek',body:this.tabCompare(true)})},
+      {id:'P·E²',cap:'Insights tab (§2 tab 5) — YOUR own relationship stats with this character, computed from local client history (never fetched from F-List). Details-tab label/value language, but an accent “You × Vesna” framing cue signals it’s about the pair: messages exchanged, first/last encounters, live online + shared channels, view count.',el:this.modal({tab:'Insights',bookmarked:false,note:'peek',body:this.tabInsights(false)})},
+      {id:'P·E³',cap:'Insights — empty state (“You haven’t crossed paths yet”) for a character you’ve viewed but never shared a channel with or messaged.',el:this.modal({tab:'Insights',bookmarked:false,note:'none',body:this.tabInsights(true)})},
+      {id:'P·F',cap:'Images tab — thumbnail grid opening a centred lightbox (prev / next / close), dimmed backdrop over the modal, not a new window.',el:this.modal({tab:'Images',bookmarked:true,note:'peek',body:this.tabImages(true)})},
+      {id:'P·G',cap:'Guestbook tab — comment list (author avatar/name/date/BBCode body) with an inline compose box. Ships native even if it later becomes an API link-out.',el:this.modal({tab:'Guestbook',bookmarked:false,note:'peek',body:this.tabGuestbook(false)})},
+      {id:'P·H',cap:'Loading — avatar + chrome paint instantly; header meta, infotags and body shimmer in. Rail history is already local, so it stays live.',el:this.modal({tab:'Overview',bookmarked:false,note:'none',body:this.loadingBody()})},
+      {id:'P·I',cap:'Stale / budget-exhausted — warn-tinted banner under the header explains the cached copy; the refresh button is disabled. Content is the last cached copy.',el:this.modal({tab:'Overview',bookmarked:false,note:'none',budget:true,banner:this.banner('budget'),body:this.tabOverview()})},
+      {id:'P·I′',cap:'Disabled-refresh tooltip — the hover affordance on the budget-exhausted refresh button, shown here on its own (no banner) so the layered states read clearly.',el:this.modal({tab:'Overview',bookmarked:false,note:'peek',budget:true,tooltip:true,body:this.tabOverview()})},
+      {id:'P·J',cap:'Profile not found — renamed or deleted upstream. Plain-language reason, Retry, and a website fallback; the history rail is untouched.',el:this.modal({tab:'Overview',bookmarked:false,note:'none',body:this.notFoundBody()})},
+      {id:'P·K',cap:'History rail — empty state. The rail is the app’s only view-history surface, so it owns its own empty message.',el:this.modal({tab:'Overview',railEmpty:true,bookmarked:false,note:'none',body:this.notFoundBody()})},
+      {id:'P·L',cap:'Guestbook — empty state, and the private-note + reusable-chip detail specs.',el:this.h('div',{display:'flex',gap:'20px',alignItems:'flex-start'},this.noteFrame(),this.linkFrame())},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>

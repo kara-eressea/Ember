@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.pv *{box-sizing:border-box}
+.pvscroll::-webkit-scrollbar{width:8px}
+.pvscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.pvcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:340px;line-height:1.5}
+.pvcap b{color:#a892c6;font-weight:600}
+@keyframes pvshimmer{0%{background-position:-200px 0}100%{background-position:280px 0}}
+.pvskel{background:linear-gradient(90deg,#2a2725 0%,#332f2b 40%,#2a2725 80%);background-size:280px 100%;animation:pvshimmer 1.15s linear infinite;border-radius:5px}
+</style>
+</helmet>
+<div class="pv" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:52px;padding:56px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="6">
+  <div style="display:flex;flex-direction:column">
+    <div class="pvcap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+
+  // ---------- five-tier match primitive ----------
+  tiers(){
+    const t=this.T();
+    // fill fraction of the drawn pie doubles as a colorblind-safe, monotonic signal
+    return {
+      match:       {frac:1,   label:'Match',        color:t.ok},
+      weakMatch:   {frac:.75, label:'Weak match',   color:this.mix(t.ok,t.warn,.55)},
+      neutral:     {frac:.5,  label:'Neutral',      color:this.mix(t.dim,t.faint,.4)},
+      weakMismatch:{frac:.25, label:'Weak mismatch',color:t.warn},
+      mismatch:    {frac:0,   label:'Mismatch',     color:t.danger},
+    };
+  }
+  // SVG pie so every fill level is metrically identical (glyph fonts aren't) and crisp (no bg-clip artifacts)
+  pie(key,size,color){
+    const T=this.tiers()[key];const c=color||T.color;const r=size/2,cx=r,cy=r,sw=1.4,rr=r-sw/2;
+    const frac=T.frac;
+    let fill=null;
+    if(frac>=1){
+      fill=React.createElement('circle',{cx,cy,r:rr,fill:c,stroke:'none'});
+    }else if(frac>0){
+      const a=frac*2*Math.PI-Math.PI/2; // start at 12 o'clock
+      const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);
+      const large=frac>0.5?1:0;
+      const d=`M ${cx} ${cy} L ${cx} ${cy-rr} A ${rr} ${rr} 0 ${large} 1 ${x} ${y} Z`;
+      fill=React.createElement('path',{d,fill:c,stroke:'none'});
+    }
+    return React.createElement('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,
+      style:{display:'inline-block',flexShrink:0,verticalAlign:'middle'}},
+      fill,
+      React.createElement('circle',{cx,cy,r:rr,fill:'none',stroke:c,strokeWidth:sw}));
+  }
+  // large overall pill
+  matchPill(key,opts){
+    const t=this.T(),T=this.tiers()[key];const short=opts&&opts.short;
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'4px 11px 4px 9px',
+      borderRadius:'20px',fontFamily:t.ui,fontSize:'11.5px',fontWeight:600,whiteSpace:'nowrap',
+      color:T.color,background:this.mix(T.color,t.bg,.83),border:`1px solid ${this.mix(T.color,t.bg,.58)}`},
+      this.pie(key,11),
+      short?T.label.replace(' match','').replace(' mismatch',''):T.label);
+  }
+  // compact dimension chip: dimension name + tier glyph
+  dimChip(dim,key){
+    const t=this.T(),T=this.tiers()[key];
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'3px 8px',borderRadius:'5px',
+      fontFamily:t.ui,fontSize:'11px',fontWeight:500,whiteSpace:'nowrap',color:t.dim,
+      background:this.mix(T.color,t.side,.86),border:`1px solid ${this.mix(T.color,t.side,.6)}`},
+      dim,
+      this.pie(key,10));
+  }
+
+  // ---------- primitive spec frame ----------
+  primitiveFrame(){
+    const t=this.T(),tiers=this.tiers();
+    const order=['match','weakMatch','neutral','weakMismatch','mismatch'];
+    const card=(style,...kids)=>this.h('div',Object.assign({background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+'px',padding:'20px 22px',width:'440px',fontFamily:t.ui,color:t.text},style),...kids);
+    const gl=txt=>this.h('div',{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',
+      color:t.faint,margin:'0 0 12px'},txt);
+    // row per tier: glyph swatch · pill · dim chip
+    const rows=order.map((k,i)=>{
+      const T=tiers[k];
+      return this.hk(k,'div',{display:'grid',gridTemplateColumns:'34px 1fr 128px',alignItems:'center',gap:'14px',
+        padding:'10px 0',borderTop:i?`1px solid ${this.mix(t.border,t.side,.4)}`:'none'},
+        this.h('span',{display:'flex',justifyContent:'center'},this.pie(k,16)),
+        this.matchPill(k),
+        this.dimChip('Kinks',k));
+    });
+    // colorblind proof: same pies, single neutral ink
+    const proof=this.h('div',{display:'flex',alignItems:'center',gap:'16px',marginTop:'2px'},
+      ...order.map((k,i)=>this.hk(k,'span',{display:'flex'},this.pie(k,18,t.dim))));
+    return this.h('div',{display:'flex',flexDirection:'column',gap:'18px'},
+      card({},gl('Match tier · five-tier primitive'),this.h('div',{},...rows)),
+      card({width:'440px'},gl('Colorblind-legible without color'),
+        this.h('div',{fontSize:'12.5px',lineHeight:1.55,color:t.dim,margin:'0 0 14px'},
+          'Fill level of the pie glyph encodes alignment monotonically — full to empty — so tier survives with color removed. Color is a second, reinforcing channel.'),
+        proof,
+        this.h('div',{display:'flex',justifyContent:'space-between',fontFamily:t.mono,fontSize:'9.5px',
+          color:t.faint,marginTop:'8px',letterSpacing:'.04em'},
+          this.h('span',{},'MATCH'),this.h('span',{},'MISMATCH'))));
+  }
+
+  // ---------- mini profile card ----------
+  avatar(size,color,initial,radius){
+    const t=this.T();
+    return this.h('div',{width:size+'px',height:size+'px',borderRadius:(radius||t.radius)+'px',flexShrink:0,
+      background:`linear-gradient(150deg,${this.mix(color,t.text,.15)},${color})`,
+      display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontWeight:600,
+      fontSize:(size*0.42)+'px',color:t.bg,boxShadow:'inset 0 1px 0 rgba(255,255,255,.14)'},initial);
+  }
+  badge(glyph,color){
+    const t=this.T();
+    return this.h('span',{width:'20px',height:'20px',borderRadius:'6px',flexShrink:0,display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontSize:'11px',color:color,
+      background:this.mix(color,t.bg,.84),border:`1px solid ${this.mix(color,t.bg,.62)}`},glyph);
+  }
+  infoChip(txt){
+    const t=this.T();
+    return this.h('span',{padding:'2.5px 8px',borderRadius:'5px',fontSize:'11px',fontWeight:500,color:t.dim,
+      background:t.bg,border:`1px solid ${t.border}`,whiteSpace:'nowrap'},txt);
+  }
+  cardShell(inner,extraStyle){
+    const t=this.T();
+    return this.h('div',Object.assign({width:'300px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+'px',boxShadow:'0 20px 50px -10px rgba(0,0,0,.7)',overflow:'hidden',
+      fontFamily:t.ui,color:t.text},extraStyle||{}),inner);
+  }
+  gl(txt){const t=this.T();return this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',
+    textTransform:'uppercase',color:t.faint,margin:'0 0 8px'},txt);}
+  actions(disabledMsg){
+    const t=this.T();
+    const primary=this.h('span',{flex:1,textAlign:'center',padding:'8px 0',borderRadius:t.radius+'px',
+      fontSize:'12.5px',fontWeight:700,color:t.bg,background:t.accent,cursor:'pointer'},'Open profile');
+    const ghost=this.h('span',{flex:1,textAlign:'center',padding:'8px 0',borderRadius:t.radius+'px',
+      fontSize:'12.5px',fontWeight:600,color:t.text,background:t.bg,border:`1px solid ${t.border}`,cursor:'pointer'},'Message');
+    return this.h('div',{display:'flex',gap:'8px',padding:'12px 14px 14px'},primary,ghost);
+  }
+  staleLine(txt){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'6px',padding:'0 14px 12px',
+      fontFamily:t.mono,fontSize:'10.5px',color:t.faint},
+      this.h('span',{fontSize:'11px'},'⟲'),txt);
+  }
+  // full loaded card. d = data, opts = {stale, noMatch}
+  miniCard(d,opts){
+    opts=opts||{};const t=this.T();
+    const genderColor={female:'#c294b0',male:'#8f9bc9',androgynous:'#a6bd94'}[d.gender]||t.accent;
+    const badges=[];
+    if(d.isFriend)badges.push(this.hk('f','span',{},this.badge('★',t.warn)));
+    if(d.isBookmarked)badges.push(this.hk('b','span',{},this.badge('⚑',t.accent)));
+    const header=this.h('div',{display:'flex',gap:'13px',padding:'16px 14px 12px',
+      background:`linear-gradient(180deg,${this.mix(genderColor,t.side,.9)},${t.side})`},
+      this.avatar(64,d.avatarColor,d.initial),
+      this.h('div',{minWidth:0,flex:1,display:'flex',flexDirection:'column'},
+        this.h('div',{display:'flex',alignItems:'flex-start',gap:'8px'},
+          this.h('div',{fontSize:'16px',fontWeight:700,color:genderColor,lineHeight:1.3,flex:1,minWidth:0,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},d.name),
+          this.h('div',{display:'flex',gap:'5px',flexShrink:0},...badges)),
+        this.h('div',{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'9px'},
+          ...d.infotags.map((x,i)=>this.hk(i,'span',{},this.infoChip(x))))));
+    let comp=null;
+    if(!opts.noMatch&&d.match){
+      comp=this.h('div',{padding:'12px 14px 4px',borderTop:`1px solid ${this.mix(t.border,t.side,.35)}`},
+        this.gl('Compatibility'),
+        this.h('div',{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'7px'},
+          this.matchPill(d.match.overall),
+          ...d.match.highlights.map((x,i)=>this.hk(i,'span',{title:x.reason},this.dimChip(x.dimension,x.tier)))));
+    }else{
+      comp=this.h('div',{padding:'11px 14px',borderTop:`1px solid ${this.mix(t.border,t.side,.35)}`,
+        fontSize:'11.5px',color:t.faint,display:'flex',alignItems:'center',gap:'7px'},
+        this.pie('neutral',13,this.mix(t.dim,t.faint,.4)),
+        'Connect your own character to compare');
+    }
+    return this.cardShell(this.h('div',{},
+      header,comp,
+      opts.stale?this.staleLine('cached 3h ago'):null,
+      this.actions()));
+  }
+
+  // skeleton state
+  skeletonCard(){
+    const t=this.T();
+    const bar=(w,h,mt)=>React.createElement('div',{className:'pvskel',style:{width:w,height:h+'px',marginTop:(mt||0)+'px'}});
+    const header=this.h('div',{display:'flex',gap:'13px',padding:'16px 14px 12px'},
+      React.createElement('div',{className:'pvskel',style:{width:'64px',height:'64px',borderRadius:t.radius+'px',flexShrink:0}}),
+      this.h('div',{flex:1},bar('62%',15,3),
+        this.h('div',{display:'flex',gap:'5px',marginTop:'11px'},bar('54px',18),bar('40px',18),bar('58px',18))));
+    const body=this.h('div',{padding:'12px 14px',borderTop:`1px solid ${this.mix(t.border,t.side,.35)}`},
+      bar('40%',9),this.h('div',{display:'flex',gap:'7px',marginTop:'9px'},bar('96px',22),bar('66px',22)));
+    return this.cardShell(this.h('div',{},header,body,this.actions()));
+  }
+  // profile-not-found state
+  notFoundCard(){
+    const t=this.T();
+    return this.cardShell(this.h('div',{padding:'26px 20px 22px',textAlign:'center'},
+      this.h('div',{width:'56px',height:'56px',borderRadius:t.radius+'px',margin:'0 auto 14px',
+        background:t.bg,border:`1px dashed ${t.border}`,display:'flex',alignItems:'center',
+        justifyContent:'center',fontSize:'22px',color:t.faint,fontFamily:t.mono},'?'),
+      this.h('div',{fontSize:'14px',fontWeight:600,color:t.text},'Profile not found'),
+      this.h('div',{fontSize:'12px',color:t.faint,lineHeight:1.5,margin:'6px 0 16px'},
+        'This character may have been renamed or deleted on the server.'),
+      this.h('span',{display:'inline-block',padding:'7px 16px',borderRadius:t.radius+'px',fontSize:'12px',
+        fontWeight:600,color:t.text,background:t.bg,border:`1px solid ${t.border}`,cursor:'pointer'},'Retry')));
+  }
+
+  renderVals(){
+    const vesna={name:'Vesna Marlowe',gender:'female',avatarColor:'#7a5c86',initial:'V',
+      isFriend:true,isBookmarked:false,
+      infotags:['Bisexual','24','Arctic fox','Switch'],
+      match:{overall:'weakMatch',highlights:[
+        {dimension:'Kinks',tier:'match',reason:'You both fave 6 of the same kinks'},
+        {dimension:'Dom/sub',tier:'weakMismatch',reason:'You prefer dominants; they are a switch'}]}};
+    const koll={name:'Kolvarr',gender:'male',avatarColor:'#4f6d7a',initial:'K',
+      isFriend:false,isBookmarked:true,
+      infotags:['Gay','31','Timber wolf','Dominant'],
+      match:{overall:'match',highlights:[
+        {dimension:'Species',tier:'match',reason:'Both anthro canids'},
+        {dimension:'Age',tier:'neutral',reason:'No stated age preference'}]}};
+    const frames=[
+      {id:'M8·A',cap:'Match tier — the reusable five-tier primitive. Overall pill (left), dimension chip (right), and the colorblind proof: pie-fill glyph reads full→empty as align→conflict, independent of hue.',el:this.primitiveFrame()},
+      {id:'M8·B',cap:'Mini profile card — loaded. Discord-style popover opened by clicking any character name. Avatar · gender-accented name · ★friend / ⚑bookmark badges · key infotags · one overall match pill + two notable dimension chips · Open profile / Message.',el:this.miniCard(vesna)},
+      {id:'M8·C',cap:'Loaded — a strong overall match, bookmarked (not friended). Dimension chips carry the reason on hover.',el:this.miniCard(koll)},
+      {id:'M8·D',cap:'Skeleton — avatar + name paint instantly; infotags, compatibility and actions shimmer in.',el:this.skeletonCard()},
+      {id:'M8·E',cap:'Stale — a served-from-cache copy carries a quiet mono “cached 3h ago” line above the actions.',el:this.miniCard(vesna,{stale:true})},
+      {id:'M8·F',cap:'No match data — the viewer has no own-profile loaded, so chips are replaced by a calm prompt.',el:this.miniCard(koll,{noMatch:true})},
+      {id:'M8·G',cap:'Profile not found — renamed or deleted upstream. Generic frame, plain-language reason, Retry.',el:this.notFoundCard()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>
