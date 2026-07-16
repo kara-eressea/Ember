@@ -1821,6 +1821,11 @@ describe("gateway commands", () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
     await joinAndSettle(session, "Development"); // mode "both": ads allowed
+    // The CDS that joinAndSettle waits on precedes the sink's async persist;
+    // flush so the conversation row exists before we query it (matches every
+    // other DB-reading test — without it the query races under CI load and
+    // `conv` is undefined).
+    await app.history.flush();
 
     const client = await connectClient();
     await client.hello(token);
