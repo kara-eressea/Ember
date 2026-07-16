@@ -11,9 +11,21 @@ Node server + React/Vite client + shared packages, managed with **pnpm workspace
 - Database: **Postgres** with **Drizzle ORM** (SQL-first typed schema, easy raw DDL for partitioning/retention, no codegen daemon).
 - Virtualized message log: **@tanstack/react-virtual** (headless, dynamic row heights, reverse infinite scroll).
 
-## 2. Tenancy — public hosted service
+## 2. Tenancy — self-hostable software, admin-only instances
 
-Open registration, not just a self-hosted friend group. Consequences: email verification, password reset, CAPTCHA/abuse controls, per-user rate limiting, audit logging, ToS/privacy pages are all v1.0 scope — scheduled as Milestone 7 (hardening), not Milestone 1.
+*Revised 2026-07-16; supersedes the original public-hosted-service decision.*
+
+EmberChat is **self-hostable software, not a managed service**. Each instance serves one person (or one real household); others who want it run their own. The pivot's driver is structural, not effort: F-List's abuse management leans on IP/household correlation, and a multi-tenant bouncer collapses all users behind the instance's single egress IP — unrelated users would read as one household (false alt-linking, shared ban fate), and one bad actor could get the instance IP banned for everyone. Unfixable on our side (see `risks-and-open-questions.md` risk 7, now defused rather than accepted). A single-tenant instance is truthful: F-List sees one person's accounts from one stable IP.
+
+Consequences:
+
+- **Registration is disabled.** The instance's account(s) are bootstrapped via an admin CLI/env mechanism; password reset is an admin-CLI operation. Email verification, CAPTCHA, disposable-email heuristics, and abuse-report intake all drop out of scope (no Brevo/mailer in v1.0).
+- **The app-account layer stays.** One EmberChat login owning several F-List accounts (and multi-device login) is still the model — tenancy changed, not the account architecture.
+- **Public-internet exposure hardening stays v1.0 scope** (rescoped Milestone 7): the instance is still reachable from the internet even with one user — TLS/reverse-proxy guidance, login lockout/backoff, secure cookies, rate limits, security headers.
+- **"Make self-hosting excellent" replaces "make registration safe"**: production docker-compose, config/deploy docs, backup/restore story.
+- **SFC "Alert Staff" reporting stays** (M6 parity-audit decision) — it reports to F-List staff and is tenancy-independent.
+
+**Eventual direction: a standalone desktop client (Tauri/Electron)** for the non-tech-savvy audience the hosted service would have served — the session/connection logic extracted into a shared library so desktop and bouncer builds share one engine. Design pass scheduled in Milestone 7; no implementation before v1.0.
 
 ## 3. Credentials — session-only, in memory ("bouncer-lite")
 
@@ -36,8 +48,8 @@ App login → connect one F-List character identity → join channels, send/rece
 ## 5. Deployment context (settled 2026-07-12)
 
 - **Hosting: VPS with docker-compose** (Hetzner/DigitalOcean-style). Master secrets via env on the host; automated `pg_dump` backups to object storage.
-- **Expected scale: realistically one or two users** (the author + a friend) — but **designed scalable from the start**, because others might adopt it as a cool toy. The operating principle: *scalability lives in the architecture, cost lives in the ops.* Architectural choices that scale come free and are kept (stateless REST, cursor-based catch-up, partition-ready message schema with the right indexes, session engine behind interfaces with a documented sharding path, per-account ticket coalescing). Operational spend that only matters at scale is deferred until real users show up (KMS, managed infra, partitioning, load testing, sharding). Milestone 7 trims to launch essentials (email verification, rate limits, ToS/privacy); deploy-logouts are handled by telling your friend beforehand.
-- **Transactional email: Brevo via SMTP** (existing account). Mailer is still abstracted behind an SMTP interface with Mailpit in dev — Brevo is just the production config.
+- **Expected scale: realistically one or two users** (the author + a friend) — but **designed scalable from the start**, because others might adopt it as a cool toy. The operating principle: *scalability lives in the architecture, cost lives in the ops.* Architectural choices that scale come free and are kept (stateless REST, cursor-based catch-up, partition-ready message schema with the right indexes, session engine behind interfaces with a documented sharding path, per-account ticket coalescing). Operational spend that only matters at scale is deferred until real users show up (KMS, managed infra, partitioning, load testing, sharding). Milestone 7 trims to self-host essentials (exposure hardening, deploy/backup story — see §2, revised 2026-07-16); deploy-logouts are handled by telling your friend beforehand.
+- **Transactional email: Brevo via SMTP** (existing account) — *mooted by the §2 tenancy revision (2026-07-16): with registration disabled there are no email flows in v1.0. Kept as the provider answer if email ever returns.*
 - **Open source: public repo, MIT licensed** (LICENSE already in repo). Consequences from day one: strict secrets hygiene (env files gitignored, no real credentials in test fixtures or sim scenarios, `.env.example` instead of `.env`), and nothing sensitive ever in git history.
 - **"EmberChat" is a working title.** The final name/domain is undecided (the `emberchat.chat` domains in the design files are placeholders). Branding is **runtime deployment config, not build-time constants**: `APP_NAME` / `APP_BASE_URL` env vars in the container's `.env`, consumed by the server (page titles, email templates, the IDN `cname`) and surfaced to the static web build via runtime config (`/config.json` or `window.__CONFIG__` injected into `index.html` by the server that serves it — no rebuild to rename). Policy caveat: the `cname` default must stay an honest, unique client identifier; configurable ≠ free to impersonate other clients. Final name decision still gates the Brevo sender domain/DKIM and public launch.
 

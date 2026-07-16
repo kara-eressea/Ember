@@ -14,7 +14,7 @@
 
 6. **Message table growth.** Per-identity duplication multiplies volume. Pressure valves: `messages (conversation_id, id DESC)` index from day one, monthly range partitioning + user-configurable retention in M7; schema designed for both now.
 
-7. **Shared egress IP.** All F-Chat connections and ticket requests originate from the VPS — the protocol has no WEBIRC-style mechanism to declare the end-user's real IP, so forwarding it is impossible, not just unimplemented. Consequences: (a) **shared fate** — an F-List IP ban or IP-level rate limit triggered by one user hits every user on the instance, which raises the stakes on the M7 abuse controls (our own moderation is what protects the shared IP); (b) **visibility** — many accounts logging in from one datacenter IP is a conspicuous pattern F-List staff may notice and investigate on their own, which strengthens the case for proactive disclosure (see the outreach open question). Same trade-off as every IRC bouncer; accepted, not fixable.
+7. **Shared egress IP — defused by the single-tenant pivot** (2026-07-16, decisions.md §2). All F-Chat connections originate from the VPS and the protocol has no WEBIRC-style mechanism to declare the end-user's real IP — with *multiple users* that meant shared ban fate and false household-linking under F-List's IP-based abuse management, which no code could fix and which is why EmberChat is now self-hostable software with admin-only instances rather than a managed service. Single-tenant, the picture F-List sees is truthful: one person's accounts from one stable IP (arguably cleaner than a residential connection). Residual: the instance IP is a datacenter IP, which some services treat with suspicion — no evidence F-List does; note it in the self-host docs.
 
 ## Open questions (resolve early)
 
@@ -27,6 +27,7 @@
 
 ## Resolved
 
-- ~~Email provider for M7~~ → **Brevo transactional SMTP** (existing account); mailer abstracted behind SMTP config, Mailpit in dev. (2026-07-12)
+- ~~Email provider for M7~~ → **Brevo transactional SMTP** (2026-07-12) → **mooted 2026-07-16**: the tenancy pivot (decisions.md §2) disabled registration, so v1.0 has no email flows; Brevo remains the answer if email ever returns.
+- ~~Tenancy: managed service vs. self-hosted~~ → **self-hostable software, admin-only instances** — F-List's IP/household-based abuse management is structurally incompatible with a multi-tenant bouncer (risk 7). Eventual mainstream path: standalone desktop client (Tauri/Electron) with the session engine as a shared library; design pass in M7. (2026-07-16)
 - ~~Hosting target~~ → **VPS with docker-compose**; ~~expected scale~~ → **realistically 1–2 users, but architecture designed scalable from day one** ("scalability lives in the architecture, cost lives in the ops") — see `decisions.md` §5. (2026-07-12)
 - ~~Launch-blocking credential custody / F-List outreach~~ → defused by **bouncer-lite** (`decisions.md` §3); returns only with opt-in at-rest storage. (2026-07-12)
