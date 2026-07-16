@@ -220,6 +220,18 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
+    // Alert Staff (SFC): report a character to F-List's global moderators.
+    // The report text is composed client-side (official-client shape:
+    // tab + reported user + complaint); logs cannot be uploaded by
+    // third-party clients, so the text is the whole report.
+    action: z.literal("user.report"),
+    d: z.object({
+      character: characterName,
+      report: z.string().min(1).max(4096),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
     // PM typing telemetry (TPN). Channels have no typing on F-Chat.
     action: z.literal("typing.set"),
     d: z.object({

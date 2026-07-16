@@ -9,6 +9,8 @@
 import {
   useEffect,
   useRef,
+  useState,
+  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router";
@@ -50,6 +52,8 @@ export function MemberContextMenu({
 }) {
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reportText, setReportText] = useState("");
   const self = member.character.toLowerCase() === ownCharacter.toLowerCase();
   const powers = modPowers({
     viewer: viewerRole,
@@ -189,6 +193,40 @@ export function MemberContextMenu({
             "error",
             error instanceof Error ? error.message : "Request failed",
           );
+      });
+  }
+
+  /** Alert Staff (SFC, M7). The report rides the official-client shape —
+   * tab, reported user, complaint — because that's what moderators' tooling
+   * expects; third-party clients cannot attach log uploads. */
+  function submitReport(event: FormEvent) {
+    event.preventDefault();
+    const complaint = reportText.trim();
+    if (complaint === "") {
+      return;
+    }
+    onClose();
+    void gateway
+      .cmd({
+        identityId,
+        action: "user.report",
+        d: {
+          character: member.character,
+          report: `Current Tab/Channel: ${channelKey} | Reporting User: ${member.character} | ${complaint}`,
+        },
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              identityId,
+              "error",
+              ack.error ?? "Could not send the report",
+            );
+        }
+        // Success needs no local notice — the server answers with a SYS
+        // ("The moderators have been alerted.") that surfaces as usual.
       });
   }
 
@@ -346,6 +384,39 @@ export function MemberContextMenu({
             >
               {ignored ? "Unignore" : "Ignore"}
             </button>
+            {reporting ? (
+              <form className={styles.reportForm} onSubmit={submitReport}>
+                <textarea
+                  className={styles.reportInput}
+                  aria-label={`Report ${member.character} to staff`}
+                  placeholder="What happened? This goes to F-List's moderators."
+                  value={reportText}
+                  maxLength={2000}
+                  rows={3}
+                  autoFocus
+                  onChange={(e) => {
+                    setReportText(e.target.value);
+                  }}
+                />
+                <button
+                  className={styles.reportSend}
+                  type="submit"
+                  disabled={reportText.trim() === ""}
+                >
+                  Send report
+                </button>
+              </form>
+            ) : (
+              <button
+                className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}
+                role="menuitem"
+                onClick={() => {
+                  setReporting(true);
+                }}
+              >
+                Report to staff…
+              </button>
+            )}
           </>
         )}
         {anyPower && (

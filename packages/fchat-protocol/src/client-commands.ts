@@ -101,6 +101,17 @@ export const clientCommandSchemas = {
     channel: z.string(),
     status: z.enum(["public", "private"]),
   }),
+  /**
+   * Alert Staff: report a user to F-List's global moderators. Clients always
+   * send action "report"; the report string carries channel + reported user
+   * + complaint (official-client formatting). Third-party clients cannot
+   * upload logs — the text is the whole report.
+   */
+  SFC: z.object({
+    action: z.literal("report"),
+    report: z.string(),
+    character: z.string(),
+  }),
   /** Set own status. "crown" is server-set (RWD) and deliberately excluded. */
   STA: z.object({
     status: z.enum(CLIENT_SETTABLE_STATUSES),
