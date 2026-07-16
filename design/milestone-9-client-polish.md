@@ -12,9 +12,14 @@ candidate pool, to be scoped when M9 becomes active.
 
 ## Candidate scope (unspecced)
 
-- **In-log search** — server-side search over the `messages` table (per
-  identity), surfaced in the client; scope the query semantics (plain text
-  vs. per-conversation vs. global) when speccing.
+- **In-log search** (the pool's headline — confirmed wanted 2026-07-16,
+  Discord-shaped) — server-side search over the `messages` table (per
+  identity), surfaced as a search box scoped to the current channel/DM with
+  a results panel. Scope when speccing: query semantics (Postgres full-text
+  vs. `ILIKE` — at personal-instance scale start simple), Discord-style
+  filters (`from:`, before/after dates, current conversation vs. all), and
+  the fiddly part — **jump-to-context**: landing the virtualized log on an
+  arbitrary old message and backfilling around it.
 - **Composer affordances** — BBCode/Markdown formatting toolbar, a `/help`
   slash-command reference, warn-code support.
 - **Light theme** — the full token-set design pass deferred from M5
