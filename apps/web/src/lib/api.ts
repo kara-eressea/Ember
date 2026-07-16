@@ -63,6 +63,13 @@ export interface SocialCharacterDto {
   statusmsg: string;
 }
 
+export interface MetaDto {
+  version: string;
+  updateAvailable: boolean;
+  latestVersion?: string;
+  releasesUrl: string;
+}
+
 export interface SocialDto {
   bookmarks: SocialCharacterDto[];
   friends: SocialCharacterDto[];
@@ -297,6 +304,11 @@ export const api = {
     return apiDownload(
       `/identities/${identityId}/conversations/${conversationId}/export?format=${format}`,
     );
+  },
+
+  /** Running version + update-check status (M7 about surface). */
+  getMeta() {
+    return apiRequest<MetaDto>("/meta", { auth: true });
   },
 
   /** Bookmarks, friends and friend requests (M6 step 7), scoped to the

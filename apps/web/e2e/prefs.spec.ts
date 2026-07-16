@@ -41,6 +41,8 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await expect(
     dialog.getByText("Account & profile live on the server website"),
   ).toBeVisible();
+  // The About surface shows the running version (M7 step 5).
+  await expect(dialog.getByText(/EmberChat v0\.0\.0/)).toBeVisible();
 
   // Rail nav switches the pane.
   await dialog.getByRole("button", { name: "Appearance" }).click();

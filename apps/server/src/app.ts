@@ -26,6 +26,7 @@ import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
+import { UpdateChecker } from "./modules/meta/update-check.js";
 import { HighlightMatcher } from "./modules/highlights/matcher.js";
 import { highlightsRoutes } from "./modules/highlights/routes.js";
 import { historyRoutes } from "./modules/history/routes.js";
@@ -142,7 +143,16 @@ export async function buildApp({
   app.decorate("detachedAway", detachedAway);
   const sessionJanitor = new SessionJanitor({ db, logger: app.log });
   sessionJanitor.start();
+  const updates = new UpdateChecker({
+    currentVersion: config.CLIENT_VERSION,
+    repo: config.UPDATE_CHECK_REPO,
+    // Test runs never phone home, whatever the config says.
+    enabled: config.UPDATE_CHECK_ENABLED && process.env.NODE_ENV !== "test",
+    logger: app.log,
+  });
+  updates.start();
   app.addHook("onClose", () => {
+    updates.stop();
     sessionJanitor.stop();
     detachedAway.stop();
     retention.stop();
@@ -255,7 +265,13 @@ export async function buildApp({
     ],
   });
 
-  app.get("/healthz", () => ({ status: "ok" }));
+  app.get("/healthz", () => ({
+    status: "ok",
+    version: config.CLIENT_VERSION,
+  }));
+  // Version/update surface for the UI (M7). Authenticated: the running
+  // version is nobody else's business, unlike the liveness probe above.
+  app.get("/api/meta", { preHandler: app.authenticate }, () => updates.status);
 
   if (config.WEB_DIST !== undefined) {
     await app.register(webStatic, {

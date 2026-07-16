@@ -91,6 +91,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // WS origin check must know it (Vite proxies /api same-origin, but
         // the Origin header still names the page's origin).
         CORS_ORIGIN: `http://127.0.0.1:${String(WEB_PORT)}`,
+        // No phone-home from CI runs.
+        UPDATE_CHECK_ENABLED: "false",
       },
       stdio: ["ignore", "inherit", "inherit"],
     });

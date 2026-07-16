@@ -3,8 +3,11 @@
 // what every channel inherits; the channel header's ads chip stores
 // per-channel exceptions on top of it.
 
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
+import { api, type MetaDto } from "../../lib/api.js";
+import { appConfig } from "../../lib/config.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { FieldRow, GroupLabel, Toggle } from "./controls.js";
 import { patchPrefs } from "./patch.js";
@@ -20,6 +23,13 @@ export function GeneralPane({
   const prefs = useSessionsStore(
     (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
   );
+  // About surface (M7): running version + the server's quiet update hint.
+  const [meta, setMeta] = useState<MetaDto>();
+  useEffect(() => {
+    api.getMeta().then(setMeta, () => {
+      // The about line just shows the name.
+    });
+  }, []);
 
   return (
     <>
@@ -43,6 +53,23 @@ export function GeneralPane({
           identity screen
         </Link>
         .
+      </p>
+      <GroupLabel>About</GroupLabel>
+      <p className={styles.stub}>
+        {appConfig().appName}
+        {meta && ` v${meta.version}`}
+        {meta?.updateAvailable && meta.latestVersion !== undefined && (
+          <>
+            {" · "}
+            <a
+              href={meta.releasesUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Update available: {meta.latestVersion} ↗
+            </a>
+          </>
+        )}
       </p>
     </>
   );
