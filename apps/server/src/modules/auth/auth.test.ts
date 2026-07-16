@@ -9,13 +9,18 @@ import {
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
-import { appUsers } from "../../db/schema.js";
+import { appUsers, authSessions } from "../../db/schema.js";
+import { MAX_SESSIONS_PER_USER } from "./routes.js";
+import { SessionJanitor } from "./session-janitor.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 
@@ -256,6 +261,122 @@ describe("logout", () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     expect(after.statusCode).toBe(401);
+  });
+});
+
+describe("login lockout", () => {
+  it("locks the account after repeated failures — even for the right password", async () => {
+    const attempt = (password: string) =>
+      app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: "lockout-target@example.test", password },
+      });
+    // The email doesn't even exist — unknown accounts lock identically, so
+    // the lockout can't be used to probe which emails are registered.
+    for (let i = 0; i < 5; i += 1) {
+      expect((await attempt("wrong password")).statusCode).toBe(401);
+    }
+    const locked = await attempt("wrong password");
+    expect(locked.statusCode).toBe(429);
+    expect(Number(locked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+});
+
+describe("session hygiene", () => {
+  it("caps auth sessions per user, evicting the oldest on login", async () => {
+    const { user } = await registerUser(); // one session exists now
+    // Backfill far past the cap, oldest first, straight into the table.
+    const base = Date.now() - 1_000_000;
+    for (let i = 0; i < MAX_SESSIONS_PER_USER + 5; i += 1) {
+      await db.insert(authSessions).values({
+        userId: user.id,
+        refreshTokenHash: `backfill-${String(counter)}-${String(i)}`,
+        expiresAt: new Date(Date.now() + 3_600_000),
+        createdAt: new Date(base + i * 1000),
+      });
+    }
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        email: user.email,
+        password: "correct horse battery staple",
+      },
+    });
+    expect(login.statusCode).toBe(200);
+    const rows = await db
+      .select({ id: authSessions.id })
+      .from(authSessions)
+      .where(eq(authSessions.userId, user.id));
+    expect(rows.length).toBe(MAX_SESSIONS_PER_USER);
+    // The just-issued session survived the eviction.
+    const refresh = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: {
+        refreshToken: login.json<{ refreshToken: string }>().refreshToken,
+      },
+    });
+    expect(refresh.statusCode).toBe(200);
+  });
+
+  it("the janitor sweeps expired sessions and leaves live ones", async () => {
+    const { user, refreshToken } = await registerUser();
+    await db.insert(authSessions).values({
+      userId: user.id,
+      refreshTokenHash: `expired-${String(counter)}`,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const janitor = new SessionJanitor({
+      db,
+      logger: { info: () => undefined, error: () => undefined },
+    });
+    expect(await janitor.sweep()).toBeGreaterThanOrEqual(1);
+    // The live session still refreshes; the expired row is gone.
+    const rows = await db
+      .select({ hash: authSessions.refreshTokenHash })
+      .from(authSessions)
+      .where(eq(authSessions.userId, user.id));
+    expect(rows.some((r) => r.hash.startsWith("expired-"))).toBe(false);
+    const refresh = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(refresh.statusCode).toBe(200);
+  });
+});
+
+describe("security headers", () => {
+  it("sends helmet headers; CSP only in SPA-serving mode", async () => {
+    // API-only mode (the shared app): headers yes, CSP no.
+    const health = await app.inject({ method: "GET", url: "/healthz" });
+    expect(health.headers["x-content-type-options"]).toBe("nosniff");
+    expect(health.headers["x-frame-options"]).toBeDefined();
+    expect(health.headers["content-security-policy"]).toBeUndefined();
+
+    // SPA-serving mode: the CSP arrives and allows F-List's static host.
+    const dist = await mkdtemp(path.join(tmpdir(), "emberchat-csp-"));
+    await writeFile(
+      path.join(dist, "index.html"),
+      "<!doctype html><html><head><title>x</title></head><body></body></html>",
+    );
+    const spa = await buildApp({
+      config: testConfig(container.getConnectionUri(), { WEB_DIST: dist }),
+      db,
+      logger: false,
+    });
+    try {
+      const page = await spa.inject({ method: "GET", url: "/" });
+      const csp = String(page.headers["content-security-policy"]);
+      expect(csp).toContain("default-src 'self'");
+      expect(csp).toContain("img-src 'self' data: https://static.f-list.net");
+      expect(csp).toContain("frame-ancestors 'none'");
+    } finally {
+      await spa.close();
+      await rm(dist, { recursive: true, force: true });
+    }
   });
 });
 

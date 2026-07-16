@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import { and, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -8,6 +8,7 @@ import { isUniqueViolation } from "../../db/errors.js";
 import { appUsers, authSessions } from "../../db/schema.js";
 import { ACCESS_TOKEN_TTL } from "../../plugins/auth.js";
 import { emailField, passwordField, usernameField } from "./account-fields.js";
+import { LoginLockout } from "./lockout.js";
 import {
   generateRefreshToken,
   hashRefreshToken,
@@ -46,12 +47,21 @@ const refreshBody = z.object({ refreshToken: z.string().min(1) });
 // reveal whether an account exists.
 const dummyHash = await argon2.hash("emberchat-timing-equalizer");
 
+/**
+ * Sessions a user can hold at once; the oldest are evicted on login (M7
+ * exposure hardening — without a cap, a leaked credential could mint
+ * unbounded rows). Generous for real multi-device use.
+ */
+export const MAX_SESSIONS_PER_USER = 25;
+
 export interface AuthRoutesOptions {
   db: Db;
   /** Requests per minute per IP on these endpoints. */
   rateLimitMax: number;
   /** Self-service signup; off on admin-only instances (decisions.md §2). */
   registrationEnabled: boolean;
+  /** Injectable for tests (controllable clock). */
+  lockout?: LoginLockout;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -62,6 +72,9 @@ export async function authRoutes(
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const { db, rateLimitMax, registrationEnabled } = options;
   const rateLimit = { max: rateLimitMax, timeWindow: "1 minute" };
+  // Per-ACCOUNT lockout, complementing the per-IP rate limit: rotating IPs
+  // must not buy unlimited guesses at one email.
+  const lockout = options.lockout ?? new LoginLockout();
 
   async function issueSession(
     user: { id: string; email: string; username: string; createdAt: Date },
@@ -80,6 +93,24 @@ export async function authRoutes(
     if (!session) {
       throw new Error("session insert returned no row");
     }
+    // Evict beyond the cap, oldest first (keep the newest N — including the
+    // row just inserted).
+    await db
+      .delete(authSessions)
+      .where(
+        and(
+          eq(authSessions.userId, user.id),
+          notInArray(
+            authSessions.id,
+            db
+              .select({ id: authSessions.id })
+              .from(authSessions)
+              .where(eq(authSessions.userId, user.id))
+              .orderBy(desc(authSessions.createdAt), desc(authSessions.id))
+              .limit(MAX_SESSIONS_PER_USER),
+          ),
+        ),
+      );
     const accessToken = app.jwt.sign(
       { sub: user.id, sid: session.id },
       { expiresIn: ACCESS_TOKEN_TTL },
@@ -140,11 +171,22 @@ export async function authRoutes(
       config: { rateLimit },
       schema: {
         body: loginBody,
-        response: { 200: tokenResponse, 401: z.object({ error: z.string() }) },
+        response: {
+          200: tokenResponse,
+          401: z.object({ error: z.string() }),
+          429: z.object({ error: z.string() }),
+        },
       },
     },
     async (request, reply) => {
       const { email, password, deviceLabel } = request.body;
+      const lockedMs = lockout.lockedForMs(email);
+      if (lockedMs > 0) {
+        return reply
+          .header("retry-after", String(Math.ceil(lockedMs / 1000)))
+          .code(429)
+          .send({ error: "Too many failed attempts — try again later" });
+      }
       const [user] = await db
         .select()
         .from(appUsers)
@@ -155,8 +197,12 @@ export async function authRoutes(
         password,
       );
       if (!user || !validPassword) {
+        // Unknown emails lock out too — diverging here would reveal which
+        // accounts exist (same reasoning as the dummy-hash verify above).
+        lockout.recordFailure(email);
         return reply.code(401).send({ error: "Invalid email or password" });
       }
+      lockout.recordSuccess(email);
       return reply.send(await issueSession(user, deviceLabel));
     },
   );
