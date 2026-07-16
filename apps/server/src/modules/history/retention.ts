@@ -1,12 +1,23 @@
-// Retention job scaffold (milestone-2 §Scope). The sweep loop, config keys
-// and app lifecycle exist now so M7's real policies (age/size, per-user
-// opt-outs) plug into #sweep without re-architecting; the default — and so
-// far only — policy is "forever", whose sweep deletes nothing.
+// Retention job (M2 scaffold, M7 policies). "forever" keeps everything;
+// the age policies delete messages older than their cutoff, in bounded
+// batches so a first sweep over years of history can't hold a transaction
+// (or the event loop's db pool) hostage.
 
+import { inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
+import { messages } from "../../db/schema.js";
 import type { SessionLogger } from "../session-engine/fchat-session.js";
 
-export type RetentionPolicy = "forever";
+export type RetentionPolicy = "forever" | "30d" | "90d" | "1y";
+
+const POLICY_MAX_AGE_MS: Record<Exclude<RetentionPolicy, "forever">, number> = {
+  "30d": 30 * 86_400_000,
+  "90d": 90 * 86_400_000,
+  "1y": 365 * 86_400_000,
+};
+
+/** Rows deleted per statement; the sweep loops until the backlog is gone. */
+export const RETENTION_BATCH_SIZE = 5_000;
 
 export interface RetentionJobOptions {
   readonly db: Db;
@@ -57,11 +68,38 @@ export class RetentionJob {
   }
 
   async #sweep(): Promise<{ deleted: number }> {
-    switch (this.#options.policy) {
-      case "forever":
-        // Nothing expires. M7 policies branch here (delete from messages
-        // where createdAt < cutoff, batched, per-user overrides).
-        return Promise.resolve({ deleted: 0 });
+    if (this.#options.policy === "forever") {
+      return { deleted: 0 };
     }
+    const cutoff = new Date(
+      Date.now() - POLICY_MAX_AGE_MS[this.#options.policy],
+    );
+    let deleted = 0;
+    for (;;) {
+      const batch = await this.#options.db
+        .delete(messages)
+        .where(
+          inArray(
+            messages.id,
+            this.#options.db
+              .select({ id: messages.id })
+              .from(messages)
+              .where(lt(messages.createdAt, cutoff))
+              .limit(RETENTION_BATCH_SIZE),
+          ),
+        )
+        .returning({ id: sql<number>`1` });
+      deleted += batch.length;
+      if (batch.length < RETENTION_BATCH_SIZE) {
+        break;
+      }
+    }
+    if (deleted > 0) {
+      this.#options.logger?.info(
+        { deleted, policy: this.#options.policy },
+        "retention sweep deleted expired messages",
+      );
+    }
+    return { deleted };
   }
 }

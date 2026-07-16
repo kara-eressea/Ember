@@ -60,11 +60,11 @@ const configSchema = z.object({
    */
   TRUST_PROXY: z.string().optional(),
   /**
-   * Message retention policy. "forever" (the default) never deletes
-   * anything; age/size policies join in M7 and extend this enum — an
-   * unrecognized value is refused at boot rather than silently kept forever.
+   * Message retention policy: how long history stays before the sweep
+   * deletes it. An unrecognized value is refused at boot rather than
+   * silently kept forever.
    */
-  RETENTION_POLICY: z.literal("forever").default("forever"),
+  RETENTION_POLICY: z.enum(["forever", "30d", "90d", "1y"]).default("forever"),
   /** How often the retention sweep runs (a no-op under "forever"). */
   RETENTION_SWEEP_INTERVAL_MS: z.coerce
     .number()

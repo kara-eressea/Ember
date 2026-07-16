@@ -189,6 +189,13 @@ export interface CatchupPlanEntry {
 }
 
 /**
+ * Id-space ceiling on how much one conversation replays for a resuming
+ * cursor (M7). Ids are global, so this is an upper bound, usually far fewer
+ * rows — big enough that any realistic overnight gap replays in full.
+ */
+export const CATCHUP_REPLAY_BUDGET = 2_000;
+
+/**
  * Which conversations to replay on sub, and from where. Two regimes:
  *
  * - The client sent a cursor: it holds a contiguous buffer up to that id, so
@@ -231,7 +238,16 @@ export async function catchupPlan(
   for (const row of rows) {
     const cursor = cursors[row.id];
     if (cursor !== undefined) {
-      plan.push({ convId: row.id, afterId: cursor });
+      // Replay budget (M2 audit backlog): a cursor from a device that was
+      // detached for weeks would otherwise replay everything since — floor
+      // it in id-space like the no-cursor path. Deeper history stays
+      // reachable through REST backfill on open. Clamp only, never drop:
+      // an up-to-date cursor still gets its empty done frame (the client's
+      // per-conversation sync marker).
+      plan.push({
+        convId: row.id,
+        afterId: Math.max(cursor, row.maxId - CATCHUP_REPLAY_BUDGET),
+      });
       continue;
     }
     const afterId = Math.max(row.lastRead ?? 0, row.maxId - batchSize);
