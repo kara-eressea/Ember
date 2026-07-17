@@ -33,6 +33,7 @@ import { MessageLog } from "../chat/MessageLog.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { useProfileStore } from "../../stores/profile.js";
+import { LinkPreview } from "../chat/LinkPreview.js";
 import { MiniProfileCard } from "../profile/MiniProfileCard.js";
 import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
@@ -309,6 +310,7 @@ export function AppShell() {
           }}
         />
       )}
+      <LinkPreview />
       {profileCard !== undefined && (
         <MiniProfileCard
           identityId={activeId}

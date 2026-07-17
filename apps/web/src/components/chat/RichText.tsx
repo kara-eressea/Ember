@@ -8,6 +8,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
+import { chipHost, chipLabel, resolvePreview } from "../../lib/link-preview.js";
+import {
+  openPreviewFrom,
+  useLinkPreviewStore,
+} from "../../stores/link-preview.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useUserPrefs } from "../../stores/sessions.js";
 import { textTokens } from "./rich-text.js";
@@ -72,15 +77,9 @@ function renderNode(
       );
     case "url":
       return (
-        <a
-          key={key}
-          className={styles.bodyLink}
-          href={node.href}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
+        <LinkChip key={key} href={node.href}>
           {renderNodes(node.children, key, extra)}
-        </a>
+        </LinkChip>
       );
     case "name":
       // [user] opens the mini profile card (M8) — the f-list.net website
@@ -122,17 +121,7 @@ function renderText(text: string, keyBase: string): ReactNode[] {
       case "plain":
         return token.text;
       case "link":
-        return (
-          <a
-            key={key}
-            className={styles.bodyLink}
-            href={token.href}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            {token.href}
-          </a>
-        );
+        return <LinkChip key={key} href={token.href} />;
       case "mention":
         return (
           <span key={key} className={styles.bodyMention}>
@@ -147,6 +136,79 @@ function renderText(text: string, keyBase: string): ReactNode[] {
         );
     }
   });
+}
+
+/**
+ * LinkChip (COMPONENTS-link-preview-eicon.md §1): the one rendering for
+ * URLs in message bodies — `[url]` tags (children = the label) and
+ * autolinked plain text (no children → derived label + mono host suffix).
+ * The ▣ glyph marks previewable media links; behavior follows the
+ * linkPreviewMode pref — click mode hijacks plain clicks on *media* links
+ * only (Ctrl/Cmd/middle click always navigates), hover mode opens after
+ * ~250ms, off = plain links everywhere.
+ */
+const HOVER_DELAY_MS = 250;
+
+function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
+  const mode = useUserPrefs().linkPreviewMode;
+  const source = resolvePreview(href);
+  const active = useLinkPreviewStore((s) => s.preview?.href === href);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    return () => {
+      clearTimeout(hoverTimer.current);
+    };
+  }, []);
+
+  const previewable = source !== undefined && mode !== "off";
+  const host = chipHost(href);
+  return (
+    <a
+      className={`${styles.linkChip} ${active ? (styles.linkChipActive ?? "") : ""}`}
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      onClick={(event) => {
+        if (
+          previewable &&
+          mode === "click" &&
+          !event.ctrlKey &&
+          !event.metaKey
+        ) {
+          // Plain click previews; modified clicks follow the URL (§2).
+          event.preventDefault();
+          openPreviewFrom(event.currentTarget, source, href, "click");
+        }
+      }}
+      onMouseEnter={(event) => {
+        if (!previewable || mode !== "hover") {
+          return;
+        }
+        const element = event.currentTarget;
+        hoverTimer.current = setTimeout(() => {
+          openPreviewFrom(element, source, href, "hover");
+        }, HOVER_DELAY_MS);
+      }}
+      onMouseLeave={() => {
+        if (mode !== "hover") {
+          return;
+        }
+        clearTimeout(hoverTimer.current);
+        const store = useLinkPreviewStore.getState();
+        if (store.preview?.href === href) {
+          store.close();
+        }
+      }}
+    >
+      <span className={styles.linkChipGlyph} aria-hidden>
+        {previewable ? "▣" : "↗"}
+      </span>
+      <span className={styles.linkChipLabel}>
+        {children ?? chipLabel(href)}
+      </span>
+      {host !== "" && <span className={styles.linkChipHost}>[{host}]</span>}
+    </a>
+  );
 }
 
 /**

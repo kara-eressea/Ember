@@ -48,6 +48,37 @@ export function placePopover(
   };
 }
 
+/** Horizontal-first placement for the LinkPreview panel
+ * (COMPONENTS-link-preview-eicon.md §2): float in the gutter to the
+ * right of the anchor, flip to the left when the right can't fit, clamp
+ * into the viewport with the same 8px margin. */
+export function placeBeside(
+  anchor: CardAnchor,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { top: number; left: number; placement: "right" | "left" } {
+  const fitsRight =
+    anchor.right + POPOVER_GAP + size.width + POPOVER_MARGIN <= viewport.width;
+  const fitsLeft = anchor.left - POPOVER_GAP - size.width >= POPOVER_MARGIN;
+  const right = fitsRight || !fitsLeft;
+  const rawLeft = right
+    ? anchor.right + POPOVER_GAP
+    : anchor.left - POPOVER_GAP - size.width;
+  return {
+    top: clamp(
+      anchor.top,
+      POPOVER_MARGIN,
+      viewport.height - size.height - POPOVER_MARGIN,
+    ),
+    left: clamp(
+      rawLeft,
+      POPOVER_MARGIN,
+      viewport.width - size.width - POPOVER_MARGIN,
+    ),
+    placement: right ? "right" : "left",
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
