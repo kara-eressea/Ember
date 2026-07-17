@@ -6,7 +6,7 @@
 // is shared but never member-counted (only chat.spec counts, on Frontpage).
 
 import { expect, test } from "@playwright/test";
-import { interceptAvatars, provisionAndConnect } from "./helpers.js";
+import { delay, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 test("markdown compose: preview = render, eicons, delayed send + recall", async ({
   page,
@@ -101,6 +101,12 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   const mediaChip = log.getByRole("link", { name: /999\.png/ });
   await expect(mediaChip).toBeVisible({ timeout: 10_000 });
   await expect(mediaChip).toContainText("▣");
+  // Even a previewable chip keeps its real href — modified clicks and
+  // open-in-new-tab always have somewhere to go (decisions.md §14).
+  await expect(mediaChip).toHaveAttribute(
+    "href",
+    "https://static.f-list.net/images/charimage/999.png",
+  );
   // Ordinary web links stay plain navigation (↗ glyph, real href).
   const plainChip = log.getByRole("link", { name: /article/ });
   await expect(plainChip).toContainText("↗");
@@ -116,6 +122,14 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   ).toBeVisible();
   // Escape closes the panel; the message (and log) stayed visible behind it.
   await page.keyboard.press("Escape");
+  await expect(panel).not.toBeVisible();
+  // Ctrl/Cmd-click is left alone (decisions.md §14): the handler skips
+  // preventDefault, so the anchor's target="_blank" default runs and the
+  // panel never opens. (Whether headless Chromium actually spawns the tab
+  // is browser policy — the app-owned contract is "no preview hijack", and
+  // any tab that does open is fed by the context-level intercept.)
+  await mediaChip.click({ modifiers: ["ControlOrMeta"] });
+  await delay(300);
   await expect(panel).not.toBeVisible();
 
   // ── Delayed send: pending affordance + ArrowUp recall ─────────────────

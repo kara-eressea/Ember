@@ -22,9 +22,14 @@ const TINY_PNG = Buffer.from(
 );
 
 export async function interceptAvatars(page: Page): Promise<void> {
-  await page.route("https://static.f-list.net/**", (route) =>
-    route.fulfill({ contentType: "image/png", body: TINY_PNG }),
-  );
+  // Context-level, not page-level: pages a spec opens later (e.g. the new
+  // tab a Ctrl-click on a media link spawns) inherit the route, so no spec
+  // path ever reaches the real static.f-list.net.
+  await page
+    .context()
+    .route("https://static.f-list.net/**", (route) =>
+      route.fulfill({ contentType: "image/png", body: TINY_PNG }),
+    );
 }
 
 export function credentials() {
