@@ -120,6 +120,9 @@ importers:
       '@emberchat/markdown-bbcode':
         specifier: workspace:*
         version: link:../../packages/markdown-bbcode
+      '@emberchat/matcher':
+        specifier: workspace:*
+        version: link:../../packages/matcher
       '@emberchat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

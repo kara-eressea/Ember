@@ -1,17 +1,21 @@
 // Mini profile card (M8 step 8, Mini Profile Viewer.dc.html frames M8·B–G +
 // COMPONENTS-profile-viewer.md §13): Discord-style popover opened by
 // clicking any character name — member-list row, log nick, [user] mention.
-// Fetch-through-cache off the same store the full viewer uses; match chips
-// arrive with the matcher surfaces (step 9).
+// Fetch-through-cache off the same store the full viewer uses. Step 9: the
+// compatibility block — overall pill + the two most notable dimension
+// chips, or the calm no-own-profile prompt (frame M8·F).
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { match, type MatchReport } from "@emberchat/matcher";
+import type { ProfileDto } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import type { SocialDto } from "../../lib/api.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { nickColor } from "../../theme/tokens.js";
 import {
+  loadOwnProfile,
   loadProfile,
   useProfileStore,
   type CardAnchor,
@@ -19,6 +23,8 @@ import {
 } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
+import { DimChip, MatchPill, TierPie } from "./MatchTier.js";
+import { notableDimensions } from "./match-utils.js";
 import { placePopover } from "./popover.js";
 import { ago } from "./time.js";
 import styles from "./profile.module.css";
@@ -44,6 +50,7 @@ export function MiniProfileCard({
 }) {
   const navigate = useNavigate();
   const loaded = useProfileStore((s) => s.profiles[name.toLowerCase()]);
+  const ownProfile = useProfileStore((s) => s.ownProfile?.profile);
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
   const self = name.toLowerCase() === ownCharacter.toLowerCase();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -56,7 +63,9 @@ export function MiniProfileCard({
   useEffect(() => {
     void loadProfile(identityId, name);
     void loadSocial(identityId);
-  }, [identityId, name]);
+    // Own profile for the compatibility block — memoized per identity.
+    void loadOwnProfile(identityId, ownCharacter);
+  }, [identityId, name, ownCharacter]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -140,6 +149,8 @@ export function MiniProfileCard({
           name={name}
           loaded={loaded}
           social={social}
+          ownProfile={self ? undefined : ownProfile}
+          self={self}
           onRetry={() => {
             void loadProfile(identityId, name, true);
           }}
@@ -158,6 +169,8 @@ function CardContent({
   name,
   loaded,
   social,
+  ownProfile,
+  self,
   onRetry,
   onOpenProfile,
   onMessage,
@@ -165,11 +178,18 @@ function CardContent({
   name: string;
   loaded: LoadedProfile | undefined;
   social: SocialDto | undefined;
+  ownProfile: ProfileDto | undefined;
+  self: boolean;
   onRetry: () => void;
   onOpenProfile: () => void;
   onMessage: (() => void) | undefined;
 }) {
   const response = loaded?.response;
+  const report: MatchReport | undefined = useMemo(
+    () =>
+      ownProfile && response ? match(ownProfile, response.profile) : undefined,
+    [ownProfile, response],
+  );
 
   if (!response && loaded && loaded.state !== "loading") {
     const budget = loaded.state === "budget";
@@ -261,6 +281,30 @@ function CardContent({
           </div>
         </div>
       </div>
+      {!self &&
+        response &&
+        (report ? (
+          <div className={styles.cardMatch}>
+            <span className={styles.groupLabel}>Compatibility</span>
+            <div className={styles.cardMatchChips}>
+              <MatchPill tier={report.overall} />
+              {notableDimensions(report, 2).map((dimension) => (
+                <DimChip
+                  key={dimension.label}
+                  label={dimension.label}
+                  tier={dimension.tier}
+                  title={dimension.reason}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          // Frame M8·F: the viewer has no own-profile data loaded.
+          <div className={styles.cardNoMatch}>
+            <TierPie tier="neutral" size={13} />
+            Connect your own character to compare
+          </div>
+        ))}
       {response && (response.stale || response.budgetExhausted) && (
         <div className={styles.cardStale}>
           <span aria-hidden>⟲</span>
