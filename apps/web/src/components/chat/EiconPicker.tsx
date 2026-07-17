@@ -1,16 +1,17 @@
-// EiconPicker (M8 step 11, COMPONENTS-link-preview-eicon.md §3, frames
-// K·A–K·E): popover anchored above the composer's ☺ button, replacing the
-// old inline name-input panel. Favorites and Recents are live; the Search
-// tab ships disabled — the server-local xariah index and its opt-in pref
-// arrive with step 12, which also wires the "Enable in Preferences" link.
-// Anchoring/clamping reuses the §13 primitive (mini profile card).
+// EiconPicker (M8 steps 11–12, COMPONENTS-link-preview-eicon.md §3, frames
+// K·A–K·E): popover anchored above the composer's ☺ button. Favorites /
+// Recents / Search tabs; Search greps the server-local xariah index behind
+// the eiconSearchEnabled pref (server-enforced — the disabled explainer
+// links to Preferences). Anchoring/clamping reuses the §13 primitive.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { UserPrefs } from "@emberchat/protocol";
+import { api, ApiError } from "../../lib/api.js";
 import { eiconUrl } from "../../lib/avatar.js";
 import { placePopover } from "../profile/popover.js";
 import { patchPrefs } from "../prefs/patch.js";
 import type { CardAnchor } from "../../stores/profile.js";
+import { useUiStore } from "../../stores/ui.js";
 import styles from "./chat.module.css";
 
 const PICKER_WIDTH = 336;
@@ -110,23 +111,46 @@ export function EiconPicker({
               aria-selected={entry.id === tab}
               className={`${styles.pickerTab} ${
                 entry.id === tab ? (styles.pickerTabActive ?? "") : ""
-              } ${entry.id === "search" ? (styles.pickerTabOff ?? "") : ""}`}
+              } ${
+                entry.id === "search" && !prefs.eiconSearchEnabled
+                  ? (styles.pickerTabOff ?? "")
+                  : ""
+              }`}
               onClick={() => {
                 setTab(entry.id);
               }}
             >
               {entry.label}
-              {entry.id === "search" && <span aria-hidden> ⊘</span>}
+              {entry.id === "search" && !prefs.eiconSearchEnabled && (
+                <span aria-hidden> ⊘</span>
+              )}
             </button>
           ))}
         </div>
         <div className={styles.pickerBody}>
           {tab === "search" ? (
-            <PickerNote glyph="⊘" title="Eicon search is off">
-              Searching uses an index downloaded from xariah.net, a third-party
-              service. Support arrives in a coming update — favorites and
-              recents work today.
-            </PickerNote>
+            prefs.eiconSearchEnabled ? (
+              <SearchTab
+                favorites={prefs.eiconFavorites}
+                onInsert={onInsert}
+                onToggleFavorite={toggleFavorite}
+              />
+            ) : (
+              <PickerNote glyph="⊘" title="Eicon search is off">
+                Searching uses an eicon index the server downloads from
+                xariah.net, a third-party service.{" "}
+                <button
+                  type="button"
+                  className={styles.pickerLink}
+                  onClick={() => {
+                    onClose();
+                    useUiStore.getState().setPrefsOpen(true);
+                  }}
+                >
+                  Enable in Preferences →
+                </button>
+              </PickerNote>
+            )
           ) : (
             <TileGrid
               names={
@@ -161,6 +185,138 @@ export function EiconPicker({
           aria-hidden
         />
       </div>
+    </>
+  );
+}
+
+// ── Search tab (live, step 12) ──────────────────────────────────────────────
+
+type SearchState = "idle" | "loading" | "ok" | "error";
+
+function SearchTab({
+  favorites,
+  onInsert,
+  onToggleFavorite,
+}: {
+  favorites: readonly string[];
+  onInsert: (name: string) => void;
+  onToggleFavorite: (name: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<string[]>([]);
+  const [state, setState] = useState<SearchState>("idle");
+  const [error, setError] = useState<string>();
+  // Debounce keystrokes; drop answers that arrive for a superseded query.
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const latest = useRef("");
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(timer.current);
+    };
+  }, []);
+
+  function run(value: string) {
+    latest.current = value;
+    api
+      .searchEicons(value)
+      .then(({ results: found }) => {
+        if (latest.current === value) {
+          setResults(found);
+          setState("ok");
+        }
+      })
+      .catch((caught: unknown) => {
+        if (latest.current === value) {
+          setError(
+            caught instanceof ApiError ? caught.message : "Search failed",
+          );
+          setState("error");
+        }
+      });
+  }
+
+  function onChange(value: string) {
+    setQuery(value);
+    clearTimeout(timer.current);
+    if (value.trim() === "") {
+      latest.current = "";
+      setState("idle");
+      setResults([]);
+      return;
+    }
+    setState("loading");
+    timer.current = setTimeout(() => {
+      run(value.trim());
+    }, 300);
+  }
+
+  return (
+    <>
+      <div className={styles.pickerSearchRow}>
+        <input
+          className={styles.pickerSearchInput}
+          value={query}
+          placeholder="Search eicons…"
+          aria-label="Search eicons"
+          autoFocus
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+        />
+        <span className={styles.pickerServiceTag}>xariah.net</span>
+      </div>
+      {state === "idle" && (
+        <PickerNote glyph="⌕" title="Search the eicon index">
+          Type a name — results come from the server's local copy of the
+          xariah.net index.
+        </PickerNote>
+      )}
+      {state === "loading" && (
+        <div className={styles.pickerGrid} aria-hidden>
+          {Array.from({ length: 10 }, (_, index) => (
+            <span
+              key={index}
+              className={styles.shimmerTile}
+              style={{ width: 60, height: 60 }}
+            />
+          ))}
+        </div>
+      )}
+      {state === "error" && (
+        <PickerNote glyph="⚠" title="Search is unavailable">
+          {error ?? "The index didn't respond."} Favorites & recents still work.{" "}
+          <button
+            type="button"
+            className={styles.pickerLink}
+            onClick={() => {
+              setState("loading");
+              run(query.trim());
+            }}
+          >
+            Retry
+          </button>
+        </PickerNote>
+      )}
+      {state === "ok" &&
+        (results.length === 0 ? (
+          <PickerNote glyph="⌕" title={`No eicons match “${query.trim()}”`}>
+            Try a shorter or different term.
+          </PickerNote>
+        ) : (
+          <>
+            <div className={styles.pickerResultsCaption}>
+              {results.length} results · hover for name
+            </div>
+            <TileGrid
+              names={results}
+              favorites={favorites}
+              empty={null}
+              onInsert={onInsert}
+              onToggleFavorite={onToggleFavorite}
+            />
+          </>
+        ))}
     </>
   );
 }

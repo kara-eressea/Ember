@@ -24,6 +24,8 @@ import { socialRoutes } from "./modules/social/routes.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { CharacterDataBudget } from "./modules/flist-api/character-data-budget.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
+import { EiconIndexService } from "./modules/eicons/index-service.js";
+import { eiconsRoutes } from "./modules/eicons/routes.js";
 import { ProfileService } from "./modules/profiles/service.js";
 import { profilesRoutes } from "./modules/profiles/routes.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
@@ -257,6 +259,13 @@ export async function buildApp({
     db,
     profiles,
   });
+  const eicons = new EiconIndexService({
+    db,
+    baseUrl: config.EICON_INDEX_BASE_URL,
+    refreshMs: config.EICON_INDEX_REFRESH_MS,
+    logger: app.log,
+  });
+  await app.register(eiconsRoutes, { prefix: "/api/eicons", db, eicons });
   await app.register(highlightsRoutes, {
     prefix: "/api/highlight-rules",
     db,
