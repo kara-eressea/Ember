@@ -66,3 +66,128 @@ https://www.f-list.net/json/api/request-send.php, Send a friend request. source_
 
 [[Category:F-Chat]]
 [[Category:Developer Resources]]
+
+---
+
+# Verified shapes (EmberChat endpoint spike, 2026-07-17)
+
+Everything below this line is EmberChat documentation, not wiki copy. Source:
+the M8 step-1 supervised live pass (11 requests, user-run, responses inspected
+offline) plus source reading of the official client (`f-list/chat3client`) and
+Horizon (`Fchat-Horizon/Horizon`) for the cases the live pass couldn't exercise.
+General observations:
+
+- Every F-List JSON response carries an `error` field — empty string on
+  success, a human-readable message on failure (still HTTP 200). Check
+  `error !== ''`, not the status code.
+- Numeric values arrive inconsistently typed across endpoints (see
+  images below) — schemas must coerce (`z.coerce.number()`), never assume.
+
+## `getApiTicket.php` — verified
+
+`no_friends=true` / `no_bookmarks=true` are honored and keep the payload
+small. (We still need `characters` for identity setup elsewhere; the spike
+passed both flags since it only needed the ticket.)
+
+## `character-data.php` — verified
+
+POST `account`, `ticket`, `name` (the official client can also query by
+`id`). Response top-level keys:
+
+| Key | Type | Notes |
+|---|---|---|
+| `id` | int | character id — needed for `character-images.php` / guestbook |
+| `name` | string | canonical casing |
+| `description` | string | raw BBCode (profile dialect), unicode-escaped |
+| `views` | int | |
+| `customs_first` | bool | display pref: custom kinks above standard |
+| `custom_title` | string | |
+| `is_self` | bool | true when the queried character belongs to the ticket's account |
+| `settings` | object | `{customs_first, show_friends, guestbook, prevent_bookmarks, public}` — all bool. **`settings.guestbook` gates the Guestbook tab for free** |
+| `badges` | string[] | empty for normal users |
+| `created_at`, `updated_at` | int | unix seconds |
+| `kinks` | object | `{ "<kinkId>": "fave"\|"yes"\|"maybe"\|"no" }` — ids are **string keys**, resolve names via mapping-list |
+| `custom_kinks` | object | `{ "<customId>": { name, description, choice, children: number[] } }` — `children` lists standard kink ids grouped under the custom |
+| `infotags` | object | `{ "<infotagId>": "<value>" }` — for `type:"list"` infotags the value is a **listitem id as a string**; for `type:"text"` it's free text. Resolve via mapping-list |
+| `inlines` | object | inline-image definitions referenced from the description (empty in spike sample) |
+| `images` | array | `{ image_id, extension, height, width, description, sort_order }` — **all values strings**, **no `url`**: assemble `https://static.f-list.net/images/charimage/{image_id}.{extension}` |
+| `character_list` | array | account's other characters — empty unless requested/permitted |
+| `timezone` | int | UTC offset hours |
+| `current_user` | object | `{ inline_mode, animated_icons }` — the *viewer's* prefs |
+| `error` | string | `""` on success |
+
+## `character-images.php` — verified (undocumented on the wiki)
+
+POST `account`, `ticket`, `id` (numeric character id). Response
+`{ images: [...], error }` — same fields as `character-data.php`'s `images`
+but **numerically typed** (`height`/`width`/`sort_order`/`id` are ints, key is
+`id` not `image_id`) **and including a ready-made `url`**. Redundant with the
+`images` array already in `character-data.php` — M8 uses the embedded array
+and skips this endpoint (one less budget class).
+
+## `character-guestbook.php` — verified live (both cases)
+
+POST `account`, `ticket`, `id` (numeric character id), `page` — **0-based**
+(confirmed live: a guestbook with posts only on its first page returns them
+at `page=0` and `[]` at `page=1`), pages of 10 (official client passes
+`offset/10`). Disabled guestbook →
+`{ "error": "This character does not have a guestbook." }`. Success (observed):
+
+```json
+{ "posts": [ { "id": 305179, "character": { "id": 2167793, "name": "…" },
+    "postedAt": 1520787424, "message": "…", "reply": null,
+    "private": false, "approved": true, "canEdit": true } ],
+  "page": 0, "canEdit": true, "nextPage": false, "error": "" }
+```
+
+`postedAt` is unix seconds. The top-level `page` echo and `canEdit` aren't in
+the client sources' type; the sources also list `repliedAt`/`deleted` fields
+not present in the observed posts (likely only when `reply` is set) — lenient
+schema either way. Gate the tab on `settings.guestbook` from character-data
+before ever calling this.
+
+## `character-memo-get2.php` — verified live
+
+POST `account`, `ticket`, `target` — **`target` is the character *name*,
+not the id** (an id probe returns `{"error":"Character not found."}`;
+`f-list/chat3client` and Horizon both pass the name). Response (observed):
+`{ note: string|null, id: number, error }` — `note` is `null` when no memo
+exists; `id` is the save target for `character-memo-save.php`
+(POST `target` = that id, `note` = text). In the no-memo case the observed
+`id` equaled the character id — treat it as opaque and always echo it back
+to save, per the official client.
+
+## Global mapping lists — verified (all ticketless POST)
+
+- **`mapping-list.php`** — the one M8 actually uses; supersedes the other two
+  (their content is a re-grouping of the same data). Shape:
+  `{ kinks: [{id, name, description, group_id}], kink_groups: [{id, name}],
+  infotags: [{id, name, type: "text"|"list", list, group_id}],
+  infotag_groups: [{id, name}], listitems: [{id, name, value}], error }` —
+  **every value is a string**, including ids. ~559 kinks / 26 groups /
+  74 infotags / 5 groups / 166 listitems, ~130 KB. For `type:"list"` infotags,
+  `list` names the listitem family (`"orientation"`, `"build"`, …) and
+  `listitems.name` matches it; the profile's infotag value is the listitem `id`.
+- `kink-list.php` — `{ kinks: { "<groupId>": { group, items: [{kink_id, name,
+  description}] } } }` (ints here). HTML entities in group names
+  (`&amp;`) — decode before display.
+- `info-list.php` — `{ info: { "<groupId>": { group, items: [{id, name, type,
+  list?}] } } }`; dropdown items carry their option list.
+
+## xariah.net eicon index — model corrected
+
+**There is no search endpoint.** The spike's `/eicons/Home/Search/<q>` and
+`/BaseSearch/<q>` probes both 404'd; Horizon and XarChat instead download the
+**full index** and search locally:
+
+- `GET https://xariah.net/eicons/Home/EiconsDataBase/base.doc` — full dump,
+  one eicon per line, `name\thash` tab-separated; comment lines start with
+  `#`, including `# As Of: <unix-seconds>`.
+- `GET https://xariah.net/eicons/Home/EiconsDataDeltaSince/<unix-seconds>` —
+  incremental: `+\t<name>` / `-\t<name>` lines plus the same `# As Of:`
+  footer.
+
+Consequence for M8: the server keeps a local index (bulk fetch + periodic
+delta), and `GET /api/eicons/search` greps it in-process — the user's query
+never reaches xariah at all; xariah only ever sees periodic bulk fetches from
+the server.
