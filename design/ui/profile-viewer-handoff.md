@@ -1,13 +1,13 @@
 # Handoff: EmberChat — Profile surfaces (M8)
 
-> Delivered by the Claude Design agent 2026-07-16, commissioned by
+> Delivered by the Claude Design agent 2026-07-16/17, commissioned by
 > `profile-viewer-brief.md` — the cover note to engineering, counterpart of
 > `README.md` (the M1-era client handoff). Synced into the repo with paths
 > adjusted: prototypes live in `prototype/`, the design system is
 > `COMPONENTS.md` in this directory, and the rendered screenshots stay in the
-> design project (re-render the `.dc.html` files instead). Still to come from
-> the design side: **link preview** (brief §4) and the **eicon picker**
-> (brief §5).
+> design project (re-render the `.dc.html` files instead). The second pass
+> (2026-07-17) completed the brief: **link preview** (§4) and **eicon picker**
+> (§5) — see `COMPONENTS-link-preview-eicon.md`.
 
 ## Overview
 This package covers the **profile surfaces** for EmberChat:
@@ -94,4 +94,6 @@ glyphs (`★ ⚑ ⟳ ‹ › ✕ ♥ ✎ ⚠`).
 |---|---|
 | `prototype/Full Profile Viewer.dc.html` | The full modal — 14 frames: all seven tabs (incl. Insights loaded + empty), Compare (with conflicts-only filter), lightbox, loading, stale/budget banner + disabled-refresh tooltip, not-found, empty history rail, and the private-note + reusable-chip detail specs. |
 | `prototype/Mini Profile Viewer.dc.html` | The mini popover card + the MatchTier primitive spec frames (7 frames incl. skeleton, stale, no-match, not-found, colorblind proof). |
-| `design/ui/COMPONENTS-profile-viewer.md` | Full component-by-component spec — the primary build reference. |
+| `prototype/Link Preview & Eicon Picker.dc.html` | Second pass (2026-07-17), 9 frames: link preview loaded/flip-left/loading + LinkChip trigger-rule spec (`▣` previewable vs `↗` plain); eicon picker Favorites/Recents/Search tabs, search-disabled explainer, and the five body states (no favorites/recents/results, loading, search unavailable). |
+| `design/ui/COMPONENTS-profile-viewer.md` | Component-by-component spec for the profile surfaces — primary build reference for steps 7–10. |
+| `design/ui/COMPONENTS-link-preview-eicon.md` | Component spec for the link preview + eicon picker — primary build reference for steps 11–13. |
