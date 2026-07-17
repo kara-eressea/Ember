@@ -6,6 +6,7 @@ import {
   BB_WRAPPER_TAGS,
   parseBBCode,
   sanitizeBBCode,
+  serializeBBCode,
   type BBNode,
 } from "./bbcode.js";
 
@@ -220,5 +221,70 @@ describe("round-trip properties", () => {
       "[user]Nyx Firemane[/user][icon]Tally Marsh[/icon]" +
       "[eicon]teacup[/eicon][noparse][b]raw[/b][/noparse]";
     expect(sanitizeBBCode(wellFormed)).toBe(wellFormed);
+  });
+});
+
+describe("profile dialect (M8)", () => {
+  it("parses profile blocks that stay literal on the chat wire", () => {
+    const input = "[heading]About[/heading][quote]said[/quote]";
+    expect(parseBBCode(input, "profile")).toEqual([
+      {
+        type: "block",
+        tag: "heading",
+        children: [{ type: "text", text: "About" }],
+      },
+      {
+        type: "block",
+        tag: "quote",
+        children: [{ type: "text", text: "said" }],
+      },
+    ]);
+    // Chat dialect: same input is inert literal text.
+    expect(parseBBCode(input)).toEqual([{ type: "text", text: input }]);
+  });
+
+  it("parses collapse with and without a title, and void [hr]", () => {
+    expect(parseBBCode("[collapse=Story]body[/collapse]", "profile")).toEqual([
+      {
+        type: "collapse",
+        title: "Story",
+        children: [{ type: "text", text: "body" }],
+      },
+    ]);
+    expect(parseBBCode("[collapse]x[/collapse][hr]", "profile")).toEqual([
+      { type: "collapse", title: "", children: [{ type: "text", text: "x" }] },
+      { type: "hr" },
+    ]);
+  });
+
+  it("nests chat-subset tags inside profile blocks", () => {
+    expect(parseBBCode("[center][b]hi[/b][/center]", "profile")).toEqual([
+      {
+        type: "block",
+        tag: "center",
+        children: [
+          {
+            type: "wrapper",
+            tag: "b",
+            children: [{ type: "text", text: "hi" }],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("degrades unknown tags and unclosed blocks to literal text", () => {
+    expect(parseBBCode("[fancy]x[/fancy]", "profile")).toEqual([
+      { type: "text", text: "[fancy]x[/fancy]" },
+    ]);
+    expect(parseBBCode("[heading]dangling", "profile")).toEqual([
+      { type: "text", text: "[heading]dangling" },
+    ]);
+  });
+
+  it("round-trips profile nodes through the serializer", () => {
+    const input =
+      "[collapse=Deep Story][center][b]hi[/b][/center][hr][/collapse]";
+    expect(serializeBBCode(parseBBCode(input, "profile"))).toBe(input);
   });
 });

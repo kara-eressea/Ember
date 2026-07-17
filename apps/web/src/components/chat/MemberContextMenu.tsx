@@ -19,6 +19,7 @@ import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { modPowers, roleTag, type ChannelRole } from "./member-roles.js";
@@ -297,6 +298,16 @@ export function MemberContextMenu({
             Message
           </button>
         )}
+        <button
+          className={styles.memberMenuItem}
+          role="menuitem"
+          onClick={() => {
+            useProfileStore.getState().open(member.character);
+            onClose();
+          }}
+        >
+          View profile
+        </button>
         <a
           className={styles.memberMenuItem}
           role="menuitem"
@@ -305,7 +316,8 @@ export function MemberContextMenu({
           rel="noopener noreferrer"
           onClick={onClose}
         >
-          View profile <span className={styles.memberMenuHint}>↗ website</span>
+          Open on f-list.net{" "}
+          <span className={styles.memberMenuHint}>↗ website</span>
         </a>
         {!self && social !== undefined && (
           <>
