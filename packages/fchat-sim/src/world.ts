@@ -113,6 +113,11 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Rue Alder", "Alder Fen", "Sorrel Vane"],
     },
+    // Reserved for the M8 profile E2E (same parallelism rule).
+    "juniper@example.test": {
+      password: "hunter2",
+      characters: ["Juniper Wren"],
+    },
     // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
     // with a bookmark, a friend, and a pending incoming request from Tally.
     "fern@example.test": {
@@ -201,6 +206,17 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Tools on every wall.",
       oplist: ["Alder Fen"],
       npcs: [],
+      listed: false,
+    },
+    // Reserved for the M8 profile E2E: NPC members whose profiles the spec
+    // views. Hidden for the same listing-stability reason.
+    {
+      name: "ADH-22bb33cc44dd55ee66ff",
+      title: "Reading Nook",
+      mode: "chat",
+      description: "Shelves, lamplight, and low voices.",
+      oplist: ["Nyx Firemane"],
+      npcs: ["Tally Marsh", "Old Greywhisker"],
       listed: false,
     },
     // Reserved for the M6 social E2E: NPC members to right-click. Hidden

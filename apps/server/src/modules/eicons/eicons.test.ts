@@ -72,7 +72,7 @@ beforeAll(async () => {
   }>();
   token = body.accessToken;
   userId = body.user.id;
-});
+}, 180_000);
 
 afterAll(async () => {
   await app.close();

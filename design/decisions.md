@@ -145,17 +145,23 @@ scope.
   and surveillance of characters the user never interacted with; "last
   seen" means last *observed* activity, plus live online state.
 
-## 12. Third-party eicon search — xariah via proxy, off by default (2026-07-16)
+## 12. Third-party eicon search — xariah, server-local index, off by default (2026-07-16; model amended 2026-07-17)
 
 Amends §8's "no eicon search" for the picker: F-List still has no search
 API, but Horizon demonstrated the community answer — xariah.net's index.
 
-- Eicon picker (Favorites/Recents/Search) queries xariah **through a server
-  proxy**: the user's IP never reaches the third party, CORS is moot, one
-  LRU-cached polite egress, and the base URL is a config knob tests point
-  at fchat-sim.
+- ~~Eicon picker (Favorites/Recents/Search) queries xariah **through a
+  server proxy**~~ **Amended 2026-07-17 (M8 step-1 spike):** xariah has no
+  search endpoint at all — clients download its bulk name index
+  (`base.doc` + daily deltas) and search locally. So the server keeps a
+  **local copy of the index** (persisted, delta-refreshed ~daily) and
+  greps it in-process. Strictly better than the proxy the spec assumed:
+  **user query text never leaves our server**, xariah only ever sees a
+  handful of bulk fetches a day, CORS is moot, and the base URL stays a
+  config knob (`EICON_INDEX_BASE_URL`) tests point at fchat-sim.
 - Pref `eiconSearchEnabled` **defaults off** and is **enforced server-side**
-  — sending keystrokes to a community service is opt-in, not advisory.
+  — making the server contact a community service is opt-in, not advisory;
+  the index only ever downloads after an enabled user searches.
 - Search returns **names only; rendering stays static.f-list.net** (§8
   unchanged). **External eicon hosting** (arbitrary image hosts inside
   `[eicon]`, Horizon issue #319) is rejected for now: other clients would
