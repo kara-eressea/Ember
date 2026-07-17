@@ -6,6 +6,8 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
+import { useProfileStore } from "../../stores/profile.js";
+import chatStyles from "../chat/chat.module.css";
 import { renderNodes, type ExtraNodeRenderer } from "../chat/RichText.js";
 import styles from "./profile.module.css";
 
@@ -22,6 +24,22 @@ export function ProfileBBCode({ bbcode }: { bbcode: string }) {
 }
 
 const extra: ExtraNodeRenderer = (node, key) => {
+  // [user] inside the viewer navigates the viewer itself — the mini card
+  // popover layers below the modal (§13), so it would open hidden.
+  if (node.type === "name" && node.tag === "user") {
+    return (
+      <button
+        key={key}
+        type="button"
+        className={`${chatStyles.nameButton ?? ""} ${chatStyles.bodyMention}`}
+        onClick={() => {
+          useProfileStore.getState().open(node.name);
+        }}
+      >
+        {node.name}
+      </button>
+    );
+  }
   if (node.type === "hr") {
     return <hr key={key} className={styles.bbHr} />;
   }

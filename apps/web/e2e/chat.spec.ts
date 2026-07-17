@@ -78,6 +78,23 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await page.keyboard.press("Escape");
   await expect(viewer).not.toBeVisible();
 
+  // ── Mini profile card (M8 step 8): member row click → §13 popover ─────
+  await members.getByText("Old Greywhisker").click();
+  const card = page.getByRole("dialog", {
+    name: "Profile card: Old Greywhisker",
+  });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole("button", { name: "Message" })).toBeVisible();
+  // "Open profile" hands off to the full viewer and closes the popover.
+  await card.getByRole("button", { name: "Open profile" }).click();
+  await expect(card).not.toBeVisible();
+  const greyViewer = page.getByRole("dialog", {
+    name: "Profile: Old Greywhisker",
+  });
+  await expect(greyViewer).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(greyViewer).not.toBeVisible();
+
   // Message opens (and routes to) the DM thread; back for the rest.
   await members.getByText("Nyx Firemane").click({ button: "right" });
   await memberMenu.getByRole("menuitem", { name: "Message" }).click();
@@ -114,6 +131,15 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
     // Receive a channel message.
     birch.send("MSG", { channel: "Frontpage", message: "Evening, all." });
     await expect(log.getByText("Evening, all.")).toBeVisible();
+
+    // Log nicks open the mini profile card too (M8 step 8).
+    await log.getByRole("button", { name: "Birch Rowan" }).first().click();
+    const nickCard = page.getByRole("dialog", {
+      name: "Profile card: Birch Rowan",
+    });
+    await expect(nickCard).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(nickCard).not.toBeVisible();
 
     // ── PMs, both directions ────────────────────────────────────────────
     birch.send("PRI", {

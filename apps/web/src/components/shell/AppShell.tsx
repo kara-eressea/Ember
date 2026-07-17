@@ -33,6 +33,7 @@ import { MessageLog } from "../chat/MessageLog.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { useProfileStore } from "../../stores/profile.js";
+import { MiniProfileCard } from "../profile/MiniProfileCard.js";
 import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { Sidebar } from "./Sidebar.js";
@@ -58,6 +59,7 @@ export function AppShell() {
   const membersOpen = useUiStore((s) => s.membersOpen);
   const prefsOpen = useUiStore((s) => s.prefsOpen);
   const profileViewing = useProfileStore((s) => s.viewing);
+  const profileCard = useProfileStore((s) => s.card);
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
 
   const ref: ConvRef | undefined =
@@ -304,6 +306,17 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setChannelBrowserOpen(false);
+          }}
+        />
+      )}
+      {profileCard !== undefined && (
+        <MiniProfileCard
+          identityId={activeId}
+          ownCharacter={session.character}
+          name={profileCard.name}
+          anchor={profileCard.anchor}
+          onClose={() => {
+            useProfileStore.getState().closeCard();
           }}
         />
       )}

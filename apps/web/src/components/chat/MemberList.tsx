@@ -2,12 +2,14 @@
 // Channel member lists only ever contain present characters (ICH/JCH/LCH),
 // so there is no Offline group. Avatars are the real F-List images,
 // lazy-loaded with the initial-on-color fallback (decisions.md §6).
-// Rows are interactive (M6): left-click opens the profile on the server
-// website, right-click opens the MemberContextMenu.
+// Rows are interactive: left-click opens the mini profile card (M8),
+// right-click opens the MemberContextMenu — the f-list.net website link
+// lives there.
 
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { MemberDto } from "@emberchat/protocol";
 import { presenceDot } from "../../lib/presence.js";
+import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
@@ -147,13 +149,15 @@ function MemberRow({
 }) {
   const dot = presenceDot(true, member.status);
   return (
-    // Left-click = profile on the server website (§9); right-click = menu.
-    <a
+    // Left-click = mini profile card anchored to the row (§13);
+    // right-click = menu.
+    <button
+      type="button"
       className={styles.memberRow}
       role="listitem"
-      href={`https://www.f-list.net/c/${encodeURIComponent(member.character)}`}
-      target="_blank"
-      rel="noopener noreferrer"
+      onClick={(event) => {
+        openCardFrom(event.currentTarget, member.character);
+      }}
       onContextMenu={onContextMenu}
     >
       <span className={styles.memberAvatar}>
@@ -183,6 +187,6 @@ function MemberRow({
           {member.statusmsg}
         </span>
       )}
-    </a>
+    </button>
   );
 }
