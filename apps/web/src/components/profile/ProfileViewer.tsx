@@ -3,7 +3,8 @@
 // Details / Kinks / Insights; Compare arrives with the matcher surfaces
 // (step 9), Images/Guestbook with step 10.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { match } from "@emberchat/matcher";
 import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
@@ -20,6 +21,10 @@ import {
 } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
+import { CHOICES } from "./choices.js";
+import { CompareTab } from "./CompareTab.js";
+import { DimChip, MatchPill } from "./MatchTier.js";
+import { notableDimensions } from "./match-utils.js";
 import { ProfileBBCode } from "./ProfileBBCode.js";
 import { ago, dateLabel } from "./time.js";
 import styles from "./profile.module.css";
@@ -28,6 +33,7 @@ const TABS = [
   { id: "overview", label: "Overview" },
   { id: "details", label: "Details" },
   { id: "kinks", label: "Kinks" },
+  { id: "compare", label: "Compare" },
   { id: "insights", label: "Insights" },
 ] as const;
 
@@ -256,13 +262,31 @@ function TabContent({
   activeTab: TabId;
   ownCharacter: string | undefined;
 }) {
+  const ownProfile = useProfileStore((s) => s.ownProfile?.profile);
   switch (activeTab) {
     case "overview":
-      return <ProfileBBCode bbcode={profile.description} />;
+      return (
+        <>
+          <MatchStrip
+            profile={profile}
+            ownProfile={ownProfile}
+            ownCharacter={ownCharacter}
+          />
+          <ProfileBBCode bbcode={profile.description} />
+        </>
+      );
     case "details":
       return <DetailsTab profile={profile} />;
     case "kinks":
       return <KinksTab profile={profile} />;
+    case "compare":
+      return (
+        <CompareTab
+          profile={profile}
+          ownProfile={ownProfile}
+          ownCharacter={ownCharacter}
+        />
+      );
     case "insights":
       return (
         <InsightsTab
@@ -272,6 +296,61 @@ function TabContent({
         />
       );
   }
+}
+
+// ── MatchStrip (§6) ──────────────────────────────────────────────────────────
+
+/** Overview's compatibility card — only when own-profile data exists and
+ * this isn't your own profile (mirrors the mini card's no-match case). */
+function MatchStrip({
+  profile,
+  ownProfile,
+  ownCharacter,
+}: {
+  profile: ProfileDto;
+  ownProfile: ProfileDto | undefined;
+  ownCharacter: string | undefined;
+}) {
+  const setTab = useProfileStore((s) => s.setTab);
+  const self =
+    ownCharacter !== undefined &&
+    profile.name.toLowerCase() === ownCharacter.toLowerCase();
+  const report = useMemo(
+    () => (ownProfile && !self ? match(ownProfile, profile) : undefined),
+    [ownProfile, profile, self],
+  );
+  if (!report || ownCharacter === undefined) {
+    return null;
+  }
+  return (
+    <section className={styles.matchStrip}>
+      <div className={styles.matchStripHead}>
+        <span className={styles.groupLabel}>
+          Compatibility with {ownCharacter}
+        </span>
+        <button
+          type="button"
+          className={styles.fullCompare}
+          onClick={() => {
+            setTab("compare");
+          }}
+        >
+          Full compare →
+        </button>
+      </div>
+      <div className={styles.matchStripChips}>
+        <MatchPill tier={report.overall} />
+        {notableDimensions(report, 4).map((dimension) => (
+          <DimChip
+            key={dimension.label}
+            label={dimension.label}
+            tier={dimension.tier}
+            title={dimension.reason}
+          />
+        ))}
+      </div>
+    </section>
+  );
 }
 
 // ── Header (§3) + PrivateNote (§4) ───────────────────────────────────────────
@@ -498,18 +577,6 @@ function DetailsTab({ profile }: { profile: ProfileDto }) {
 }
 
 // ── Kinks (§8) ───────────────────────────────────────────────────────────────
-
-const CHOICES = [
-  { id: "fave", label: "Fave", glyph: "♥", color: "var(--eb-ok)" },
-  {
-    id: "yes",
-    label: "Yes",
-    glyph: "+",
-    color: "color-mix(in srgb, var(--eb-ok) 50%, var(--eb-warn))",
-  },
-  { id: "maybe", label: "Maybe", glyph: "~", color: "var(--eb-warn)" },
-  { id: "no", label: "No", glyph: "×", color: "var(--eb-danger)" },
-] as const;
 
 function KinksTab({ profile }: { profile: ProfileDto }) {
   const ownProfile = useProfileStore((s) => s.ownProfile);

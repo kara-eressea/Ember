@@ -67,6 +67,28 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await expect(viewer.getByText(/sim fixture character/)).toBeVisible();
   // The view lands in the history rail; Details resolves canned infotags.
   await expect(viewer.getByText("Recently viewed")).toBeVisible();
+
+  // ── MatchStrip + Compare (M8 step 9) ───────────────────────────────────
+  // Sim default profiles carry only a Gender infotag and no kinks, so the
+  // matcher lands Neutral across the board — missing data is never a
+  // mismatch. The strip proves the own-profile fetch; Full compare hands
+  // off to the tab.
+  await expect(viewer.getByText("Compatibility with Cindral")).toBeVisible();
+  await viewer.getByRole("button", { name: /Full compare/ }).click();
+  await expect(viewer.getByRole("tab", { name: "Compare" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    viewer.getByText("Not enough overlapping profile data for a verdict yet."),
+  ).toBeVisible();
+  await expect(
+    viewer.getByRole("row").filter({ hasText: "Orientation" }),
+  ).toBeVisible();
+  await expect(
+    viewer.getByText("No kinks appear on both lists — nothing to align."),
+  ).toBeVisible();
+
   await viewer.getByRole("tab", { name: "Details" }).click();
   await expect(viewer.getByText("Gender")).toBeVisible();
   await expect(viewer.getByText("Female")).toBeVisible();
@@ -85,6 +107,8 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   });
   await expect(card).toBeVisible();
   await expect(card.getByRole("button", { name: "Message" })).toBeVisible();
+  // Step 9: the compatibility block rides the card once own data exists.
+  await expect(card.getByText("Compatibility")).toBeVisible();
   // "Open profile" hands off to the full viewer and closes the popover.
   await card.getByRole("button", { name: "Open profile" }).click();
   await expect(card).not.toBeVisible();
