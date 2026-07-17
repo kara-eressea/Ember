@@ -68,11 +68,22 @@
   align-items: center;
   width: 100%;
   padding: 6px 8px;
+  border-radius: var(--eb-radius);
+}
+
+/* The open-profile region: a real button flexing inside the row (its
+ * remove sibling must not nest inside it — audit M3). */
+.histOpen {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
   text-align: left;
   cursor: pointer;
   background: none;
   border: none;
-  border-radius: var(--eb-radius);
 }
 
 .histRow:hover {

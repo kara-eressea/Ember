@@ -69,6 +69,20 @@ export type ProfileResult =
   | { status: "not-found"; error: string }
   | { status: "budget-exhausted"; retryAfterSeconds: number };
 
+/** The per-character half of getProfile — everything up to the cache write,
+ * shared between coalesced concurrent callers (audit: in-flight dedup). */
+type PayloadResult =
+  | {
+      status: "ok";
+      payload: CharacterData;
+      canonical: string;
+      fetchedAt: number;
+      stale: boolean;
+      budgetExhausted: boolean;
+    }
+  | { status: "not-found"; error: string }
+  | { status: "budget-exhausted"; retryAfterSeconds: number };
+
 export type GuestbookResult =
   | { status: "ok"; page: GuestbookPage }
   | { status: "no-guestbook" }
@@ -92,6 +106,10 @@ export class ProfileService {
    * a restart never refetches a fresh payload. */
   #mappings: { data: MappingList; fetchedAt: number } | undefined;
   #mappingsRefresh: Promise<MappingList> | undefined;
+  /** Coalesces concurrent loads of the same character so N simultaneous
+   * surfaces (viewer + mini card + compare) spend one budget unit, not N —
+   * mirrors the #mappingsRefresh pattern (M8 audit). */
+  readonly #profileLoads = new Map<string, Promise<PayloadResult>>();
 
   constructor(options: ProfileServiceOptions) {
     this.#db = options.db;
@@ -112,6 +130,42 @@ export class ProfileService {
     refresh: boolean,
   ): Promise<ProfileResult> {
     const lower = name.toLowerCase();
+    // One payload load per character at a time; joiners share the result.
+    // A joiner's refresh flag is satisfied either way: an in-flight load
+    // only exists when it is already deciding against the cache/upstream.
+    let load = this.#profileLoads.get(lower);
+    if (!load) {
+      load = this.#loadPayload(identity, lower, name, refresh).finally(() => {
+        this.#profileLoads.delete(lower);
+      });
+      this.#profileLoads.set(lower, load);
+    }
+    const result = await load;
+    if (result.status !== "ok") {
+      return result;
+    }
+    const [profile, note] = await Promise.all([
+      this.#resolve(result.payload),
+      this.#recordViewAndGetNote(identity.id, lower, result.canonical),
+    ]);
+    return {
+      status: "ok",
+      profile,
+      fetchedAt: result.fetchedAt,
+      stale: result.stale,
+      budgetExhausted: result.budgetExhausted,
+      note,
+    };
+  }
+
+  /** The character-scoped half: cache read → budget → upstream → cache
+   * write. No per-identity effects — those stay with each caller. */
+  async #loadPayload(
+    identity: ProfileIdentity,
+    lower: string,
+    name: string,
+    refresh: boolean,
+  ): Promise<PayloadResult> {
     const [cached] = await this.#db
       .select()
       .from(characterCache)
@@ -184,11 +238,14 @@ export class ProfileService {
         });
     }
 
-    const [profile, note] = await Promise.all([
-      this.#resolve(payload),
-      this.#recordViewAndGetNote(identity.id, lower, canonical),
-    ]);
-    return { status: "ok", profile, fetchedAt, stale, budgetExhausted, note };
+    return {
+      status: "ok",
+      payload,
+      canonical,
+      fetchedAt,
+      stale,
+      budgetExhausted,
+    };
   }
 
   async history(
@@ -655,7 +712,12 @@ export class ProfileService {
       })),
       images: (payload.images ?? []).map((image) => ({
         id: image.image_id,
-        url: `${IMAGE_BASE}/${String(image.image_id)}.${image.extension}`,
+        // The extension is an unconstrained upstream string headed into a
+        // URL — keep it to a plain file suffix (audit L: defense in depth;
+        // the host is fixed either way).
+        url: `${IMAGE_BASE}/${String(image.image_id)}.${
+          /^[a-zA-Z0-9]{1,5}$/.test(image.extension) ? image.extension : "jpg"
+        }`,
         width: image.width ?? null,
         height: image.height ?? null,
         description: image.description ?? "",

@@ -49,7 +49,8 @@ interface ProfileState {
   profiles: Record<string, LoadedProfile>;
   /** Recently-viewed rail, most recent first (server is source of truth). */
   history: HistoryEntry[];
-  insights: Record<string, ProfileInsights>;
+  /** "error" = the fetch failed; the tab offers a Retry (audit M2). */
+  insights: Record<string, ProfileInsights | "error">;
   /** The viewing identity's own profile, for kink tints + the matcher. */
   ownProfile: ProfileResponse | undefined;
 
@@ -121,13 +122,22 @@ export function loadProfile(
     return running;
   }
   setProfile(lower, { state: "loading", response: cached?.response });
-  const load = api
+  // Handlers write only while still the request of record: a refresh
+  // replaces the inflight entry, and a superseded response landing late
+  // must not clobber the fresher one (audit M4).
+  const load: Promise<void> = api
     .getProfile(identityId, name, refresh)
     .then((response) => {
+      if (inflight.get(key) !== load) {
+        return;
+      }
       setProfile(lower, { state: "ok", response });
       touchHistory(response.profile.name);
     })
     .catch((error: unknown) => {
+      if (inflight.get(key) !== load) {
+        return;
+      }
       if (error instanceof ApiError && error.status === 404) {
         setProfile(lower, { state: "notfound", error: error.message });
         return;
@@ -173,13 +183,17 @@ function touchHistory(name: string): void {
 }
 
 export async function loadHistory(identityId: string): Promise<void> {
-  const { history } = await api.getProfileHistory(identityId);
-  useProfileStore.setState({
-    history: history.map((entry) => ({
-      name: entry.name,
-      lastViewedAt: entry.lastViewedAt,
-    })),
-  });
+  try {
+    const { history } = await api.getProfileHistory(identityId);
+    useProfileStore.setState({
+      history: history.map((entry) => ({
+        name: entry.name,
+        lastViewedAt: entry.lastViewedAt,
+      })),
+    });
+  } catch {
+    // The rail keeps its local mirror; the next viewer open retries.
+  }
 }
 
 export async function removeHistoryEntry(
@@ -200,10 +214,26 @@ export async function loadInsights(
   identityId: string,
   name: string,
 ): Promise<void> {
-  const insights = await api.getProfileInsights(identityId, name);
-  useProfileStore.setState((state) => ({
-    insights: { ...state.insights, [name.toLowerCase()]: insights },
-  }));
+  const lower = name.toLowerCase();
+  try {
+    const insights = await api.getProfileInsights(identityId, name);
+    useProfileStore.setState((state) => ({
+      insights: { ...state.insights, [lower]: insights },
+    }));
+  } catch {
+    useProfileStore.setState((state) => ({
+      insights: { ...state.insights, [lower]: "error" },
+    }));
+  }
+}
+
+/** Clear a failed insights entry so the tab shows the shimmer again. */
+export function resetInsights(name: string): void {
+  useProfileStore.setState((state) => {
+    const next = { ...state.insights };
+    delete next[name.toLowerCase()];
+    return { insights: next };
+  });
 }
 
 const ownInflight = new Map<string, Promise<void>>();
