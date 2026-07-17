@@ -8,12 +8,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
-import { eiconUrl } from "../../lib/avatar.js";
 import {
   useSessionsStore,
   type IdentitySession,
 } from "../../stores/sessions.js";
+import type { CardAnchor } from "../../stores/profile.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { eiconsIn, mergeRecents } from "./eicon-recents.js";
+import { EiconPicker } from "./EiconPicker.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
 import { parseSlash, SlashUsageError } from "./slash.js";
@@ -64,8 +66,7 @@ export function Composer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [markdown, setMarkdown] = useState(savedMarkdownMode);
-  const [eiconOpen, setEiconOpen] = useState(false);
-  const [eiconName, setEiconName] = useState("");
+  const [eiconAnchor, setEiconAnchor] = useState<CardAnchor>();
   const [adChosen, setAdChosen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
@@ -154,6 +155,16 @@ export function Composer({
   }
 
   /** Inserts at the caret (falls back to the end), keeping focus. */
+  /** Fold used eicons into the Recents pref (picker inserts + sent text). */
+  function recordRecents(names: string[]) {
+    if (names.length === 0) {
+      return;
+    }
+    void patchPrefs(session.identityId, {
+      eiconRecents: mergeRecents(session.prefs.eiconRecents, names),
+    });
+  }
+
   function insertAtCaret(snippet: string) {
     const el = inputRef.current;
     const at = el?.selectionStart ?? text.length;
@@ -275,6 +286,9 @@ export function Composer({
       setError(ack.error ?? "Send failed");
       return;
     }
+    // Typed eicons count as "used" too — this is also how Recents (and from
+    // there Favorites) bootstrap before eicon search exists.
+    recordRecents(eiconsIn(body));
     setText("");
     clearTimeout(typingTimer.current);
     pushTyping("clear");
@@ -371,101 +385,20 @@ export function Composer({
           </div>
         </div>
       )}
-      {eiconOpen && (
-        <form
-          className={styles.eiconInsert}
-          onSubmit={(event) => {
-            event.preventDefault();
-            const name = eiconName.trim();
-            if (name !== "") {
-              insertAtCaret(`[eicon]${name}[/eicon]`);
-            }
-            setEiconName("");
-            setEiconOpen(false);
+      {eiconAnchor && (
+        <EiconPicker
+          identityId={session.identityId}
+          prefs={session.prefs}
+          anchor={eiconAnchor}
+          iconsBlacklisted={iconsBlacklisted}
+          onInsert={(name) => {
+            insertAtCaret(`[eicon]${name}[/eicon]`);
+            recordRecents([name]);
           }}
-        >
-          {session.prefs.eiconFavorites.length > 0 && (
-            <span className={styles.eiconFavorites}>
-              {session.prefs.eiconFavorites.map((name) => (
-                <span key={name} className={styles.eiconFavorite}>
-                  <button
-                    type="button"
-                    className={styles.eiconFavoriteInsert}
-                    title={`Insert ${name}`}
-                    onClick={() => {
-                      insertAtCaret(`[eicon]${name}[/eicon]`);
-                      setEiconOpen(false);
-                    }}
-                  >
-                    <img
-                      src={eiconUrl(name)}
-                      alt={name}
-                      width={26}
-                      height={26}
-                      loading="lazy"
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.eiconFavoriteRemove}
-                    aria-label={`Remove ${name} from favorites`}
-                    onClick={() => {
-                      void patchPrefs(session.identityId, {
-                        eiconFavorites: session.prefs.eiconFavorites.filter(
-                          (f) => f !== name,
-                        ),
-                      });
-                    }}
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </span>
-          )}
-          <input
-            className={styles.miniInput}
-            value={eiconName}
-            onChange={(e) => {
-              setEiconName(e.target.value);
-            }}
-            placeholder="eicon name…"
-            aria-label="Eicon name"
-            // Opened by an explicit click on the insert affordance.
-            autoFocus
-          />
-          <button className={styles.miniButton} type="submit">
-            Insert
-          </button>
-          <button
-            type="button"
-            className={styles.miniButton}
-            title="Save to favorites"
-            aria-label="Save to favorites"
-            disabled={
-              eiconName.trim() === "" ||
-              session.prefs.eiconFavorites.includes(eiconName.trim())
-            }
-            onClick={() => {
-              const name = eiconName.trim();
-              // The prefs schema caps favorites at 100; drop the oldest
-              // rather than refuse — it's a quick-insert row, not an archive.
-              void patchPrefs(session.identityId, {
-                eiconFavorites: [
-                  ...session.prefs.eiconFavorites.slice(-99),
-                  name,
-                ],
-              });
-            }}
-          >
-            ☆
-          </button>
-          {iconsBlacklisted && (
-            <span className={styles.blacklistWarning} role="alert">
-              This channel disallows icons — the server will reject it.
-            </span>
-          )}
-        </form>
+          onClose={() => {
+            setEiconAnchor(undefined);
+          }}
+        />
       )}
       <div className={styles.inputBar}>
         <span className={styles.inputGlyph} title="Attachments arrive later">
@@ -512,10 +445,20 @@ export function Composer({
           <button
             type="button"
             className={styles.formatHint}
-            title="Insert an eicon by name"
+            title="Insert an eicon"
             aria-label="Insert eicon"
-            onClick={() => {
-              setEiconOpen(!eiconOpen);
+            onClick={(event) => {
+              if (eiconAnchor) {
+                setEiconAnchor(undefined);
+                return;
+              }
+              const rect = event.currentTarget.getBoundingClientRect();
+              setEiconAnchor({
+                top: rect.top,
+                left: rect.left,
+                bottom: rect.bottom,
+                right: rect.right,
+              });
             }}
           >
             ☺
