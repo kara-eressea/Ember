@@ -13,7 +13,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 | 5 | Highlights + preferences | done | M3, M4 | [milestone-5-highlights-preferences.md](milestone-5-highlights-preferences.md) |
 | 6 | Channel browser + channel ops | done | M1 (benefits from M3) | [milestone-6-channel-browser-ops.md](milestone-6-channel-browser-ops.md) |
 | 7 | Self-host hardening (rescoped 2026-07-16, was public-service hardening) | done | M1–M2 min., realistically M1–M6 | [milestone-7-self-host-hardening.md](milestone-7-self-host-hardening.md) |
-| 8 | Nice-to-haves: profile viewer + compatibility + eicon search (specced 2026-07-16) | steps 1–15 done 2026-07-17, wrap-up pending | M7 | [milestone-8-nice-to-haves.md](milestone-8-nice-to-haves.md) |
+| 8 | Nice-to-haves: profile viewer + compatibility + eicon search | **shipped v0.7.0** (2026-07-17) | M7 | [milestone-8-nice-to-haves.md](milestone-8-nice-to-haves.md) |
 | 9 | Client polish (split from M8, 2026-07-16) | not started | M8 | [milestone-9-client-polish.md](milestone-9-client-polish.md) |
 | 10 | Ads & character search (created 2026-07-16) | not started | M8 | [milestone-10-ads-and-search.md](milestone-10-ads-and-search.md) |
 | MX | Desktop client (Electron/embedded bouncer — undated, after the nice-to-have rounds) | not started | M8+; design in [standalone-client.md](standalone-client.md) | [standalone-client.md](standalone-client.md) |
@@ -148,6 +148,12 @@ Kickoff audit = the 2026-07-16 codebase sanity check recorded in [milestone-7-se
 - [x] 9. Milestone verification suite per milestone-7.md: registration-disabled reachability + admin CLI round-trip; lockout/backoff + rate-limit headers; upgrade-gate simulations (breaking flag, downgrade, clean minor); retention sweep per policy; SFC round-trip; deploy-guide walkthrough on a clean host; restore drill
 
 ## Milestone 8 step checklist
+
+> **Branching exception (closed 2026-07-17):** M8 was built on a temporary
+> `staging` integration branch (the M2–M7 pattern); after the three-reviewer
+> audit and its fix pass (#115) and the user's sign-off it merge-committed to
+> `main` (PR #116), v0.7.0 was tagged and released (ghcr workflow green),
+> and the branch was deleted.
 
 Mirrors [milestone-8-nice-to-haves.md](milestone-8-nice-to-haves.md) (specced
 2026-07-16). Two independent tracks: **profiles** (2→5→7→8→9, fed by 3/4/6)
