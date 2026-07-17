@@ -91,6 +91,33 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(input).toHaveValue("[eicon]teacup[/eicon]");
   await input.fill("");
 
+  // ── Link previews (M8 step 13): media chip → floating panel ────────────
+  // The image URL rides the intercepted static.f-list.net host, so the
+  // preview loads the fixture PNG; default mode is click.
+  await input.fill(
+    "see https://static.f-list.net/images/charimage/999.png and https://example.com/article",
+  );
+  await input.press("Enter");
+  const mediaChip = log.getByRole("link", { name: /999\.png/ });
+  await expect(mediaChip).toBeVisible({ timeout: 10_000 });
+  await expect(mediaChip).toContainText("▣");
+  // Ordinary web links stay plain navigation (↗ glyph, real href).
+  const plainChip = log.getByRole("link", { name: /article/ });
+  await expect(plainChip).toContainText("↗");
+  await expect(plainChip).toHaveAttribute(
+    "href",
+    "https://example.com/article",
+  );
+  await mediaChip.click();
+  const panel = page.getByRole("dialog", { name: /Preview: static\.f-list/ });
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByText("static.f-list.net/images/charimage/999.png"),
+  ).toBeVisible();
+  // Escape closes the panel; the message (and log) stayed visible behind it.
+  await page.keyboard.press("Escape");
+  await expect(panel).not.toBeVisible();
+
   // ── Delayed send: pending affordance + ArrowUp recall ─────────────────
   await page.getByLabel("Send delay").selectOption("10");
   await input.fill("**recalled** never arrives");
