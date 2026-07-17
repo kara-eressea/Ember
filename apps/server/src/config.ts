@@ -88,6 +88,27 @@ const configSchema = z.object({
     .int()
     .min(60_000)
     .default(6 * 60 * 60 * 1000),
+  /**
+   * Character-data-class requests allowed per sliding hour (M8 profiles).
+   * F-List's published limit is 200/hour; the 170 default leaves headroom —
+   * do not raise this above the current published limit. Operator-only on
+   * purpose (no UI preference): the policy risk attaches to the server's IP
+   * and F-List account.
+   */
+  CHARACTER_DATA_BUDGET_PER_HOUR: z.coerce.number().int().min(1).default(170),
+  /** How long a cached character profile stays fresh before a view refetches
+   * it (stale rows are still served when the budget is exhausted). */
+  PROFILE_CACHE_TTL_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(24 * 60 * 60 * 1000),
+  /** Bulk mapping-list refresh window (ticketless, cheap, drifts rarely). */
+  FLIST_MAPPINGS_TTL_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(7 * 24 * 60 * 60 * 1000),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

@@ -12,15 +12,12 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
+import type { FlistApiClient, SocialAuth } from "../flist-api/api-client.js";
+import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
 import {
-  FlistApiBusyError,
-  type FlistApiClient,
-  type SocialAuth,
-} from "../flist-api/api-client.js";
-import {
-  AccountLockedError,
-  type TicketManagerRegistry,
-} from "../flist-api/ticket-manager.js";
+  upstreamStatus,
+  withTicket as withTicketFor,
+} from "../flist-api/with-ticket.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 
 const characterRow = z.object({
@@ -84,62 +81,13 @@ export async function socialRoutes(
     return row;
   }
 
-  /**
-   * Rejections (as opposed to error envelopes) from the upstream path:
-   * a memory-only vault after a restart throws AccountLockedError until
-   * the user re-enters the password — the MOST likely production failure
-   * of these routes, so it gets its own status instead of a bare 500
-   * (M6 audit). Busy = the shared 1 req/s budget shed the call.
-   */
-  function upstreamStatus(error: unknown): {
-    code: 409 | 502 | 503;
-    error: string;
-  } {
-    if (error instanceof AccountLockedError) {
-      return {
-        code: 409,
-        error:
-          "The F-List account is locked (server restart) — unlock it from the identity screen",
-      };
-    }
-    if (error instanceof FlistApiBusyError) {
-      return { code: 503, error: error.message };
-    }
-    return {
-      code: 502,
-      error: error instanceof Error ? error.message : "F-List API error",
-    };
-  }
-
-  /**
-   * Runs an API call with the account's current ticket; on a ticket
-   * refusal, invalidates and retries once with a fresh one. Tickets expire
-   * after 30 minutes while the manager caches for 25 — the overlap window
-   * plus an account-wide invalidation elsewhere both land here.
-   */
-  async function withTicket<T extends { error: string }>(
+  // Ticket-retry + upstream-error mapping shared with the profiles module
+  // (extracted M8) — see flist-api/with-ticket.ts.
+  function withTicket<T extends { error: string }>(
     identity: IdentityRow,
     call: (auth: SocialAuth) => Promise<T>,
   ): Promise<T> {
-    const manager = tickets.managerFor(
-      identity.accountId,
-      identity.accountName,
-    );
-    const auth = {
-      account: identity.accountName,
-      ticket: await manager.getTicket(),
-    };
-    const result = await call(auth);
-    if (!/ticket/i.test(result.error)) {
-      return result;
-    }
-    // Conditional: a LATE refusal for an old ticket must not evict a fresh
-    // one another call already fetched (see TicketManager.invalidate).
-    manager.invalidate(auth.ticket);
-    return call({
-      account: identity.accountName,
-      ticket: await manager.getTicket(),
-    });
+    return withTicketFor(tickets, identity, call);
   }
 
   app.get(

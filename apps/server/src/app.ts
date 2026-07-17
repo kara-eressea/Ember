@@ -22,7 +22,10 @@ import {
 import { directoryRoutes } from "./modules/directory/routes.js";
 import { socialRoutes } from "./modules/social/routes.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
+import { CharacterDataBudget } from "./modules/flist-api/character-data-budget.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
+import { ProfileService } from "./modules/profiles/service.js";
+import { profilesRoutes } from "./modules/profiles/routes.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
@@ -63,6 +66,8 @@ export interface BuildAppOptions {
   detachedAwayNow?: () => number;
   /** Test-only directory cooldown/timeout knobs. */
   directoryTuning?: ChannelDirectoryOptions;
+  /** Injectable for tests (drain/inspect the profile budget). */
+  characterDataBudget?: CharacterDataBudget;
 }
 
 export async function buildApp({
@@ -73,6 +78,7 @@ export async function buildApp({
   sessionTuning,
   detachedAwayNow,
   directoryTuning,
+  characterDataBudget,
 }: BuildAppOptions): Promise<FastifyInstance> {
   // Without the right trustProxy, every client behind a reverse proxy shares
   // the proxy's IP and the per-IP rate limits become one global bucket.
@@ -231,6 +237,25 @@ export async function buildApp({
     sessions,
     tickets,
     flistApi,
+  });
+  const profiles = new ProfileService({
+    db,
+    flistApi,
+    tickets,
+    budget:
+      characterDataBudget ??
+      new CharacterDataBudget({
+        limit: config.CHARACTER_DATA_BUDGET_PER_HOUR,
+      }),
+    sessions,
+    logger: app.log,
+    cacheTtlMs: config.PROFILE_CACHE_TTL_MS,
+    mappingsTtlMs: config.FLIST_MAPPINGS_TTL_MS,
+  });
+  await app.register(profilesRoutes, {
+    prefix: "/api/identities",
+    db,
+    profiles,
   });
   await app.register(highlightsRoutes, {
     prefix: "/api/highlight-rules",
