@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import {
   apiTicketResponseSchema,
+  characterDataSchema,
+  guestbookSchema,
+  infoListSchema,
+  kinkListSchema,
+  mappingListSchema,
+  memoGetSchema,
   parseServerCommand,
   serializeClientCommand,
   type ClientCommand,
@@ -1568,5 +1574,200 @@ describe("social JSON API + FRL (M6 step 7)", () => {
         })
       )["requests"],
     ).toEqual([]);
+  });
+});
+
+describe("character JSON API + eicon index (M8 step 3)", () => {
+  async function apiCall(
+    sim: FchatSim,
+    path: string,
+    form: Record<string, string>,
+  ): Promise<unknown> {
+    const response = await fetch(new URL(path, sim.httpUrl), {
+      method: "POST",
+      body: new URLSearchParams(form),
+    });
+    return response.json();
+  }
+
+  function auth(sim: FchatSim, account = "amber@example.test") {
+    return { account, ticket: sim.issueTicketFor(account) };
+  }
+
+  it("serves a default profile for any world character, string-typed like live", async () => {
+    const sim = await startSim();
+    const raw = await apiCall(sim, "/json/api/character-data.php", {
+      ...auth(sim),
+      name: "nyx firemane", // case-insensitive, canonical casing restored
+    });
+    const parsed = characterDataSchema.parse(raw);
+    expect(parsed.error).toBe("");
+    expect(parsed.name).toBe("Nyx Firemane");
+    expect(parsed.settings?.guestbook).toBe(false);
+    // NPC gender flows into the Gender infotag (id 3, gender listitem).
+    expect(parsed.infotags?.["3"]).toBe("2");
+  });
+
+  it("setCharacterProfile overrides and exercises schema coercion", async () => {
+    const sim = await startSim();
+    sim.setCharacterProfile("Petal Thorn", {
+      description: "[b]Petal[/b]",
+      kinks: { "620": "fave" },
+      infotags: { "1": "24", "9": "Dryad" },
+      images: [{ id: 31, extension: "png", height: 640, width: 480 }],
+    });
+    const parsed = characterDataSchema.parse(
+      await apiCall(sim, "/json/api/character-data.php", {
+        ...auth(sim),
+        name: "Petal Thorn",
+      }),
+    );
+    // The sim serves image values as strings (live quirk); coercion numbers them.
+    expect(parsed.images?.[0]).toMatchObject({
+      image_id: 31,
+      height: 640,
+      width: 480,
+    });
+    expect(parsed.kinks).toEqual({ "620": "fave" });
+    expect(parsed.infotags?.["9"]).toBe("Dryad");
+  });
+
+  it("rejects unknown characters and invalid tickets", async () => {
+    const sim = await startSim();
+    expect(
+      await apiCall(sim, "/json/api/character-data.php", {
+        ...auth(sim),
+        name: "Nobody Realsson",
+      }),
+    ).toEqual({ error: "Character not found." });
+    expect(
+      await apiCall(sim, "/json/api/character-data.php", {
+        account: "amber@example.test",
+        ticket: "fct_stale",
+        name: "Nyx Firemane",
+      }),
+    ).toEqual({ error: "Invalid ticket." });
+  });
+
+  it("serves the mapping lists ticketless, all-string like live", async () => {
+    const sim = await startSim();
+    const mapping = mappingListSchema.parse(
+      await apiCall(sim, "/json/api/mapping-list.php", {}),
+    );
+    // The matcher's dimension infotags ship in the canned set with real ids.
+    const byId = new Map(mapping.infotags?.map((tag) => [tag.id, tag]));
+    expect(byId.get(2)).toMatchObject({ name: "Orientation", type: "list" });
+    expect(byId.get(3)?.list).toBe("gender");
+    expect(
+      mapping.listitems?.filter((item) => item.name === "gender"),
+    ).not.toHaveLength(0);
+    const kinks = kinkListSchema.parse(
+      await apiCall(sim, "/json/api/kink-list.php", {}),
+    );
+    expect(kinks.kinks?.["31"]?.items[0]?.kink_id).toBe(620);
+    const info = infoListSchema.parse(
+      await apiCall(sim, "/json/api/info-list.php", {}),
+    );
+    expect(info.info?.["3"]?.group).toBe("General details");
+  });
+
+  it("pages guestbooks 0-based in tens; no guestbook is the error case", async () => {
+    const sim = await startSim();
+    sim.setGuestbook(
+      "Cindral",
+      Array.from({ length: 12 }, (_, index) => ({
+        from: "Tally Marsh",
+        message: `post ${String(index)}`,
+      })),
+    );
+    const credentials = auth(sim);
+    const id = sim.characterIdOf("Cindral");
+    const page0 = guestbookSchema.parse(
+      await apiCall(sim, "/json/api/character-guestbook.php", {
+        ...credentials,
+        id: String(id),
+        page: "0",
+      }),
+    );
+    expect(page0.posts).toHaveLength(10);
+    expect(page0.posts?.[0]?.message).toBe("post 0");
+    expect(page0.nextPage).toBe(true);
+    const page1 = guestbookSchema.parse(
+      await apiCall(sim, "/json/api/character-guestbook.php", {
+        ...credentials,
+        id: String(id),
+        page: "1",
+      }),
+    );
+    expect(page1.posts).toHaveLength(2);
+    expect(page1.nextPage).toBe(false);
+    // A guestbook flips the character-data settings flag on.
+    const profile = characterDataSchema.parse(
+      await apiCall(sim, "/json/api/character-data.php", {
+        ...credentials,
+        name: "Cindral",
+      }),
+    );
+    expect(profile.settings?.guestbook).toBe(true);
+    expect(
+      await apiCall(sim, "/json/api/character-guestbook.php", {
+        ...credentials,
+        id: String(sim.characterIdOf("Amber Vale")),
+        page: "0",
+      }),
+    ).toEqual({ error: "This character does not have a guestbook." });
+  });
+
+  it("memo-get takes the character NAME; an id-shaped target misses", async () => {
+    const sim = await startSim();
+    sim.setMemo("amber@example.test", "Birch Rowan", "met at the inn");
+    const credentials = auth(sim);
+    const memo = memoGetSchema.parse(
+      await apiCall(sim, "/json/api/character-memo-get2.php", {
+        ...credentials,
+        target: "Birch Rowan",
+      }),
+    );
+    expect(memo.note).toBe("met at the inn");
+    expect(memo.id).toBe(sim.characterIdOf("Birch Rowan"));
+    // No memo yet → note null, id still present (live behavior).
+    const empty = memoGetSchema.parse(
+      await apiCall(sim, "/json/api/character-memo-get2.php", {
+        ...credentials,
+        target: "Nyx Firemane",
+      }),
+    );
+    expect(empty.note).toBeNull();
+    // The step-1 spike's own mistake, preserved: numeric ids are not names.
+    expect(
+      await apiCall(sim, "/json/api/character-memo-get2.php", {
+        ...credentials,
+        target: String(sim.characterIdOf("Birch Rowan")),
+      }),
+    ).toEqual({ error: "Character not found." });
+  });
+
+  it("serves the eicon index as base.doc + deltas in xariah's format", async () => {
+    const sim = await startSim();
+    sim.setEiconIndex(["campfire", "teacup"], 1_752_000_000);
+    sim.addEiconDelta("+", "lantern", 1_752_000_500);
+    sim.addEiconDelta("-", "teacup", 1_752_000_900);
+    const base = await (
+      await fetch(new URL("/eicons/Home/EiconsDataBase/base.doc", sim.httpUrl))
+    ).text();
+    const lines = base.split("\n").filter((line) => line !== "");
+    expect(lines[0]).toBe("# As Of: 1752000000");
+    expect(lines.slice(1).map((line) => line.split("\t")[0])).toEqual([
+      "campfire",
+      "teacup",
+    ]);
+    const delta = await (
+      await fetch(
+        new URL("/eicons/Home/EiconsDataDeltaSince/1752000600", sim.httpUrl),
+      )
+    ).text();
+    const deltaLines = delta.split("\n").filter((line) => line !== "");
+    expect(deltaLines[0]).toBe("# As Of: 1752000900");
+    expect(deltaLines.slice(1)).toEqual(["-\tteacup"]);
   });
 });

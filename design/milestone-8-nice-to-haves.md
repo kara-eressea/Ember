@@ -115,7 +115,15 @@ F-List's 200/hour character-data limit; guestbook/images/character-data all
 count against it, tickets and mappings don't). Global per instance — the
 policy risk attaches to the egress IP, and the instance is single-user. Sits
 *in front of* the existing 1 req/s `FlistApiClient` throttle (which stays as
-the second, orthogonal gate). On exhaustion: serve the stale cached payload
+the second, orthogonal gate). The cap is operator-tunable via
+`CHARACTER_DATA_BUDGET_PER_HOUR` (default 170; wired in step 5 with the other
+config) — env-var only, deliberately **not** a UI preference: the 200/hour
+figure is policy prose, not runtime-discoverable, so if F-List changes it a
+self-hoster adjusts config without a release; but the risk attaches to the
+server's IP and account, so the decision belongs to the operator reading the
+deploy docs, not a prefs toggle (decided with the user 2026-07-17). No upper
+clamp in code; `.env.example` documents the derivation. On exhaustion: serve
+the stale cached payload
 with `budgetExhausted: true`, or 429 + `retryAfterSeconds` when there is no
 cache. The counter resets on restart — accepted LOW (interactive browsing
 can't realistically hit 170/hr twice around a restart); noted in the module
