@@ -407,6 +407,14 @@ export const api = {
     );
   },
 
+  /** Server-local eicon index search (M8) — pref-gated (403 when off). */
+  searchEicons(query: string) {
+    return apiRequest<{ results: string[] }>(
+      `/eicons/search?q=${encodeURIComponent(query)}`,
+      { auth: true },
+    );
+  },
+
   listHighlightRules() {
     return apiRequest<{ rules: HighlightRuleDto[] }>("/highlight-rules", {
       auth: true,

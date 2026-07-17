@@ -77,6 +77,11 @@ const prefsShape = {
   /** EiconPicker Recents tab (M8): most-recent-first, written on insert
    * and on send (typed eicons count too). Patches replace the array. */
   eiconRecents: z.array(z.string().min(1).max(100).regex(EICON_NAME)).max(50),
+  /** Eicon search via the server-local xariah.net index (M8). Off by
+   * default and enforced server-side (403) — enabling makes the server
+   * download the index from xariah.net, a third-party service; query text
+   * itself never leaves the server. */
+  eiconSearchEnabled: z.boolean(),
   /** Highlight messages that name the receiving identity's character. */
   highlightOwnNick: z.boolean(),
   /** When-highlighted actions (COMPONENTS.md §12). */
@@ -161,6 +166,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   animateEicons: true,
   eiconFavorites: [],
   eiconRecents: [],
+  eiconSearchEnabled: false,
   highlightOwnNick: true,
   highlightSound: false,
   highlightFlashTitle: true,

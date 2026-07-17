@@ -109,6 +109,15 @@ const configSchema = z.object({
     .int()
     .min(60_000)
     .default(7 * 24 * 60 * 60 * 1000),
+  /** Eicon index host (M8): bulk base.doc + DeltaSince fetches — search
+   * text never leaves this server. Tests point it at fchat-sim. */
+  EICON_INDEX_BASE_URL: z.url().default("https://xariah.net"),
+  /** Delta-refresh cadence for the eicon index (~daily upstream). */
+  EICON_INDEX_REFRESH_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(24 * 60 * 60 * 1000),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

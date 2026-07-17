@@ -65,11 +65,26 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(
     picker.getByRole("button", { name: "Remove teacup from favorites" }),
   ).toBeVisible();
-  // Search is a disabled tab with the third-party explainer until step 12.
+  // Search is pref-gated (server-enforced): the disabled explainer links to
+  // Preferences, where the toggle carries the third-party disclosure.
   await picker.getByRole("tab", { name: /Search/ }).click();
   await expect(picker.getByText("Eicon search is off")).toBeVisible();
-  await picker.getByRole("tab", { name: "Favorites" }).click();
+  await picker.getByRole("button", { name: /Enable in Preferences/ }).click();
+  const prefsWindow = page.getByRole("dialog", { name: "Preferences" });
+  await expect(prefsWindow).toBeVisible();
+  await prefsWindow.getByRole("button", { name: "Appearance" }).click();
+  await prefsWindow.getByRole("switch", { name: "Eicon search" }).click();
+  await page.keyboard.press("Escape");
+  await expect(prefsWindow).not.toBeVisible();
+  // Live search against the sim-served xariah-format index.
+  await page.getByRole("button", { name: "Insert eicon" }).click();
+  await picker.getByRole("tab", { name: "Search" }).click();
+  await picker.getByRole("textbox", { name: "Search eicons" }).fill("lantern");
+  await expect(
+    picker.getByRole("button", { name: "Insert lanternlight" }),
+  ).toBeVisible();
   // Tile click inserts at the caret; Escape dismisses the popover.
+  await picker.getByRole("tab", { name: "Favorites" }).click();
   await picker.getByRole("button", { name: "Insert teacup" }).click();
   await page.keyboard.press("Escape");
   await expect(picker).not.toBeVisible();

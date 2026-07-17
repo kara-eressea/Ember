@@ -146,6 +146,18 @@ export function AppearancePane({ identityId }: { identityId: string }) {
           }}
         />
       </FieldRow>
+      <FieldRow
+        label="Eicon search"
+        help="Search uses an eicon index the server downloads from xariah.net, a third-party service — your search text never leaves the server"
+      >
+        <Toggle
+          label="Eicon search"
+          checked={prefs.eiconSearchEnabled}
+          onChange={(eiconSearchEnabled) => {
+            set({ eiconSearchEnabled });
+          }}
+        />
+      </FieldRow>
 
       <GroupLabel>Timestamps</GroupLabel>
       <FieldRow label="Timestamp format">

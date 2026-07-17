@@ -1166,3 +1166,74 @@
   bottom: auto;
   transform: rotate(225deg);
 }
+
+/* EiconPicker Search tab (M8 step 12). */
+
+.pickerSearchRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.pickerSearchInput {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 6px;
+}
+
+.pickerSearchInput::placeholder {
+  color: var(--eb-faint);
+}
+
+.pickerServiceTag {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+}
+
+.pickerResultsCaption {
+  margin-bottom: 6px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+}
+
+.pickerLink {
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.pickerLink:hover {
+  text-decoration: underline;
+}
+
+.shimmerTile {
+  display: inline-block;
+  background: var(--eb-hover);
+  border-radius: 6px;
+  animation: pickerShimmer 1.15s linear infinite alternate;
+}
+
+@keyframes pickerShimmer {
+  from {
+    opacity: 0.55;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
