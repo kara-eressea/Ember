@@ -97,6 +97,44 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await expect(
     viewer.getByText(/YOU × Nyx Firemane|crossed paths/),
   ).toBeVisible();
+
+  // ── Images + Guestbook (M8 step 10) ────────────────────────────────────
+  // Images come from the cached character-data payload (fixture-seeded in
+  // global-setup, hotlinks intercepted); the lightbox overlays the modal.
+  await viewer.getByRole("tab", { name: "Images" }).click();
+  await expect(
+    viewer.getByRole("button", { name: "Image 1 of 3" }),
+  ).toBeVisible();
+  await viewer.getByRole("button", { name: "Image 2 of 3" }).click();
+  const lightbox = viewer.getByRole("dialog", { name: "Image 2 of 3" });
+  await expect(lightbox).toBeVisible();
+  await expect(lightbox.getByText("2/3")).toBeVisible();
+  await expect(lightbox.getByText("A portrait")).toBeVisible();
+  await lightbox.getByRole("button", { name: "Next image" }).click();
+  await expect(
+    viewer.getByRole("dialog", { name: "Image 3 of 3" }).getByText("3/3"),
+  ).toBeVisible();
+  // Escape closes the lightbox, not the profile modal underneath.
+  await page.keyboard.press("Escape");
+  await expect(
+    viewer.getByRole("dialog", { name: /Image \d/ }),
+  ).not.toBeVisible();
+  await expect(viewer).toBeVisible();
+
+  // Guestbook: 12 seeded posts → page one shows 10, Load more fetches the
+  // rest; the owner reply renders as a quoted block.
+  await viewer.getByRole("tab", { name: "Guestbook" }).click();
+  await expect(
+    viewer.getByText("Wonderful company around the fire."),
+  ).toBeVisible();
+  await expect(viewer.getByText("Nyx Firemane replied")).toBeVisible();
+  await expect(viewer.getByText("Guestbook entry number 9.")).toBeVisible();
+  await expect(
+    viewer.getByText("Guestbook entry number 11."),
+  ).not.toBeVisible();
+  await viewer.getByRole("button", { name: "Load more" }).click();
+  await expect(viewer.getByText("Guestbook entry number 11.")).toBeVisible();
+
   await page.keyboard.press("Escape");
   await expect(viewer).not.toBeVisible();
 

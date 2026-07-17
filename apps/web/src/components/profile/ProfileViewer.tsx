@@ -23,6 +23,8 @@ import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { CHOICES } from "./choices.js";
 import { CompareTab } from "./CompareTab.js";
+import { GuestbookTab } from "./GuestbookTab.js";
+import { ImagesTab } from "./ImagesTab.js";
 import { DimChip, MatchPill } from "./MatchTier.js";
 import { notableDimensions } from "./match-utils.js";
 import { ProfileBBCode } from "./ProfileBBCode.js";
@@ -35,6 +37,8 @@ const TABS = [
   { id: "kinks", label: "Kinks" },
   { id: "compare", label: "Compare" },
   { id: "insights", label: "Insights" },
+  { id: "images", label: "Images" },
+  { id: "guestbook", label: "Guestbook" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -295,6 +299,10 @@ function TabContent({
           ownCharacter={ownCharacter}
         />
       );
+    case "images":
+      return <ImagesTab profile={profile} />;
+    case "guestbook":
+      return <GuestbookTab identityId={identityId} profile={profile} />;
   }
 }
 

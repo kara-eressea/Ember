@@ -12,6 +12,7 @@
 }
 
 .window {
+  position: relative; /* the Images lightbox overlays the modal, not the page */
   display: flex;
   width: 900px;
   height: 640px;
@@ -1184,4 +1185,176 @@
   color: var(--eb-faint);
   border: 1px dashed var(--eb-border);
   border-radius: var(--eb-radius);
+}
+
+/* ── Images tab (§11) ─────────────────────────────────────────────────── */
+
+.imgGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.imgThumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.imgThumbImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.imgBroken {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 20px;
+  color: var(--eb-faint);
+}
+
+.imgCaption {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-dim);
+  background: rgb(10 9 8 / 70%);
+  border-radius: 4px;
+}
+
+/* Dimmed overlay *within* the modal window (§11), not a new layer over
+   the page — the profile modal stays visibly underneath. */
+.lightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  background: rgb(10 9 8 / 86%);
+}
+
+.lightboxImg {
+  max-width: 70%;
+  max-height: 380px;
+  object-fit: contain;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.lightboxDesc {
+  max-width: 70%;
+  font-size: 12px;
+  color: var(--eb-dim);
+  text-align: center;
+}
+
+.lightboxBar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.lightboxCounter {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-dim);
+}
+
+/* ── Guestbook tab (§12) ──────────────────────────────────────────────── */
+
+.gbList {
+  display: flex;
+  flex-direction: column;
+}
+
+.gbPost {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.gbPost + .gbPost {
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 60%, var(--eb-side));
+}
+
+.gbBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.gbHead {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.gbAuthor {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gbDate {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.gbMessage {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--eb-text);
+}
+
+.gbReply {
+  padding: 8px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--eb-dim);
+  background: var(--eb-bg);
+  border-left: 2px solid var(--eb-accent-med, var(--eb-accent));
+  border-radius: 0 6px 6px 0;
+}
+
+.gbReplyLabel {
+  display: block;
+  margin-bottom: 3px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gbFoot {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 0 4px;
+}
+
+.gbSign {
+  font-size: 11.5px;
+  color: var(--eb-accent);
+  text-decoration: none;
+}
+
+.gbSign:hover {
+  text-decoration: underline;
 }
