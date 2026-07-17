@@ -49,6 +49,33 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(eicon).toHaveAttribute("width", "60");
   await expect(eicon).toHaveAttribute("height", "60");
 
+  // ── EiconPicker (M8 step 11): ☺ popover, Recents → star → Favorites ───
+  // The typed eicon above was recorded as "used", so Recents bootstraps
+  // without search (which ships disabled until step 12).
+  await page.getByRole("button", { name: "Insert eicon" }).click();
+  const picker = page.getByRole("dialog", { name: "Eicon picker" });
+  await expect(picker).toBeVisible();
+  await expect(picker.getByText("No favorites yet")).toBeVisible();
+  await picker.getByRole("tab", { name: "Recents" }).click();
+  await expect(
+    picker.getByRole("button", { name: "Insert teacup" }),
+  ).toBeVisible();
+  await picker.getByRole("button", { name: "Add teacup to favorites" }).click();
+  await picker.getByRole("tab", { name: "Favorites" }).click();
+  await expect(
+    picker.getByRole("button", { name: "Remove teacup from favorites" }),
+  ).toBeVisible();
+  // Search is a disabled tab with the third-party explainer until step 12.
+  await picker.getByRole("tab", { name: /Search/ }).click();
+  await expect(picker.getByText("Eicon search is off")).toBeVisible();
+  await picker.getByRole("tab", { name: "Favorites" }).click();
+  // Tile click inserts at the caret; Escape dismisses the popover.
+  await picker.getByRole("button", { name: "Insert teacup" }).click();
+  await page.keyboard.press("Escape");
+  await expect(picker).not.toBeVisible();
+  await expect(input).toHaveValue("[eicon]teacup[/eicon]");
+  await input.fill("");
+
   // ── Delayed send: pending affordance + ArrowUp recall ─────────────────
   await page.getByLabel("Send delay").selectOption("10");
   await input.fill("**recalled** never arrives");

@@ -28,7 +28,7 @@ export const TIMESTAMP_FORMATS = ["time", "seconds", "off"] as const;
 export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
 
 /** Matches the eicon-name charset the URL builder accepts (web avatar.ts). */
-const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
+export const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
 
 /** UTF-8 byte length without TextEncoder/Buffer — this package targets both
  * runtimes and pulls in neither lib. */
@@ -74,6 +74,9 @@ const prefsShape = {
   eiconFavorites: z
     .array(z.string().min(1).max(100).regex(EICON_NAME))
     .max(100),
+  /** EiconPicker Recents tab (M8): most-recent-first, written on insert
+   * and on send (typed eicons count too). Patches replace the array. */
+  eiconRecents: z.array(z.string().min(1).max(100).regex(EICON_NAME)).max(50),
   /** Highlight messages that name the receiving identity's character. */
   highlightOwnNick: z.boolean(),
   /** When-highlighted actions (COMPONENTS.md §12). */
@@ -157,6 +160,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   eiconDisplay: "inline",
   animateEicons: true,
   eiconFavorites: [],
+  eiconRecents: [],
   highlightOwnNick: true,
   highlightSound: false,
   highlightFlashTitle: true,
