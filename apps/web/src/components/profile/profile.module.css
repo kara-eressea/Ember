@@ -813,3 +813,127 @@
     background-position: -200% 0;
   }
 }
+
+/* ── Mini profile card (§13 + Mini Profile Viewer.dc.html M8·B–G) ─────── */
+
+.cardOverlay {
+  position: fixed;
+  inset: 0;
+  /* Above the chat shell + member list, below the profile modal (45). */
+  z-index: 40;
+}
+
+.card {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  overflow: auto;
+  color: var(--eb-text);
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow */
+}
+
+.cardHeader {
+  display: flex;
+  gap: 13px;
+  padding: 16px 14px 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      var(--gender-accent, var(--eb-accent)) 10%,
+      var(--eb-side)
+    ),
+    var(--eb-side)
+  );
+}
+
+.cardHeaderInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cardName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--gender-accent, var(--eb-accent));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.cardChip {
+  padding: 2.5px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  white-space: nowrap;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 5px;
+}
+
+.cardStale {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 14px 12px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 14px;
+}
+
+.cardPrimary {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  cursor: pointer;
+  background: var(--eb-accent);
+  border: 0;
+  border-radius: var(--eb-radius);
+}
+
+.cardGhost {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.cardError {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 26px 20px 22px;
+  text-align: center;
+}

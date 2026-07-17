@@ -44,12 +44,30 @@ beforeEach(() => {
   useProfileStore.setState({
     viewing: undefined,
     activeTab: "overview",
+    card: undefined,
     profiles: {},
     history: [],
     insights: {},
     ownProfile: undefined,
   });
   vi.restoreAllMocks();
+});
+
+describe("mini card popover state", () => {
+  const ANCHOR = { top: 10, left: 20, bottom: 30, right: 120 };
+
+  it("keeps a single popover — a new openCard replaces the old", () => {
+    useProfileStore.getState().openCard("Nyx Firemane", ANCHOR);
+    useProfileStore.getState().openCard("Cindral", ANCHOR);
+    expect(useProfileStore.getState().card?.name).toBe("Cindral");
+  });
+
+  it("opening the full viewer dismisses the popover (§13 hand-off)", () => {
+    useProfileStore.getState().openCard("Nyx Firemane", ANCHOR);
+    useProfileStore.getState().open("Nyx Firemane");
+    expect(useProfileStore.getState().card).toBeUndefined();
+    expect(useProfileStore.getState().viewing).toBe("Nyx Firemane");
+  });
 });
 
 describe("loadProfile", () => {

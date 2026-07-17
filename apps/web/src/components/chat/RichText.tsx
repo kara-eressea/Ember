@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
+import { openCardFrom } from "../../stores/profile.js";
 import { useUserPrefs } from "../../stores/sessions.js";
 import { textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
@@ -82,16 +83,19 @@ function renderNode(
         </a>
       );
     case "name":
+      // [user] opens the mini profile card (M8) — the f-list.net website
+      // link lives in the context menu / full viewer instead.
       return node.tag === "user" ? (
-        <a
+        <button
           key={key}
-          className={styles.bodyMention}
-          href={`https://www.f-list.net/c/${encodeURIComponent(node.name)}`}
-          target="_blank"
-          rel="noreferrer noopener"
+          type="button"
+          className={`${styles.nameButton ?? ""} ${styles.bodyMention}`}
+          onClick={(event) => {
+            openCardFrom(event.currentTarget, node.name);
+          }}
         >
           {node.name}
-        </a>
+        </button>
       ) : (
         <InlineIcon key={key} tag={node.tag} name={node.name} />
       );

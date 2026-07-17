@@ -23,10 +23,21 @@ export interface HistoryEntry {
   lastViewedAt: number;
 }
 
+/** Trigger bounding rect the mini card anchors to (§13: anchor to the
+ * trigger, not the cursor, so repeated opens are stable). */
+export interface CardAnchor {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+
 interface ProfileState {
   /** Character the viewer modal shows; undefined = closed. */
   viewing: string | undefined;
   activeTab: "overview" | "details" | "kinks" | "insights";
+  /** The mini profile card popover; undefined = closed. Only one at a time. */
+  card: { name: string; anchor: CardAnchor } | undefined;
   /** Keyed by lowercased name — session-lifetime client cache. */
   profiles: Record<string, LoadedProfile>;
   /** Recently-viewed rail, most recent first (server is source of truth). */
@@ -38,18 +49,22 @@ interface ProfileState {
   open: (name: string) => void;
   close: () => void;
   setTab: (tab: ProfileState["activeTab"]) => void;
+  openCard: (name: string, anchor: CardAnchor) => void;
+  closeCard: () => void;
 }
 
 export const useProfileStore = create<ProfileState>()((set) => ({
   viewing: undefined,
   activeTab: "overview",
+  card: undefined,
   profiles: {},
   history: [],
   insights: {},
   ownProfile: undefined,
 
   open(name) {
-    set({ viewing: name, activeTab: "overview" });
+    // Opening the full viewer dismisses the popover (§13 hand-off).
+    set({ viewing: name, activeTab: "overview", card: undefined });
   },
   close() {
     set({ viewing: undefined });
@@ -57,7 +72,24 @@ export const useProfileStore = create<ProfileState>()((set) => ({
   setTab(tab) {
     set({ activeTab: tab });
   },
+  openCard(name, anchor) {
+    set({ card: { name, anchor } });
+  },
+  closeCard() {
+    set({ card: undefined });
+  },
 }));
+
+/** Open the mini card anchored to a trigger element's bounding rect. */
+export function openCardFrom(element: Element, name: string): void {
+  const rect = element.getBoundingClientRect();
+  useProfileStore.getState().openCard(name, {
+    top: rect.top,
+    left: rect.left,
+    bottom: rect.bottom,
+    right: rect.right,
+  });
+}
 
 const inflight = new Map<string, Promise<void>>();
 

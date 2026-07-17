@@ -140,6 +140,23 @@
   white-space: nowrap;
 }
 
+/* Reset for name triggers that open the mini profile card (M8): buttons
+   that must render exactly like the span/anchor they replaced. Defined
+   before .bodyMention so the mention styling wins its own properties. */
+.nameButton {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+}
+
+.nameButton:hover {
+  text-decoration: underline;
+}
+
 .body {
   min-width: 0;
   font-size: var(--eb-msg-font, 13px);
@@ -441,13 +458,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: calc(100% - 8px);
   margin: 0 4px;
   padding: 4px 8px;
-  border-radius: var(--eb-radius);
+  font: inherit;
   font-size: 13px;
   color: inherit;
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--eb-radius);
 }
 
 .memberRow:hover {
