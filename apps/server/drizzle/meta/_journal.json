@@ -64,6 +64,13 @@
       "when": 1784187885382,
       "tag": "0008_m7-drop-email-verified",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784265189204,
+      "tag": "0009_m8-profiles",
+      "breakpoints": true
     }
   ]
 }
