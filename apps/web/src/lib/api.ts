@@ -3,6 +3,7 @@
 // proxies to the API server, production serves both from one Fastify.
 
 import type {
+  GuestbookPage,
   HighlightRuleDto,
   HighlightRuleInput,
   ProfileHistoryEntry,
@@ -387,6 +388,14 @@ export const api = {
   getProfileInsights(identityId: string, name: string) {
     return apiRequest<ProfileInsights>(
       `/identities/${identityId}/profile/${encodeURIComponent(name)}/insights`,
+      { auth: true },
+    );
+  },
+  /** One guestbook page (0-based, pages of 10) — passthrough to F-List,
+   * so it spends the character-data budget like a profile fetch. */
+  getProfileGuestbook(identityId: string, name: string, page: number) {
+    return apiRequest<GuestbookPage>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/guestbook?page=${String(page)}`,
       { auth: true },
     );
   },

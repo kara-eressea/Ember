@@ -35,7 +35,14 @@ export interface CardAnchor {
 interface ProfileState {
   /** Character the viewer modal shows; undefined = closed. */
   viewing: string | undefined;
-  activeTab: "overview" | "details" | "kinks" | "compare" | "insights";
+  activeTab:
+    | "overview"
+    | "details"
+    | "kinks"
+    | "compare"
+    | "insights"
+    | "images"
+    | "guestbook";
   /** The mini profile card popover; undefined = closed. Only one at a time. */
   card: { name: string; anchor: CardAnchor } | undefined;
   /** Keyed by lowercased name — session-lifetime client cache. */
