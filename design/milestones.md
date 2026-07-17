@@ -14,7 +14,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 | 6 | Channel browser + channel ops | done | M1 (benefits from M3) | [milestone-6-channel-browser-ops.md](milestone-6-channel-browser-ops.md) |
 | 7 | Self-host hardening (rescoped 2026-07-16, was public-service hardening) | done | M1–M2 min., realistically M1–M6 | [milestone-7-self-host-hardening.md](milestone-7-self-host-hardening.md) |
 | 8 | Nice-to-haves: profile viewer + compatibility + eicon search | **shipped v0.7.0** (2026-07-17) | M7 | [milestone-8-nice-to-haves.md](milestone-8-nice-to-haves.md) |
-| 9 | Client polish (split from M8, 2026-07-16) | not started | M8 | [milestone-9-client-polish.md](milestone-9-client-polish.md) |
+| 9 | Client polish: LOW sweep, at-rest credentials, search, toolbar, light theme (specced 2026-07-18) | in progress | M8 | [milestone-9-client-polish.md](milestone-9-client-polish.md) |
 | 10 | Ads & character search (created 2026-07-16) | not started | M8 | [milestone-10-ads-and-search.md](milestone-10-ads-and-search.md) |
 | MX | Desktop client (Electron/embedded bouncer — undated, after the nice-to-have rounds) | not started | M8+; design in [standalone-client.md](standalone-client.md) | [standalone-client.md](standalone-client.md) |
 
@@ -180,6 +180,26 @@ prototypes in `prototype/*.dc.html`.
 - [x] 13. Link previews (client-only, per COMPONENTS-link-preview-eicon.md §1–§2, frames L·A–L·D): `lib/link-preview.ts` resolver — direct image (.avif/.gif/.jpg/.png/.webp) + video (.mp4/.webm) extension test on the pathname + per-host rewrite table (imgur single-image pages → i.imgur.com; albums/galleries honestly left alone — never guess a rewrite), unit-tested; §1 `LinkChip` is now the one URL rendering in RichText (`[url]` tags + autolinks): ▣ previewable / ↗ plain glyph, label (children or filename/segment/host), mono `[host]` suffix, accentSoft active state; `linkPreviewMode` pref default **click** — plain click on a *media* link previews (Ctrl/Cmd-click follows), hover mode opens after 250ms and closes on mouseleave, off = plain links; §2 `LinkPreview` panel via new `placeBeside` in popover.ts (right gutter → flip left → 8px clamp, unit-tested): head letterbox, shimmer + mono "fetching…" while loading, host/path + ✕ footer, capture-phase Escape, **failure renders nothing** (img/video onError closes the panel — absence is the design); one panel at a time (`stores/link-preview.ts`), hosted in AppShell; AppearancePane Off/Hover/Click segmented with the IP-disclosure note. E2E in compose.spec: media URL → ▣ chip → click → panel with fixture image + path footer → Escape; plain link keeps ↗ + real href (full local suite 15/15; web 167)
 - [x] 14. Verification suite + docs sweep: audited the milestone-8 verification list against shipped coverage — viewer/mini-card/compare/images/guestbook E2E live in chat.spec, eicon gating + link previews in compose.spec (kept in place: they verify the features in a real chat context; extraction would re-test without adding coverage). Gaps filled in a new `profile.spec.ts` (owns juniper@example.test / Juniper Wren + hidden Reading Nook room): history survives a reload (server-side per identity), note autosaves ("Saved ✓"), survives reload AND a full history prune (own table), rail-row navigation; compose.spec adds media-chip real-href + Ctrl-click-doesn't-hijack assertions (popup spawning is browser policy — asserted the app-owned "no preview" contract); `interceptAvatars` hardened to context-level routing so later-opened tabs can never reach the real static.f-list.net. Fixed a real step-12 flake: eicons.test.ts was missing the 180s beforeAll timeout its testcontainer siblings carry. Docs: self-hosting.md config table + prose gained the five M8 knobs (budget rationale: operator knob, not a user pref) and the xariah privacy model; `.env.example` gained the missing `FLIST_MAPPINGS_TTL_MS`; decisions.md §12 amended (proxy → server-local index, per the step-1 spike). Full E2E 16/16; server 232, web 167
 - [x] 15. Detached-disconnect ceiling (addendum 2026-07-17, decisions.md §15): `DETACHED_DISCONNECT_HOURS` (default 72, 0 = never) rides the M5 detached-away sweep — a session with zero subscribers past the ceiling is stopped with reason "disconnected after Nh with no attached device"; the detachment stamp is now set regardless of F-Chat status, so reconnect-backoff sessions count from the detach and stopping them also ends the retries; autoConnect intent + vault untouched → the next attach reconnects automatically with the exact channel set (§9 scenario 2). Env knob, never a user pref (the courtesy posture attaches to the server, like the budget). Companion decisions recorded the same day: at-rest credential storage committed for **M9**, outreach question resolved disclosure-only (§3 amended; risks doc + M9 doc updated). Integration test on the injected sweep clock (71h untouched → 73h stopped, reason asserted); .env.example + self-hosting.md rows
+
+## Milestone 9 step checklist
+
+> **Branching exception (open):** M9 runs on a temporary `staging`
+> integration branch (the M2–M8 pattern), created off `main` 2026-07-18.
+> Feature PRs target `staging`; the wrap-up ritual merges to `main`.
+
+Mirrors [milestone-9-client-polish.md](milestone-9-client-polish.md)
+(specced 2026-07-18 — the user committed the full candidate pool minus the
+activity heatmap; UI built directly against COMPONENTS.md, no CD pass).
+
+- [ ] 0. Backlog triage + LOW sweep: strike stale items across the M3–M8 backlogs, stamp the accepted-by-design ones, fix the worthwhile batch (~16 items), collect the needs-the-user items in one note
+- [ ] 1. At-rest credential storage + boot-time session resume (`flist_credentials` table, AES-256-GCM under `CREDENTIALS_KEY`, per-account opt-in default off, boot resume within the detached-disconnect window, dumps carry ciphertext — key stays in `.env`)
+- [ ] 2. In-log search — server (`GET .../search`, ILIKE, `from:`/`before:`/`after:` filters, cursor-paged, ownership-checked)
+- [ ] 3. In-log search — web UI (header search scoped to the conversation + everywhere toggle, results panel, jump-to-context with backfill-around-id)
+- [ ] 4. Composer toolbar + `/help` reference + friendly warn-code copy
+- [ ] 5. Light theme + colorblind token pass (light `BASE_THEME_IDS` variants, AA re-check, alternative status hues + glyph reinforcement)
+- [ ] 6. Quick-switcher (Ctrl/Cmd+K palette, fuzzy, ARIA combobox)
+- [ ] 7. Status-message history (`statusMessageRecents` pref, chips in the status editor)
+- [ ] 8. Verification suite + docs (E2E incl. server-restart credential resume; self-hosting/decisions sweep)
 
 ## Standing to-dos (not milestone-gated)
 
