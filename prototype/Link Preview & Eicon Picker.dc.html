@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.lp *{box-sizing:border-box}
+.lpscroll::-webkit-scrollbar{width:8px;height:8px}
+.lpscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.lpscroll::-webkit-scrollbar-track{background:transparent}
+.lpcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:560px;line-height:1.5}
+.lpcap b{color:#a892c6;font-weight:600}
+@keyframes lpshimmer{0%{background-position:-260px 0}100%{background-position:360px 0}}
+.lpskel{background:linear-gradient(90deg,#2a2725 0%,#332f2b 40%,#2a2725 80%);background-size:360px 100%;animation:lpshimmer 1.15s linear infinite}
+</style>
+</helmet>
+<div class="lp" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="9">
+  <div style="display:flex;flex-direction:column">
+    <div class="lpcap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,
+      codebg:'#151311',accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  nickColor(n){const p=['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8'];
+    let s=0;for(const c of n)s+=c.charCodeAt(0);return p[s%p.length];}
+  gl(txt,mb){const t=this.T();return this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',
+    textTransform:'uppercase',color:t.faint,margin:`0 0 ${mb==null?8:mb}px`},txt);}
+  iconBtn(glyph,opts){opts=opts||{};const t=this.T();
+    return this.h('span',{width:'28px',height:'28px',borderRadius:t.radius+'px',display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'13px',flexShrink:0,cursor:'pointer',
+      color:opts.on?t.accent:t.dim,background:opts.on?t.accentSoft:t.bg,border:`1px solid ${opts.on?t.accentMed:t.border}`},glyph);}
+
+  // ===================== shared: message log slice =====================
+  linkChip(label,host,previewable,active){
+    const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',verticalAlign:'baseline',
+      padding:'1px 7px 1px 6px',borderRadius:'6px',cursor:'pointer',
+      color:t.accent,background:active?t.accentSoft:'transparent',
+      border:`1px solid ${active?t.accentMed:'transparent'}`,textDecoration:active?'none':'underline',
+      textUnderlineOffset:'2px',textDecorationColor:this.mix(t.accent,t.bg,.5)},
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',opacity:.85},previewable?'▣':'↗'),
+      this.h('span',{fontWeight:500},label),
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.faint},'['+host+']'));
+  }
+  msg(time,nick,bodyEls,hl){
+    const t=this.T(),nc=this.nickColor(nick);
+    return this.h('div',{display:'flex',gap:'9px',alignItems:'baseline',padding:hl?'4px 16px':'2px 16px',
+      background:hl?t.accentSoft:'transparent',boxShadow:hl?`inset 3px 0 0 ${t.accent}`:'none'},
+      this.h('span',{fontFamily:t.mono,fontSize:'11.5px',color:t.faint,fontVariantNumeric:'tabular-nums',flexShrink:0},'['+time+']'),
+      this.h('span',{fontFamily:t.mono,fontSize:'12.5px',fontWeight:600,color:nc,whiteSpace:'nowrap',flexShrink:0},'<'+nick+'>'),
+      this.h('span',{fontSize:'13px',lineHeight:1.5,color:t.text},...bodyEls));
+  }
+  logPanel(w,activeLink){
+    const t=this.T();
+    return this.h('div',{width:w+'px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden',fontFamily:t.ui},
+      this.h('div',{padding:'9px 16px',borderBottom:`1px solid ${t.border}`,display:'flex',alignItems:'center',gap:'8px',background:t.head},
+        this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint},'#'),
+        this.h('span',{fontSize:'13.5px',fontWeight:700,color:t.text},'Cabin Fever'),
+        this.h('span',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint},'· 32 online')),
+      this.h('div',{padding:'10px 0'},
+        this.msg('14:02','Kolvarr',['ref sheet finally done — ',this.linkChip('vesna_refsheet.png','imgur.com',true,activeLink)]),
+        this.msg('14:02','Vesna',['oh that came out gorgeous']),
+        this.msg('14:03','Sable',['@Vesna the snow palette is perfect'],true),
+        this.msg('14:04','Kolvarr',['also this thread has the pose i meant ',this.linkChip('north-expedition','f-list.net',false)]),
+        this.msg('14:05','Thistle',['brb finding the storm-shelter log'])));
+  }
+
+  // ===================== §4 Link preview panel =====================
+  previewShell(w,h_,inner,footer){
+    const t=this.T();
+    return this.h('div',{width:w+'px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden',boxShadow:'0 18px 44px -12px rgba(0,0,0,.6)'},
+      this.h('div',{width:'100%',height:h_+'px',display:'flex',alignItems:'center',justifyContent:'center'},inner),
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px',padding:'7px 11px',borderTop:`1px solid ${t.border}`,background:t.head},
+        this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint},'▣'),
+        this.h('span',{fontFamily:t.mono,fontSize:'10.5px',color:t.dim,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1},footer||'imgur.com/a/vesna_refsheet.png'),
+        this.iconBtn('✕')));
+  }
+  fakeImage(w,h_,c,ratio){const t=this.T();
+    return this.h('div',{width:w+'px',height:h_+'px',borderRadius:'5px',position:'relative',overflow:'hidden',
+      background:`linear-gradient(150deg,${this.mix(c,t.text,.12)},${c})`,
+      display:'flex',alignItems:'flex-end'},
+      this.h('div',{position:'absolute',left:'9px',bottom:'8px',fontFamily:t.mono,fontSize:'9.5px',color:'rgba(255,255,255,.72)'},ratio));}
+  connector(dir){const t=this.T();
+    // small arrow/gutter cue between anchor and preview
+    return this.h('div',{alignSelf:'center',display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',padding:'0 2px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.accentMed},dir==='left'?'‹':'›'));}
+
+  frameLoaded(){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'flex-start',gap:'6px'},
+      this.logPanel(430,true),
+      this.connector('right'),
+      this.previewShell(272,300,this.fakeImage(240,268,'#5f6b86','1200×1500 · portrait, clamped to max height'),'imgur.com/vesna_refsheet.png'));
+  }
+  frameWide(){
+    const t=this.T();
+    // right gutter too narrow → preview flips to the LEFT of the anchor
+    return this.h('div',{display:'flex',alignItems:'flex-start',gap:'6px'},
+      this.previewShell(340,232,this.fakeImage(316,200,'#4f6d7a','2400×1350 · wide, clamped to max width'),'imgur.com/north-map.png'),
+      this.connector('left'),
+      this.logPanel(360,true));
+  }
+  frameLoading(){
+    const t=this.T();
+    const shimmer=React.createElement('div',{className:'lpskel',style:{width:'240px',height:'268px',borderRadius:'5px'}});
+    return this.h('div',{display:'flex',alignItems:'flex-start',gap:'6px'},
+      this.logPanel(430,true),
+      this.connector('right'),
+      this.previewShell(272,300,shimmer,'fetching…'));
+  }
+  specRow(l,el){const t=this.T();
+    return this.h('div',{display:'grid',gridTemplateColumns:'132px 1fr',gap:'14px',alignItems:'center',padding:'9px 0',
+      borderBottom:`1px solid ${this.mix(t.border,t.side,.45)}`},
+      this.h('div',{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:t.faint},l),
+      this.h('div',{},el));}
+  frameLinkSpec(){
+    const t=this.T();
+    const note=(txt)=>this.h('span',{fontSize:'12px',color:t.dim,lineHeight:1.5},txt);
+    return this.h('div',{width:'440px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      padding:'16px 18px',fontFamily:t.ui,color:t.text},
+      this.gl('Link treatment & trigger rules',14),
+      this.h('div',{display:'flex',flexDirection:'column'},
+        this.specRow('Previewable',this.h('span',{},this.linkChip('vesna_refsheet.png','imgur.com',true),
+          this.h('div',{marginTop:'5px'},note('Leading ▣ glyph flags a click-to-preview media link.')))),
+        this.specRow('Plain link',this.h('span',{},this.linkChip('north-expedition','f-list.net',false),
+          this.h('div',{marginTop:'5px'},note('↗ glyph, underlined — a plain click follows it.')))),
+        this.specRow('Trigger',note('Preference: click (default) opens the preview · Ctrl/Cmd+click always follows the URL. Hover mode = preview follows the pointer.')),
+        this.specRow('Position',note('Floats in the gutter beside the log so the message stays visible; flips left when the right gutter is too narrow; clamped into the viewport with an 8px margin.')),
+        this.specRow('Max bounds',note('Tall → clamp height; wide → clamp width; otherwise natural size. Never exceeds ~340×300.')),
+        this.specRow('Dismiss',note('Click mode: Esc or click-away (stays open until then). Hover mode: leaving the link.')),
+        this.specRow('Failure',this.h('span',{fontSize:'12px',color:t.dim,lineHeight:1.5},'No preview appears — ',
+          this.h('b',{style:{color:t.text}},'never'),' a broken-image box or flashing chrome.'))));
+  }
+
+  // ===================== §5 Eicon picker =====================
+  composer(activeSmile,w){
+    const t=this.T();
+    return this.h('div',{width:w+'px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',height:'46px',padding:'0 12px',background:t.side,
+        border:`1px solid ${t.border}`,borderRadius:t.radius+'px'},
+        this.h('span',{fontFamily:t.mono,fontSize:'19px',color:t.faint},'+'),
+        this.h('span',{flex:1,fontSize:'13.5px',color:t.faint},'Message #Cabin Fever…'),
+        this.h('span',{display:'flex',alignItems:'center',gap:'9px',fontFamily:t.mono,fontSize:'11px',color:t.faint},
+          this.h('b',{style:{color:t.dim}},'B'),this.h('code',{style:{color:t.dim}},'code'),
+          this.h('span',{width:'26px',height:'26px',borderRadius:'6px',display:'inline-flex',alignItems:'center',
+            justifyContent:'center',fontSize:'14px',cursor:'pointer',
+            color:activeSmile?t.accent:t.dim,background:activeSmile?t.accentSoft:'transparent',
+            border:`1px solid ${activeSmile?t.accentMed:'transparent'}`},'☺'))));
+  }
+  eiconTile(name,fav,dim){
+    const t=this.T();
+    return this.h('div',{position:'relative',width:'60px',height:'60px',borderRadius:'6px',flexShrink:0,cursor:'pointer',
+      background:this.mix(t.accent,t.bg,.86),border:`1px solid ${t.border}`,display:'flex',alignItems:'center',
+      justifyContent:'center',opacity:dim?.5:1,overflow:'hidden'},
+      this.h('span',{fontFamily:t.mono,fontSize:'8px',color:t.faint,textAlign:'center',lineHeight:1.15,padding:'0 3px',
+        wordBreak:'break-all'},name),
+      fav!=null?this.h('span',{position:'absolute',top:'2px',right:'3px',fontSize:'10px',
+        color:fav?t.warn:t.faint,textShadow:'0 1px 2px rgba(0,0,0,.6)'},fav?'★':'☆'):null);
+  }
+  eiconGrid(names,favSet){
+    const t=this.T();
+    return this.h('div',{display:'grid',gridTemplateColumns:'repeat(5,60px)',gap:'6px'},
+      ...names.map((n,i)=>this.hk(i,'div',{},this.eiconTile(n,favSet?favSet.indexOf(n)>=0:null))));
+  }
+  pickerTabs(active,searchDisabled){
+    const t=this.T();
+    const tabs=[['Favorites',false],['Recents',false],['Search',searchDisabled]];
+    return this.h('div',{display:'flex',gap:'2px',padding:'0 10px',borderBottom:`1px solid ${t.border}`},
+      ...tabs.map((tb,i)=>{const on=tb[0]===active;
+        return this.hk(i,'div',{display:'flex',alignItems:'center',gap:'5px',padding:'9px 11px 8px',fontSize:'12px',
+          fontWeight:on?600:500,cursor:'pointer',color:on?t.text:(tb[1]?t.faint:t.dim),
+          boxShadow:on?`inset 0 -2px 0 ${t.accent}`:'none'},tb[0],
+          tb[1]?this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint},'⊘'):null);}));
+  }
+  pickerShell(bodyH,tab,body,opts){
+    opts=opts||{};const t=this.T();
+    const search=tab==='Search';
+    const bar=search&&!opts.searchDisabled?this.h('div',{padding:'9px 10px 3px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px',height:'30px',padding:'0 10px',background:t.bg,
+        border:`1px solid ${t.border}`,borderRadius:t.radius+'px'},
+        this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.faint},'⌕'),
+        this.h('span',{flex:1,fontSize:'12px',color:opts.query?t.text:t.faint},opts.query||'Search eicons…'),
+        this.h('span',{fontFamily:t.mono,fontSize:'9px',color:t.faint},'xariah.net'))):null;
+    const pop=this.h('div',{width:'336px',background:t.side,border:`1px solid ${t.border}`,borderRadius:'11px',
+      boxShadow:'0 24px 60px -14px rgba(0,0,0,.7)',overflow:'hidden',fontFamily:t.ui,color:t.text},
+      this.pickerTabs(tab,opts.searchDisabled),
+      bar,
+      this.h('div',{padding:'10px',maxHeight:bodyH+'px',overflow:'auto',minHeight:'150px'},body),
+      this.h('div',{display:'flex',alignItems:'center',gap:'7px',padding:'7px 11px',borderTop:`1px solid ${t.border}`,
+        background:t.head,fontFamily:t.mono,fontSize:'9.5px',color:t.faint},
+        this.h('span',{},'click to insert'),this.h('span',{color:this.mix(t.faint,t.side,.3)},'·'),
+        this.h('span',{},'☆ to favorite')));
+    pop.props.className='lpscroll';
+    // anchored above the composer ☺ button
+    return this.h('div',{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'0',width:'520px'},
+      this.h('div',{alignSelf:'stretch',display:'flex',justifyContent:'flex-end',paddingRight:'20px'},pop),
+      this.h('div',{alignSelf:'flex-end',marginTop:'-1px',marginRight:'54px',width:0,height:0,
+        borderLeft:'7px solid transparent',borderRight:'7px solid transparent',borderTop:`7px solid ${t.border}`}),
+      this.h('div',{marginTop:'5px',alignSelf:'stretch'},this.composer(true,520)));
+  }
+  emptyBlock(w,glyph,title,sub,cta){
+    const t=this.T();
+    return this.h('div',{width:w+'px',minHeight:'150px',display:'flex',flexDirection:'column',alignItems:'center',
+      justifyContent:'center',textAlign:'center',gap:'9px',padding:'18px'},
+      this.h('div',{width:'40px',height:'40px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'16px',color:t.faint},glyph),
+      this.h('div',{fontSize:'12.5px',fontWeight:600,color:t.dim},title),
+      sub?this.h('div',{fontSize:'11.5px',color:t.faint,maxWidth:'220px',lineHeight:1.5},sub):null,
+      cta?this.h('span',{marginTop:'2px',fontSize:'11.5px',fontWeight:600,color:t.accent,cursor:'pointer'},cta):null);
+  }
+  searchDisabledBody(){
+    const t=this.T();
+    return this.h('div',{minHeight:'150px',display:'flex',flexDirection:'column',alignItems:'center',
+      justifyContent:'center',textAlign:'center',gap:'10px',padding:'20px'},
+      this.h('div',{width:'40px',height:'40px',borderRadius:t.radius+'px',border:`1px solid ${t.border}`,background:t.bg,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'16px',color:t.faint},'⊘'),
+      this.h('div',{fontSize:'12.5px',fontWeight:600,color:t.dim},'Eicon search is off'),
+      this.h('div',{fontSize:'11.5px',color:t.faint,maxWidth:'250px',lineHeight:1.55},
+        'Searching uses ',this.h('span',{color:t.dim},'xariah.net'),', a third-party service.'),
+      this.h('span',{marginTop:'2px',fontSize:'11.5px',fontWeight:600,color:t.accent,cursor:'pointer'},'Enable in Preferences →'));
+  }
+
+  data(){return {
+    faves:['snuggle','arcticfox','maptable','coffee','pawprint','snowfall','journal','compass','lantern','wink'],
+    recents:['wink','coffee','pawprint','thumbsup','facepalm','sparkle','heart','zzz','popcorn','confused'],
+    results:['fox_wink','fox_grin','fox_blush','fox_smug','fox_cry','fox_sleep','fox_wave','fox_heart'],
+  };}
+
+  frameFaves(){const d=this.data();
+    return this.pickerShell(232,'Favorites',this.eiconGrid(d.faves,d.faves.slice(0,10)));}
+  frameRecents(){const d=this.data();
+    return this.pickerShell(232,'Recents',this.eiconGrid(d.recents,['wink','coffee','heart']));}
+  frameSearch(){const d=this.data();const t=this.T();
+    return this.pickerShell(232,'Search',
+      this.h('div',{},
+        this.h('div',{fontFamily:t.mono,fontSize:'9.5px',color:t.faint,margin:'2px 2px 8px'},d.results.length+' results · hover for name'),
+        this.eiconGrid(d.results,['fox_heart'])),
+      {query:'fox'});}
+  frameSearchDisabled(){
+    return this.pickerShell(232,'Search',this.searchDisabledBody(),{searchDisabled:true});}
+  frameStates(){
+    const t=this.T();
+    const shimmer=React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,60px)',gap:'6px'}},
+      ...Array.from({length:8}).map((_,i)=>React.createElement('div',{key:i,className:'lpskel',
+        style:{width:'60px',height:'60px',borderRadius:'6px'}})));
+    const card=(label,body)=>this.h('div',{width:'250px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:'11px',overflow:'hidden'},
+      this.h('div',{padding:'7px 11px',borderBottom:`1px solid ${t.border}`,background:t.head,fontFamily:t.mono,
+        fontSize:'9.5px',fontWeight:600,letterSpacing:'.06em',textTransform:'uppercase',color:t.faint},label),
+      this.h('div',{padding:'10px'},body));
+    return this.h('div',{display:'flex',flexWrap:'wrap',gap:'16px',width:'808px'},
+      card('No favorites yet',this.emptyBlock(228,'☆','No favorites yet','Tap the star on any eicon to keep it here.')),
+      card('No recents',this.emptyBlock(228,'↺','Nothing used yet','Eicons you insert will show up here.')),
+      card('No results',this.emptyBlock(228,'⌕','No eicons match “qwxz”','Try a shorter or different term.')),
+      card('Loading',this.h('div',{minHeight:'150px',display:'flex',alignItems:'center',justifyContent:'center'},shimmer)),
+      card('Search unavailable',this.emptyBlock(228,'⚠','Search is unavailable','xariah.net didn’t respond. Favorites & recents still work.','Retry')));
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'L·A',cap:'Link preview — click-to-preview (default). A media link in the log opens a large preview floating in the gutter to the right; the message stays visible. Portrait image clamped to max height, filename footer + close.',el:this.frameLoaded()},
+      {id:'L·B',cap:'Wide image + flip. When the right gutter is too narrow the preview flips to the LEFT of the anchor; wide images clamp to max width (letterboxed height).',el:this.frameWide()},
+      {id:'L·C',cap:'Loading — a shimmer fills the target box while the image fetches. On failure the preview simply never appears — no broken-image chrome, ever.',el:this.frameLoading()},
+      {id:'L·D',cap:'Link treatment & trigger rules — previewable (▣) vs plain (↗) link, click/hover trigger modes, positioning, max bounds, dismissal, and the no-flash failure rule.',el:this.frameLinkSpec()},
+      {id:'K·A',cap:'Eicon picker — Favorites tab, anchored above the composer ☺ button (caret + composer shown for context). 60px grid, filled ★ = favorited, click to insert.',el:this.frameFaves()},
+      {id:'K·B',cap:'Recents tab — most-recently-inserted eicons, star affordance to promote any into Favorites.',el:this.frameRecents()},
+      {id:'K·C',cap:'Search tab (enabled) — query field (xariah.net), result grid, hover-for-name, star to favorite.',el:this.frameSearch()},
+      {id:'K·D',cap:'Search tab — disabled state: the tab is dimmed with a ⊘ marker; the body explains “search uses xariah.net, a third-party service” and links to Preferences. Favorites & Recents stay usable.',el:this.frameSearchDisabled()},
+      {id:'K·E',cap:'Eicon picker — body states: no favorites, no recents, no results, loading shimmer, and search-unavailable error.',el:this.frameStates()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>
