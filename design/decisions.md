@@ -38,7 +38,7 @@ F-List passwords are **never persisted**. On connect, the user supplies their F-
 - Consequences: no MASTER_KEY/KMS in v1, no ciphertext columns, no startup session resume (Milestone 2 loses that item), and every server deploy logs all characters out of F-Chat until passwords are re-entered. Accepted at current scale.
 - Vault hygiene: passwords never logged or serialized, redacted from error paths, cleared when the last session for an account stops or the user explicitly disconnects.
 - This reduces the credential-custody exposure to "passwords transit our server and live in RAM while a session runs" — the same trust level as any hosted web client, and comfortably within the developer policy's storage clause.
-- **The full bouncer model (restart-surviving sessions) is a stated eventual goal**, deliberately deferred. When it comes, encrypted at-rest storage returns as an explicit per-user opt-in, and the custody question — including whether to consult F-List staff first — gets decided before building; see `risks-and-open-questions.md`.
+- **The full bouncer model (restart-surviving sessions) is a stated eventual goal**, deliberately deferred. When it comes, encrypted at-rest storage returns as an explicit per-user opt-in, and the custody question — including whether to consult F-List staff first — gets decided before building; see `risks-and-open-questions.md`. *→ Decided 2026-07-17: committed for M9, disclosure-only — see §15.*
 - Clarification on tickets: an *established* F-Chat connection never needs re-ticketing — the ticket is checked only at IDN. The vault exists for the two cases that need a fresh ticket: reconnecting after a drop, and authenticated JSON API calls. This mirrors what local clients already do with saved credentials.
 
 ## 4. First milestone — thin vertical slice
@@ -198,6 +198,50 @@ server proxy, no arbitrary-URL resolution.
 - Enabled by default (unlike §12's search, no typed text goes anywhere —
   only a standard image fetch on explicit action); the pref note discloses
   that the image host sees your IP when a preview loads.
+
+## 15. Session lifetime & credential custody after the self-host pivot (2026-07-17)
+
+Two user decisions that follow from §2's admin-only pivot; together they
+close the loop on "the bouncer stays online" vs. "the bouncer is a good
+citizen".
+
+- **Detached-disconnect ceiling (M8, shipped as step 15).** A session with
+  zero attached devices for `DETACHED_DISCONNECT_HOURS` (default **72**,
+  `0` = never) is logged out of F-Chat by the detached-away sweep. Holding
+  a connection nobody reads for weeks is discourteous to F-List and
+  surprising to the user. Operator env knob, not a user pref (same
+  reasoning as the §11 budget: the courtesy posture attaches to the
+  server). `autoConnect` intent stays true and the in-memory vault keeps
+  the credentials, so the next attach reconnects automatically with the
+  exact channel set (§9 scenario 2) — the user only loses catch-up *while*
+  disconnected. The session notice states why ("disconnected after 72h
+  with no attached device").
+- **Opt-in at-rest credential storage is committed for M9** — amends §3's
+  "never persisted". §3 was written against the multi-tenant threat model
+  (a breached managed service leaking *many users'* F-List passwords);
+  after §2's pivot the deployment is the admin's own box holding their own
+  credentials — the same trust model as the desktop clients
+  (Rising/Horizon) that already store credentials on the machine, and as
+  classic IRC bouncers. Design constraints, decided now:
+  - **Unattended auto-reconnect after a server restart requires that the
+    box can decrypt alone**: an env-file key encrypting a DB column.
+    That protects dumps/backups from casual exposure but not a full-box
+    compromise — exactly the desktop-client guarantee, and the docs say
+    so plainly rather than overselling the crypto. (The "wrap with the
+    app password, unlock on next login" middle option was considered and
+    rejected: the goal is sessions that come back by themselves.)
+  - **Opt-in per F-List account, default off** — a "remember on this
+    server" affordance with disclosure; the in-memory-only model stays
+    the default.
+  - Boot-time reconnect only revives sessions that were connected at
+    shutdown and are within the detached-disconnect window — an
+    abandoned instance must not reconnect ghosts forever.
+  - Whether the credentials table rides the automatic pg dumps (or is
+    excluded) is decided at build time and documented either way.
+  - **The F-List outreach question is resolved as disclosure-only** (the
+    `risks-and-open-questions.md` gate): established third-party clients
+    already store credentials without ceremony; we document the model
+    honestly in the self-host docs instead of seeking prior blessing.
 
 ## Other settled points
 

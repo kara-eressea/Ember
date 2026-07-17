@@ -4,6 +4,13 @@
 // restores what the status was. Off by default. The sweep only ever moves a
 // status *from "online"*: a manually chosen away/busy/looking/dnd is the
 // user's, and the bouncer never clobbers it.
+//
+// The same sweep enforces the detached-disconnect ceiling (M8, decisions.md
+// §15): a session nobody has attached to for DETACHED_DISCONNECT_HOURS is
+// stopped outright — holding an F-Chat connection no one reads for days is
+// discourteous to F-List. autoConnect intent stays true and the vault keeps
+// the credentials, so the next attach reconnects automatically with the
+// exact channel set (§9 scenario 2).
 
 import { eq } from "drizzle-orm";
 import { resolvePrefs } from "@emberchat/protocol";
@@ -22,6 +29,8 @@ export interface DetachedAwayOptions {
   hub: GatewayHub;
   logger: SessionLogger;
   sweepIntervalMs?: number;
+  /** Stop a session after this long with zero subscribers; 0 = never. */
+  disconnectAfterMs?: number;
   /** Injectable clock for tests. */
   now?: () => number;
 }
@@ -127,14 +136,34 @@ export class DetachedAway {
           this.#detachedSince.delete(identityId);
           continue;
         }
-        if (session.status !== "online") {
-          // Not connected to F-Chat — nothing to set; the clock keeps
-          // counting from the detach, not the reconnect.
-          continue;
-        }
+        // The stamp tracks detachment, not connectivity: it is set on the
+        // first subscriber-less sweep even while the session is between
+        // F-Chat connections, so both thresholds count from the detach.
         const since = this.#detachedSince.get(identityId);
         if (since === undefined) {
           this.#detachedSince.set(identityId, now);
+          continue;
+        }
+        // Detached-disconnect ceiling (decisions.md §15): a session in
+        // reconnect-backoff counts too — stopping it also ends the retries.
+        const disconnectAfterMs = this.#options.disconnectAfterMs ?? 0;
+        if (disconnectAfterMs > 0 && now - since >= disconnectAfterMs) {
+          this.#detachedSince.delete(identityId);
+          this.#applied.delete(identityId);
+          const hours = Math.round(disconnectAfterMs / 3_600_000);
+          this.#options.sessions.stop(
+            identityId,
+            `disconnected after ${String(hours)}h with no attached device`,
+          );
+          this.#options.logger.info(
+            { identityId },
+            "detached session disconnected",
+          );
+          continue;
+        }
+        if (session.status !== "online") {
+          // Not connected to F-Chat — no status to set; the clock keeps
+          // counting from the detach, not the reconnect.
           continue;
         }
         if (this.#applied.has(identityId)) {
