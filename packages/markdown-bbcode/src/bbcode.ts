@@ -30,6 +30,23 @@ export type BBWrapperTag = (typeof BB_WRAPPER_TAGS)[number];
 export const BB_NAME_TAGS = ["user", "icon", "eicon"] as const;
 export type BBNameTag = (typeof BB_NAME_TAGS)[number];
 
+/** Profile-dialect block tags (M8): parsed only under dialect "profile" —
+ * on the chat wire they stay literal text, exactly as before. */
+export const BB_BLOCK_TAGS = [
+  "heading",
+  "big",
+  "small",
+  "quote",
+  "left",
+  "center",
+  "right",
+  "justify",
+  "indent",
+] as const;
+export type BBBlockTag = (typeof BB_BLOCK_TAGS)[number];
+
+export type BBDialect = "chat" | "profile";
+
 export type BBNode =
   | { readonly type: "text"; readonly text: string }
   | {
@@ -48,7 +65,19 @@ export type BBNode =
       readonly children: readonly BBNode[];
     }
   | { readonly type: "name"; readonly tag: BBNameTag; readonly name: string }
-  | { readonly type: "noparse"; readonly text: string };
+  | { readonly type: "noparse"; readonly text: string }
+  // Profile-dialect nodes — never produced under dialect "chat".
+  | {
+      readonly type: "block";
+      readonly tag: BBBlockTag;
+      readonly children: readonly BBNode[];
+    }
+  | {
+      readonly type: "collapse";
+      readonly title: string;
+      readonly children: readonly BBNode[];
+    }
+  | { readonly type: "hr" };
 
 /** F-List character names; eicon names additionally allow dots. */
 const NAME_RE = /^[a-zA-Z0-9 _.-]{1,64}$/;
@@ -87,6 +116,10 @@ export function readTagToken(input: string, at: number): TagToken | undefined {
 
 function isWrapperTag(tag: string): tag is BBWrapperTag {
   return (BB_WRAPPER_TAGS as readonly string[]).includes(tag);
+}
+
+function isBlockTag(tag: string): tag is BBBlockTag {
+  return (BB_BLOCK_TAGS as readonly string[]).includes(tag);
 }
 
 function isNameTag(tag: string): tag is BBNameTag {
@@ -158,8 +191,16 @@ export function makeCloserFinder(
  * mismatched closers, bad parameters, and unclosed openers all become
  * literal text rather than errors — chat input is hostile and the wire
  * must never make us throw.
+ *
+ * Dialect "profile" (M8) additionally accepts the profile block tags
+ * (heading/big/small/quote/alignment/indent), `[collapse=Title]`, and the
+ * void `[hr]` — profile descriptions use a wider set than the chat wire.
+ * Anything still unrecognized degrades to literal text either way.
  */
-export function parseBBCode(input: string): BBNode[] {
+export function parseBBCode(
+  input: string,
+  dialect: BBDialect = "chat",
+): BBNode[] {
   const root: Frame = {
     open: { closing: false, tag: "", param: undefined, raw: "", length: 0 },
     children: [],
@@ -282,6 +323,25 @@ export function parseBBCode(input: string): BBNode[] {
       continue;
     }
 
+    // Profile-dialect blocks.
+    if (dialect === "profile") {
+      if (token.tag === "hr" && token.param === undefined) {
+        top().children.push({ type: "hr" });
+        at += token.length;
+        continue;
+      }
+      if (token.tag === "collapse") {
+        stack.push({ open: token, children: [] });
+        at += token.length;
+        continue;
+      }
+      if (isBlockTag(token.tag) && token.param === undefined) {
+        stack.push({ open: token, children: [] });
+        at += token.length;
+        continue;
+      }
+    }
+
     // Anything else — unknown tag, or a subset tag with an illegal
     // parameter shape: literal.
     pushText(top().children, token.raw);
@@ -310,6 +370,12 @@ function buildNode(frame: Frame): BBNode {
   }
   if (open.tag === "url") {
     return { type: "url", href: open.param!, children };
+  }
+  if (open.tag === "collapse") {
+    return { type: "collapse", title: open.param?.trim() ?? "", children };
+  }
+  if (isBlockTag(open.tag)) {
+    return { type: "block", tag: open.tag, children };
   }
   return { type: "wrapper", tag: open.tag as BBWrapperTag, children };
 }
@@ -341,6 +407,20 @@ export function serializeBBCode(nodes: readonly BBNode[]): string {
         break;
       case "noparse":
         out += `[noparse]${node.text}[/noparse]`;
+        break;
+      // Profile-dialect nodes serialize losslessly too (render-only in
+      // practice — nothing ever sends the profile dialect to the wire).
+      case "block":
+        out += `[${node.tag}]${serializeBBCode(node.children)}[/${node.tag}]`;
+        break;
+      case "collapse":
+        out +=
+          node.title === ""
+            ? `[collapse]${serializeBBCode(node.children)}[/collapse]`
+            : `[collapse=${node.title}]${serializeBBCode(node.children)}[/collapse]`;
+        break;
+      case "hr":
+        out += "[hr]";
         break;
     }
   }

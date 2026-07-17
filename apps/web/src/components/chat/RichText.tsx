@@ -20,10 +20,24 @@ export function RichText({ bbcode }: { bbcode: string }) {
   return <>{renderNodes(nodes, "r")}</>;
 }
 
-function renderNodes(nodes: readonly BBNode[], keyBase: string): ReactNode[] {
-  return nodes.map((node, index) =>
-    renderNode(node, `${keyBase}.${String(index)}`),
-  );
+/** Hook for the profile renderer (M8): claim a node (profile blocks) or
+ * return undefined to fall through to the shared inline rendering. */
+export type ExtraNodeRenderer = (
+  node: BBNode,
+  key: string,
+) => ReactNode | undefined;
+
+/** Exported for the profile BBCode renderer (M8): profile blocks wrap these
+ * same inline nodes so chat and profiles render text identically. */
+export function renderNodes(
+  nodes: readonly BBNode[],
+  keyBase: string,
+  extra?: ExtraNodeRenderer,
+): ReactNode[] {
+  return nodes.map((node, index) => {
+    const key = `${keyBase}.${String(index)}`;
+    return extra?.(node, key) ?? renderNode(node, key, extra);
+  });
 }
 
 const WRAPPER_CLASS: Record<string, string | undefined> = {
@@ -35,20 +49,24 @@ const WRAPPER_CLASS: Record<string, string | undefined> = {
   sub: styles.bbSub,
 };
 
-function renderNode(node: BBNode, key: string): ReactNode {
+function renderNode(
+  node: BBNode,
+  key: string,
+  extra?: ExtraNodeRenderer,
+): ReactNode {
   switch (node.type) {
     case "text":
       return renderText(node.text, key);
     case "wrapper":
       return (
         <span key={key} className={WRAPPER_CLASS[node.tag] ?? ""}>
-          {renderNodes(node.children, key)}
+          {renderNodes(node.children, key, extra)}
         </span>
       );
     case "color":
       return (
         <span key={key} className={styles[`bbc-${node.color}`] ?? ""}>
-          {renderNodes(node.children, key)}
+          {renderNodes(node.children, key, extra)}
         </span>
       );
     case "url":
@@ -60,7 +78,7 @@ function renderNode(node: BBNode, key: string): ReactNode {
           target="_blank"
           rel="noreferrer noopener"
         >
-          {renderNodes(node.children, key)}
+          {renderNodes(node.children, key, extra)}
         </a>
       );
     case "name":
@@ -83,6 +101,13 @@ function renderNode(node: BBNode, key: string): ReactNode {
           {node.text}
         </span>
       );
+    // Profile-dialect nodes never occur in chat parses; if one arrives
+    // unclaimed (no `extra`), degrade to unstyled content — never crash.
+    case "block":
+    case "collapse":
+      return <span key={key}>{renderNodes(node.children, key, extra)}</span>;
+    case "hr":
+      return null;
   }
 }
 

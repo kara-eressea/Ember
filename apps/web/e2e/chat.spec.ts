@@ -50,13 +50,33 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   // Frontpage is unowned ("" owner slot) — Nyx is a channel op.
   await expect(memberMenu.getByText("channel op @")).toBeVisible();
   await expect(
-    memberMenu.getByRole("menuitem", { name: /View profile/ }),
+    memberMenu.getByRole("menuitem", { name: /Open on f-list\.net/ }),
   ).toHaveAttribute("href", "https://www.f-list.net/c/Nyx%20Firemane");
   await expect(
     memberMenu.getByRole("menuitem", { name: "Ignore" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(memberMenu).not.toBeVisible();
+
+  // ── Profile viewer (M8 step 7): menu → modal, sim-served profile ───────
+  await members.getByText("Nyx Firemane").click({ button: "right" });
+  await memberMenu.getByRole("menuitem", { name: "View profile" }).click();
+  const viewer = page.getByRole("dialog", { name: "Profile: Nyx Firemane" });
+  await expect(viewer).toBeVisible();
+  // The sim's default profile description renders through the BBCode body.
+  await expect(viewer.getByText(/sim fixture character/)).toBeVisible();
+  // The view lands in the history rail; Details resolves canned infotags.
+  await expect(viewer.getByText("Recently viewed")).toBeVisible();
+  await viewer.getByRole("tab", { name: "Details" }).click();
+  await expect(viewer.getByText("Gender")).toBeVisible();
+  await expect(viewer.getByText("Female")).toBeVisible();
+  // Insights against a character we just chatted with in Frontpage.
+  await viewer.getByRole("tab", { name: "Insights" }).click();
+  await expect(
+    viewer.getByText(/YOU × Nyx Firemane|crossed paths/),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(viewer).not.toBeVisible();
 
   // Message opens (and routes to) the DM thread; back for the rest.
   await members.getByText("Nyx Firemane").click({ button: "right" });

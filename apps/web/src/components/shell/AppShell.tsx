@@ -32,6 +32,8 @@ import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
+import { useProfileStore } from "../../stores/profile.js";
+import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
@@ -55,6 +57,7 @@ export function AppShell() {
   );
   const membersOpen = useUiStore((s) => s.membersOpen);
   const prefsOpen = useUiStore((s) => s.prefsOpen);
+  const profileViewing = useProfileStore((s) => s.viewing);
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
 
   const ref: ConvRef | undefined =
@@ -301,6 +304,14 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setChannelBrowserOpen(false);
+          }}
+        />
+      )}
+      {profileViewing !== undefined && (
+        <ProfileViewer
+          identityId={activeId}
+          onClose={() => {
+            useProfileStore.getState().close();
           }}
         />
       )}
