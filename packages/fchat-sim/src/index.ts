@@ -5,4 +5,9 @@ export {
   type FchatSimOptions,
 } from "./sim-server.js";
 export { TicketService } from "./ticket-service.js";
+export {
+  CharacterService,
+  type SimCharacterProfileSeed,
+  type SimGuestbookPostSeed,
+} from "./character-service.js";
 export * from "./world.js";
