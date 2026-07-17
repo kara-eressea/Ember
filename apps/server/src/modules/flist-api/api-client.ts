@@ -1,20 +1,35 @@
 // F-List JSON API client. Operational budget (developer policy): at most one
 // request per second globally — every call funnels through the throttle
-// below. The character-data endpoint (<200/hour budget) arrives with M6.
+// below. Character-data-class calls (character-data, guestbook) are
+// additionally metered by CharacterDataBudget, which callers consult BEFORE
+// invoking these methods (this client stays a pure transport).
 
 import {
   API_TICKET_PATH,
+  CHARACTER_API_PATHS,
   SOCIAL_API_PATHS,
   apiEnvelopeSchema,
   apiTicketResponseSchema,
   bookmarkListSchema,
+  characterDataSchema,
   friendListSchema,
   friendRequestListSchema,
+  guestbookSchema,
+  infoListSchema,
+  kinkListSchema,
+  mappingListSchema,
+  memoGetSchema,
   type ApiEnvelope,
   type ApiTicketResponse,
   type BookmarkList,
+  type CharacterData,
   type FriendList,
   type FriendRequestList,
+  type Guestbook,
+  type InfoList,
+  type KinkList,
+  type MappingList,
+  type MemoGet,
 } from "@emberchat/fchat-protocol";
 
 /** Every social endpoint authenticates with the account's current ticket. */
@@ -202,6 +217,69 @@ export class FlistApiClient {
       { request_id: String(requestId) },
       apiEnvelopeSchema,
     );
+  }
+
+  // ── Character endpoints (M8 step 2) — shapes verified 2026-07-17 ────────
+  // characterData/guestbook count against the 170/hour CharacterDataBudget
+  // (enforced by callers); the mapping lists and memo reads don't.
+
+  characterData(auth: SocialAuth, name: string): Promise<CharacterData> {
+    return this.#post(
+      CHARACTER_API_PATHS.characterData,
+      auth,
+      { name },
+      characterDataSchema,
+    );
+  }
+
+  /** page is 0-based, pages of 10. Gate on character-data's
+   * `settings.guestbook` before spending budget here. */
+  guestbook(auth: SocialAuth, id: number, page: number): Promise<Guestbook> {
+    return this.#post(
+      CHARACTER_API_PATHS.guestbook,
+      auth,
+      { id: String(id), page: String(page) },
+      guestbookSchema,
+    );
+  }
+
+  /** target is the character NAME (not id). */
+  memoGet(auth: SocialAuth, target: string): Promise<MemoGet> {
+    return this.#post(
+      CHARACTER_API_PATHS.memoGet,
+      auth,
+      { target },
+      memoGetSchema,
+    );
+  }
+
+  mappingList(): Promise<MappingList> {
+    return this.#postPublic(CHARACTER_API_PATHS.mappingList, mappingListSchema);
+  }
+
+  kinkList(): Promise<KinkList> {
+    return this.#postPublic(CHARACTER_API_PATHS.kinkList, kinkListSchema);
+  }
+
+  infoList(): Promise<InfoList> {
+    return this.#postPublic(CHARACTER_API_PATHS.infoList, infoListSchema);
+  }
+
+  /** Ticketless endpoints — still POST, still through the 1 req/s gate. */
+  async #postPublic<T>(
+    path: string,
+    schema: { parse: (value: unknown) => T },
+  ): Promise<T> {
+    return this.#throttled(async () => {
+      const response = await this.#fetch(new URL(path, this.#baseUrl), {
+        method: "POST",
+        body: new URLSearchParams(),
+      });
+      if (!response.ok) {
+        throw new Error(`${path}: HTTP ${String(response.status)}`);
+      }
+      return schema.parse(await response.json());
+    });
   }
 
   async #post<T>(
