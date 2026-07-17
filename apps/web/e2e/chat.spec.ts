@@ -50,13 +50,112 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   // Frontpage is unowned ("" owner slot) — Nyx is a channel op.
   await expect(memberMenu.getByText("channel op @")).toBeVisible();
   await expect(
-    memberMenu.getByRole("menuitem", { name: /View profile/ }),
+    memberMenu.getByRole("menuitem", { name: /Open on f-list\.net/ }),
   ).toHaveAttribute("href", "https://www.f-list.net/c/Nyx%20Firemane");
   await expect(
     memberMenu.getByRole("menuitem", { name: "Ignore" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(memberMenu).not.toBeVisible();
+
+  // ── Profile viewer (M8 step 7): menu → modal, sim-served profile ───────
+  await members.getByText("Nyx Firemane").click({ button: "right" });
+  await memberMenu.getByRole("menuitem", { name: "View profile" }).click();
+  const viewer = page.getByRole("dialog", { name: "Profile: Nyx Firemane" });
+  await expect(viewer).toBeVisible();
+  // The sim's default profile description renders through the BBCode body.
+  await expect(viewer.getByText(/sim fixture character/)).toBeVisible();
+  // The view lands in the history rail; Details resolves canned infotags.
+  await expect(viewer.getByText("Recently viewed")).toBeVisible();
+
+  // ── MatchStrip + Compare (M8 step 9) ───────────────────────────────────
+  // Sim default profiles carry only a Gender infotag and no kinks, so the
+  // matcher lands Neutral across the board — missing data is never a
+  // mismatch. The strip proves the own-profile fetch; Full compare hands
+  // off to the tab.
+  await expect(viewer.getByText("Compatibility with Cindral")).toBeVisible();
+  await viewer.getByRole("button", { name: /Full compare/ }).click();
+  await expect(viewer.getByRole("tab", { name: "Compare" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    viewer.getByText("Not enough overlapping profile data for a verdict yet."),
+  ).toBeVisible();
+  await expect(
+    viewer.getByRole("row").filter({ hasText: "Orientation" }),
+  ).toBeVisible();
+  await expect(
+    viewer.getByText("No kinks appear on both lists — nothing to align."),
+  ).toBeVisible();
+
+  await viewer.getByRole("tab", { name: "Details" }).click();
+  await expect(viewer.getByText("Gender")).toBeVisible();
+  await expect(viewer.getByText("Female")).toBeVisible();
+  // Insights against a character we just chatted with in Frontpage.
+  await viewer.getByRole("tab", { name: "Insights" }).click();
+  await expect(
+    viewer.getByText(/YOU × Nyx Firemane|crossed paths/),
+  ).toBeVisible();
+
+  // ── Images + Guestbook (M8 step 10) ────────────────────────────────────
+  // Images come from the cached character-data payload (fixture-seeded in
+  // global-setup, hotlinks intercepted); the lightbox overlays the modal.
+  await viewer.getByRole("tab", { name: "Images" }).click();
+  await expect(
+    viewer.getByRole("button", { name: "Image 1 of 3" }),
+  ).toBeVisible();
+  await viewer.getByRole("button", { name: "Image 2 of 3" }).click();
+  const lightbox = viewer.getByRole("dialog", { name: "Image 2 of 3" });
+  await expect(lightbox).toBeVisible();
+  await expect(lightbox.getByText("2/3")).toBeVisible();
+  await expect(lightbox.getByText("A portrait")).toBeVisible();
+  await lightbox.getByRole("button", { name: "Next image" }).click();
+  await expect(
+    viewer.getByRole("dialog", { name: "Image 3 of 3" }).getByText("3/3"),
+  ).toBeVisible();
+  // Escape closes the lightbox, not the profile modal underneath.
+  await page.keyboard.press("Escape");
+  await expect(
+    viewer.getByRole("dialog", { name: /Image \d/ }),
+  ).not.toBeVisible();
+  await expect(viewer).toBeVisible();
+
+  // Guestbook: 12 seeded posts → page one shows 10, Load more fetches the
+  // rest; the owner reply renders as a quoted block.
+  await viewer.getByRole("tab", { name: "Guestbook" }).click();
+  await expect(
+    viewer.getByText("Wonderful company around the fire."),
+  ).toBeVisible();
+  await expect(viewer.getByText("Nyx Firemane replied")).toBeVisible();
+  await expect(viewer.getByText("Guestbook entry number 9.")).toBeVisible();
+  await expect(
+    viewer.getByText("Guestbook entry number 11."),
+  ).not.toBeVisible();
+  await viewer.getByRole("button", { name: "Load more" }).click();
+  await expect(viewer.getByText("Guestbook entry number 11.")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(viewer).not.toBeVisible();
+
+  // ── Mini profile card (M8 step 8): member row click → §13 popover ─────
+  await members.getByText("Old Greywhisker").click();
+  const card = page.getByRole("dialog", {
+    name: "Profile card: Old Greywhisker",
+  });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole("button", { name: "Message" })).toBeVisible();
+  // Step 9: the compatibility block rides the card once own data exists.
+  await expect(card.getByText("Compatibility")).toBeVisible();
+  // "Open profile" hands off to the full viewer and closes the popover.
+  await card.getByRole("button", { name: "Open profile" }).click();
+  await expect(card).not.toBeVisible();
+  const greyViewer = page.getByRole("dialog", {
+    name: "Profile: Old Greywhisker",
+  });
+  await expect(greyViewer).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(greyViewer).not.toBeVisible();
 
   // Message opens (and routes to) the DM thread; back for the rest.
   await members.getByText("Nyx Firemane").click({ button: "right" });
@@ -94,6 +193,15 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
     // Receive a channel message.
     birch.send("MSG", { channel: "Frontpage", message: "Evening, all." });
     await expect(log.getByText("Evening, all.")).toBeVisible();
+
+    // Log nicks open the mini profile card too (M8 step 8).
+    await log.getByRole("button", { name: "Birch Rowan" }).first().click();
+    const nickCard = page.getByRole("dialog", {
+      name: "Profile card: Birch Rowan",
+    });
+    await expect(nickCard).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(nickCard).not.toBeVisible();
 
     // ── PMs, both directions ────────────────────────────────────────────
     birch.send("PRI", {

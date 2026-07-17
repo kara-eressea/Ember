@@ -9,9 +9,10 @@ tooling and character search moved to **M10**
 (`milestone-10-ads-and-search.md`); the desktop client remains **MX**.*
 
 **Goal:** the features that make EmberChat pleasant to *live in* — an
-in-app character profile viewer with per-identity view history and private
-notes, Discord-style mini profile cards, Rising-style compatibility scoring,
-link previews, and an eicon picker with opt-in third-party search.
+in-app character profile viewer with per-identity view history, private
+notes, and relationship insights from our own stored history, Discord-style
+mini profile cards, Rising-style compatibility scoring, link previews, and
+an eicon picker with opt-in third-party search.
 
 **Depends on:** M7.
 
@@ -50,8 +51,27 @@ Routes:
 - `GET .../profile-history?limit&before` → recently-viewed list (name,
   lastViewedAt, viewCount, cached flag), newest first.
 - `DELETE .../profile-history/:name` — prune one history entry.
-- `GET .../profile/:name/guestbook?page=` and `.../images` — thin
-  passthroughs, **gated on the step-1 endpoint verification**.
+- `GET .../profile/:name/guestbook?page=` — thin passthrough to
+  `character-guestbook.php` (verified 2026-07-17: params `id` + 0-based
+  `page`, pages of 10, `{nextPage, posts[]}`), served only when the cached
+  profile's `settings.guestbook` is true (character-data tells us for free —
+  no wasted budget on disabled guestbooks). No separate `.../images` route:
+  the spike showed `character-images.php` is redundant with the `images`
+  array already inside character-data (assemble
+  `static.f-list.net/images/charimage/{image_id}.{extension}`), so the
+  Images tab costs zero extra requests.
+- `GET .../profile/:name/insights` — relationship stats derived from data
+  the bouncer already holds (added 2026-07-16, after the initial spec):
+  SQL aggregates over the per-identity `messages` table (DMs exchanged
+  sent/received, last chatted, first encountered, last message observed
+  from them in any shared channel or DM) plus live session state
+  (currently online + status, channels currently shared) and the
+  `profile_views` row (times viewed, first viewed). **No new tables, no
+  F-List traffic, zero budget cost.** Deliberately *not* presence
+  history: true last-seen-online would mean persisting the global NLN/FLN
+  firehose — heavy writes and surveillance of characters the user never
+  interacted with. "Last seen talking" + live online state is what we can
+  compute honestly; presence tracking stays out (future opt-in at most).
 
 Four new tables (`apps/server/src/db/schema.ts`):
 
@@ -73,9 +93,13 @@ Four new tables (`apps/server/src/db/schema.ts`):
   text, `updated_at`. Deliberately separate from `profile_views` so pruning
   history never deletes a note. Routes: `GET`/`PUT
   .../profile/:name/note` (the GET rides along in the profile response).
-  If step 1 verifies a stable F-List memo endpoint, offer one-way **memo
-  import** (and possibly sync) on top; ours works regardless — unlike
-  Rising's memo surface, notes don't depend on the API.
+  Step 1 verified the memo endpoints (2026-07-17:
+  `character-memo-get2.php` with `target` = character *name* →
+  `{note, id}`; save via `character-memo-save.php` with `target` = that
+  memo id), so one-way **memo import** ships: an "Import F-List memo"
+  affordance on an empty note (memo reads count as budget-free — they're
+  not character-data-class). Ours works regardless — unlike Rising's memo
+  surface, notes don't depend on the API.
 
 The server resolves raw character-data (numeric infotag/kink ids) against
 `flist_mappings` into a **`ProfileDto`** (`packages/protocol/src/profile.ts`)
@@ -91,7 +115,15 @@ F-List's 200/hour character-data limit; guestbook/images/character-data all
 count against it, tickets and mappings don't). Global per instance — the
 policy risk attaches to the egress IP, and the instance is single-user. Sits
 *in front of* the existing 1 req/s `FlistApiClient` throttle (which stays as
-the second, orthogonal gate). On exhaustion: serve the stale cached payload
+the second, orthogonal gate). The cap is operator-tunable via
+`CHARACTER_DATA_BUDGET_PER_HOUR` (default 170; wired in step 5 with the other
+config) — env-var only, deliberately **not** a UI preference: the 200/hour
+figure is policy prose, not runtime-discoverable, so if F-List changes it a
+self-hoster adjusts config without a release; but the risk attaches to the
+server's IP and account, so the decision belongs to the operator reading the
+deploy docs, not a prefs toggle (decided with the user 2026-07-17). No upper
+clamp in code; `.env.example` documents the derivation. On exhaustion: serve
+the stale cached payload
 with `budgetExhausted: true`, or 429 + `retryAfterSeconds` when there is no
 cache. The counter resets on restart — accepted LOW (interactive browsing
 can't realistically hit 170/hr twice around a restart); noted in the module
@@ -168,9 +200,18 @@ it returns.
   4. **Compare** — side-by-side vs. the active identity: per-dimension
      score table with reasons, two-column kink alignment sorted
      worst-conflicts-first. Pure `@emberchat/matcher` output.
-  5. **Images** / **Guestbook** — gated on step-1 verification. Fallbacks
-     if verification fails: Images renders the `images`/`inlines` arrays
-     already inside character-data; Guestbook ships as a link-out.
+  5. **Insights** — dense label/value rows of the viewing identity's own
+     relationship stats with this character, from the insights route:
+     messages exchanged, last chatted, first encountered, last seen
+     talking, currently-online + shared channels, times viewed. Empty
+     state: "You haven't crossed paths yet." Per-identity by
+     construction — it's a read over the user's own stored history, the
+     same privacy model as notes.
+  6. **Images** / **Guestbook** — both endpoints verified 2026-07-17.
+     Images renders the `images` array already inside character-data (no
+     extra requests); Guestbook shows only when the profile's
+     `settings.guestbook` is true, with a "this character has no
+     guestbook" empty state otherwise.
 - **Entry points**: MemberContextMenu "View profile" opens the viewer (keep
   "Open on f-list.net ↗" as a secondary item); `[user]` tags in RichText,
   member-list rows (left-click; right-click keeps the menu), and message-log
@@ -218,32 +259,60 @@ log (see the CD brief). Client-only track:
   preview grid via the existing `eiconUrl`; click inserts
   `[eicon]name[/eicon]` at the caret; star toggles favorite. The Search tab,
   when disabled, shows a one-line explainer + a link to the prefs pane.
-- **xariah search via server proxy**: `GET /api/eicons/search?q=` in a new
-  `apps/server/src/modules/eicons/routes.ts`. Proxy rather than
-  client-direct because (a) the user's IP never reaches the third party —
-  matching the privacy pref's promise; (b) immune to xariah's unknown CORS
-  posture; (c) single egress with a server-side LRU result cache (~500
-  queries, 15 min TTL) and one polite rate limit — a good citizen of a
-  community service; (d) the base URL is a config knob
-  (`EICON_SEARCH_BASE_URL`, default xariah) that tests point at fchat-sim.
-  Response `{ results: string[] }` — **names only; rendering stays
-  static.f-list.net**. Exact endpoint/shape is a step-1 verification item.
+- **xariah-backed search via a server-local index** (model corrected by the
+  2026-07-17 spike: **xariah has no search endpoint** — Horizon and XarChat
+  download the full index and search locally; see
+  `chat-json-endpoints.md`). New `apps/server/src/modules/eicons/`:
+  on first enabled use the server fetches
+  `https://xariah.net/eicons/Home/EiconsDataBase/base.doc` (one
+  `name\thash` line per eicon, `# As Of: <ts>` comment), keeps the name
+  list in memory (persisted row in `flist_mappings` alongside the other
+  bulk payloads so restarts don't re-download), and refreshes via
+  `EiconsDataDeltaSince/<ts>` (+/- delta lines) on a ~daily cadence.
+  `GET /api/eicons/search?q=` greps that local index in-process. Strictly
+  better than the per-query proxy the spec first assumed: the user's
+  query text **never leaves our server at all** — xariah only ever sees
+  periodic bulk fetches; plus trivially fast, CORS-irrelevant, and a
+  good citizen (a handful of requests per day total). Base URL stays a
+  config knob (`EICON_INDEX_BASE_URL`, default xariah) that tests point
+  at fchat-sim. Response `{ results: string[] }` — **names only;
+  rendering stays static.f-list.net**.
 - Pref `eiconSearchEnabled` — **default false**, toggle in AppearancePane
-  labeled explicitly ("Search sends your query to xariah.net, a third-party
-  service"), and **enforced server-side** (403 when off) so the privacy
-  gate is real, not advisory.
+  labeled explicitly ("Search uses an eicon index downloaded from
+  xariah.net, a third-party service" — the index-download model means
+  query text never leaves the server, but enabling does make the server
+  contact xariah), and **enforced server-side** (403 when off) so the
+  gate is real, not advisory. The CD picker's search-disabled explainer
+  copy should be adjusted to match at build time.
+
+## Post-spec addendum — detached-disconnect ceiling (step 15, 2026-07-17)
+
+User decision at step-14 review (decisions.md §15): the bouncer should not
+hold an F-Chat connection forever when nobody is reading. The detached-away
+sweep (M5) gains an operator ceiling — `DETACHED_DISCONNECT_HOURS`
+(default 72, `0` = never): a session with zero gateway subscribers past the
+ceiling is stopped with an explanatory reason ("disconnected after 72h with
+no attached device"). `autoConnect` intent stays true and the vault keeps
+the credentials, so the next attach reconnects automatically with the exact
+channel set (§9 scenario 2). Env knob, not a user pref — the courtesy
+posture attaches to the server, like the §11 budget. Sessions stuck in
+reconnect-backoff count from the detach too (stopping them also ends the
+retries).
 
 ## Verification
 
 - fchat-sim grows the character API (`character-data.php` ticketed;
-  mapping/kink/info lists ticketless; an eicon-search stub) with
+  mapping-list ticketless; guestbook + memo endpoints; an eicon **index**
+  stub serving a small `base.doc`-format file + delta endpoint) with
   `setCharacterProfile()` fixtures — the sim's existing HTTP side is the
-  attachment point.
+  attachment point. Fixture shapes copy the verified ones in
+  `chat-json-endpoints.md` (string-typed numbers and all).
 - Server integration (`profiles.test.ts`, pattern `social.test.ts`): cache
   hit / miss / TTL-expired / force-refresh; history upsert, bump, list,
   delete; note put/get round-trip + survives history prune; budget
   exhaustion → stale-with-flag and 429-no-cache; locked-vault 409; ticket
-  retry.
+  retry; insights aggregates over seeded messages (counts, last-chatted,
+  never-crossed-paths empty shape) scoped to the requesting identity.
 - Matcher unit tests: golden profile pairs per dimension, missing-data →
   NEUTRAL, hard-mismatch domination, kink alignment weighting.
 - Web unit: profile lib cache/dedup; picker recents behavior; link-preview
@@ -262,13 +331,14 @@ log (see the CD brief). Client-only track:
   stale-serving makes suspension structurally unlikely; every
   character-data-class request goes through the one counter. In-memory
   reset on restart is an accepted LOW.
-- **Unverified endpoints (blocks two tabs):** `character-guestbook.php`,
-  `character-images.php`, memo endpoints, and the xariah API are
-  undocumented in-repo. Step 1 verifies them live (short, supervised, per
-  testing-strategy.md) and updates `design/chat-json-endpoints.md`;
-  Images/Guestbook and the xariah path are scoped to survive a negative
-  result (fallbacks above). Memos ship only if a stable endpoint is
-  confirmed; otherwise a wishlist note.
+- **~~Unverified endpoints~~ — resolved 2026-07-17:** the step-1 spike
+  (three short supervised passes, ~20 requests total, per
+  testing-strategy.md) live-verified every endpoint: character-data +
+  all three mapping lists (shapes captured), guestbook (0-based paging,
+  disabled-case error, and a real posts payload), memo (param corrected:
+  `target` = name; get/save id round-trip understood), and the xariah
+  model (no search API — bulk index + deltas, searched server-locally).
+  Full shapes in `design/chat-json-endpoints.md`.
 - **xariah availability/ToS:** community service, no SLA — the proxy
   degrades to an in-picker "search unavailable" error, never breaks the
   picker. Off-by-default + server-enforced pref covers the privacy posture.

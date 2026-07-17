@@ -2,7 +2,14 @@
 // 401, and surfaces structured errors. Same-origin `/api` — the dev server
 // proxies to the API server, production serves both from one Fastify.
 
-import type { HighlightRuleDto, HighlightRuleInput } from "@emberchat/protocol";
+import type {
+  GuestbookPage,
+  HighlightRuleDto,
+  HighlightRuleInput,
+  ProfileHistoryEntry,
+  ProfileInsights,
+  ProfileResponse,
+} from "@emberchat/protocol";
 import { useAuthStore } from "../stores/auth.js";
 
 export interface UserDto {
@@ -347,6 +354,65 @@ export const api = {
       channels: DirectoryChannelDto[];
       refreshedAt: string | null;
     }>(`/identities/${identityId}/directory`, { auth: true });
+  },
+
+  // ── Profiles (M8) ─────────────────────────────────────────────────────────
+  // getProfile can spend the server's 170/hour F-List budget (cache misses,
+  // refresh) — the lib/profile.ts loader dedups; components never call raw.
+
+  getProfile(identityId: string, name: string, refresh = false) {
+    const suffix = refresh ? "?refresh=1" : "";
+    return apiRequest<ProfileResponse>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}${suffix}`,
+      { auth: true },
+    );
+  },
+  getProfileHistory(identityId: string) {
+    return apiRequest<{ history: ProfileHistoryEntry[] }>(
+      `/identities/${identityId}/profile-history`,
+      { auth: true },
+    );
+  },
+  deleteProfileHistory(identityId: string, name: string) {
+    return apiRequest<{ ok: true }>(
+      `/identities/${identityId}/profile-history/${encodeURIComponent(name)}`,
+      { method: "DELETE", auth: true },
+    );
+  },
+  putProfileNote(identityId: string, name: string, note: string) {
+    return apiRequest<{ ok: true }>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/note`,
+      { method: "PUT", auth: true, body: { note } },
+    );
+  },
+  getProfileInsights(identityId: string, name: string) {
+    return apiRequest<ProfileInsights>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/insights`,
+      { auth: true },
+    );
+  },
+  /** One guestbook page (0-based, pages of 10) — passthrough to F-List,
+   * so it spends the character-data budget like a profile fetch. */
+  getProfileGuestbook(identityId: string, name: string, page: number) {
+    return apiRequest<GuestbookPage>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/guestbook?page=${String(page)}`,
+      { auth: true },
+    );
+  },
+  /** The F-List memo — budget-free; feeds the one-way note import. */
+  getProfileMemo(identityId: string, name: string) {
+    return apiRequest<{ note: string | null }>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/memo`,
+      { auth: true },
+    );
+  },
+
+  /** Server-local eicon index search (M8) — pref-gated (403 when off). */
+  searchEicons(query: string) {
+    return apiRequest<{ results: string[] }>(
+      `/eicons/search?q=${encodeURIComponent(query)}`,
+      { auth: true },
+    );
   },
 
   listHighlightRules() {

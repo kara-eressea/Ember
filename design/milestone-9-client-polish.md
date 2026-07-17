@@ -10,6 +10,20 @@ light theme, and the accumulated small stuff.
 **Depends on:** M8. **Not yet specced** — the list below is the carried-over
 candidate pool, to be scoped when M9 becomes active.
 
+## Committed scope (decided 2026-07-17, spec at kickoff)
+
+- **Opt-in at-rest credential storage + boot-time session resume**
+  (decisions.md §15, amending §3): per-F-List-account "remember on this
+  server" opt-in (default off) storing the password encrypted with an
+  env-file key; on server start, sessions that were connected at shutdown
+  and are within the `DETACHED_DISCONNECT_HOURS` window reconnect
+  unattended (ticket discipline + backoff as usual — one TicketManager,
+  ≥10s reconnect backoff, 1 req/s). Custody question resolved
+  disclosure-only; docs must state plainly that the env key protects
+  dumps/backups, not a full-box compromise (the desktop-client guarantee).
+  Decide at build time whether the credentials table rides the automatic
+  pg dumps, and document either way.
+
 ## Candidate scope (unspecced)
 
 - **In-log search** (the pool's headline — confirmed wanted 2026-07-16,
@@ -33,6 +47,15 @@ candidate pool, to be scoped when M9 becomes active.
   + shape/glyph reinforcement), sibling of the light-theme token work; the
   M8 match chips are already specced glyph-coded, this extends the idea
   app-wide.
+- **Activity heatmap on Insights** (user idea 2026-07-16, explicitly "a
+  much later thing") — on the profile viewer's Insights tab (M8), a
+  "when is this character usually active" heatmap: hour-of-day and
+  day-of-week grids aggregated from the message timestamps the bouncer
+  has observed for them. Great for scheduling RP. Honest-data caveat
+  (same stance as M8's insights/decisions.md §11): it reflects only
+  activity we've *seen* — shared channels and DMs — not global presence;
+  no NLN/FLN presence-history tracking. Rides entirely on the M8
+  insights route; zero F-List traffic.
 - **Graduated audit LOWs** — promote deserving items from the M2–M8 audit
   backlogs in `milestones.md` § Standing to-dos.
 

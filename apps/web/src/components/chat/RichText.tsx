@@ -8,6 +8,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
+import { chipHost, chipLabel, resolvePreview } from "../../lib/link-preview.js";
+import {
+  openPreviewFrom,
+  useLinkPreviewStore,
+} from "../../stores/link-preview.js";
+import { openCardFrom } from "../../stores/profile.js";
 import { useUserPrefs } from "../../stores/sessions.js";
 import { textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
@@ -20,10 +26,24 @@ export function RichText({ bbcode }: { bbcode: string }) {
   return <>{renderNodes(nodes, "r")}</>;
 }
 
-function renderNodes(nodes: readonly BBNode[], keyBase: string): ReactNode[] {
-  return nodes.map((node, index) =>
-    renderNode(node, `${keyBase}.${String(index)}`),
-  );
+/** Hook for the profile renderer (M8): claim a node (profile blocks) or
+ * return undefined to fall through to the shared inline rendering. */
+export type ExtraNodeRenderer = (
+  node: BBNode,
+  key: string,
+) => ReactNode | undefined;
+
+/** Exported for the profile BBCode renderer (M8): profile blocks wrap these
+ * same inline nodes so chat and profiles render text identically. */
+export function renderNodes(
+  nodes: readonly BBNode[],
+  keyBase: string,
+  extra?: ExtraNodeRenderer,
+): ReactNode[] {
+  return nodes.map((node, index) => {
+    const key = `${keyBase}.${String(index)}`;
+    return extra?.(node, key) ?? renderNode(node, key, extra);
+  });
 }
 
 const WRAPPER_CLASS: Record<string, string | undefined> = {
@@ -35,45 +55,46 @@ const WRAPPER_CLASS: Record<string, string | undefined> = {
   sub: styles.bbSub,
 };
 
-function renderNode(node: BBNode, key: string): ReactNode {
+function renderNode(
+  node: BBNode,
+  key: string,
+  extra?: ExtraNodeRenderer,
+): ReactNode {
   switch (node.type) {
     case "text":
       return renderText(node.text, key);
     case "wrapper":
       return (
         <span key={key} className={WRAPPER_CLASS[node.tag] ?? ""}>
-          {renderNodes(node.children, key)}
+          {renderNodes(node.children, key, extra)}
         </span>
       );
     case "color":
       return (
         <span key={key} className={styles[`bbc-${node.color}`] ?? ""}>
-          {renderNodes(node.children, key)}
+          {renderNodes(node.children, key, extra)}
         </span>
       );
     case "url":
       return (
-        <a
-          key={key}
-          className={styles.bodyLink}
-          href={node.href}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          {renderNodes(node.children, key)}
-        </a>
+        <LinkChip key={key} href={node.href}>
+          {renderNodes(node.children, key, extra)}
+        </LinkChip>
       );
     case "name":
+      // [user] opens the mini profile card (M8) — the f-list.net website
+      // link lives in the context menu / full viewer instead.
       return node.tag === "user" ? (
-        <a
+        <button
           key={key}
-          className={styles.bodyMention}
-          href={`https://www.f-list.net/c/${encodeURIComponent(node.name)}`}
-          target="_blank"
-          rel="noreferrer noopener"
+          type="button"
+          className={`${styles.nameButton ?? ""} ${styles.bodyMention}`}
+          onClick={(event) => {
+            openCardFrom(event.currentTarget, node.name);
+          }}
         >
           {node.name}
-        </a>
+        </button>
       ) : (
         <InlineIcon key={key} tag={node.tag} name={node.name} />
       );
@@ -83,6 +104,13 @@ function renderNode(node: BBNode, key: string): ReactNode {
           {node.text}
         </span>
       );
+    // Profile-dialect nodes never occur in chat parses; if one arrives
+    // unclaimed (no `extra`), degrade to unstyled content — never crash.
+    case "block":
+    case "collapse":
+      return <span key={key}>{renderNodes(node.children, key, extra)}</span>;
+    case "hr":
+      return null;
   }
 }
 
@@ -93,17 +121,7 @@ function renderText(text: string, keyBase: string): ReactNode[] {
       case "plain":
         return token.text;
       case "link":
-        return (
-          <a
-            key={key}
-            className={styles.bodyLink}
-            href={token.href}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            {token.href}
-          </a>
-        );
+        return <LinkChip key={key} href={token.href} />;
       case "mention":
         return (
           <span key={key} className={styles.bodyMention}>
@@ -118,6 +136,79 @@ function renderText(text: string, keyBase: string): ReactNode[] {
         );
     }
   });
+}
+
+/**
+ * LinkChip (COMPONENTS-link-preview-eicon.md §1): the one rendering for
+ * URLs in message bodies — `[url]` tags (children = the label) and
+ * autolinked plain text (no children → derived label + mono host suffix).
+ * The ▣ glyph marks previewable media links; behavior follows the
+ * linkPreviewMode pref — click mode hijacks plain clicks on *media* links
+ * only (Ctrl/Cmd/middle click always navigates), hover mode opens after
+ * ~250ms, off = plain links everywhere.
+ */
+const HOVER_DELAY_MS = 250;
+
+function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
+  const mode = useUserPrefs().linkPreviewMode;
+  const source = resolvePreview(href);
+  const active = useLinkPreviewStore((s) => s.preview?.href === href);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    return () => {
+      clearTimeout(hoverTimer.current);
+    };
+  }, []);
+
+  const previewable = source !== undefined && mode !== "off";
+  const host = chipHost(href);
+  return (
+    <a
+      className={`${styles.linkChip} ${active ? (styles.linkChipActive ?? "") : ""}`}
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      onClick={(event) => {
+        if (
+          previewable &&
+          mode === "click" &&
+          !event.ctrlKey &&
+          !event.metaKey
+        ) {
+          // Plain click previews; modified clicks follow the URL (§2).
+          event.preventDefault();
+          openPreviewFrom(event.currentTarget, source, href, "click");
+        }
+      }}
+      onMouseEnter={(event) => {
+        if (!previewable || mode !== "hover") {
+          return;
+        }
+        const element = event.currentTarget;
+        hoverTimer.current = setTimeout(() => {
+          openPreviewFrom(element, source, href, "hover");
+        }, HOVER_DELAY_MS);
+      }}
+      onMouseLeave={() => {
+        if (mode !== "hover") {
+          return;
+        }
+        clearTimeout(hoverTimer.current);
+        const store = useLinkPreviewStore.getState();
+        if (store.preview?.href === href) {
+          store.close();
+        }
+      }}
+    >
+      <span className={styles.linkChipGlyph} aria-hidden>
+        {previewable ? "▣" : "↗"}
+      </span>
+      <span className={styles.linkChipLabel}>
+        {children ?? chipLabel(href)}
+      </span>
+      {host !== "" && <span className={styles.linkChipHost}>[{host}]</span>}
+    </a>
+  );
 }
 
 /**

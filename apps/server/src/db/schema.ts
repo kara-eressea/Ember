@@ -248,3 +248,74 @@ export const ignores = pgTable(
   },
   (t) => [primaryKey({ columns: [t.identityId, t.character] })],
 );
+
+// ── Profile service (M8) ─────────────────────────────────────────────────────
+
+// Global character-data payload cache — one row per character, shared across
+// every identity so two identities viewing the same character never
+// double-spend the 170/hour budget. Rows are refreshed (not deleted) when
+// older than the cache TTL; a stale row is still served with a flag when the
+// budget is exhausted.
+export const characterCache = pgTable("character_cache", {
+  characterLower: text().primaryKey(),
+  /** Canonical casing as returned by character-data. */
+  characterName: text().notNull(),
+  /** Raw character-data.php payload (chat-json-endpoints.md "Verified
+   * shapes") — resolved into a ProfileDto per request so mapping refreshes
+   * never invalidate cached profiles. */
+  payload: jsonb().$type<Record<string, unknown>>().notNull(),
+  fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+// Per-identity profile-view history — doubles as the user-facing "recently
+// viewed" rail. History = row existence: never TTL'd, pruned only by the
+// user, synced across devices by construction.
+export const profileViews = pgTable(
+  "profile_views",
+  {
+    identityId: uuid()
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    characterLower: text().notNull(),
+    /** Canonical casing, denormalized so the history list never depends on a
+     * cache row surviving. */
+    characterName: text().notNull(),
+    firstViewedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    lastViewedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    viewCount: integer().notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ columns: [t.identityId, t.characterLower] }),
+    // The history rail: an identity's views, most recent first.
+    index("profile_views_identity_recency_idx").on(
+      t.identityId,
+      t.lastViewedAt.desc(),
+    ),
+  ],
+);
+
+// Global bulk payloads that resolve character-data ids into names: the three
+// mapping lists (~7-day refresh) and, from step 12, the eicon index. One row
+// per source, replaced wholesale on refresh.
+export const flistMappings = pgTable("flist_mappings", {
+  /** "mapping-list" | "kink-list" | "info-list" | "eicon-index". */
+  source: text().primaryKey(),
+  payload: jsonb().$type<Record<string, unknown>>().notNull(),
+  fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+// Private per-identity notes on a character ("what we RP'd last time").
+// Deliberately separate from profile_views so pruning history never deletes
+// a note.
+export const characterNotes = pgTable(
+  "character_notes",
+  {
+    identityId: uuid()
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    characterLower: text().notNull(),
+    note: text().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.identityId, t.characterLower] })],
+);

@@ -140,6 +140,23 @@
   white-space: nowrap;
 }
 
+/* Reset for name triggers that open the mini profile card (M8): buttons
+   that must render exactly like the span/anchor they replaced. Defined
+   before .bodyMention so the mention styling wins its own properties. */
+.nameButton {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+}
+
+.nameButton:hover {
+  text-decoration: underline;
+}
+
 .body {
   min-width: 0;
   font-size: var(--eb-msg-font, 13px);
@@ -229,51 +246,6 @@
   padding: 2px 16px;
   color: var(--eb-dim);
   font-size: 12.5px;
-}
-
-/* Composer ☺ favorites: quick-insert thumbnails (M5, decisions.md §8). */
-.eiconFavorites {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  width: 100%;
-}
-
-.eiconFavorite {
-  position: relative;
-  display: inline-flex;
-}
-
-.eiconFavoriteInsert {
-  display: inline-flex;
-  padding: 2px;
-  cursor: pointer;
-  background: var(--eb-bg);
-  border: 1px solid var(--eb-border);
-  border-radius: 5px;
-}
-
-.eiconFavoriteInsert:hover {
-  border-color: var(--eb-accent-med);
-}
-
-.eiconFavoriteRemove {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: none;
-  padding: 0 3px;
-  font-size: 9px;
-  color: var(--eb-text);
-  cursor: pointer;
-  background: var(--eb-side2);
-  border: 1px solid var(--eb-border);
-  border-radius: 50%;
-}
-
-.eiconFavorite:hover .eiconFavoriteRemove {
-  display: block;
 }
 
 /* Name-only eicon display: chip + hover preview (M5, decisions.md §8). */
@@ -441,13 +413,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: calc(100% - 8px);
   margin: 0 4px;
   padding: 4px 8px;
-  border-radius: var(--eb-radius);
+  font: inherit;
   font-size: 13px;
   color: inherit;
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--eb-radius);
 }
 
 .memberRow:hover {
@@ -901,12 +878,6 @@
   white-space: pre-wrap;
 }
 
-.eiconInsert {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
 .mdToggle {
   border: 0;
   background: none;
@@ -966,12 +937,6 @@
   color: var(--eb-faint);
 }
 
-.blacklistWarning {
-  align-self: center;
-  font-size: 11px;
-  color: var(--eb-warn);
-}
-
 .footerControls {
   display: flex;
   align-items: center;
@@ -1026,4 +991,371 @@
 .reportSend:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ── EiconPicker (M8, COMPONENTS-link-preview-eicon.md §3) ────────────── */
+
+.pickerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.eiconPicker {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  width: 336px;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 2px);
+  box-shadow: 0 24px 60px -14px rgb(0 0 0 / 70%);
+}
+
+.pickerTabs {
+  display: flex;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.pickerTab {
+  padding: 9px 11px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.pickerTabActive {
+  font-weight: 600;
+  color: var(--eb-text);
+  box-shadow: inset 0 -2px 0 var(--eb-accent);
+}
+
+.pickerTabOff:not(.pickerTabActive) {
+  color: var(--eb-faint);
+}
+
+.pickerBody {
+  min-height: 120px;
+  max-height: 264px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.pickerGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 60px);
+  gap: 6px;
+  justify-content: center;
+}
+
+.eiconTile {
+  position: relative;
+  display: block;
+  width: 60px;
+  height: 60px;
+}
+
+.eiconTileInsert {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--eb-accent) 14%, var(--eb-bg));
+  border: 1px solid var(--eb-border);
+  border-radius: 6px;
+}
+
+.eiconTileName {
+  padding: 0 3px;
+  overflow: hidden;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+}
+
+.eiconTileStar {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: rgb(10 9 8 / 65%);
+  border: 0;
+  border-radius: 5px;
+  opacity: 0;
+}
+
+.eiconTile:hover .eiconTileStar,
+.eiconTileStar:focus-visible,
+.eiconTileStarOn {
+  opacity: 1;
+}
+
+.eiconTileStarOn {
+  color: var(--eb-warn);
+}
+
+.pickerFoot {
+  padding: 7px 12px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+  border-top: 1px solid var(--eb-border);
+}
+
+.pickerNote {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 22px 24px;
+  text-align: center;
+}
+
+.pickerNoteTile {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 4px;
+  font-size: 16px;
+  color: var(--eb-faint);
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.pickerNoteTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.pickerNoteBody {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--eb-dim);
+}
+
+/* Caret pointing down at the ☺ trigger (hidden if placement flipped). */
+.pickerCaret {
+  position: absolute;
+  bottom: -6px;
+  left: 24px;
+  width: 10px;
+  height: 10px;
+  background: var(--eb-side);
+  border-right: 1px solid var(--eb-border);
+  border-bottom: 1px solid var(--eb-border);
+  transform: rotate(45deg);
+}
+
+.pickerCaretUp {
+  top: -6px;
+  bottom: auto;
+  transform: rotate(225deg);
+}
+
+/* EiconPicker Search tab (M8 step 12). */
+
+.pickerSearchRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.pickerSearchInput {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 6px;
+}
+
+.pickerSearchInput::placeholder {
+  color: var(--eb-faint);
+}
+
+.pickerServiceTag {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+}
+
+.pickerResultsCaption {
+  margin-bottom: 6px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+}
+
+.pickerLink {
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.pickerLink:hover {
+  text-decoration: underline;
+}
+
+.shimmerTile {
+  display: inline-block;
+  background: var(--eb-hover);
+  border-radius: 6px;
+  animation: pickerShimmer 1.15s linear infinite alternate;
+}
+
+@keyframes pickerShimmer {
+  from {
+    opacity: 0.55;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── LinkChip + LinkPreview (M8, COMPONENTS-link-preview-eicon.md §1–§2) ── */
+
+.linkChip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 1px 7px 1px 6px;
+  color: var(--eb-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  text-underline-offset: 2px;
+  border-radius: 6px;
+}
+
+.linkChipActive {
+  text-decoration: none;
+  background: var(--eb-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--eb-accent-med);
+}
+
+.linkChipGlyph {
+  flex: none;
+  font-size: 11px;
+}
+
+.linkChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linkChipHost {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+/* Above the profile modal (z-45): chips inside a profile body open the
+ * panel too, and a transient top layer that renders *below* its opener is
+ * invisible — the click looks dead and its capture-phase Escape eats the
+ * modal's (M8 audit H1). Member menus (z-50) stay on top. */
+.previewOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+}
+
+.linkPreview {
+  position: fixed;
+  z-index: 47;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 18px 44px -12px rgb(0 0 0 / 60%);
+}
+
+.previewMedia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  max-height: 300px;
+  background: var(--eb-head);
+}
+
+.previewImg {
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.previewSkeleton {
+  width: 100%;
+  height: 180px;
+  background: var(--eb-hover);
+  animation: pickerShimmer 1.15s linear infinite alternate;
+}
+
+.previewFoot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px 6px 10px;
+  color: var(--eb-dim);
+  background: var(--eb-head);
+  border-top: 1px solid var(--eb-border);
+}
+
+.previewPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewClose {
+  flex: none;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+}
+
+.previewClose:hover {
+  color: var(--eb-text);
+  background: var(--eb-hover);
 }

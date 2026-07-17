@@ -118,10 +118,40 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
 | `APP_NAME` / `CLIENT_NAME` | `EmberChat` | Branding / IDN `cname` (keep it honest) |
 | `RETENTION_POLICY` | `forever` | `forever` \| `30d` \| `90d` \| `1y` message retention |
+| `DETACHED_DISCONNECT_HOURS` | `72` | Log a character out of F-Chat after this long with no device attached (`0` = never); reopening the app reconnects automatically |
 | `UPDATE_CHECK_ENABLED` | `true` | Daily GitHub Releases check; `false` = no phone-home |
 | `CONFIRM_BREAKING_UPGRADE` | `false` | One-boot acknowledgment for breaking migrations |
 | `BACKUP_DIR` / `BACKUP_INTERVAL_SECONDS` / `BACKUP_KEEP_DAYS` | `./backups` / `86400` / `14` | Backup service knobs |
 | `FCHAT_URL` / `FLIST_API_URL` | real F-List | Point at fchat-sim for smoke tests |
+| `CHARACTER_DATA_BUDGET_PER_HOUR` | `170` | Profile/guestbook fetches allowed per sliding hour — **do not raise above F-List's published 200/hr**; when exhausted, cached profiles are served stale |
+| `PROFILE_CACHE_TTL_MS` | `86400000` (24 h) | How long a cached profile stays fresh before a view refetches it |
+| `FLIST_MAPPINGS_TTL_MS` | `604800000` (7 d) | Refresh window for F-List's bulk infotag/kink mapping lists |
+| `EICON_INDEX_BASE_URL` | `https://xariah.net` | Eicon search index host (see the privacy note below) |
+| `EICON_INDEX_REFRESH_MS` | `86400000` (24 h) | Delta-refresh cadence for the eicon index |
+
+**Profile viewer & the request budget**: the in-app profile viewer (M8)
+fetches character data from F-List's JSON API through one global
+per-instance counter, capped at `CHARACTER_DATA_BUDGET_PER_HOUR`. The
+170 default leaves headroom under F-List's 200/hour line — the policy risk
+attaches to your server's IP and F-List account, which is why this is an
+operator knob and not a user preference. When the budget runs out, the
+viewer serves cached profiles (marked stale) until the window frees up.
+One transparency note: all identities on an instance share a single
+profile cache, so a profile one identity fetched — including one visible
+only to it (e.g. friends-only) — may be served from that cache to another
+identity on the same instance until it expires. On an admin-only instance
+that is one household's own traffic; if you share your instance more
+widely than that, know the boundary.
+
+**Eicon search & xariah.net**: eicon search is **off by default** and
+enforced server-side per user. The first time a user who enabled it
+searches, the server downloads a bulk name index from
+`EICON_INDEX_BASE_URL` (xariah.net, a community-run third-party service)
+and refreshes it with small daily deltas; searches then run against that
+local copy — **user search text never leaves your server**, and users' IPs
+never reach xariah. The only xariah-bound traffic is your server's
+periodic bulk fetch. Point the knob at fchat-sim (or leave search
+disabled) if you'd rather have no third-party egress at all.
 
 **Your logs**: message/command history lives in the `messages` table inside
 the Postgres volume (and in the dumps under `BACKUP_DIR`) — known and

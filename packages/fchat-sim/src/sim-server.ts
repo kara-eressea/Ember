@@ -28,6 +28,11 @@ import {
   type ServerCommand,
   type ServerVars,
 } from "@emberchat/fchat-protocol";
+import {
+  CharacterService,
+  type SimCharacterProfileSeed,
+  type SimGuestbookPostSeed,
+} from "./character-service.js";
 import { SocialService } from "./social-service.js";
 import { TicketService } from "./ticket-service.js";
 import { DEFAULT_WORLD, type SimWorld } from "./world.js";
@@ -161,6 +166,7 @@ export class FchatSim {
   readonly #log: (line: string) => void;
   readonly #tickets: TicketService;
   readonly #social: SocialService;
+  readonly #characters: CharacterService;
   readonly #http: Server;
   readonly #wss: WebSocketServer;
   readonly #connections = new Set<Connection>();
@@ -193,6 +199,7 @@ export class FchatSim {
     this.#log = options.log ?? (() => {});
     this.#tickets = new TicketService(this.#world.accounts);
     this.#social = new SocialService(this.#world.accounts);
+    this.#characters = new CharacterService(this.#world);
     for (const seed of this.#world.channels) {
       this.#channels.set(seed.name, {
         name: seed.name,
@@ -283,6 +290,40 @@ export class FchatSim {
     return ticket;
   }
 
+  // ── Character-data fixtures (M8 step 3) ──────────────────────────────────
+
+  /** Seed/override a character's profile (also makes the name known, so
+   * arbitrary test characters work). */
+  setCharacterProfile(name: string, seed: SimCharacterProfileSeed): void {
+    this.#characters.setProfile(name, seed);
+  }
+
+  /** Give a character a guestbook (its character-data flips
+   * settings.guestbook to true unless the profile seed overrides it). */
+  setGuestbook(name: string, posts: readonly SimGuestbookPostSeed[]): void {
+    this.#characters.setGuestbook(name, posts);
+  }
+
+  /** Store an account's F-List memo on a character (memo-get2). */
+  setMemo(account: string, character: string, note: string): void {
+    this.#characters.setMemo(account, character, note);
+  }
+
+  /** Replace the eicon index served at /eicons/Home/EiconsDataBase/base.doc. */
+  setEiconIndex(names: readonly string[], asOfUnixSeconds?: number): void {
+    this.#characters.setEiconIndex(names, asOfUnixSeconds);
+  }
+
+  /** Append a +/- line to /eicons/Home/EiconsDataDeltaSince responses. */
+  addEiconDelta(action: "+" | "-", name: string, atUnixSeconds: number): void {
+    this.#characters.addEiconDelta(action, name, atUnixSeconds);
+  }
+
+  /** The numeric character id the sim assigned (character-data / guestbook). */
+  characterIdOf(name: string): number {
+    return this.#characters.idOf(name);
+  }
+
   // ── Misbehavior controls (testing-strategy.md) ────────────────────────────
 
   /** Abruptly drops a character's connection (no close frame semantics). */
@@ -323,6 +364,10 @@ export class FchatSim {
 
   #handleHttp(request: IncomingMessage, response: ServerResponse): void {
     const url = new URL(request.url ?? "/", this.httpUrl);
+    // xariah-style eicon index (M8): GET, text/plain — the only non-POST API.
+    if (request.method === "GET" && this.#handleEiconIndex(url, response)) {
+      return;
+    }
     const isSocial = url.pathname.startsWith("/json/api/");
     if (
       request.method !== "POST" ||
@@ -343,11 +388,70 @@ export class FchatSim {
     request.on("end", () => {
       const form = new URLSearchParams(body);
       const payload = isSocial
-        ? this.#handleSocialApi(url.pathname, form)
+        ? (this.#handleCharacterApi(url.pathname, form) ??
+          this.#handleSocialApi(url.pathname, form))
         : this.#handleTicketApi(form);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(payload));
     });
+  }
+
+  /** Serves base.doc / DeltaSince like xariah.net; false = not an eicon URL. */
+  #handleEiconIndex(url: URL, response: ServerResponse): boolean {
+    const deltaPrefix = "/eicons/Home/EiconsDataDeltaSince/";
+    let text: string;
+    if (url.pathname === "/eicons/Home/EiconsDataBase/base.doc") {
+      text = this.#characters.eiconBaseDoc();
+    } else if (url.pathname.startsWith(deltaPrefix)) {
+      const since = Number(url.pathname.slice(deltaPrefix.length));
+      if (!Number.isFinite(since)) {
+        return false;
+      }
+      text = this.#characters.eiconDeltaSince(since);
+    } else {
+      return false;
+    }
+    response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    response.end(text);
+    return true;
+  }
+
+  /** Character endpoints (M8 step 3) — mapping lists are ticketless like the
+   * real API; character-data/guestbook/memo require a valid ticket.
+   * Returns undefined for paths this handler doesn't own. */
+  #handleCharacterApi(
+    pathname: string,
+    form: URLSearchParams,
+  ): object | undefined {
+    switch (pathname) {
+      case "/json/api/mapping-list.php":
+        return this.#characters.mappingList();
+      case "/json/api/kink-list.php":
+        return this.#characters.kinkList();
+      case "/json/api/info-list.php":
+        return this.#characters.infoList();
+      case "/json/api/character-data.php":
+      case "/json/api/character-guestbook.php":
+      case "/json/api/character-memo-get2.php":
+        break;
+      default:
+        return undefined;
+    }
+    const account = form.get("account") ?? "";
+    if (!this.#tickets.validate(account, form.get("ticket") ?? "")) {
+      return { error: "Invalid ticket." };
+    }
+    switch (pathname) {
+      case "/json/api/character-data.php":
+        return this.#characters.characterData(form.get("name") ?? "");
+      case "/json/api/character-guestbook.php":
+        return this.#characters.guestbook(
+          Number(form.get("id") ?? ""),
+          Number(form.get("page") ?? "0"),
+        );
+      default:
+        return this.#characters.memoGet(account, form.get("target") ?? "");
+    }
   }
 
   #handleTicketApi(form: URLSearchParams): ApiTicketResponse {

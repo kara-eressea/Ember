@@ -62,6 +62,29 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // server's rate gate follows the live VAR, so it speeds up equally.
     sim = new FchatSim({ serverVars: { msg_flood: 0.05 } });
     await sim.start();
+    // Profile fixtures for the M8 Images/Guestbook tabs (chat.spec): the
+    // images ride inside character-data (their static.f-list.net URLs are
+    // intercepted in the browser); 12 guestbook posts exercise the 0-based
+    // 10-per-page pagination, one with an owner reply.
+    sim.setCharacterProfile("Nyx Firemane", {
+      images: [
+        { id: 9001, extension: "png", width: 400, height: 300 },
+        { id: 9002, extension: "jpg", description: "A portrait" },
+        { id: 9003, extension: "png" },
+      ],
+    });
+    sim.setGuestbook(
+      "Nyx Firemane",
+      Array.from({ length: 12 }, (_, index) => ({
+        from: index === 0 ? "Old Greywhisker" : `Visitor ${String(index)}`,
+        message:
+          index === 0
+            ? "Wonderful [b]company[/b] around the fire."
+            : `Guestbook entry number ${String(index)}.`,
+        postedAt: 1_752_000_000 - index * 86_400,
+        ...(index === 0 ? { reply: "Likewise, old friend." } : {}),
+      })),
+    );
     // Specs drive a second character straight against the sim (the "other
     // side" of the relay); Playwright forwards process.env to workers.
     process.env["FCHAT_SIM_WS_URL"] = sim.wsUrl;
@@ -81,6 +104,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         AUTH_RATE_LIMIT_MAX: "1000",
         FCHAT_URL: sim.wsUrl,
         FLIST_API_URL: sim.httpUrl,
+        EICON_INDEX_BASE_URL: sim.httpUrl,
         // The sim is local — the 1 req/s policy budget only matters against
         // the real F-List, and serializing on it starves parallel specs.
         FLIST_API_MIN_INTERVAL_MS: "0",

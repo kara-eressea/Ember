@@ -6,7 +6,7 @@
 // is shared but never member-counted (only chat.spec counts, on Frontpage).
 
 import { expect, test } from "@playwright/test";
-import { interceptAvatars, provisionAndConnect } from "./helpers.js";
+import { delay, interceptAvatars, provisionAndConnect } from "./helpers.js";
 
 test("markdown compose: preview = render, eicons, delayed send + recall", async ({
   page,
@@ -48,6 +48,89 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(eicon).toBeVisible({ timeout: 10_000 });
   await expect(eicon).toHaveAttribute("width", "60");
   await expect(eicon).toHaveAttribute("height", "60");
+
+  // ── EiconPicker (M8 step 11): ☺ popover, Recents → star → Favorites ───
+  // The typed eicon above was recorded as "used", so Recents bootstraps
+  // without search (which ships disabled until step 12).
+  await page.getByRole("button", { name: "Insert eicon" }).click();
+  const picker = page.getByRole("dialog", { name: "Eicon picker" });
+  await expect(picker).toBeVisible();
+  await expect(picker.getByText("No favorites yet")).toBeVisible();
+  await picker.getByRole("tab", { name: "Recents" }).click();
+  await expect(
+    picker.getByRole("button", { name: "Insert teacup" }),
+  ).toBeVisible();
+  await picker.getByRole("button", { name: "Add teacup to favorites" }).click();
+  await picker.getByRole("tab", { name: "Favorites" }).click();
+  await expect(
+    picker.getByRole("button", { name: "Remove teacup from favorites" }),
+  ).toBeVisible();
+  // Search is pref-gated (server-enforced): the disabled explainer links to
+  // Preferences, where the toggle carries the third-party disclosure.
+  await picker.getByRole("tab", { name: /Search/ }).click();
+  await expect(picker.getByText("Eicon search is off")).toBeVisible();
+  await picker.getByRole("button", { name: /Enable in Preferences/ }).click();
+  const prefsWindow = page.getByRole("dialog", { name: "Preferences" });
+  await expect(prefsWindow).toBeVisible();
+  await prefsWindow.getByRole("button", { name: "Appearance" }).click();
+  await prefsWindow.getByRole("switch", { name: "Eicon search" }).click();
+  await page.keyboard.press("Escape");
+  await expect(prefsWindow).not.toBeVisible();
+  // Live search against the sim-served xariah-format index.
+  await page.getByRole("button", { name: "Insert eicon" }).click();
+  await picker.getByRole("tab", { name: "Search" }).click();
+  await picker.getByRole("textbox", { name: "Search eicons" }).fill("lantern");
+  await expect(
+    picker.getByRole("button", { name: "Insert lanternlight" }),
+  ).toBeVisible();
+  // Tile click inserts at the caret; Escape dismisses the popover.
+  await picker.getByRole("tab", { name: "Favorites" }).click();
+  await picker.getByRole("button", { name: "Insert teacup" }).click();
+  await page.keyboard.press("Escape");
+  await expect(picker).not.toBeVisible();
+  await expect(input).toHaveValue("[eicon]teacup[/eicon]");
+  await input.fill("");
+
+  // ── Link previews (M8 step 13): media chip → floating panel ────────────
+  // The image URL rides the intercepted static.f-list.net host, so the
+  // preview loads the fixture PNG; default mode is click.
+  await input.fill(
+    "see https://static.f-list.net/images/charimage/999.png and https://example.com/article",
+  );
+  await input.press("Enter");
+  const mediaChip = log.getByRole("link", { name: /999\.png/ });
+  await expect(mediaChip).toBeVisible({ timeout: 10_000 });
+  await expect(mediaChip).toContainText("▣");
+  // Even a previewable chip keeps its real href — modified clicks and
+  // open-in-new-tab always have somewhere to go (decisions.md §14).
+  await expect(mediaChip).toHaveAttribute(
+    "href",
+    "https://static.f-list.net/images/charimage/999.png",
+  );
+  // Ordinary web links stay plain navigation (↗ glyph, real href).
+  const plainChip = log.getByRole("link", { name: /article/ });
+  await expect(plainChip).toContainText("↗");
+  await expect(plainChip).toHaveAttribute(
+    "href",
+    "https://example.com/article",
+  );
+  await mediaChip.click();
+  const panel = page.getByRole("dialog", { name: /Preview: static\.f-list/ });
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByText("static.f-list.net/images/charimage/999.png"),
+  ).toBeVisible();
+  // Escape closes the panel; the message (and log) stayed visible behind it.
+  await page.keyboard.press("Escape");
+  await expect(panel).not.toBeVisible();
+  // Ctrl/Cmd-click is left alone (decisions.md §14): the handler skips
+  // preventDefault, so the anchor's target="_blank" default runs and the
+  // panel never opens. (Whether headless Chromium actually spawns the tab
+  // is browser policy — the app-owned contract is "no preview hijack", and
+  // any tab that does open is fed by the context-level intercept.)
+  await mediaChip.click({ modifiers: ["ControlOrMeta"] });
+  await delay(300);
+  await expect(panel).not.toBeVisible();
 
   // ── Delayed send: pending affordance + ArrowUp recall ─────────────────
   await page.getByLabel("Send delay").selectOption("10");

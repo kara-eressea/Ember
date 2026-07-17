@@ -38,7 +38,7 @@ F-List passwords are **never persisted**. On connect, the user supplies their F-
 - Consequences: no MASTER_KEY/KMS in v1, no ciphertext columns, no startup session resume (Milestone 2 loses that item), and every server deploy logs all characters out of F-Chat until passwords are re-entered. Accepted at current scale.
 - Vault hygiene: passwords never logged or serialized, redacted from error paths, cleared when the last session for an account stops or the user explicitly disconnects.
 - This reduces the credential-custody exposure to "passwords transit our server and live in RAM while a session runs" — the same trust level as any hosted web client, and comfortably within the developer policy's storage clause.
-- **The full bouncer model (restart-surviving sessions) is a stated eventual goal**, deliberately deferred. When it comes, encrypted at-rest storage returns as an explicit per-user opt-in, and the custody question — including whether to consult F-List staff first — gets decided before building; see `risks-and-open-questions.md`.
+- **The full bouncer model (restart-surviving sessions) is a stated eventual goal**, deliberately deferred. When it comes, encrypted at-rest storage returns as an explicit per-user opt-in, and the custody question — including whether to consult F-List staff first — gets decided before building; see `risks-and-open-questions.md`. *→ Decided 2026-07-17: committed for M9, disclosure-only — see §15.*
 - Clarification on tickets: an *established* F-Chat connection never needs re-ticketing — the ticket is checked only at IDN. The vault exists for the two cases that need a fresh ticket: reconnecting after a drop, and authenticated JSON API calls. This mirrors what local clients already do with saved credentials.
 
 ## 4. First milestone — thin vertical slice
@@ -136,18 +136,32 @@ scope.
   history, so pruning one never loses the other); F-List memo import/sync
   only if the memo endpoint verifies. Mini card and viewer also badge
   friend/bookmark status from the already-loaded social lists.
+- **Relationship insights** (added post-spec, same day): an Insights tab of
+  the viewing identity's own stats with a character (messages exchanged,
+  last chatted, first encountered, last seen talking, shared channels,
+  times viewed), computed from the message store + live session state —
+  no new tables, zero budget cost. Explicitly **no presence-history
+  tracking**: recording the global NLN/FLN firehose would be heavy writes
+  and surveillance of characters the user never interacted with; "last
+  seen" means last *observed* activity, plus live online state.
 
-## 12. Third-party eicon search — xariah via proxy, off by default (2026-07-16)
+## 12. Third-party eicon search — xariah, server-local index, off by default (2026-07-16; model amended 2026-07-17)
 
 Amends §8's "no eicon search" for the picker: F-List still has no search
 API, but Horizon demonstrated the community answer — xariah.net's index.
 
-- Eicon picker (Favorites/Recents/Search) queries xariah **through a server
-  proxy**: the user's IP never reaches the third party, CORS is moot, one
-  LRU-cached polite egress, and the base URL is a config knob tests point
-  at fchat-sim.
+- ~~Eicon picker (Favorites/Recents/Search) queries xariah **through a
+  server proxy**~~ **Amended 2026-07-17 (M8 step-1 spike):** xariah has no
+  search endpoint at all — clients download its bulk name index
+  (`base.doc` + daily deltas) and search locally. So the server keeps a
+  **local copy of the index** (persisted, delta-refreshed ~daily) and
+  greps it in-process. Strictly better than the proxy the spec assumed:
+  **user query text never leaves our server**, xariah only ever sees a
+  handful of bulk fetches a day, CORS is moot, and the base URL stays a
+  config knob (`EICON_INDEX_BASE_URL`) tests point at fchat-sim.
 - Pref `eiconSearchEnabled` **defaults off** and is **enforced server-side**
-  — sending keystrokes to a community service is opt-in, not advisory.
+  — making the server contact a community service is opt-in, not advisory;
+  the index only ever downloads after an enabled user searches.
 - Search returns **names only; rendering stays static.f-list.net** (§8
   unchanged). **External eicon hosting** (arbitrary image hosts inside
   `[eicon]`, Horizon issue #319) is rejected for now: other clients would
@@ -184,6 +198,50 @@ server proxy, no arbitrary-URL resolution.
 - Enabled by default (unlike §12's search, no typed text goes anywhere —
   only a standard image fetch on explicit action); the pref note discloses
   that the image host sees your IP when a preview loads.
+
+## 15. Session lifetime & credential custody after the self-host pivot (2026-07-17)
+
+Two user decisions that follow from §2's admin-only pivot; together they
+close the loop on "the bouncer stays online" vs. "the bouncer is a good
+citizen".
+
+- **Detached-disconnect ceiling (M8, shipped as step 15).** A session with
+  zero attached devices for `DETACHED_DISCONNECT_HOURS` (default **72**,
+  `0` = never) is logged out of F-Chat by the detached-away sweep. Holding
+  a connection nobody reads for weeks is discourteous to F-List and
+  surprising to the user. Operator env knob, not a user pref (same
+  reasoning as the §11 budget: the courtesy posture attaches to the
+  server). `autoConnect` intent stays true and the in-memory vault keeps
+  the credentials, so the next attach reconnects automatically with the
+  exact channel set (§9 scenario 2) — the user only loses catch-up *while*
+  disconnected. The session notice states why ("disconnected after 72h
+  with no attached device").
+- **Opt-in at-rest credential storage is committed for M9** — amends §3's
+  "never persisted". §3 was written against the multi-tenant threat model
+  (a breached managed service leaking *many users'* F-List passwords);
+  after §2's pivot the deployment is the admin's own box holding their own
+  credentials — the same trust model as the desktop clients
+  (Rising/Horizon) that already store credentials on the machine, and as
+  classic IRC bouncers. Design constraints, decided now:
+  - **Unattended auto-reconnect after a server restart requires that the
+    box can decrypt alone**: an env-file key encrypting a DB column.
+    That protects dumps/backups from casual exposure but not a full-box
+    compromise — exactly the desktop-client guarantee, and the docs say
+    so plainly rather than overselling the crypto. (The "wrap with the
+    app password, unlock on next login" middle option was considered and
+    rejected: the goal is sessions that come back by themselves.)
+  - **Opt-in per F-List account, default off** — a "remember on this
+    server" affordance with disclosure; the in-memory-only model stays
+    the default.
+  - Boot-time reconnect only revives sessions that were connected at
+    shutdown and are within the detached-disconnect window — an
+    abandoned instance must not reconnect ghosts forever.
+  - Whether the credentials table rides the automatic pg dumps (or is
+    excluded) is decided at build time and documented either way.
+  - **The F-List outreach question is resolved as disclosure-only** (the
+    `risks-and-open-questions.md` gate): established third-party clients
+    already store credentials without ceremony; we document the model
+    honestly in the self-host docs instead of seeking prior blessing.
 
 ## Other settled points
 

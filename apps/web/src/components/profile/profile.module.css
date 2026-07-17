@@ -1,0 +1,1371 @@
+/* Profile viewer (M8) — COMPONENTS-profile-viewer.md §1–§8 + §10 exactly.
+   Styled against the --eb-* theme tokens only; derived colors use CSS
+   color-mix over tokens so every accent option keeps working. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 45%);
+}
+
+.window {
+  position: relative; /* the Images lightbox overlays the modal, not the page */
+  display: flex;
+  width: 900px;
+  height: 640px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 5px);
+  box-shadow: 0 40px 100px -20px rgb(0 0 0 / 70%);
+  outline: none;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── §2 HistoryRail ───────────────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  width: 208px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: var(--eb-side2);
+  border-right: 1px solid var(--eb-border);
+}
+
+.railHead {
+  padding: 12px 12px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--eb-faint);
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.railList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+}
+
+.histRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--eb-radius);
+}
+
+/* The open-profile region: a real button flexing inside the row (its
+ * remove sibling must not nest inside it — audit M3). */
+.histOpen {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.histRow:hover {
+  background: var(--eb-hover);
+}
+
+.histRowActive,
+.histRowActive:hover {
+  background: var(--eb-accent-soft);
+  box-shadow: inset 2px 0 0 var(--eb-accent);
+}
+
+.histName {
+  display: block;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.histRowActive .histName {
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.histMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.histAgo {
+  font-family: var(--eb-mono, monospace);
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.histRemove {
+  padding: 0 2px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 12px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  opacity: 0.5;
+}
+
+.histRow:hover .histRemove,
+.histRemove:hover {
+  opacity: 1;
+}
+
+.railEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 28px 16px;
+  font-size: 11.5px;
+  text-align: center;
+  color: var(--eb-faint);
+}
+
+.railEmptyTile {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+  color: var(--eb-faint);
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+/* ── §3 ProfileHeader ─────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 22px 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      var(--gender-accent, var(--eb-accent)) 10%,
+      var(--eb-side)
+    ),
+    var(--eb-side)
+  );
+}
+
+.headerInfo {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nameRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gender-accent, var(--eb-text));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 6px;
+}
+
+.badgeFriend {
+  color: var(--eb-warn);
+}
+
+.badgeBookmark {
+  color: var(--eb-faint);
+}
+
+.badgeBookmarkOn {
+  color: var(--eb-accent);
+}
+
+.metaRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-family: var(--eb-mono, monospace);
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+.iconBtn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.iconBtn:hover:not(:disabled) {
+  color: var(--eb-text);
+}
+
+.iconBtn:disabled {
+  color: var(--eb-faint);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 9px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 10.5px;
+  color: var(--eb-dim);
+  text-align: left;
+  white-space: normal;
+  background: var(--eb-head);
+  border: 1px solid var(--eb-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px -6px rgb(0 0 0 / 70%);
+}
+
+/* ── Stale banner ─────────────────────────────────────────────────────── */
+
+.staleBanner {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 22px;
+  font-size: 11.5px;
+  color: var(--eb-warn);
+  background: color-mix(in srgb, var(--eb-warn) 14%, var(--eb-side));
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--eb-warn) 38%, var(--eb-side));
+}
+
+/* ── §4 PrivateNote ───────────────────────────────────────────────────── */
+
+.noteZone {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.noteAdd {
+  padding: 6px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: 1px dashed var(--eb-border);
+  border-radius: 20px;
+}
+
+.noteAdd:hover {
+  color: var(--eb-dim);
+}
+
+.notePeek {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 232px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.noteEyebrow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--eb-accent);
+}
+
+.noteDot {
+  width: 5px;
+  height: 5px;
+  background: var(--eb-accent);
+  border-radius: 50%;
+}
+
+.notePencil {
+  margin-left: auto;
+  color: var(--eb-faint);
+}
+
+.notePreview {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.noteEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 240px;
+  padding: 8px 10px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-accent-med);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 0 0 3px var(--eb-accent-soft);
+}
+
+.noteSaved {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--eb-ok);
+}
+
+.noteBody {
+  min-height: 40px;
+  max-height: 96px;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--eb-text);
+  resize: none;
+  background: none;
+  border: none;
+  outline: none;
+  caret-color: var(--eb-accent);
+}
+
+.noteFoot {
+  font-family: var(--eb-mono, monospace);
+  font-size: 9.5px;
+  color: var(--eb-faint);
+}
+
+.noteImport {
+  padding: 0;
+  font-family: var(--eb-mono, monospace);
+  font-size: 9.5px;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* ── §5 TabStrip ──────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--eb-side) 65%, var(--eb-bg));
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.tab {
+  padding: 11px 13px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.tabActive {
+  font-weight: 600;
+  color: var(--eb-text);
+  box-shadow: inset 0 -2px 0 var(--eb-accent);
+}
+
+/* ── Content region ───────────────────────────────────────────────────── */
+
+.content {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 22px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* ── §7 Details / §7b Insights ────────────────────────────────────────── */
+
+.columns {
+  column-count: 2;
+  column-gap: 34px;
+}
+
+.group {
+  margin-bottom: 18px;
+  break-inside: avoid;
+}
+
+.groupLabel {
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--eb-faint);
+}
+
+.detailRow {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--eb-border) 45%, var(--eb-side));
+}
+
+.insightRow {
+  grid-template-columns: 168px 1fr;
+}
+
+.detailLabel {
+  font-size: 12px;
+  color: var(--eb-faint);
+}
+
+.detailValue {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--eb-text);
+  overflow-wrap: anywhere;
+}
+
+.insightHeadline {
+  font-weight: 600;
+  color: var(--eb-accent);
+}
+
+.insightsEyebrow {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-bottom: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eb-accent);
+}
+
+.insightsSub {
+  margin-bottom: 16px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 56px 40px;
+  text-align: center;
+}
+
+.emptyTile {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  color: var(--eb-faint);
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.emptyTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.emptyBody {
+  max-width: 380px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--eb-dim);
+}
+
+.emptyActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.button {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--eb-text);
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.button:hover {
+  background: var(--eb-hover);
+}
+
+/* ── §8 Kinks ─────────────────────────────────────────────────────────── */
+
+.kinkLegend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.kinkGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.kinkCol {
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.kinkColHead {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 9px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eb-dim);
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.kinkColSquare {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.kinkColCount {
+  margin-left: auto;
+  font-family: var(--eb-mono, monospace);
+  font-weight: 400;
+  color: var(--eb-faint);
+}
+
+.kinkList {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 2px;
+}
+
+.kinkRow {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 5px 7px;
+  font-size: 12px;
+  color: var(--eb-text);
+  border-radius: 5px;
+}
+
+.choiceMark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 10px;
+  border-radius: 4px;
+}
+
+.kinkName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.customTag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 8.5px;
+  color: var(--eb-accent);
+  background: var(--eb-accent-soft);
+  border-radius: 4px;
+}
+
+.kinkExpand {
+  margin-left: auto;
+  padding: 0 3px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 11px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.kinkDesc {
+  padding: 2px 7px 6px 29px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--eb-dim);
+}
+
+/* ── §10 BBCodeBody ───────────────────────────────────────────────────── */
+
+.bbBody {
+  max-width: 660px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--eb-text);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.bbHeading {
+  display: block;
+  padding-left: 9px;
+  margin: 20px 0 9px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--eb-text);
+  border-left: 3px solid var(--eb-accent);
+  white-space: normal;
+}
+
+.bbBig {
+  display: block;
+  margin: 16px 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.bbSmall {
+  font-size: 11px;
+  color: var(--eb-dim);
+}
+
+.bbQuote {
+  display: block;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--eb-dim);
+  background: var(--eb-bg);
+  border-left: 2px solid var(--eb-accent-med);
+  border-radius: 0 6px 6px 0;
+}
+
+.bbCollapse {
+  display: block;
+  margin: 10px 0;
+  overflow: hidden;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  white-space: normal;
+}
+
+.bbCollapseHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+  text-align: left;
+  cursor: pointer;
+  background: var(--eb-side2);
+  border: none;
+}
+
+.bbCollapseChevron {
+  font-size: 10px;
+  color: var(--eb-accent);
+  transition: transform 0.12s;
+}
+
+.bbCollapseChevronOpen {
+  transform: rotate(90deg);
+}
+
+.bbCollapseTag {
+  margin-left: auto;
+  font-family: var(--eb-mono, monospace);
+  font-size: 9px;
+  color: var(--eb-faint);
+}
+
+.bbCollapseBody {
+  display: block;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  border-top: 1px solid var(--eb-border);
+}
+
+.bbAlignLeft {
+  display: block;
+  text-align: left;
+}
+
+.bbAlignCenter {
+  display: block;
+  text-align: center;
+}
+
+.bbAlignRight {
+  display: block;
+  text-align: right;
+}
+
+.bbAlignJustify {
+  display: block;
+  text-align: justify;
+}
+
+.bbIndent {
+  display: block;
+  padding-left: 22px;
+}
+
+.bbHr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--eb-border);
+}
+
+/* ── Loading shimmer ──────────────────────────────────────────────────── */
+
+.shimmer {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--eb-hover) 25%,
+    color-mix(in srgb, var(--eb-hover) 40%, var(--eb-side)) 50%,
+    var(--eb-hover) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.15s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ── Mini profile card (§13 + Mini Profile Viewer.dc.html M8·B–G) ─────── */
+
+.cardOverlay {
+  position: fixed;
+  inset: 0;
+  /* Above the chat shell + member list, below the profile modal (45). */
+  z-index: 40;
+}
+
+.card {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  overflow: auto;
+  color: var(--eb-text);
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow */
+}
+
+.cardHeader {
+  display: flex;
+  gap: 13px;
+  padding: 16px 14px 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      var(--gender-accent, var(--eb-accent)) 10%,
+      var(--eb-side)
+    ),
+    var(--eb-side)
+  );
+}
+
+.cardHeaderInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cardName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--gender-accent, var(--eb-accent));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.cardChip {
+  padding: 2.5px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  white-space: nowrap;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 5px;
+}
+
+.cardStale {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 14px 12px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 14px;
+}
+
+.cardPrimary {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  cursor: pointer;
+  background: var(--eb-accent);
+  border: 0;
+  border-radius: var(--eb-radius);
+}
+
+.cardGhost {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.cardError {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 26px 20px 22px;
+  text-align: center;
+}
+
+/* ── MatchTier primitive (§0) ─────────────────────────────────────────── */
+
+.tierPie {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.matchPill {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 11px 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid;
+  border-radius: 20px;
+}
+
+.dimChip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  white-space: nowrap;
+  border: 1px solid;
+  border-radius: 5px;
+}
+
+/* ── MatchStrip (§6) ──────────────────────────────────────────────────── */
+
+.matchStrip {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.matchStripHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.fullCompare {
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.fullCompare:hover {
+  text-decoration: underline;
+}
+
+.matchStripChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+/* ── Mini card compatibility block (M8·B/C/F) ─────────────────────────── */
+
+.cardMatch {
+  padding: 12px 14px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 65%, var(--eb-side));
+}
+
+.cardMatchChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.cardNoMatch {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 11px 14px;
+  font-size: 11.5px;
+  color: var(--eb-faint);
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 65%, var(--eb-side));
+}
+
+/* ── Compare tab (§9) ─────────────────────────────────────────────────── */
+
+.cmpHead {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.cmpSummary {
+  font-size: 12.5px;
+  color: var(--eb-dim);
+}
+
+.dimTable {
+  overflow: hidden;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.dimRow {
+  display: grid;
+  grid-template-columns: 118px 1fr 1fr 132px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.dimRow + .dimRow {
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 60%, var(--eb-side));
+}
+
+.dimHeadRow {
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--eb-side) 65%, var(--eb-bg));
+}
+
+.dimCellLabel {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--eb-faint);
+}
+
+.dimCellMatch {
+  justify-self: end;
+}
+
+/* ── Kink alignment (§9b) ─────────────────────────────────────────────── */
+
+.cmpKinks {
+  margin-top: 18px;
+}
+
+.cmpKinksHead {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.cmpKinksMeta {
+  flex: 1;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.conflictChip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 20px;
+}
+
+.conflictChipOn {
+  color: var(--eb-danger);
+  background: color-mix(in srgb, var(--eb-danger) 15%, var(--eb-bg));
+  border-color: color-mix(in srgb, var(--eb-danger) 40%, var(--eb-bg));
+}
+
+.cmpKinkCaptions {
+  display: grid;
+  grid-template-columns: 104px 1fr 104px;
+  gap: 10px;
+  padding: 0 12px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+}
+
+.cmpKinkList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 196px;
+  overflow: auto;
+}
+
+.cmpKinkRow {
+  display: grid;
+  grid-template-columns: 104px 1fr 104px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.cmpChoice {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: 500;
+  color: var(--eb-dim);
+}
+
+.cmpTheirs {
+  justify-self: end;
+  text-align: right;
+}
+
+.cmpKinkName {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-weight: 500;
+  color: var(--eb-text);
+}
+
+.cmpKinksEmpty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--eb-faint);
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+/* ── Images tab (§11) ─────────────────────────────────────────────────── */
+
+.imgGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.imgThumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.imgThumbImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.imgBroken {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 20px;
+  color: var(--eb-faint);
+}
+
+.imgCaption {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-dim);
+  background: rgb(10 9 8 / 70%);
+  border-radius: 4px;
+}
+
+/* Dimmed overlay *within* the modal window (§11), not a new layer over
+   the page — the profile modal stays visibly underneath. */
+.lightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  background: rgb(10 9 8 / 86%);
+}
+
+.lightboxImg {
+  max-width: 70%;
+  max-height: 380px;
+  object-fit: contain;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.lightboxDesc {
+  max-width: 70%;
+  font-size: 12px;
+  color: var(--eb-dim);
+  text-align: center;
+}
+
+.lightboxBar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.lightboxCounter {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-dim);
+}
+
+/* ── Guestbook tab (§12) ──────────────────────────────────────────────── */
+
+.gbList {
+  display: flex;
+  flex-direction: column;
+}
+
+.gbPost {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.gbPost + .gbPost {
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 60%, var(--eb-side));
+}
+
+.gbBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.gbHead {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.gbAuthor {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gbDate {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.gbMessage {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--eb-text);
+}
+
+.gbReply {
+  padding: 8px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--eb-dim);
+  background: var(--eb-bg);
+  border-left: 2px solid var(--eb-accent-med, var(--eb-accent));
+  border-radius: 0 6px 6px 0;
+}
+
+.gbReplyLabel {
+  display: block;
+  margin-bottom: 3px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gbFoot {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 0 4px;
+}
+
+.gbSign {
+  font-size: 11.5px;
+  color: var(--eb-accent);
+  text-decoration: none;
+}
+
+.gbSign:hover {
+  text-decoration: underline;
+}

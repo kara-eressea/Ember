@@ -2,7 +2,7 @@
 
 ## Risks
 
-1. **ToS / credential custody — largely defused by bouncer-lite** (decisions.md §3). Passwords are never persisted; they transit our server and live in RAM only while sessions run — the same trust level as any hosted web client, and comfortably within the developer policy's "must not store … user's information" clause. Residual obligations: never log or serialize passwords, TLS everywhere, clear the vault on disconnect, disclose the model plainly in the UI/ToS. **This risk returns in full when at-rest credential storage is added** (the full bouncer model is an eventual goal, not a hypothetical) — decide then whether to consult F-List staff first (options: ask first / launch with disclosure and strong crypto / keep the feature invite-only).
+1. **ToS / credential custody — largely defused by bouncer-lite** (decisions.md §3). Passwords are never persisted; they transit our server and live in RAM only while sessions run — the same trust level as any hosted web client, and comfortably within the developer policy's "must not store … user's information" clause. Residual obligations: never log or serialize passwords, TLS everywhere, clear the vault on disconnect, disclose the model plainly in the UI/ToS. **This risk returns in full when at-rest credential storage is added** (the full bouncer model is an eventual goal, not a hypothetical) — decide then whether to consult F-List staff first (options: ask first / launch with disclosure and strong crypto / keep the feature invite-only). *→ Decided 2026-07-17: disclosure-only, committed for M9 (decisions.md §15) — the self-host pivot makes it the admin's own credentials on their own box.*
 
 2. **Ticket invalidation collisions.** Issuing a ticket invalidates all prior tickets account-wide. If a user simultaneously runs the official client (or any other tool), the two will fight over tickets. Handle IDN failures gracefully, back off, and surface "another client may be logged in with this account" to the user rather than hammering the ticket endpoint.
 
@@ -19,7 +19,6 @@
 ## Open questions (resolve early)
 
 - Does F-List offer any OAuth-like alternative to password custody? (Almost certainly not — ask when requesting test-server access. Less pressing under bouncer-lite, but it would remove the residual transit/RAM exposure too.)
-- When opt-in at-rest credentials are built (eventual goal, scheduled under M7): consult F-List staff first, or launch on disclosure + strong crypto? Decide before building.
 - Exact expected rendering/etiquette for LRP ads and RLL results in third-party clients.
 - How fresh are ORS room counts, and how long is it acceptable to cache the channel directory?
 - Test-server access turnaround time — file the helpdesk ticket at project start.
@@ -31,3 +30,4 @@
 - ~~Tenancy: managed service vs. self-hosted~~ → **self-hostable software, admin-only instances** — F-List's IP/household-based abuse management is structurally incompatible with a multi-tenant bouncer (risk 7). Eventual mainstream path: standalone desktop client (Tauri/Electron) with the session engine as a shared library; design pass in M7. (2026-07-16)
 - ~~Hosting target~~ → **VPS with docker-compose**; ~~expected scale~~ → **realistically 1–2 users, but architecture designed scalable from day one** ("scalability lives in the architecture, cost lives in the ops") — see `decisions.md` §5. (2026-07-12)
 - ~~Launch-blocking credential custody / F-List outreach~~ → defused by **bouncer-lite** (`decisions.md` §3); returns only with opt-in at-rest storage. (2026-07-12)
+- ~~Consult F-List staff before building at-rest credentials, or disclosure-only?~~ → **disclosure-only** (2026-07-17, decisions.md §15): post-pivot the deployment is the admin's own box holding their own credentials — the trust model desktop clients (Rising/Horizon) and classic IRC bouncers already ship without ceremony. The self-host docs state the model honestly (env-file key, protects dumps not a full-box compromise). At-rest storage itself is committed for **M9**.

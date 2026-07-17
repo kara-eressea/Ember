@@ -26,9 +26,14 @@ export const FONT_SIZES = ["s", "m", "l"] as const;
 export const TIMESTAMP_FORMATS = ["time", "seconds", "off"] as const;
 /** Inline images vs name chips with a hover preview (decisions.md §8). */
 export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
+/** Link previews (M8, decisions.md §14): click = a plain click on a
+ * previewable media link opens the floating preview (Ctrl/Cmd/middle
+ * click still navigates); hover = ~250ms hover opens it; off = links are
+ * plain links. */
+export const LINK_PREVIEW_MODES = ["off", "hover", "click"] as const;
 
 /** Matches the eicon-name charset the URL builder accepts (web avatar.ts). */
-const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
+export const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
 
 /** UTF-8 byte length without TextEncoder/Buffer — this package targets both
  * runtimes and pulls in neither lib. */
@@ -74,6 +79,18 @@ const prefsShape = {
   eiconFavorites: z
     .array(z.string().min(1).max(100).regex(EICON_NAME))
     .max(100),
+  /** EiconPicker Recents tab (M8): most-recent-first, written on insert
+   * and on send (typed eicons count too). Patches replace the array. */
+  eiconRecents: z.array(z.string().min(1).max(100).regex(EICON_NAME)).max(50),
+  /** Eicon search via the server-local xariah.net index (M8). Off by
+   * default and enforced server-side (403) — enabling makes the server
+   * download the index from xariah.net, a third-party service; query text
+   * itself never leaves the server. */
+  eiconSearchEnabled: z.boolean(),
+  /** Floating media previews for links in the log (M8). Loading a preview
+   * hotlinks the image host directly from the browser (IP disclosure —
+   * same model as avatars/eicons). */
+  linkPreviewMode: z.enum(LINK_PREVIEW_MODES),
   /** Highlight messages that name the receiving identity's character. */
   highlightOwnNick: z.boolean(),
   /** When-highlighted actions (COMPONENTS.md §12). */
@@ -157,6 +174,9 @@ export const PREFS_DEFAULTS: UserPrefs = {
   eiconDisplay: "inline",
   animateEicons: true,
   eiconFavorites: [],
+  eiconRecents: [],
+  eiconSearchEnabled: false,
+  linkPreviewMode: "click",
   highlightOwnNick: true,
   highlightSound: false,
   highlightFlashTitle: true,

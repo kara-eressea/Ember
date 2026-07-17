@@ -10,6 +10,7 @@ import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
 import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
+import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adsHidden } from "./ads.js";
@@ -320,14 +321,28 @@ function MessageLine({
       data-ad={ad || undefined}
     >
       {time !== "" && <span className={styles.time}>{time}</span>}
-      {/* Grouped rows keep an invisible nick so aligned columns stay put. */}
-      <span
-        className={`${styles.nick} ${grouped ? (styles.nickGrouped ?? "") : ""}`}
-        style={{ color: nickColor(message.senderCharacter) }}
-        aria-hidden={grouped || undefined}
-      >
-        {message.senderCharacter}
-      </span>
+      {/* Grouped rows keep an invisible nick so aligned columns stay put;
+          visible nicks open the mini profile card (M8). */}
+      {grouped ? (
+        <span
+          className={`${styles.nick} ${styles.nickGrouped ?? ""}`}
+          style={{ color: nickColor(message.senderCharacter) }}
+          aria-hidden
+        >
+          {message.senderCharacter}
+        </span>
+      ) : (
+        <button
+          type="button"
+          className={`${styles.nick} ${styles.nameButton ?? ""}`}
+          style={{ color: nickColor(message.senderCharacter) }}
+          onClick={(event) => {
+            openCardFrom(event.currentTarget, message.senderCharacter);
+          }}
+        >
+          {message.senderCharacter}
+        </button>
+      )}
       {ad && (
         <span className={styles.adTag} title="Roleplay ad (LRP)">
           AD

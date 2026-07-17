@@ -146,6 +146,37 @@ export function AppearancePane({ identityId }: { identityId: string }) {
           }}
         />
       </FieldRow>
+      <FieldRow
+        label="Eicon search"
+        help="Search uses an eicon index the server downloads from xariah.net, a third-party service — your search text never leaves the server"
+      >
+        <Toggle
+          label="Eicon search"
+          checked={prefs.eiconSearchEnabled}
+          onChange={(eiconSearchEnabled) => {
+            set({ eiconSearchEnabled });
+          }}
+        />
+      </FieldRow>
+
+      <GroupLabel>Link previews</GroupLabel>
+      <FieldRow
+        label="Media link previews"
+        help="Loading a preview fetches the image straight from its host — the host sees your IP, like any image on a webpage. Click mode: a plain click on a media link previews it; Ctrl/Cmd+click follows the link"
+      >
+        <Segmented
+          label="Media link previews"
+          options={[
+            { value: "off", label: "Off" },
+            { value: "hover", label: "Hover" },
+            { value: "click", label: "Click" },
+          ]}
+          value={prefs.linkPreviewMode}
+          onChange={(linkPreviewMode) => {
+            set({ linkPreviewMode });
+          }}
+        />
+      </FieldRow>
 
       <GroupLabel>Timestamps</GroupLabel>
       <FieldRow label="Timestamp format">

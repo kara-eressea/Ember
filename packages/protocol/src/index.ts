@@ -3,3 +3,4 @@
 export * from "./gateway.js";
 export * from "./highlights.js";
 export * from "./prefs.js";
+export * from "./profile.js";
