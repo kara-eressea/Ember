@@ -118,6 +118,7 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
 | `APP_NAME` / `CLIENT_NAME` | `EmberChat` | Branding / IDN `cname` (keep it honest) |
 | `RETENTION_POLICY` | `forever` | `forever` \| `30d` \| `90d` \| `1y` message retention |
+| `DETACHED_DISCONNECT_HOURS` | `72` | Log a character out of F-Chat after this long with no device attached (`0` = never); reopening the app reconnects automatically |
 | `UPDATE_CHECK_ENABLED` | `true` | Daily GitHub Releases check; `false` = no phone-home |
 | `CONFIRM_BREAKING_UPGRADE` | `false` | One-boot acknowledgment for breaking migrations |
 | `BACKUP_DIR` / `BACKUP_INTERVAL_SECONDS` / `BACKUP_KEEP_DAYS` | `./backups` / `86400` / `14` | Backup service knobs |

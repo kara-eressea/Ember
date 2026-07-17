@@ -277,6 +277,28 @@ describe("detached auto-away lifecycle", () => {
     await app.detachedAway.sweep();
     await expectOwnStatus(restarted, "away", "afk");
   });
+
+  it("stops a session past the detached-disconnect ceiling (default 72h)", async () => {
+    const { identityId, session } = await startIdentity();
+    const events: { status: string; reason?: string }[] = [];
+    session.events.on("status", (event) => events.push(event));
+
+    // The ceiling needs no prefs — it is the operator's knob, applied even
+    // with detached-away off (the default from registerUser).
+    await app.detachedAway.sweep(); // stamps the detachment clock
+    fakeNow += 71 * 60 * MINUTE_MS;
+    await app.detachedAway.sweep();
+    expect(session.status).toBe("online"); // under the ceiling — untouched
+
+    fakeNow += 2 * 60 * MINUTE_MS; // 73h total
+    await app.detachedAway.sweep();
+    expect(session.status).toBe("stopped");
+    expect(app.sessions.get(identityId)).toBeUndefined();
+    expect(events.at(-1)).toEqual({
+      status: "stopped",
+      reason: "disconnected after 72h with no attached device",
+    });
+  });
 });
 
 describe("GatewayHub attach hook", () => {

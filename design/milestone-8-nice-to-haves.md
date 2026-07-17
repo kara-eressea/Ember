@@ -285,6 +285,20 @@ log (see the CD brief). Client-only track:
   gate is real, not advisory. The CD picker's search-disabled explainer
   copy should be adjusted to match at build time.
 
+## Post-spec addendum — detached-disconnect ceiling (step 15, 2026-07-17)
+
+User decision at step-14 review (decisions.md §15): the bouncer should not
+hold an F-Chat connection forever when nobody is reading. The detached-away
+sweep (M5) gains an operator ceiling — `DETACHED_DISCONNECT_HOURS`
+(default 72, `0` = never): a session with zero gateway subscribers past the
+ceiling is stopped with an explanatory reason ("disconnected after 72h with
+no attached device"). `autoConnect` intent stays true and the vault keeps
+the credentials, so the next attach reconnects automatically with the exact
+channel set (§9 scenario 2). Env knob, not a user pref — the courtesy
+posture attaches to the server, like the §11 budget. Sessions stuck in
+reconnect-backoff count from the detach too (stopping them also ends the
+retries).
+
 ## Verification
 
 - fchat-sim grows the character API (`character-data.php` ticketed;

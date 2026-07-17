@@ -142,6 +142,7 @@ export async function buildApp({
     sessions,
     hub,
     logger: app.log,
+    disconnectAfterMs: config.DETACHED_DISCONNECT_HOURS * 3_600_000,
     now: process.env.NODE_ENV === "test" ? detachedAwayNow : undefined,
   });
   hub.onFirstSubscribe = (identityId) => {

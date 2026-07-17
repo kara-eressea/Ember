@@ -89,6 +89,14 @@ const configSchema = z.object({
     .min(60_000)
     .default(6 * 60 * 60 * 1000),
   /**
+   * Disconnect a session from F-Chat after this many hours with zero
+   * attached devices (0 = never; decisions.md §15). Courtesy toward
+   * F-List: a bouncer nobody reads shouldn't hold a connection forever.
+   * The in-memory vault keeps the credentials, so the next attach
+   * reconnects automatically with the exact channel set.
+   */
+  DETACHED_DISCONNECT_HOURS: z.coerce.number().min(0).default(72),
+  /**
    * Character-data-class requests allowed per sliding hour (M8 profiles).
    * F-List's published limit is 200/hour; the 170 default leaves headroom —
    * do not raise this above the current published limit. Operator-only on
