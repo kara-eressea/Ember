@@ -120,7 +120,9 @@ export class EiconIndexService {
     try {
       await this.#deltaFetch();
     } catch (error) {
-      // A failed refresh keeps serving the stale index; next search retries.
+      // A failed refresh keeps serving the stale index. Stamping syncedAt
+      // deliberately postpones the next attempt by a full refresh window —
+      // per-search retries against a down host would hammer it.
       this.#syncedAt = this.#now();
       this.#logger?.warn({ err: error }, "eicon index delta refresh failed");
     }

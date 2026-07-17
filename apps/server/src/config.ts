@@ -95,7 +95,7 @@ const configSchema = z.object({
    * The in-memory vault keeps the credentials, so the next attach
    * reconnects automatically with the exact channel set.
    */
-  DETACHED_DISCONNECT_HOURS: z.coerce.number().min(0).default(72),
+  DETACHED_DISCONNECT_HOURS: z.coerce.number().int().min(0).default(72),
   /**
    * Character-data-class requests allowed per sliding hour (M8 profiles).
    * F-List's published limit is 200/hour; the 170 default leaves headroom —

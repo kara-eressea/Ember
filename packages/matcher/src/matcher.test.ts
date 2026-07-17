@@ -105,6 +105,25 @@ describe("gender/orientation dimensions", () => {
     expect(dimension(nonbinary, "gender").tier).toBe("weakMatch");
   });
 
+  it("bi with a gender preference: match on the preferred gender, weak on the other", () => {
+    const preferred = match(
+      profile({ gender: "Male" }),
+      profile({ orientation: "Bi - male preference", gender: "Female" }),
+    );
+    expect(dimension(preferred, "orientation").tier).toBe("match");
+    const other = match(
+      profile({ gender: "Female" }),
+      profile({ orientation: "Bi - male preference", gender: "Male" }),
+    );
+    expect(dimension(other, "orientation").tier).toBe("weakMatch");
+    // The substring trap: "female preference" contains "male preference".
+    const femPref = match(
+      profile({ gender: "Female" }),
+      profile({ orientation: "Bi - female preference", gender: "Male" }),
+    );
+    expect(dimension(femPref, "orientation").tier).toBe("match");
+  });
+
   it("no orientation falls back to gender-preference kinks", () => {
     const withFallback = match(
       profile({ gender: "Male", kinks: [{ id: 554, choice: "fave" }] }),

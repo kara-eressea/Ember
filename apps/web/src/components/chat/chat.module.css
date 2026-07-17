@@ -1279,15 +1279,19 @@
   color: var(--eb-faint);
 }
 
+/* Above the profile modal (z-45): chips inside a profile body open the
+ * panel too, and a transient top layer that renders *below* its opener is
+ * invisible — the click looks dead and its capture-phase Escape eats the
+ * modal's (M8 audit H1). Member menus (z-50) stay on top. */
 .previewOverlay {
   position: fixed;
   inset: 0;
-  z-index: 42;
+  z-index: 46;
 }
 
 .linkPreview {
   position: fixed;
-  z-index: 43;
+  z-index: 47;
   display: flex;
   flex-direction: column;
   width: 340px;

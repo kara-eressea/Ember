@@ -86,6 +86,7 @@ export function LinkPreview() {
               style={state === "loading" ? { display: "none" } : undefined}
               src={source.src}
               alt={source.path}
+              referrerPolicy="no-referrer"
               onLoad={() => {
                 setLoadedSrc(source.src);
               }}

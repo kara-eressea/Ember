@@ -183,6 +183,24 @@ function orientationFit(
   if (value.includes("unsure") || value.includes("curious")) {
     return { tier: "weakMatch", reason: `${orientation} — possibly open` };
   }
+  // "Bi - male preference" / "Bi - female preference": open to any gender,
+  // stronger toward the preferred one. Check "female" first — the string
+  // "female preference" contains "male preference".
+  if (value.includes("male preference")) {
+    const preferred = value.includes("female preference")
+      ? "feminine"
+      : "masculine";
+    if (theirGroup === preferred) {
+      return {
+        tier: "match",
+        reason: `${orientation} — their gender is the preferred one`,
+      };
+    }
+    return {
+      tier: "weakMatch",
+      reason: `${orientation} — open, though not the preferred gender`,
+    };
+  }
   if (theirGroup === "other") {
     // Binary orientations against nonbinary genders: soft signal only.
     return {

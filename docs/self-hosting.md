@@ -136,6 +136,12 @@ per-instance counter, capped at `CHARACTER_DATA_BUDGET_PER_HOUR`. The
 attaches to your server's IP and F-List account, which is why this is an
 operator knob and not a user preference. When the budget runs out, the
 viewer serves cached profiles (marked stale) until the window frees up.
+One transparency note: all identities on an instance share a single
+profile cache, so a profile one identity fetched — including one visible
+only to it (e.g. friends-only) — may be served from that cache to another
+identity on the same instance until it expires. On an admin-only instance
+that is one household's own traffic; if you share your instance more
+widely than that, know the boundary.
 
 **Eicon search & xariah.net**: eicon search is **off by default** and
 enforced server-side per user. The first time a user who enabled it

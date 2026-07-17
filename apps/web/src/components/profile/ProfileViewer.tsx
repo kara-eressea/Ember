@@ -15,6 +15,7 @@ import {
   loadOwnProfile,
   loadProfile,
   removeHistoryEntry,
+  resetInsights,
   saveNoteDebounced,
   useProfileStore,
   type LoadedProfile,
@@ -149,34 +150,40 @@ function HistoryRail({
         <div className={styles.railList}>
           {history.map((entry) => {
             const active = entry.name.toLowerCase() === viewing.toLowerCase();
+            // Two sibling buttons, not a control nested in a control — the
+            // remove affordance must be valid ARIA and keyboard-reachable
+            // (M8 audit M3).
             return (
-              <button
+              <div
                 key={entry.name.toLowerCase()}
-                type="button"
                 className={`${styles.histRow} ${active ? styles.histRowActive : ""}`}
-                onClick={() => {
-                  open(entry.name);
-                }}
               >
-                <Avatar name={entry.name} size={28} square />
-                <span className={styles.histMeta}>
-                  <span className={styles.histName}>{entry.name}</span>
-                  <span className={styles.histAgo}>
-                    {ago(entry.lastViewedAt)}
+                <button
+                  type="button"
+                  className={styles.histOpen}
+                  onClick={() => {
+                    open(entry.name);
+                  }}
+                >
+                  <Avatar name={entry.name} size={28} square />
+                  <span className={styles.histMeta}>
+                    <span className={styles.histName}>{entry.name}</span>
+                    <span className={styles.histAgo}>
+                      {ago(entry.lastViewedAt)}
+                    </span>
                   </span>
-                </span>
-                <span
+                </button>
+                <button
+                  type="button"
                   className={styles.histRemove}
-                  role="button"
                   aria-label={`Remove ${entry.name} from history`}
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  onClick={() => {
                     void removeHistoryEntry(identityId, entry.name);
                   }}
                 >
                   ×
-                </span>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -726,6 +733,25 @@ function InsightsTab({
 
   if (!insights) {
     return <div className={styles.shimmer} style={{ height: 120 }} />;
+  }
+  if (insights === "error") {
+    return (
+      <EmptyState glyph="?" title="Couldn't load insights">
+        Reading your local history with {name} failed.
+        <span className={styles.emptyActions}>
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => {
+              resetInsights(name);
+              void loadInsights(identityId, name);
+            }}
+          >
+            Retry
+          </button>
+        </span>
+      </EmptyState>
+    );
   }
   const crossed =
     insights.messagesSent + insights.messagesReceived > 0 ||
