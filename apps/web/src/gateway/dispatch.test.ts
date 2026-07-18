@@ -803,3 +803,21 @@ describe("rtbNoticeText", () => {
     expect(rtbNoticeText({ type: "trackadd" })).toBeUndefined();
   });
 });
+
+describe("ads.updated", () => {
+  it("converges the ad-library mirror for the identity (M10)", async () => {
+    const { useAdsStore } = await import("../stores/ads.js");
+    expect(useAdsStore.getState().byIdentity[IDENTITY]).toBeUndefined();
+    const ads = [
+      { id: "a1", content: "hello", tags: ["default"], disabled: false },
+    ];
+    dispatchFrame(event("ads.updated", { ads }));
+    expect(useAdsStore.getState().byIdentity[IDENTITY]).toEqual({
+      ads,
+      loaded: true,
+    });
+    // At-least-once: a replay is an idempotent overwrite.
+    dispatchFrame(event("ads.updated", { ads: [] }));
+    expect(useAdsStore.getState().byIdentity[IDENTITY]?.ads).toEqual([]);
+  });
+});
