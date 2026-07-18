@@ -183,21 +183,38 @@ describe("buildRows presence lines (show join/part/quit pref)", () => {
   });
 });
 
-describe("buildRows ad hiding", () => {
-  it("drops inbound ads when hideAds is set, keeping own ads", () => {
+describe("buildRows channel view (M10)", () => {
+  it("chat view drops inbound ads, keeping own ads", () => {
     const rows = buildRows(
       [msg(1), msg(2, false, { kind: "lrp" }), msg(3, true, { kind: "lrp" })],
       null,
       [],
-      { hideAds: true },
+      { view: "chat" },
     );
     expect(shape(rows)).toEqual(["divider", "m1", "m3"]);
   });
 
-  it("keeps ads when hideAds is off", () => {
-    const rows = buildRows([msg(1), msg(2, false, { kind: "lrp" })], null, [], {
-      hideAds: false,
-    });
-    expect(shape(rows)).toEqual(["divider", "m1", "m2"]);
+  it("ads view drops inbound chat rows, keeping own sends and ads", () => {
+    const rows = buildRows(
+      [msg(1), msg(2, true), msg(3, false, { kind: "lrp" })],
+      null,
+      [],
+      { view: "ads" },
+    );
+    expect(shape(rows)).toEqual(["divider", "m2", "m3"]);
+  });
+
+  it("both view (and the default) keeps everything", () => {
+    const messages = [msg(1), msg(2, false, { kind: "lrp" })];
+    expect(shape(buildRows(messages, null, [], { view: "both" }))).toEqual([
+      "divider",
+      "m1",
+      "m2",
+    ]);
+    expect(shape(buildRows(messages, null, []))).toEqual([
+      "divider",
+      "m1",
+      "m2",
+    ]);
   });
 });

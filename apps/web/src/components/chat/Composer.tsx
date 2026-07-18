@@ -55,6 +55,10 @@ export interface ComposerProps {
   channelKey?: string;
   /** The channel's room mode (chat/ads/both) — gates the ad toggle. */
   channelMode?: string;
+  /** The channel's Chat/Ads/Both view (M10, "both"-mode channels only).
+   * In the Ads view the composer composes ads, with a separate draft per
+   * view so flipping never loses either text. */
+  adView?: string;
   /** DM partner — enables outbound typing telemetry (TPN, PMs only). */
   partner?: string;
   /** Channel key when the conversation is a channel we are not live in. */
@@ -69,6 +73,7 @@ export function Composer({
   convId,
   channelKey,
   channelMode,
+  adView,
   partner,
   rejoinKey,
   placeholder,
@@ -88,9 +93,32 @@ export function Composer({
   const online = session.sessionStatus === "online";
   // Room mode decides what a send is: ads-only rooms force LRP, chat-only
   // rooms force MSG, "both" offers the toggle (RMO re-gates this live).
+  // The Ads view (M10) composes ads like an ads-only room does.
   const adsPossible = channelKey !== undefined && channelMode !== "chat";
-  const adForced = channelKey !== undefined && channelMode === "ads";
+  const adForced =
+    channelKey !== undefined && (channelMode === "ads" || adView === "ads");
   const sendAsAd = adForced || (adsPossible && adChosen);
+
+  // Separate chat/ad drafts across view flips (M10, spec §4): switching the
+  // header's Show selector stashes the current text and restores the other
+  // view's — neither draft is ever lost.
+  const draftsRef = useRef({ chat: "", ad: "" });
+  const prevViewRef = useRef(adView);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    if (prev === adView) {
+      return;
+    }
+    prevViewRef.current = adView;
+    const prevKey = prev === "ads" ? ("ad" as const) : ("chat" as const);
+    const nextKey = adView === "ads" ? ("ad" as const) : ("chat" as const);
+    if (prevKey !== nextKey) {
+      draftsRef.current[prevKey] = text;
+      setText(draftsRef.current[nextKey]);
+      requestAnimationFrame(autogrow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flip-only
+  }, [adView]);
   // What actually goes on the wire — and what the server's limit measures.
   const wire = markdown ? mdToBBCode(text) : text;
   const bytes = utf8.encode(wire).length;
@@ -658,10 +686,12 @@ export function Composer({
             disabled={adForced}
             title={
               adForced
-                ? "This room only accepts roleplay ads (LRP)"
+                ? channelMode === "ads"
+                  ? "This room only accepts roleplay ads"
+                  : "The Ads view composes ads — set Show to Chat or Both for chat"
                 : sendAsAd
-                  ? "Sending as a roleplay ad (LRP) — 1 per 10 minutes"
-                  : "Send as a roleplay ad (LRP)"
+                  ? "Sending as a roleplay ad — each channel takes one ad per window"
+                  : "Send as a roleplay ad"
             }
             aria-pressed={sendAsAd}
           >

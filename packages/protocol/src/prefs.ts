@@ -143,18 +143,29 @@ const prefsShape = {
    * Patches replace the whole array. */
   mutedIdentityIds: z.array(z.uuid()).max(64),
   mutedConvIds: z.array(z.uuid()).max(500),
-  /** Never show roleplay ads (LRP) — the account-wide default every channel
-   * inherits. Hidden ads neither render nor count as unread. */
-  hideAds: z.boolean(),
-  /** Per-channel override of hideAds, keyed by lowercased channel key.
-   * Absent key = inherit the global default. Patches replace the whole
+  /** Channel view default (M10, replaces M6's hideAds boolean): what a
+   * channel shows unless overridden — "both" everything, "chat" hides ad
+   * rows, "ads" hides chat rows. Ads never count toward unread regardless
+   * of view. */
+  adViewDefault: z.enum(["chat", "ads", "both"]),
+  /** Per-channel view override (the header's Chat/Ads/Both selector),
+   * keyed by lowercased channel key. Absent key = inherit the default;
+   * entries restating the default are pruned. Patches replace the whole
    * record (same convention as the muted lists). */
-  channelAdVisibility: z
-    .record(z.string().min(1).max(128), z.enum(["show", "hide"]))
+  channelAdView: z
+    .record(z.string().min(1).max(128), z.enum(["chat", "ads", "both"]))
     .refine((value) => Object.keys(value).length <= 500, {
       message: "too many channel overrides",
     }),
 } as const;
+
+/** The M6 shapes the M10 tri-state replaced — read once by resolvePrefs to
+ * migrate stored documents; never written again. */
+const legacyHideAds = z.boolean();
+const legacyChannelAdVisibility = z.record(
+  z.string().min(1).max(128),
+  z.enum(["show", "hide"]),
+);
 
 /** The full resolved prefs shape — every field present. */
 export const userPrefsSchema = z.object(prefsShape);
@@ -205,8 +216,8 @@ export const PREFS_DEFAULTS: UserPrefs = {
   desktopNotifyNotes: false,
   mutedIdentityIds: [],
   mutedConvIds: [],
-  hideAds: false,
-  channelAdVisibility: {},
+  adViewDefault: "both",
+  channelAdView: {},
 };
 
 /**
@@ -226,6 +237,28 @@ export function resolvePrefs(stored: unknown): UserPrefs {
     resolved[key] = parsed.success
       ? parsed.data
       : PREFS_DEFAULTS[key as keyof UserPrefs];
+  }
+  // M6 → M10 migration: a stored document from before the tri-state view
+  // carries hideAds/channelAdVisibility. Map them onto the new fields the
+  // first time — once any client patches the new keys, they win.
+  if (source["adViewDefault"] === undefined) {
+    const legacy = legacyHideAds.safeParse(source["hideAds"]);
+    if (legacy.success && legacy.data) {
+      resolved["adViewDefault"] = "chat";
+    }
+  }
+  if (source["channelAdView"] === undefined) {
+    const legacy = legacyChannelAdVisibility.safeParse(
+      source["channelAdVisibility"],
+    );
+    if (legacy.success && Object.keys(legacy.data).length > 0) {
+      resolved["channelAdView"] = Object.fromEntries(
+        Object.entries(legacy.data).map(([key, value]) => [
+          key,
+          value === "hide" ? "chat" : "both",
+        ]),
+      );
+    }
   }
   return resolved as UserPrefs;
 }
