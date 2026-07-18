@@ -66,7 +66,12 @@ function snapshot(): ServerFrame {
         status: "online",
         statusmsg: "",
         ignores: [],
-        limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
+        limits: {
+          chatMax: 4096,
+          privMax: 50000,
+          lfrpMax: 50000,
+          lfrpFlood: 600,
+        },
         iconBlacklist: [],
         chatop: false,
         sendDelaySeconds: 0,
@@ -298,6 +303,7 @@ describe("presence", () => {
       chatMax: 4096,
       privMax: 50000,
       lfrpMax: 50000,
+      lfrpFlood: 600,
     });
   });
 
@@ -819,5 +825,21 @@ describe("ads.updated", () => {
     // At-least-once: a replay is an idempotent overwrite.
     dispatchFrame(event("ads.updated", { ads: [] }));
     expect(useAdsStore.getState().byIdentity[IDENTITY]?.ads).toEqual([]);
+  });
+});
+
+describe("ads.cooldowns", () => {
+  it("stores waits as absolute expiries (M10)", async () => {
+    const { useAdsStore } = await import("../stores/ads.js");
+    const before = Date.now();
+    dispatchFrame(
+      event("ads.cooldowns", { waits: { Development: 60_000, Frontpage: 0 } }),
+    );
+    const until =
+      useAdsStore.getState().cooldownsByIdentity[IDENTITY]?.["Development"];
+    expect(until).toBeGreaterThanOrEqual(before + 60_000);
+    expect(
+      useAdsStore.getState().cooldownsByIdentity[IDENTITY]?.["Frontpage"],
+    ).toBeLessThanOrEqual(Date.now());
   });
 });

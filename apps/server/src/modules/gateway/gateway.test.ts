@@ -951,7 +951,7 @@ describe("gateway fan-out", () => {
       prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
-      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
+      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000, lfrpFlood: 0 },
     });
     expect(snapshot.d.channels).toHaveLength(2);
     const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
@@ -2125,6 +2125,117 @@ describe("gateway commands", () => {
       disabled: false,
     });
   });
+
+  it("ads.cooldowns reports per-channel waits; immediate bypasses the delay (M10)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Development"); // mode "both": ads allowed
+    await app.history.flush();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Development"),
+        ),
+      );
+    const convId = conv!.id;
+
+    // Fresh session: the channel is clear to post.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "ads.cooldowns",
+        d: { keys: ["Development"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: true },
+    });
+    expect(
+      eventPayload<{ waits: Record<string, number> }>(
+        await client.nextEvent("ads.cooldowns"),
+      ).waits,
+    ).toEqual({ Development: 0 });
+
+    // Raise the pace VAR live (the suite's sim zeroes lfrp_flood so other
+    // tests can post freely): the gate reads the live VAR, so the next ad
+    // opens a real window and the wait becomes deterministic.
+    await inject(session, {
+      cmd: "VAR",
+      payload: { variable: "lfrp_flood", value: 600 },
+    });
+
+    // Posting an ad starts the per-channel window; the next query reports
+    // a remaining wait derived from the live lfrp_flood VAR.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "cooldown probe ad", kind: "lrp" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    await client.nextEvent("message.new");
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "ads.cooldowns",
+        d: { keys: ["Development"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 3,
+      d: { ok: true },
+    });
+    const after = eventPayload<{ waits: Record<string, number> }>(
+      await client.nextEvent("ads.cooldowns"),
+    ).waits;
+    expect(after["Development"]).toBeGreaterThan(0);
+
+    // With a send delay set, `immediate: true` (the post flow) skips the
+    // outbox and puts the message on the wire now.
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: { identityId, action: "prefs.set", d: { sendDelaySeconds: 60 } },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 4,
+      d: { ok: true },
+    });
+    client.send({
+      t: "cmd",
+      id: 5,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "right now", immediate: true },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 5,
+      d: { ok: true },
+    });
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({ kind: "msg", bbcode: "right now", sentByUs: true });
+  }, 30_000);
 
   it("delayed send parks in the outbox, recalls, and releases due rows", async () => {
     const { identityId, token } = await createIdentity();

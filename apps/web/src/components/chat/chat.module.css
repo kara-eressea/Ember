@@ -1556,6 +1556,15 @@
   background: var(--eb-border);
 }
 
+/* Advisory lossiness line under the composer preview (M10). */
+.previewLossiness {
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--eb-warn);
+  background: color-mix(in srgb, var(--eb-warn) 10%, var(--eb-side));
+  border-top: 1px solid color-mix(in srgb, var(--eb-warn) 30%, var(--eb-side));
+}
+
 .formatSelect {
   max-width: 76px;
   padding: 2px 4px;

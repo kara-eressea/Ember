@@ -15,16 +15,48 @@ interface IdentityAds {
 
 interface AdsState {
   byIdentity: Record<string, IdentityAds>;
+  /** Per-channel ad-cooldown expiry (epoch ms), keyed identity → channel.
+   * Fed by the `ads.cooldowns` reply and by our own successful posts; the
+   * dialog renders "next allowed in Xm" from these. */
+  cooldownsByIdentity: Record<string, Record<string, number>>;
   applyAds: (identityId: string, ads: AdDto[]) => void;
+  applyCooldowns: (identityId: string, waits: Record<string, number>) => void;
+  markPosted: (identityId: string, key: string, floodSeconds: number) => void;
 }
 
 export const useAdsStore = create<AdsState>()((set) => ({
   byIdentity: {},
+  cooldownsByIdentity: {},
   applyAds(identityId, ads) {
     set((state) => ({
       byIdentity: {
         ...state.byIdentity,
         [identityId]: { ads, loaded: true },
+      },
+    }));
+  },
+  applyCooldowns(identityId, waits) {
+    const now = Date.now();
+    set((state) => ({
+      cooldownsByIdentity: {
+        ...state.cooldownsByIdentity,
+        [identityId]: {
+          ...state.cooldownsByIdentity[identityId],
+          ...Object.fromEntries(
+            Object.entries(waits).map(([key, ms]) => [key, now + ms]),
+          ),
+        },
+      },
+    }));
+  },
+  markPosted(identityId, key, floodSeconds) {
+    set((state) => ({
+      cooldownsByIdentity: {
+        ...state.cooldownsByIdentity,
+        [identityId]: {
+          ...state.cooldownsByIdentity[identityId],
+          [key]: Date.now() + floodSeconds * 1000,
+        },
       },
     }));
   },

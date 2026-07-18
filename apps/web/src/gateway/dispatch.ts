@@ -241,6 +241,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // mirror so an open Ad Center shows the current library.
       useAdsStore.getState().applyAds(identityId, event.d.ads);
       return;
+    case "ads.cooldowns":
+      // Reply to our own cooldown query — waits become absolute expiries so
+      // the post dialog can count down without re-asking.
+      useAdsStore.getState().applyCooldowns(identityId, event.d.waits);
+      return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);
       return;

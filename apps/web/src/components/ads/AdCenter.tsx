@@ -23,6 +23,7 @@ import {
 import { api, ApiError } from "../../lib/api.js";
 import { knownIdsFor, useAdsStore } from "../../stores/ads.js";
 import type { IdentitySession } from "../../stores/sessions.js";
+import { useUiStore } from "../../stores/ui.js";
 import { RichText } from "../chat/RichText.js";
 import {
   adTitle,
@@ -597,6 +598,16 @@ export function AdCenter({
               }}
             >
               + New ad
+            </button>
+            <button
+              type="button"
+              className={styles.postAds}
+              disabled={ads.every((ad) => ad.disabled)}
+              onClick={() => {
+                useUiStore.getState().setPostAdsOpen(true);
+              }}
+            >
+              Post ads…
             </button>
           </div>
         </div>

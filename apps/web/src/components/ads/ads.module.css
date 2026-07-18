@@ -199,8 +199,31 @@
 }
 
 .libraryFoot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--eb-border);
+}
+
+.postAds {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  cursor: pointer;
+  background: var(--eb-accent);
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.postAds:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .newAd {

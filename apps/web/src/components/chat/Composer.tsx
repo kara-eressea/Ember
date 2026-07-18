@@ -5,8 +5,18 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { BB_COLORS, mdToBBCode } from "@emberchat/markdown-bbcode";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import {
+  analyzeMarkdown,
+  BB_COLORS,
+  mdToBBCode,
+} from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
   useSessionsStore,
@@ -87,6 +97,12 @@ export function Composer({
   const limitBytes = sendAsAd ? session.limits.lfrpMax : maxBytes;
   const pending = session.outbox.filter((item) => item.convId === convId);
   const previewEmote = parseEmote(wire);
+  // Advisory lossiness check (M10): Markdown that reaches the wire as
+  // literal text gets a heads-up next to the preview — never a block.
+  const lossCount = useMemo(
+    () => (markdown && text.trim() !== "" ? analyzeMarkdown(text).length : 0),
+    [markdown, text],
+  );
   // Case-insensitive: the icon_blacklist VAR carries lowercase names while
   // channel keys are canonical-case (audit).
   const iconsBlacklisted =
@@ -417,6 +433,15 @@ export function Composer({
               <RichText bbcode={wire} />
             )}
           </div>
+          {lossCount > 0 && (
+            <div className={styles.previewLossiness}>
+              ⚠{" "}
+              {lossCount === 1
+                ? "1 part will post as plain text"
+                : `${String(lossCount)} parts will post as plain text`}{" "}
+              — the preview shows exactly what goes out
+            </div>
+          )}
         </div>
       )}
       {helpOpen && (
