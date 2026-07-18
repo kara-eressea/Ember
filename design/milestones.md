@@ -14,7 +14,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 | 6 | Channel browser + channel ops | done | M1 (benefits from M3) | [milestone-6-channel-browser-ops.md](milestone-6-channel-browser-ops.md) |
 | 7 | Self-host hardening (rescoped 2026-07-16, was public-service hardening) | done | M1–M2 min., realistically M1–M6 | [milestone-7-self-host-hardening.md](milestone-7-self-host-hardening.md) |
 | 8 | Nice-to-haves: profile viewer + compatibility + eicon search | **shipped v0.7.0** (2026-07-17) | M7 | [milestone-8-nice-to-haves.md](milestone-8-nice-to-haves.md) |
-| 9 | Client polish: LOW sweep, at-rest credentials, search, toolbar, light theme (specced 2026-07-18) | steps 0–8 done 2026-07-18, wrap-up pending | M8 | [milestone-9-client-polish.md](milestone-9-client-polish.md) |
+| 9 | Client polish: LOW sweep, at-rest credentials, search, toolbar, light theme | **shipped v0.8.0** (2026-07-18) | M8 | [milestone-9-client-polish.md](milestone-9-client-polish.md) |
 | 10 | Ads & character search (created 2026-07-16) | not started | M8 | [milestone-10-ads-and-search.md](milestone-10-ads-and-search.md) |
 | MX | Desktop client (Electron/embedded bouncer — undated, after the nice-to-have rounds) | not started | M8+; design in [standalone-client.md](standalone-client.md) | [standalone-client.md](standalone-client.md) |
 
@@ -183,9 +183,11 @@ prototypes in `prototype/*.dc.html`.
 
 ## Milestone 9 step checklist
 
-> **Branching exception (open):** M9 runs on a temporary `staging`
-> integration branch (the M2–M8 pattern), created off `main` 2026-07-18.
-> Feature PRs target `staging`; the wrap-up ritual merges to `main`.
+> **Branching exception (closed 2026-07-18):** M9 was built on a temporary
+> `staging` integration branch (the M2–M8 pattern); after the three-reviewer
+> audit and its fix pass (#130) and the user's sign-off it merge-committed
+> to `main` (PR #131), v0.8.0 was tagged and released (ghcr workflow green),
+> and the branch was deleted.
 
 Mirrors [milestone-9-client-polish.md](milestone-9-client-polish.md)
 (specced 2026-07-18 — the user committed the full candidate pool minus the
