@@ -76,27 +76,31 @@ export function TierPie({
 }
 
 /** Overall pill: pie + label. `short` drops the " match"/" mismatch"
- * suffix (compare table rows). */
+ * suffix (compare table rows). `compact` is the official second size for
+ * IRC-density surfaces — ad rows, search results (M10 reuse notes): same
+ * primitive, tokens, tier colors and pie geometry, smaller metrics. */
 export function MatchPill({
   tier,
   short = false,
+  compact = false,
 }: {
   tier: MatchTier;
   short?: boolean;
+  compact?: boolean;
 }) {
   const label = short
     ? TIER_LABEL[tier].replace(" match", "").replace(" mismatch", "")
     : TIER_LABEL[tier];
   return (
     <span
-      className={styles.matchPill}
+      className={`${styles.matchPill} ${compact ? (styles.matchPillCompact ?? "") : ""}`}
       style={{
         color: TIER_COLOR[tier],
         background: `color-mix(in srgb, ${TIER_COLOR[tier]} 17%, var(--eb-bg))`,
         borderColor: `color-mix(in srgb, ${TIER_COLOR[tier]} 42%, var(--eb-bg))`,
       }}
     >
-      <TierPie tier={tier} size={11} />
+      <TierPie tier={tier} size={compact ? 10 : 11} />
       {label}
     </span>
   );

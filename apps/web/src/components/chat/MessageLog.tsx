@@ -6,12 +6,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { match } from "@emberchat/matcher";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
 import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
-import { openCardFrom } from "../../stores/profile.js";
+import { openCardFrom, useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { MatchPill } from "../profile/MatchTier.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
@@ -296,6 +298,8 @@ export function MessageLog({
                 <SystemLine message={row.message} prefs={prefs} />
               ) : row.message.kind === "rll" ? (
                 <RollLine message={row.message} prefs={prefs} />
+              ) : row.message.kind === "lrp" ? (
+                <AdLine message={row.message} prefs={prefs} />
               ) : (
                 <MessageLine
                   message={row.message}
@@ -356,6 +360,58 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
   );
 }
 
+/** A roleplay ad (M10, CD spec §5): a distinct bordered block with an
+ * accent rail, so an ad never reads as a normal chat line. The MatchTier
+ * chip appears ONLY when the poster's profile is already in the local
+ * cache — no fetch-on-render, so most rows carry no chip and its absence
+ * is the normal look (it sits in the flex spacer, not a reserved column).
+ */
+function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
+  const time = formatTime(message.createdAt, timeFormat(prefs));
+  return (
+    <div className={styles.adBlock} data-ad>
+      <div className={styles.adBlockHead}>
+        <span className={styles.adTag} title="Roleplay ad">
+          AD
+        </span>
+        <button
+          type="button"
+          className={`${styles.nick} ${styles.nameButton ?? ""}`}
+          style={{ color: nickColor(message.senderCharacter) }}
+          onClick={(event) => {
+            openCardFrom(event.currentTarget, message.senderCharacter);
+          }}
+        >
+          {message.senderCharacter}
+        </button>
+        {time !== "" && <span className={styles.time}>{time}</span>}
+        <span className={styles.adBlockSpacer} />
+        <CachedMatchChip name={message.senderCharacter} />
+      </div>
+      <div className={styles.adBlockBody}>
+        <RichText bbcode={message.bbcode} />
+      </div>
+    </div>
+  );
+}
+
+/** Cache-only compatibility chip (M10 step 8): renders the M8 MatchPill
+ * compact size when — and only when — both profiles are already loaded in
+ * this session. Never triggers a fetch. */
+function CachedMatchChip({ name }: { name: string }) {
+  const loaded = useProfileStore((s) => s.profiles[name.toLowerCase()]);
+  const own = useProfileStore((s) => s.ownProfile?.profile);
+  const theirs = loaded?.response?.profile;
+  const tier = useMemo(
+    () => (own && theirs ? match(own, theirs).overall : undefined),
+    [own, theirs],
+  );
+  if (tier === undefined) {
+    return null;
+  }
+  return <MatchPill tier={tier} short compact />;
+}
+
 function MessageLine({
   message,
   prefs,
@@ -367,14 +423,12 @@ function MessageLine({
 }) {
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
-  const ad = message.kind === "lrp";
   return (
     <div
       className={`${styles.messageLine} ${
         message.mention ? (styles.mentionLine ?? "") : ""
-      } ${ad ? (styles.adLine ?? "") : ""}`}
+      }`}
       data-mention={message.mention || undefined}
-      data-ad={ad || undefined}
     >
       {time !== "" && <span className={styles.time}>{time}</span>}
       {/* Grouped rows keep an invisible nick so aligned columns stay put;
@@ -398,11 +452,6 @@ function MessageLine({
         >
           {message.senderCharacter}
         </button>
-      )}
-      {ad && (
-        <span className={styles.adTag} title="Roleplay ad (LRP)">
-          AD
-        </span>
       )}
       {emote ? (
         // /me: italic action running straight off the name, no separator.

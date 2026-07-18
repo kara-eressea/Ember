@@ -970,6 +970,13 @@
   border-radius: 20px;
 }
 
+/* The official compact size (M10 reuse notes) — ad rows, search results. */
+.matchPillCompact {
+  gap: 5px;
+  padding: 2.5px 9px 2.5px 7px;
+  font-size: 10.5px;
+}
+
 .dimChip {
   display: inline-flex;
   gap: 6px;
