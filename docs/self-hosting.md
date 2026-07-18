@@ -115,7 +115,7 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `AUTH_SECRET` | — (required) | Access-token signing secret, ≥ 32 chars |
 | `IMAGE_TAG` | `latest` | ghcr tag to run: `vX.Y.Z` \| `vX.Y` \| `vX` \| `latest` \| `edge` |
 | `UPDATE_CHECK_REPO` | `kara-eressea/Ember` | GitHub repo the update check reads releases from |
-| `BIND_ADDRESS` / `PORT` | `127.0.0.1` / `3000` | Host listen address |
+| `BIND_ADDRESS` / `PORT` | `127.0.0.1` / `3000` | Host bind address and host-side published port (the container always listens on 3000 internally). Reaching a non-default port directly (no proxy)? Put it in `APP_BASE_URL` too |
 | `TRUST_PROXY` | unset | **Required behind a proxy** — hop count or CIDRs |
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
 | `APP_NAME` / `CLIENT_NAME` | `EmberChat` | Branding / IDN `cname` (keep it honest) |
@@ -261,7 +261,8 @@ Replace `image:` with `build: { context: ., target: runtime }` in
   doing its job (see Upgrades above).
 - **429s from your own IP** behind a proxy — `TRUST_PROXY` is unset.
 - **Gateway closes with code 4403** — the browser's origin isn't
-  `APP_BASE_URL`; fix the URL scheme/host in `.env`.
+  `APP_BASE_URL`; fix the URL scheme/host/port in `.env` (a custom `PORT`
+  reached without a proxy must appear in `APP_BASE_URL` too).
 - **Locked out of the app** — `reset-password` via the admin CLI (Quick
   start step 4).
 - **Everything logged out after a restart** — expected with the default
