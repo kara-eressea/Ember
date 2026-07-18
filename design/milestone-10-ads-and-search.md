@@ -35,7 +35,10 @@ milestone evolves).
   post-hoc refusal for something the editor let you type.
 - **Multiple ads may target the same channel** (Horizon-style library);
   with rotation deferred, M10 posting is always an explicit "post this ad
-  now" — the library just remembers per-ad channel target defaults.
+  now". **Post-time targeting** (settled by the step-1 survey — Horizon
+  stores no channels on the ad): the posting flow selects ads by tag and
+  channels from the joined ads/both-mode set; nothing channel-shaped is
+  stored on the ad itself.
 - **UI shape:** an ad scratchpad/manager opened from a button in the
   composer formatting toolbar — write, preview (M4 tokenizer), pick
   channels, post. UI-heavy steps go through a **Claude Design pass** first
@@ -71,6 +74,56 @@ milestone evolves).
   confirmation is a single supervised manual post in a room the user
   controls, at their discretion.
 
+## Step 1 findings (2026-07-18 — Horizon/Rising survey + protocol review)
+
+Behavioral survey of `Fchat-Horizon/Horizon` (MPL-2.0 — file-level
+copyleft; **behavior imitated, no code copied**) plus a pass over our own
+protocol docs and M6 implementation. What it settled:
+
+- **Ad shape:** Horizon's Ad Center stores per-character ads as exactly
+  `{ disabled, tags[], content }` — no title, no per-ad channel list, no
+  weights. Empty-content ads are dropped on save; a tagless ad gets the
+  tag `default`. Adopted for our step 3 (plus our explicit `sortOrder`,
+  which Horizon keeps as array order for its "ad-center order" mode).
+- **Tags are purely local** campaign selectors — the posting flow picks
+  tags, and matching enabled ads are included. Nothing beyond the plain
+  LRP body ever touches the wire. Adopted: free-form strings.
+- **Targeting is chosen at post time**: eligible channels = joined
+  channels whose mode is `ads`/`both`; Horizon has **no cap** on selected
+  channels — its conservatism lever is a hard campaign expiry instead
+  (rotation runs max 3 h, then silently stops; renewable). Noted for the
+  M11 posture discussion: expiry may be the better lever than a channel
+  cap.
+- **Pacing corroboration:** Horizon tracks the `lfrp_flood` window
+  per-channel (`nextAd` per conversation), matching our per-channel
+  rate-gate read of ERR 56's "to a channel" wording. Its rotation adds
+  jitter (3 min start / 8 min per-post variance over a 1.5 min base gap,
+  net "12–22 minutes"), enforces a 5 s gap from the user's own manual
+  posts, and spaces any two ads app-wide ≥ 7.5 s across characters.
+  Recorded for M11; M10's manual posting needs none of it beyond the
+  existing per-channel gate.
+- **`[ads: N min]` channel-description convention:** Horizon parses this
+  token out of channel descriptions and honors it as that channel's
+  requested ad cadence. Adopted for M10 as **display** (show the parsed
+  cadence in the posting flow so the user can honor it); enforcement
+  belongs to M11 rotation.
+- **ERR 56 handling:** Horizon has none — a flood-refused automated ad is
+  simply lost. We already do better (per-channel gate + friendly ERR
+  copy); M10 keeps that bar for manual posting.
+- **Show selector:** per-channel view persisted only when it differs from
+  the channel's native mode; the composer flips MSG↔LRP (and length VAR
+  `chat_max`↔`lfrp_max`) with the view, keeping **separate drafts** per
+  view. Horizon never counts ads toward unread at all — corroborates our
+  chosen semantics. Adopted for step 7, including the separate-drafts
+  detail.
+- **Protocol notes** (our docs): the ad length VAR is **`lfrp_max`**
+  (50000), not `chat_max`; FKS has a 5 s pace (ERR 50), plus ERR 18 (no
+  results), 61 (too many terms — live threshold unknown), 72 (too many
+  results — live ceiling unknown). fchat-sim already shipped per-channel
+  ERR 56, ERR 59/60 mode refusals, and `lfrp_max` length checks with M6;
+  step 2 added FKS (kink fave/yes + gender matching; other filter arrays
+  accepted but unmatched — documented sim leniency).
+
 ## Steps (dependency order)
 
 1. **Kickoff investigation:** survey F-Chat Horizon / Rising's ad tooling
@@ -80,15 +133,16 @@ milestone evolves).
 2. **fchat-sim:** FKS request/response (fixture-backed results honoring
    the filter params) + ERR 56 ad-flood refusals on LRP pacing violations
    (LRP fan-out itself shipped with M6).
-3. **Server ad library:** `ads` table (per identity: label, Markdown body,
-   tags, default target channels, sort order), CRUD REST + gateway events
-   keeping devices in sync.
+3. **Server ad library:** `ads` table (per identity: Markdown body, tags,
+   disabled flag, sort order — the Horizon-faithful shape; no title, no
+   stored channels), CRUD REST + gateway events keeping devices in sync.
 4. **`markdown-bbcode` lossiness report:** `mdToBBCode` (or a sibling)
    returns structured diagnostics for constructs that don't survive
    translation; unit-tested against the subset invariant.
 5. **Ad manager UI** (Claude Design pass first): composer-toolbar entry,
-   library list, editor with live preview, VAR-driven amber/red hard-cap
-   counter, lossiness warnings, channel target defaults.
+   library list (tags, disable toggle, reorder), editor with live preview,
+   VAR-driven amber/red hard-cap counter, lossiness warnings; posting flow
+   = pick tags → pick channels (joined, ads/both mode) → post.
 6. **Manual posting:** post-now to selected channels through the existing
    LRP rate-gated send path; RMO gating (ads/both channels only, chat-only
    channels excluded with the reason shown); per-channel "last posted /

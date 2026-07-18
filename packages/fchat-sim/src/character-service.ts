@@ -228,6 +228,15 @@ export class CharacterService {
     this.#profiles.set(name.toLowerCase(), seed);
   }
 
+  /** Kink map (kink id → choice) for FKS matching; empty when unseeded. */
+  kinksOf(name: string): Readonly<Record<string, string>> {
+    const known = this.#findKnown(name);
+    if (!known) {
+      return {};
+    }
+    return this.#profiles.get(known.toLowerCase())?.kinks ?? {};
+  }
+
   setGuestbook(name: string, posts: readonly SimGuestbookPostSeed[]): void {
     this.idOf(name);
     this.#guestbooks.set(name.toLowerCase(), [...posts]);

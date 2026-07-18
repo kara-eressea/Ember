@@ -61,6 +61,12 @@ export const serverCommandSchemas = {
   }),
   /** An error occurred. See src/error-codes.ts. */
   ERR: z.object({ number: z.int(), message: z.string() }),
+  /** Search results for the client's FKS. `characters` is bare names;
+   * `kinks` echoes the requested kink ids. */
+  FKS: z.object({
+    characters: z.array(z.string()),
+    kinks: z.array(z.string()),
+  }),
   /** A character went offline. Treat as a global LCH for that character. */
   FLN: z.object({ character: z.string() }),
   /** Initial friends list, sent at login — the union of the account's
