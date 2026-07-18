@@ -119,6 +119,10 @@ const prefsShape = {
     }),
   /** Restore the previous status when activity resumes. */
   autoAwayClearOnReturn: z.boolean(),
+  /** Recent status messages (M9), most-recent-first, offered as one-click
+   * chips in the status editor. Written on every successful non-empty STA;
+   * patches replace the whole array (the recents convention). */
+  statusMessageRecents: z.array(z.string().min(1).max(255)).max(20),
   /** Server-side: away after N minutes with zero gateway subscribers,
    * cleared on the next attach. Opt-in (decisions.md §10). */
   detachedAwayEnabled: z.boolean(),
@@ -192,6 +196,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   autoAwayMinutes: 10,
   autoAwayMessage: "",
   autoAwayClearOnReturn: true,
+  statusMessageRecents: [],
   detachedAwayEnabled: false,
   detachedAwayMinutes: 30,
   desktopNotifyMentions: false,

@@ -16,6 +16,7 @@ import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { patchPrefs } from "../prefs/patch.js";
 import {
   useSessionsStore,
   type ChannelInvite,
@@ -263,6 +264,20 @@ function MeStatus({
         setError(ack.error ?? "Could not set status");
         return;
       }
+      // Fold a non-empty message into the recents chips (M9) — dedupe,
+      // most-recent-first, whole-array patch per the recents convention.
+      const message = statusmsg.trim();
+      if (message !== "") {
+        const recents = [
+          message,
+          ...session.prefs.statusMessageRecents.filter(
+            (entry) => entry !== message,
+          ),
+        ].slice(0, 20);
+        void patchPrefs(session.identityId, {
+          statusMessageRecents: recents,
+        });
+      }
       setOpen(false);
     } finally {
       setBusy(false);
@@ -316,6 +331,23 @@ function MeStatus({
           <button className={styles.miniButton} type="submit" disabled={busy}>
             Set
           </button>
+          {session.prefs.statusMessageRecents.length > 0 && (
+            <div className={styles.statusRecents}>
+              {session.prefs.statusMessageRecents.slice(0, 5).map((recent) => (
+                <button
+                  key={recent}
+                  type="button"
+                  className={styles.statusRecentChip}
+                  title={recent}
+                  onClick={() => {
+                    setStatusmsg(recent);
+                  }}
+                >
+                  {recent}
+                </button>
+              ))}
+            </div>
+          )}
           {error && (
             <p className={styles.miniError} role="alert">
               {error}
