@@ -50,6 +50,12 @@ export interface FchatSimOptions {
   readonly lisBatchSize?: number;
   /** Log every frame in/out (used by the CLI). */
   readonly log?: (line: string) => void;
+  /** FKS: required seconds between searches (live: 5 — ERR 50). Tests
+   * lower it to exercise the flow without waiting. */
+  readonly fksFloodSeconds?: number;
+  /** FKS: result-count ceiling before ERR 72 ("too many results"). The
+   * live ceiling is undocumented; tests lower it to trigger the refusal. */
+  readonly fksResultCap?: number;
 }
 
 interface Connection {
@@ -66,6 +72,8 @@ interface Connection {
   /** Per-channel ad timestamps — the lfrp pace reads as per channel
    * (ERR 56: "to a channel"); confirm on the supervised live pass. */
   readonly lastLrpAt: Map<string, number>;
+  /** Last FKS, for the 5s search pace (ERR 50). */
+  lastFksAt: number;
 }
 
 interface ChannelState {
@@ -188,6 +196,8 @@ export class FchatSim {
    * server: they survive reconnects and are replayed via IGN init. */
   readonly #ignores = new Map<string, Set<string>>();
   #port: number | undefined;
+  readonly #fksFloodSeconds: number;
+  readonly #fksResultCap: number;
 
   constructor(options: FchatSimOptions = {}) {
     this.#world = options.world ?? DEFAULT_WORLD;
@@ -197,6 +207,8 @@ export class FchatSim {
     this.#requestedPort = options.port ?? 0;
     this.#host = options.host ?? "127.0.0.1";
     this.#log = options.log ?? (() => {});
+    this.#fksFloodSeconds = options.fksFloodSeconds ?? 5;
+    this.#fksResultCap = options.fksResultCap ?? 250;
     this.#tickets = new TicketService(this.#world.accounts);
     this.#social = new SocialService(this.#world.accounts);
     this.#characters = new CharacterService(this.#world);
@@ -537,6 +549,7 @@ export class FchatSim {
       lastMsgAt: 0,
       lastPriAt: 0,
       lastLrpAt: new Map(),
+      lastFksAt: 0,
     };
     this.#connections.add(connection);
     socket.on("message", (data: RawData) => {
@@ -765,6 +778,9 @@ export class FchatSim {
         return;
       case "RLL":
         this.#handleRoll(connection, character, command.payload);
+        return;
+      case "FKS":
+        this.#handleSearch(connection, character, command.payload);
         return;
       case "SFC":
         this.#handleStaffReport(connection, character, command.payload);
@@ -1107,6 +1123,68 @@ export class FchatSim {
       },
       character,
     );
+  }
+
+  /**
+   * FKS: character search over everyone online. Sim semantics (live
+   * matching is undocumented — recorded in the M10 investigation): a
+   * character matches when it lists at least one requested kink id with
+   * choice "fave" or "yes" (an empty kinks array skips the kink test —
+   * lenient; the real server requires kinks) AND, when a genders filter is
+   * present, its gender is in the list. The other filter arrays
+   * (orientations/languages/furryprefs/roles) are accepted but not
+   * matched — the sim's world seeds carry no such data, and client
+   * correctness doesn't depend on the sim honoring them.
+   */
+  #handleSearch(
+    connection: Connection,
+    character: string,
+    payload: {
+      kinks: string[];
+      genders?: string[] | undefined;
+      orientations?: string[] | undefined;
+      languages?: string[] | undefined;
+      furryprefs?: string[] | undefined;
+      roles?: string[] | undefined;
+    },
+  ): void {
+    const now = Date.now();
+    if (now - connection.lastFksAt < this.#fksFloodSeconds * 1000) {
+      this.#sendError(connection, FchatErrorCode.SearchFlood);
+      return;
+    }
+    connection.lastFksAt = now;
+    const matches: string[] = [];
+    for (const [name, state] of this.#online) {
+      if (name === character) {
+        continue;
+      }
+      if (payload.genders && !payload.genders.includes(state.gender)) {
+        continue;
+      }
+      if (payload.kinks.length > 0) {
+        const kinks = this.#characters.kinksOf(name);
+        const hit = payload.kinks.some(
+          (id) => kinks[id] === "fave" || kinks[id] === "yes",
+        );
+        if (!hit) {
+          continue;
+        }
+      }
+      matches.push(name);
+    }
+    if (matches.length === 0) {
+      this.#sendError(connection, FchatErrorCode.NoSearchResults);
+      return;
+    }
+    if (matches.length > this.#fksResultCap) {
+      this.#sendError(connection, FchatErrorCode.TooManySearchResults);
+      return;
+    }
+    this.#send(connection, {
+      cmd: "FKS",
+      payload: { characters: matches, kinks: payload.kinks },
+    });
   }
 
   /** SFC: records the report and acknowledges like the live server does. */

@@ -27,6 +27,17 @@ these features extend).
     investigation should record it).
   - Open at kickoff: posting while detached (the bouncer posting with no
     browser attached is the most "unattended automation" posture).
+  - Horizon reference points (M10 step-1 survey): no channel cap — its
+    conservatism lever is a hard **campaign expiry** (max 3 h, renewable,
+    then rotation silently stops), which may be the better lever for us
+    too; jitter = 3 min start / 8 min per-post variance over a 1.5 min
+    base gap (net "12–22 min"); ≥ 7.5 s spacing between any two ads
+    app-wide across characters; a 5 s no-ad window around the user's own
+    manual posts; honors an `[ads: N min]` cadence token parsed from
+    channel descriptions (M10 displays it; M11 rotation should enforce
+    it); campaigns resume after reconnect on rejoin. Horizon does NOT
+    react to ERR 56 (refused ads are lost) — our pause-with-warning
+    decision is strictly better.
   - **No automated live testing** — rotation is verified against
     fchat-sim's ERR 56 simulation only.
 - **Ad ratings** (Horizon parity — rate/annotate posters' ads locally).

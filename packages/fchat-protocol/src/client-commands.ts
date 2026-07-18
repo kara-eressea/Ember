@@ -45,6 +45,21 @@ export const clientCommandSchemas = {
   /** Unban a character from a channel (chanop). The response is a SYS. */
   CUB: z.object({ channel: z.string(), character: z.string() }),
   /**
+   * Character search. `kinks` is required (kink ids as strings, per the
+   * wiki sample); every other filter is optional. The enum values are
+   * server-defined and drift (the wiki sample itself uses a gender spelling
+   * missing from its own list), so they stay plain strings here — the
+   * server is the validator. Pace: 5s between searches (ERR 50).
+   */
+  FKS: z.object({
+    kinks: z.array(z.string()),
+    genders: z.array(z.string()).optional(),
+    orientations: z.array(z.string()).optional(),
+    languages: z.array(z.string()).optional(),
+    furryprefs: z.array(z.string()).optional(),
+    roles: z.array(z.string()).optional(),
+  }),
+  /**
    * Identify with the server. Must be the first command sent; cname/cversion
    * uniquely identify this client (developer policy).
    */
