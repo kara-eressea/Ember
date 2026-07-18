@@ -95,10 +95,12 @@ export function buildRows(
       groupHead = undefined;
     }
     // Emotes never group (the nick is part of the sentence) and never
-    // continue a group; sys lines have no sender at all.
+    // continue a group; sys lines have no sender at all; ads render as
+    // standalone blocks (M10) that neither group nor continue a group.
     const groupable =
       options.groupConsecutive === true &&
       message.kind !== "sys" &&
+      message.kind !== "lrp" &&
       !message.bbcode.startsWith("/me");
     const grouped =
       groupable &&

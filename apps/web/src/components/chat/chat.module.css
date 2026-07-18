@@ -215,15 +215,33 @@
   font-style: italic;
 }
 
-/* Roleplay ads (LRP, M6): a quiet tinted wash + AD tag so ads scan apart
-   from chat without shouting. */
-.adLine,
-.adLine:hover {
-  padding-top: 4px;
-  padding-bottom: 4px;
-  background: color-mix(in srgb, var(--eb-accent) 6%, transparent);
-  box-shadow: inset 3px 0 0
-    color-mix(in srgb, var(--eb-accent) 45%, transparent);
+/* Roleplay ads (M10, CD spec §5): a distinct bordered block with a 3px
+   accent rail and a faint accent tint — never reads as a plain chat line.
+   The optional MatchTier chip lives in the flex spacer, so its absence
+   (the normal, cache-only case) leaves no hole. */
+.adBlock {
+  padding: 8px 12px 9px;
+  margin: 4px 16px;
+  background: color-mix(in srgb, var(--eb-accent) 7%, var(--eb-side));
+  border: 1px solid var(--eb-border);
+  border-left: 3px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+}
+
+.adBlockHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.adBlockSpacer {
+  flex: 1;
+}
+
+.adBlockBody {
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .adTag {

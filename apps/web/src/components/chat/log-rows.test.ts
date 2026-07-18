@@ -218,3 +218,24 @@ describe("buildRows channel view (M10)", () => {
     ]);
   });
 });
+
+describe("buildRows ad grouping (M10)", () => {
+  it("ads never group and never continue a group", () => {
+    const rows = buildRows(
+      [
+        msg(1, false),
+        msg(2, false, { kind: "lrp" }),
+        msg(3, false),
+        msg(4, false),
+      ],
+      null,
+      [],
+      { groupConsecutive: true },
+    );
+    const grouped = rows
+      .filter((row) => row.type === "message")
+      .map((row) => (row.type === "message" ? (row.grouped ?? false) : false));
+    // m2 (the ad) breaks the run: m3 starts fresh, only m4 groups.
+    expect(grouped).toEqual([false, false, false, true]);
+  });
+});
