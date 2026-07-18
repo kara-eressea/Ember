@@ -219,8 +219,10 @@ citizen".
 - **Opt-in at-rest credential storage is committed for M9** — amends §3's
   "never persisted". *→ Shipped 2026-07-18 (M9 step 1) exactly per the
   constraints below; the credentials table rides the pg dumps (decided at
-  build time as anticipated), and the restart resume is verified by a
-  genuine two-server-process integration test.* §3 was written against the multi-tenant threat model
+  build time as anticipated), and the restart resume is verified by an
+  integration test that boots a second server instance (fresh buildApp —
+  new vault/registry/store) over the same database, a fair restart
+  equivalent.* §3 was written against the multi-tenant threat model
   (a breached managed service leaking *many users'* F-List passwords);
   after §2's pivot the deployment is the admin's own box holding their own
   credentials — the same trust model as the desktop clients

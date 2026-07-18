@@ -288,36 +288,39 @@ function AddIdentityFlow({
               {account.remembered && " · remembered on this server"}
             </span>
           </span>
-          {canRemember &&
-            (account.remembered ? (
+          {account.remembered ? (
+            // Forget renders even on a key-less server: a credential
+            // stored under a since-removed key is still the user's to
+            // delete (M9 audit).
+            <button
+              type="button"
+              className={styles.linkButton}
+              title="Delete the stored credential — the next server restart will ask for the password again"
+              onClick={() => {
+                void api
+                  .setFlistAccountRemember(account.id, false)
+                  .then(onAccountsChanged);
+              }}
+            >
+              Forget
+            </button>
+          ) : (
+            canRemember &&
+            account.unlocked && (
               <button
                 type="button"
                 className={styles.linkButton}
-                title="Delete the stored credential — the next server restart will ask for the password again"
+                title="Store the password encrypted on this server so restarts reconnect automatically"
                 onClick={() => {
                   void api
-                    .setFlistAccountRemember(account.id, false)
+                    .setFlistAccountRemember(account.id, true)
                     .then(onAccountsChanged);
                 }}
               >
-                Forget
+                Remember
               </button>
-            ) : (
-              account.unlocked && (
-                <button
-                  type="button"
-                  className={styles.linkButton}
-                  title="Store the password encrypted on this server so restarts reconnect automatically"
-                  onClick={() => {
-                    void api
-                      .setFlistAccountRemember(account.id, true)
-                      .then(onAccountsChanged);
-                  }}
-                >
-                  Remember
-                </button>
-              )
-            ))}
+            )
+          )}
           <button
             className={styles.connectButton}
             onClick={() => {

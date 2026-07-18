@@ -167,6 +167,7 @@ function MemberRow({
         <span
           className={styles.memberDot}
           style={{ background: DOT_COLOR[dot] }}
+          data-dot={dot}
         />
       </span>
       {role === "owner" && (

@@ -16,8 +16,11 @@ const FRIENDLY: Record<number, string> = {
   50: "Searches are limited to one every five seconds.",
   54: "Staff alerts are limited to one every two minutes — contact a moderator directly for corrections.",
   56: "Roleplay ads are paced by F-Chat: one per channel every ten minutes.",
-  59: "That channel is ads-only right now — plain chat messages aren't allowed.",
-  60: "That channel is chat-only right now — roleplay ads aren't allowed.",
+  // 59 = ads refused (chat-only channel); 60 = chat refused (ads-only
+  // channel) — wiki-verified, and the audit caught them swapped once:
+  // tests below pin BOTH.
+  59: "That channel is chat-only — roleplay ads aren't allowed there.",
+  60: "That channel is ads-only — plain chat messages aren't allowed there.",
   62: "F-Chat has no free login slots right now — try again in a little while.",
   64: "Your ignore list is at F-Chat's 300-name cap.",
 };

@@ -48,8 +48,9 @@ items. First triage, then fix:
 
 Per decisions.md §15 (amending §3; custody resolved disclosure-only):
 
-- **Schema**: `flist_credentials` (accountId PK/FK cascade, ciphertext,
-  nonce, createdAt/updatedAt) — separate table, never a column on
+- **Schema**: `flist_credentials` (accountId PK/FK cascade, ciphertext —
+  the IV and auth tag ride inside the blob as base64(iv‖tag‖ct) —
+  createdAt/updatedAt) — separate table, never a column on
   `flist_accounts`, so backup/pruning stories stay independent.
 - **Crypto**: AES-256-GCM with a key from new env `CREDENTIALS_KEY`
   (32-byte base64url; generated like `AUTH_SECRET`). No key = feature

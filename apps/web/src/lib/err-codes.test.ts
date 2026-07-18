@@ -8,6 +8,13 @@ describe("errNotice", () => {
     );
   });
 
+  it("keeps 59 (chat-only) and 60 (ads-only) straight — wiki semantics", () => {
+    // 59 fires when an AD is refused → the channel allows only chat.
+    expect(errNotice(59, "")).toContain("chat-only");
+    // 60 fires when CHAT is refused → the channel allows only ads.
+    expect(errNotice(60, "")).toContain("ads-only");
+  });
+
   it("falls back to the server's message for unknown codes", () => {
     expect(errNotice(999, "Mystery refusal.")).toBe("Mystery refusal. (999)");
   });
