@@ -2207,6 +2207,23 @@ describe("gateway commands", () => {
     ).waits;
     expect(after["Development"]).toBeGreaterThan(0);
 
+    // A second immediate ad inside the window REFUSES with the friendly
+    // cooldown copy (M10 step 10: the ERR-56-class refusal surface) —
+    // never a silent queue that would ghost-post minutes later.
+    client.send({
+      t: "cmd",
+      id: 30,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "too soon", kind: "lrp" },
+      },
+    });
+    const refused = await client.nextOfType("ack");
+    expect(refused.id).toBe(30);
+    expect(refused.d.ok).toBe(false);
+    expect(refused.d.error).toContain("next available in");
+
     // With a send delay set, `immediate: true` (the post flow) skips the
     // outbox and puts the message on the wire now.
     client.send({
