@@ -30,6 +30,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
+import { SearchPanel } from "../chat/SearchPanel.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { useProfileStore } from "../../stores/profile.js";
@@ -37,6 +38,7 @@ import { LinkPreview } from "../chat/LinkPreview.js";
 import { MiniProfileCard } from "../profile/MiniProfileCard.js";
 import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
+import { QuickSwitcher } from "./QuickSwitcher.js";
 import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
 
@@ -62,6 +64,8 @@ export function AppShell() {
   const profileViewing = useProfileStore((s) => s.viewing);
   const profileCard = useProfileStore((s) => s.card);
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
+  const searchOpen = useUiStore((s) => s.searchOpen);
+  const switcherOpen = useUiStore((s) => s.switcherOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -85,6 +89,26 @@ export function AppShell() {
   // Idle detection lives with the shell: it exists exactly while the user
   // is in the app, across identity/conversation navigation.
   useEffect(() => startAutoAway(), []);
+
+  // Ctrl/Cmd+K toggles the quick-switcher (M9) from anywhere in the shell.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        const ui = useUiStore.getState();
+        ui.setSwitcherOpen(!ui.switcherOpen);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   // The routed identity subscribes immediately (its snapshot should win the
   // race); the rest follow once ready lists them, so background badges and
@@ -154,9 +178,16 @@ export function AppShell() {
 
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.
-  const newestId = useMessagesStore((s) =>
-    convId === undefined ? undefined : s.buffers[convId]?.messages.at(-1)?.id,
-  );
+  // Never while a search jump detached the view from the live tail — the
+  // newest *buffered* id is then an old message and would drag the cursor
+  // backward.
+  const newestId = useMessagesStore((s) => {
+    if (convId === undefined) {
+      return undefined;
+    }
+    const buffer = s.buffers[convId];
+    return buffer?.detachedTail ? undefined : buffer?.messages.at(-1)?.id;
+  });
   useEffect(() => {
     if (identityId !== undefined && convId !== undefined) {
       useSessionsStore.getState().clearUnread(identityId, convId);
@@ -286,6 +317,15 @@ export function AppShell() {
             />
           </>
         )}
+        {searchOpen && (
+          <SearchPanel
+            session={session}
+            convId={convId}
+            onClose={() => {
+              useUiStore.getState().setSearchOpen(false);
+            }}
+          />
+        )}
       </main>
       {showMembers && channel && (
         <MemberList
@@ -307,6 +347,18 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setChannelBrowserOpen(false);
+          }}
+        />
+      )}
+      {switcherOpen && identities !== undefined && (
+        <QuickSwitcher
+          session={session}
+          identities={identities.map((identity) => ({
+            id: identity.id,
+            name: identity.name,
+          }))}
+          onClose={() => {
+            useUiStore.getState().setSwitcherOpen(false);
           }}
         />
       )}

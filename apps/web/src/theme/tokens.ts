@@ -41,7 +41,26 @@ export const BASE_THEMES = {
     faint: "#6e675d",
     border: "#282520",
   },
+  // Parchment (M9): the light variant of the same warm hue family — paper
+  // rather than pure white, dark warm text. Every derived token (hover,
+  // codebg, accent-soft) flows from these through the same mix() calls, so
+  // the derivation structure is untouched.
+  parchment: {
+    heading: "#35302a",
+    bg: "#f6f1e7",
+    side: "#efe8db",
+    side2: "#e7dfd0",
+    head: "#f2ecdf",
+    text: "#2e2a24",
+    dim: "#675f52",
+    faint: "#94897a",
+    border: "#ddd3c2",
+  },
 } as const satisfies Record<BaseThemeId, Record<keyof typeof NEUTRALS, string>>;
+
+/** Base themes rendered on a light ground — they take the light-tuned
+ * status, nick, and BBCode palettes below. */
+export const LIGHT_THEMES: ReadonlySet<BaseThemeId> = new Set(["parchment"]);
 
 /** User-selectable accents; default is Dusk Purple. The `satisfies` pins
  * this palette to the prefs schema's accent enum — adding or renaming an
@@ -63,7 +82,37 @@ export const WARN = "#d0a24f";
 export const WARN_MOSS = "#c9a25e";
 export const DANGER = "#e08a6a";
 
-/** Deterministic per-nick colors: palette[sum(charCodes) % length]. */
+/** Status colors per ground and vision profile (M9). The colorblind set
+ * derives from Okabe–Ito: sky-blue ok / amber warn / vermillion danger —
+ * hues that stay distinct under deuteranopia and protanopia; the presence
+ * dots additionally shape-code (see base.css). */
+export const STATUS_COLORS = {
+  dark: { ok: OK, warn: WARN, warnMoss: WARN_MOSS, danger: DANGER },
+  light: {
+    ok: "#54803a",
+    warn: "#96741b",
+    warnMoss: "#96741b",
+    danger: "#b25233",
+  },
+  colorblindDark: {
+    ok: "#56b4e9",
+    warn: "#e6b625",
+    warnMoss: "#e6b625",
+    danger: "#e0703f",
+  },
+  colorblindLight: {
+    ok: "#2a6f9e",
+    warn: "#8a6d00",
+    warnMoss: "#8a6d00",
+    danger: "#b0400e",
+  },
+} as const;
+
+/** Deterministic per-nick colors: palette[sum(charCodes) % length]. Two
+ * palettes, same hue order — the dark one is the original pastel set, the
+ * light one the same hues pulled down for contrast on paper. themeVariables
+ * writes the active one as --eb-nick-N; nickColor hands out the var so
+ * every consumer re-tints on theme switch for free. */
 export const NICK_PALETTE = [
   "#a892c6",
   "#c294b0",
@@ -75,12 +124,27 @@ export const NICK_PALETTE = [
   "#98bda8",
 ] as const;
 
-export function nickColor(nick: string): string {
+export const NICK_PALETTE_LIGHT = [
+  "#6c4f96",
+  "#96517a",
+  "#4d5f9e",
+  "#5a7a42",
+  "#3d7680",
+  "#8e4f96",
+  "#93417f",
+  "#3e7a5c",
+] as const;
+
+export function nickIndex(nick: string): number {
   let sum = 0;
   for (const char of nick) {
     sum += char.codePointAt(0) ?? 0;
   }
-  return NICK_PALETTE[sum % NICK_PALETTE.length]!;
+  return sum % NICK_PALETTE.length;
+}
+
+export function nickColor(nick: string): string {
+  return `var(--eb-nick-${String(nickIndex(nick))})`;
 }
 
 /** Linear RGB lerp between two `#rrggbb` colors; `t` = weight toward `b`. */

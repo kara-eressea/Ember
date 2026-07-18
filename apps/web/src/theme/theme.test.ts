@@ -40,12 +40,38 @@ describe("themeVariables", () => {
       mix("#a892c6", BASE_THEMES.charcoal.bg, 0.84),
     );
   });
+
+  it("parchment flips to the light status/nick/bbc palettes (M9)", () => {
+    const vars = themeVariables("dusk", "parchment");
+    expect(vars["--eb-bg"]).toBe(BASE_THEMES.parchment.bg);
+    // Light-ground status colors, dark-enough for AA as text.
+    expect(vars["--eb-ok"]).toBe("#54803a");
+    // [color=white] must stay legible on paper — a warm gray, not a lie.
+    expect(vars["--eb-bbc-white"]).toBe("#8d8577");
+    // The light nick palette rides the same var slots.
+    expect(vars["--eb-nick-0"]).toBe("#6c4f96");
+    // The derivation structure is untouched — soft still leans to bg.
+    expect(vars["--eb-accent-soft"]).toBe(
+      mix("#a892c6", BASE_THEMES.parchment.bg, 0.84),
+    );
+  });
+
+  it("colorblind mode swaps status hues per ground (M9)", () => {
+    expect(themeVariables("dusk", "slate", true)["--eb-ok"]).toBe("#56b4e9");
+    expect(themeVariables("dusk", "parchment", true)["--eb-ok"]).toBe(
+      "#2a6f9e",
+    );
+    // Moss's warn shift folds into whichever set is active.
+    expect(themeVariables("moss", "slate", true)["--eb-warn"]).toBe("#e6b625");
+  });
 });
 
 describe("nickColor", () => {
-  it("is deterministic and stays in the palette", () => {
+  it("is deterministic and hands out a theme var in palette range", () => {
     expect(nickColor("Amber Vale")).toBe(nickColor("Amber Vale"));
-    expect(NICK_PALETTE).toContain(nickColor("Nyx Firemane"));
+    expect(nickColor("Nyx Firemane")).toMatch(/^var\(--eb-nick-[0-7]\)$/);
+    // Every slot the vars can reference exists in both palettes.
+    expect(NICK_PALETTE).toHaveLength(8);
   });
 });
 
@@ -62,7 +88,7 @@ describe("hydrateTheme", () => {
       setItem: (key: string, value: string) => void stored.set(key, value),
     });
     vi.stubGlobal("document", {
-      documentElement: { style: { setProperty } },
+      documentElement: { style: { setProperty }, classList: { toggle() {} } },
     });
   });
 

@@ -913,7 +913,13 @@ function ErrorState({
     <div className={styles.content}>
       <EmptyState
         glyph="?"
-        title={budget ? "Profile budget exhausted" : "Profile not found"}
+        title={
+          budget
+            ? "Profile budget exhausted"
+            : loaded.state === "error"
+              ? "Couldn't load profile"
+              : "Profile not found"
+        }
       >
         {loaded.error ??
           (budget

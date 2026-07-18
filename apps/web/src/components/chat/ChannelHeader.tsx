@@ -110,6 +110,19 @@ function MuteChip({
     <button
       className={`${styles.pinChip} ${muted ? (styles.ignoreChipActive ?? "") : ""}`}
       onClick={() => {
+        // The prefs schema caps the list at 500; without this check the
+        // patch is rejected server-side and the chip silently flips back
+        // (M5 audit backlog) — say why instead.
+        if (!muted && mutedConvIds.length >= 500) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              identityId,
+              "error",
+              "Mute limit reached (500 conversations) — unmute some in Preferences → Notifications first.",
+            );
+          return;
+        }
         void patchPrefs(identityId, {
           mutedConvIds: muted
             ? mutedConvIds.filter((entry) => entry !== convId)
@@ -524,6 +537,16 @@ export function ChannelHeader({
         <span className={styles.headerSpacer} />
         <button
           className={styles.headerButton}
+          title="Search this channel's log"
+          aria-label="Search log"
+          onClick={() => {
+            useUiStore.getState().setSearchOpen(true);
+          }}
+        >
+          ⌕
+        </button>
+        <button
+          className={styles.headerButton}
           onClick={toggleMembers}
           title="Toggle member list"
         >
@@ -595,6 +618,16 @@ export function DmHeader({
           <span className={styles.typing}>is typing…</span>
         )}
         <span className={styles.headerSpacer} />
+        <button
+          className={styles.headerButton}
+          title="Search this conversation's log"
+          aria-label="Search log"
+          onClick={() => {
+            useUiStore.getState().setSearchOpen(true);
+          }}
+        >
+          ⌕
+        </button>
       </div>
       {(dm.statusmsg || dm.status) && (
         <div className={styles.description}>

@@ -22,7 +22,8 @@ const DOT_COLOR = {
   faint: "var(--eb-faint)",
 } as const;
 
-/** Keep the ~204px menu inside the viewport — member rows hug the right edge. */
+/** Rough pre-clamp so the menu doesn't flash off-screen for a frame; the
+ * menu itself re-clamps against its measured size once rendered. */
 const MENU_WIDTH = 216;
 
 interface Group {
@@ -124,6 +125,7 @@ export function MemberList({
           identityId={identityId}
           ownCharacter={ownCharacter}
           channelKey={channel.key}
+          channelTitle={channel.title}
           member={menu.member}
           role={menu.role}
           viewerRole={viewerRole}
@@ -165,6 +167,7 @@ function MemberRow({
         <span
           className={styles.memberDot}
           style={{ background: DOT_COLOR[dot] }}
+          data-dot={dot}
         />
       </span>
       {role === "owner" && (

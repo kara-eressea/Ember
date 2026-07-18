@@ -24,6 +24,7 @@ export function IdentityPicker() {
 
   const [identities, setIdentities] = useState<IdentityDto[]>();
   const [accounts, setAccounts] = useState<FlistAccountDto[]>();
+  const [canRemember, setCanRemember] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -35,6 +36,7 @@ export function IdentityPicker() {
       ]);
       setIdentities(identityList.identities);
       setAccounts(accountList.accounts);
+      setCanRemember(accountList.canRemember);
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Failed to load");
@@ -141,6 +143,7 @@ export function IdentityPicker() {
       {adding ? (
         <AddIdentityFlow
           accounts={accounts ?? []}
+          canRemember={canRemember}
           onDone={() => {
             setAdding(false);
             void reload();
@@ -202,6 +205,8 @@ function RemoveButton({
 
 interface AddIdentityFlowProps {
   accounts: FlistAccountDto[];
+  /** The server has a CREDENTIALS_KEY — "Remember" affordances render. */
+  canRemember: boolean;
   onDone: () => void;
   onAccountsChanged: () => void;
 }
@@ -220,6 +225,7 @@ type FlowMode =
  */
 function AddIdentityFlow({
   accounts,
+  canRemember,
   onDone,
   onAccountsChanged,
 }: AddIdentityFlowProps) {
@@ -253,6 +259,7 @@ function AddIdentityFlow({
   if (effective.kind === "add" || effective.kind === "unlock") {
     return (
       <AccountForm
+        canRemember={canRemember}
         unlock={mode.kind === "unlock" ? mode.account : undefined}
         onBack={
           accounts.length > 0
@@ -278,8 +285,42 @@ function AddIdentityFlow({
             <br />
             <span className={styles.identityMeta}>
               {account.unlocked ? "unlocked" : "locked — password needed"}
+              {account.remembered && " · remembered on this server"}
             </span>
           </span>
+          {account.remembered ? (
+            // Forget renders even on a key-less server: a credential
+            // stored under a since-removed key is still the user's to
+            // delete (M9 audit).
+            <button
+              type="button"
+              className={styles.linkButton}
+              title="Delete the stored credential — the next server restart will ask for the password again"
+              onClick={() => {
+                void api
+                  .setFlistAccountRemember(account.id, false)
+                  .then(onAccountsChanged);
+              }}
+            >
+              Forget
+            </button>
+          ) : (
+            canRemember &&
+            account.unlocked && (
+              <button
+                type="button"
+                className={styles.linkButton}
+                title="Store the password encrypted on this server so restarts reconnect automatically"
+                onClick={() => {
+                  void api
+                    .setFlistAccountRemember(account.id, true)
+                    .then(onAccountsChanged);
+                }}
+              >
+                Remember
+              </button>
+            )
+          )}
           <button
             className={styles.connectButton}
             onClick={() => {
@@ -315,10 +356,12 @@ function AddIdentityFlow({
 }
 
 function AccountForm({
+  canRemember,
   unlock,
   onBack,
   onReady,
 }: {
+  canRemember: boolean;
   /** Set = re-enter the password for this known account (name fixed). */
   unlock: FlistAccountDto | undefined;
   onBack: (() => void) | undefined;
@@ -326,6 +369,7 @@ function AccountForm({
 }) {
   const [accountName, setAccountName] = useState(unlock?.accountName ?? "");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(unlock?.remembered ?? false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -335,8 +379,8 @@ function AccountForm({
     setError(undefined);
     try {
       const { account } = unlock
-        ? await api.unlockFlistAccount(unlock.id, password)
-        : await api.addFlistAccount({ accountName, password });
+        ? await api.unlockFlistAccount(unlock.id, password, remember)
+        : await api.addFlistAccount({ accountName, password, remember });
       onReady(account);
     } catch (cause) {
       setError(
@@ -386,6 +430,20 @@ function AccountForm({
           required
         />
       </label>
+      {canRemember && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => {
+                setRemember(event.target.checked);
+              }}
+            />{" "}
+            Remember on this server
+          </span>
+        </label>
+      )}
       <button className={styles.primaryButton} type="submit" disabled={busy}>
         {unlock ? "Unlock" : "Verify account"}
       </button>
@@ -400,8 +458,13 @@ function AccountForm({
         </button>
       )}
       <p className={styles.footNote}>
-        Your password is verified with F-List and kept only in server memory —
-        never stored. A server restart will ask for it again.
+        {remember && canRemember
+          ? "Your password is verified with F-List, then stored encrypted on " +
+            "this server so restarts reconnect automatically. The key lives " +
+            "in the server's env file — this protects database backups, not " +
+            "a fully compromised machine."
+          : "Your password is verified with F-List and kept only in server " +
+            "memory — never stored. A server restart will ask for it again."}
       </p>
     </form>
   );

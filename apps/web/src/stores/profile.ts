@@ -8,7 +8,10 @@ import { create } from "zustand";
 import type { ProfileInsights, ProfileResponse } from "@emberchat/protocol";
 import { api, ApiError } from "../lib/api.js";
 
-export type ProfileLoadState = "loading" | "ok" | "notfound" | "budget";
+/** "error" = network/server trouble, distinct from a genuine 404 — a
+ * transient outage must not read as "this character doesn't exist". */
+export type ProfileLoadState =
+  "loading" | "ok" | "notfound" | "budget" | "error";
 
 export interface LoadedProfile {
   state: ProfileLoadState;
@@ -151,7 +154,7 @@ export function loadProfile(
         return;
       }
       setProfile(lower, {
-        state: "notfound",
+        state: "error",
         error: error instanceof Error ? error.message : "Profile fetch failed",
         response: cached?.response,
       });

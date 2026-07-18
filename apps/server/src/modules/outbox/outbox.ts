@@ -6,7 +6,7 @@
 // due while the process was down). Every change fans the identity's full
 // pending list as `outbox.updated`, so all attached devices stay in sync.
 
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { OutboxItemDto } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { conversations, outboxMessages } from "../../db/schema.js";
@@ -46,6 +46,7 @@ function itemDto(row: OutboxRow): OutboxItemDto {
     bbcode: row.bbcode,
     releaseAt: row.releaseAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
+    kind: row.kind === "lrp" ? "lrp" : "msg",
     // "releasing" is a worker-internal claim; to the user it is still a
     // pending send (recall of it just misses — the send is in flight).
     state: row.state === "failed" ? "failed" : "scheduled",
@@ -86,6 +87,7 @@ export class Outbox {
       .set({
         state: "failed",
         failureReason: "interrupted by a restart — it may have been sent",
+        failedAt: new Date(),
       })
       .where(eq(outboxMessages.state, "releasing"))
       .catch((error: unknown) => {
@@ -239,7 +241,13 @@ export class Outbox {
         .where(
           and(
             eq(outboxMessages.state, "failed"),
-            lte(outboxMessages.releaseAt, new Date(now - FAILED_ROW_TTL_MS)),
+            // Key on when the row actually failed — a crash-recovery
+            // failure long after releaseAt still gets the full window
+            // (M7 audit). Pre-migration rows have no failedAt; fall back.
+            lte(
+              sql`coalesce(${outboxMessages.failedAt}, ${outboxMessages.releaseAt})`,
+              new Date(now - FAILED_ROW_TTL_MS),
+            ),
           ),
         )
         .returning({ identityId: outboxMessages.identityId });
@@ -302,6 +310,7 @@ export class Outbox {
         .set({
           state: "failed",
           failureReason: error instanceof Error ? error.message : "send failed",
+          failedAt: new Date(),
         })
         .where(eq(outboxMessages.id, row.id));
       await this.#fan(row.identityId);

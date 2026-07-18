@@ -13,6 +13,7 @@ import {
 import type { GatewayHub } from "../gateway/gateway.js";
 import type { HistorySink } from "../history/sink.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
+import type { CredentialStore } from "./credential-store.js";
 import type { CredentialVault } from "./vault.js";
 
 const accountResponse = z.object({
@@ -20,6 +21,8 @@ const accountResponse = z.object({
   accountName: z.string(),
   /** Whether the in-memory vault currently holds this account's password. */
   unlocked: z.boolean(),
+  /** Whether an at-rest credential is stored (§15 "Remember" opt-in). */
+  remembered: z.boolean(),
   createdAt: z.date(),
 });
 
@@ -28,17 +31,25 @@ const errorResponse = z.object({ error: z.string() });
 const addAccountBody = z.object({
   accountName: z.string().min(1).max(254),
   // Forwarded to F-List once for verification, then vaulted in memory —
-  // never persisted or logged (decisions.md §3).
+  // never persisted or logged (decisions.md §3)… unless `remember` opts
+  // this account into encrypted at-rest storage (§15).
   password: z.string().min(1).max(1024),
+  remember: z.boolean().optional(),
 });
 
-const unlockBody = z.object({ password: z.string().min(1).max(1024) });
+const unlockBody = z.object({
+  password: z.string().min(1).max(1024),
+  remember: z.boolean().optional(),
+});
+
+const rememberBody = z.object({ remember: z.boolean() });
 
 const idParams = z.object({ id: z.uuid() });
 
 export interface FlistAccountsRoutesOptions {
   db: Db;
   vault: CredentialVault;
+  store: CredentialStore;
   tickets: TicketManagerRegistry;
   sessions: SessionRegistry;
   history: HistorySink;
@@ -58,7 +69,8 @@ export async function flistAccountsRoutes(
   options: FlistAccountsRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, vault, tickets, sessions, history, hub, rateLimitMax } = options;
+  const { db, vault, store, tickets, sessions, history, hub, rateLimitMax } =
+    options;
   const flistRateLimit = {
     rateLimit: { max: rateLimitMax, timeWindow: "1 minute" },
   };
@@ -74,11 +86,15 @@ export async function flistAccountsRoutes(
     return row;
   }
 
-  function present(row: { id: string; accountName: string; createdAt: Date }) {
+  function present(
+    row: { id: string; accountName: string; createdAt: Date },
+    remembered: boolean,
+  ) {
     return {
       id: row.id,
       accountName: row.accountName,
       unlocked: vault.has(row.id),
+      remembered,
       createdAt: row.createdAt,
     };
   }
@@ -87,7 +103,14 @@ export async function flistAccountsRoutes(
     "/",
     {
       schema: {
-        response: { 200: z.object({ accounts: z.array(accountResponse) }) },
+        response: {
+          200: z.object({
+            accounts: z.array(accountResponse),
+            /** False when the server has no CREDENTIALS_KEY — the UI
+             * hides the "Remember on this server" affordance entirely. */
+            canRemember: z.boolean(),
+          }),
+        },
       },
     },
     async (request) => {
@@ -95,7 +118,13 @@ export async function flistAccountsRoutes(
         .select()
         .from(flistAccounts)
         .where(eq(flistAccounts.userId, request.user.sub));
-      return { accounts: rows.map(present) };
+      // Always queried, even key-less: a row stored under a since-removed
+      // key must stay visible (and Forget-able) — never silently hidden.
+      const stored = await store.storedAccountIds();
+      return {
+        accounts: rows.map((row) => present(row, stored.has(row.id))),
+        canRemember: store.enabled,
+      };
     },
   );
 
@@ -117,7 +146,7 @@ export async function flistAccountsRoutes(
       },
     },
     async (request, reply) => {
-      const { accountName, password } = request.body;
+      const { accountName, password, remember } = request.body;
       let row;
       try {
         [row] = await db
@@ -142,9 +171,14 @@ export async function flistAccountsRoutes(
         const { characters } = await tickets
           .managerFor(row.id, row.accountName)
           .getTicketWithCharacters();
+        // Only after F-List verified the password, and only opted-in (§15).
+        const remembered = remember === true && store.enabled;
+        if (remembered) {
+          await store.save(row.id, password);
+        }
         return await reply
           .code(201)
-          .send({ account: present(row), characters });
+          .send({ account: present(row, remembered), characters });
       } catch (error) {
         vault.delete(row.id);
         tickets.drop(row.id);
@@ -200,6 +234,16 @@ export async function flistAccountsRoutes(
         request.log.error({ err: error }, "unlock verification failed");
         return reply.code(502).send({ error: "Could not reach F-List" });
       }
+      // A verified password refreshes an existing stored credential (the
+      // opt-in already happened); `remember: true` opts in right here.
+      let remembered = false;
+      if (store.enabled) {
+        const stored = await store.storedAccountIds();
+        remembered = stored.has(row.id) || request.body.remember === true;
+        if (remembered) {
+          await store.save(row.id, request.body.password);
+        }
+      }
       // One unlock brings every autoConnect identity back (restart recovery,
       // decisions.md §9 scenario 2): resume exactly the channels each was in.
       const wanted = await db
@@ -239,7 +283,53 @@ export async function flistAccountsRoutes(
           );
         }
       }
-      return reply.send({ account: present(row), reconnected });
+      return reply.send({ account: present(row, remembered), reconnected });
+    },
+  );
+
+  // The "Remember on this server" toggle (§15). Enabling requires the
+  // vault to hold the password already (add/unlock verified it — this
+  // route never sees or re-verifies a password itself); disabling wipes
+  // the stored row.
+  app.put(
+    "/:id/remember",
+    {
+      schema: {
+        params: idParams,
+        body: rememberBody,
+        response: {
+          200: z.object({ account: accountResponse }),
+          404: errorResponse,
+          409: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const row = await findOwnedAccount(request.params.id, request.user.sub);
+      if (!row) {
+        return reply.code(404).send({ error: "Account not found" });
+      }
+      if (request.body.remember) {
+        // Only ENABLING needs the key; deleting a stored row must work on
+        // a keyless server too — a user who opted in before the admin
+        // removed CREDENTIALS_KEY still owns that ciphertext (audit).
+        if (!store.enabled) {
+          return reply.code(409).send({
+            error:
+              "This server has no CREDENTIALS_KEY configured — remembering is disabled",
+          });
+        }
+        const password = vault.get(row.id);
+        if (password === undefined) {
+          return reply
+            .code(409)
+            .send({ error: "Unlock the account first, then enable this" });
+        }
+        await store.save(row.id, password);
+      } else {
+        await store.remove(row.id);
+      }
+      return reply.send({ account: present(row, request.body.remember) });
     },
   );
 

@@ -24,10 +24,24 @@ export interface TokenResponse {
   refreshToken: string;
 }
 
+/** One in-log search hit (M9). */
+export interface SearchResultDto {
+  id: number;
+  convId: string;
+  conversationTitle: string;
+  conversationKind: "channel" | "pm";
+  senderCharacter: string;
+  kind: "msg" | "lrp" | "rll" | "sys" | "pm";
+  bbcode: string;
+  createdAt: string;
+}
+
 export interface FlistAccountDto {
   id: string;
   accountName: string;
   unlocked: boolean;
+  /** An encrypted at-rest credential is stored on the server (§15). */
+  remembered: boolean;
   createdAt: string;
 }
 
@@ -213,21 +227,32 @@ export const api = {
   },
 
   listFlistAccounts() {
-    return apiRequest<{ accounts: FlistAccountDto[] }>("/flist-accounts", {
-      auth: true,
-    });
+    return apiRequest<{ accounts: FlistAccountDto[]; canRemember: boolean }>(
+      "/flist-accounts",
+      { auth: true },
+    );
   },
-  addFlistAccount(input: { accountName: string; password: string }) {
+  addFlistAccount(input: {
+    accountName: string;
+    password: string;
+    remember?: boolean;
+  }) {
     return apiRequest<{ account: FlistAccountDto }>("/flist-accounts", {
       method: "POST",
       body: input,
       auth: true,
     });
   },
-  unlockFlistAccount(id: string, password: string) {
+  unlockFlistAccount(id: string, password: string, remember?: boolean) {
     return apiRequest<{ account: FlistAccountDto; reconnected: string[] }>(
       `/flist-accounts/${id}/unlock`,
-      { method: "POST", body: { password }, auth: true },
+      { method: "POST", body: { password, remember }, auth: true },
+    );
+  },
+  setFlistAccountRemember(id: string, remember: boolean) {
+    return apiRequest<{ account: FlistAccountDto }>(
+      `/flist-accounts/${id}/remember`,
+      { method: "PUT", body: { remember }, auth: true },
     );
   },
   deleteFlistAccount(id: string) {
@@ -283,6 +308,23 @@ export const api = {
   },
 
   /** One page of history, ascending; `before` walks toward older messages. */
+  searchMessages(
+    identityId: string,
+    q: string,
+    options: { convId?: string; cursor?: number } = {},
+  ) {
+    const query = new URLSearchParams({ q });
+    if (options.convId !== undefined) {
+      query.set("convId", options.convId);
+    }
+    if (options.cursor !== undefined) {
+      query.set("cursor", String(options.cursor));
+    }
+    return apiRequest<{ results: SearchResultDto[]; nextCursor?: number }>(
+      `/identities/${identityId}/search?${query.toString()}`,
+      { auth: true },
+    );
+  },
   listMessages(
     identityId: string,
     conversationId: string,

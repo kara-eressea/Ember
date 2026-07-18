@@ -89,6 +89,27 @@ const configSchema = z.object({
     .min(60_000)
     .default(6 * 60 * 60 * 1000),
   /**
+   * At-rest F-List credential storage key (M9, decisions.md §15): 32
+   * bytes, base64url — generate like AUTH_SECRET. Unset = the "Remember
+   * on this server" feature is hidden and nothing is ever stored. The key
+   * lives only in the env file: DB dumps/backups alone stay ciphertext.
+   * This protects backups, NOT a full-box compromise — the desktop-client
+   * guarantee, stated plainly in docs/self-hosting.md.
+   */
+  CREDENTIALS_KEY: z
+    .string()
+    .refine(
+      (key) => {
+        try {
+          return Buffer.from(key, "base64url").length === 32;
+        } catch {
+          return false;
+        }
+      },
+      { message: "CREDENTIALS_KEY must be 32 bytes of base64url" },
+    )
+    .optional(),
+  /**
    * Disconnect a session from F-Chat after this many hours with zero
    * attached devices (0 = never; decisions.md §15). Courtesy toward
    * F-List: a bouncer nobody reads shouldn't hold a connection forever.

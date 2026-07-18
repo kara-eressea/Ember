@@ -41,6 +41,28 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(log.getByText("a code span")).toBeVisible();
   await expect(log).not.toContainText("**bold words**");
 
+  // ── Toolbar + /help (M9 step 4) ────────────────────────────────────────
+  // Bold is Markdown-aware; Underline (BBCode-only) lives behind the Aa
+  // toggle and works with Markdown on because the dialect passes wrapper
+  // tags through.
+  await input.fill("glow");
+  await input.selectText();
+  await page.getByRole("button", { name: "Bold", exact: true }).click();
+  await expect(input).toHaveValue("**glow**");
+  await page.getByRole("button", { name: "More formatting" }).click();
+  await input.selectText();
+  await page.getByRole("button", { name: "Underline" }).click();
+  await expect(input).toHaveValue("[u]**glow**[/u]");
+  await page.getByRole("button", { name: "More formatting" }).click();
+  await input.fill("/help");
+  await input.press("Enter");
+  const help = page.getByRole("dialog", { name: "Help" });
+  await expect(help).toBeVisible();
+  await expect(help.getByText("/setmode chat|ads|both")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(help).not.toBeVisible();
+  await expect(input).toHaveValue("");
+
   // ── Eicons render inline at a fixed 60px box ───────────────────────────
   await input.fill("look: [eicon]teacup[/eicon]");
   await input.press("Enter");

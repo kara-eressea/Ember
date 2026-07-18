@@ -28,6 +28,8 @@ import { EiconIndexService } from "./modules/eicons/index-service.js";
 import { eiconsRoutes } from "./modules/eicons/routes.js";
 import { ProfileService } from "./modules/profiles/service.js";
 import { profilesRoutes } from "./modules/profiles/routes.js";
+import { resumeStoredSessions } from "./modules/flist-accounts/boot-resume.js";
+import { CredentialStore } from "./modules/flist-accounts/credential-store.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
@@ -92,6 +94,11 @@ export async function buildApp({
   app.setSerializerCompiler(serializerCompiler);
 
   const vault = new CredentialVault();
+  const credentialStore = new CredentialStore({
+    db,
+    key: config.CREDENTIALS_KEY,
+    logger: app.log,
+  });
   const flistApi =
     flistApiClient ??
     new FlistApiClient({
@@ -219,6 +226,7 @@ export async function buildApp({
     prefix: "/api/flist-accounts",
     db,
     vault,
+    store: credentialStore,
     tickets,
     sessions,
     history,
@@ -317,6 +325,23 @@ export async function buildApp({
       appName: config.APP_NAME,
     });
   }
+
+  // Boot-time session resume (§15): fire-and-forget after the app is
+  // wired — a no-op without CREDENTIALS_KEY or stored rows, so tests and
+  // key-less deployments are untouched. Not awaited: listening must not
+  // wait on F-List ticket round-trips.
+  void resumeStoredSessions({
+    db,
+    store: credentialStore,
+    vault,
+    sessions,
+    history,
+    detachedAway,
+    logger: app.log,
+    disconnectAfterMs: config.DETACHED_DISCONNECT_HOURS * 3_600_000,
+  }).catch((error: unknown) => {
+    app.log.error({ err: error }, "boot resume failed");
+  });
 
   return app;
 }

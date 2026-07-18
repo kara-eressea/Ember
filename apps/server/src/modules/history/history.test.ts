@@ -692,6 +692,85 @@ describe("history pagination", () => {
     expect(page3.hasMore).toBe(false);
   });
 
+  it("searches the identity's log with filters, cursor-paged (M9)", async () => {
+    const { identityId, conversationId, token } = await seedConversation(3);
+    // A second conversation proves scoping; a foreign sender proves from:.
+    const [other] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Elsewhere",
+        title: "Elsewhere",
+      })
+      .returning({ id: conversations.id });
+    await db.insert(messages).values({
+      conversationId: other!.id,
+      senderCharacter: "Tally Marsh",
+      kind: "msg",
+      bbcode: "a message about teacups",
+    });
+
+    const search = (query: string) =>
+      app.inject({
+        method: "GET",
+        url: `/api/identities/${identityId}/search?${query}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+    // Free text, everywhere: hits both conversations' bodies.
+    const all = await search(`q=${encodeURIComponent("message")}`);
+    expect(all.statusCode).toBe(200);
+    const everywhere = all.json<{
+      results: { bbcode: string; conversationTitle: string }[];
+    }>();
+    expect(everywhere.results).toHaveLength(4);
+    expect(everywhere.results[0]!.conversationTitle).toBe("Elsewhere");
+
+    // Scoped to the seeded conversation.
+    const scoped = await search(
+      `q=${encodeURIComponent("message")}&convId=${conversationId}`,
+    );
+    expect(scoped.json<{ results: unknown[] }>().results).toHaveLength(3);
+
+    // from: filter (case-insensitive, quoted name with a space).
+    const bySender = await search(
+      `q=${encodeURIComponent('message from:"tally marsh"')}`,
+    );
+    const senderHits = bySender.json<{ results: { bbcode: string }[] }>();
+    expect(senderHits.results).toHaveLength(1);
+    expect(senderHits.results[0]!.bbcode).toContain("teacups");
+
+    // Cursor paging, newest first.
+    const page1 = await search(`q=${encodeURIComponent("message")}&limit=3`);
+    const body1 = page1.json<{
+      results: { id: number }[];
+      nextCursor?: number;
+    }>();
+    expect(body1.results).toHaveLength(3);
+    expect(body1.nextCursor).toBeDefined();
+    const page2 = await search(
+      `q=${encodeURIComponent("message")}&limit=3&cursor=${String(body1.nextCursor)}`,
+    );
+    const body2 = page2.json<typeof body1>();
+    expect(body2.results).toHaveLength(1);
+    expect(body2.nextCursor).toBeUndefined();
+
+    // ILIKE wildcards in user text match literally, never as wildcards.
+    const literal = await search(`q=${encodeURIComponent("100%")}`);
+    expect(literal.json<{ results: unknown[] }>().results).toHaveLength(0);
+
+    // Filter-only queries need no free text; empty-after-parse is a 400.
+    const filterOnly = await search(
+      `q=${encodeURIComponent('from:"Nyx Firemane"')}`,
+    );
+    expect(filterOnly.json<{ results: unknown[] }>().results).toHaveLength(3);
+    const dateOnly = await search(
+      `q=${encodeURIComponent("before:2030-01-01")}`,
+    );
+    expect(dateOnly.statusCode).toBe(400);
+  });
+
   it("lists conversations for the identity", async () => {
     const { identityId, token } = await seedConversation(1);
     const response = await app.inject({

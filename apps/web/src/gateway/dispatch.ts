@@ -7,6 +7,7 @@
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
 import { adsHidden } from "../components/chat/ads.js";
 import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
+import { errNotice } from "../lib/err-codes.js";
 import { loadSocial } from "../lib/social.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useMessagesStore } from "../stores/messages.js";
@@ -266,10 +267,12 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       return;
     }
     case "error":
+      // Friendly copy for the codes users actually hit (M9); unknown
+      // codes surface F-Chat's own message.
       sessions.applyNotice(
         identityId,
         "error",
-        `${event.d.message} (${String(event.d.number)})`,
+        errNotice(event.d.number, event.d.message),
       );
       return;
   }

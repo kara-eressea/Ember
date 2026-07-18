@@ -163,6 +163,8 @@
 }
 
 .main {
+  /* Anchor for the absolutely-positioned search panel (M9). */
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -339,6 +341,20 @@
 .socialRow {
   cursor: pointer;
   font-family: inherit;
+}
+
+/* Right side of a section header when it holds count + refresh together. */
+.sectionMeta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* §4 relationship glyph on friend/bookmark rows (★ friend, ⚑ bookmark). */
+.socialGlyph {
+  flex: none;
+  font-size: 10px;
+  color: var(--eb-faint);
 }
 
 .socialEmpty {
@@ -566,4 +582,133 @@
 .navBadgeMention {
   background: var(--eb-accent);
   color: var(--eb-bg);
+}
+
+/* Colorblind mode (M9): shape-code the presence dots — round filled =
+   online, square = idle/warn, hollow ring = offline. Hue is never the
+   only signal; applyTheme stamps the root class. */
+:global(.eb-colorblind) .dotWarn {
+  border-radius: 2px;
+}
+
+:global(.eb-colorblind) .dotFaint {
+  background: transparent;
+  border: 1.5px solid var(--eb-faint);
+}
+
+/* ── Quick-switcher (M9 step 6) ─────────────────────────────────────────── */
+
+.switcherOverlay {
+  position: fixed;
+  inset: 0;
+  /* Above every other layer (profile modal 45, previews 46/47, menus
+     50/51): the switcher is user-invoked and must never open invisibly
+     beneath a modal while stealing focus (M9 audit). */
+  z-index: 52;
+  background: rgb(0 0 0 / 25%);
+}
+
+.switcher {
+  position: fixed;
+  top: 18vh;
+  left: 50%;
+  z-index: 53;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100vw - 32px));
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 24px 60px -18px rgb(0 0 0 / 65%);
+  transform: translateX(-50%);
+}
+
+.switcherInput {
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: none;
+  border-bottom: 1px solid var(--eb-border);
+  outline: none;
+}
+
+.switcherList {
+  max-height: 320px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.switcherEmpty {
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--eb-faint);
+}
+
+.switcherRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--eb-text);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.switcherRowActive {
+  background: var(--eb-accent-soft);
+}
+
+.switcherGlyph {
+  flex: none;
+  width: 16px;
+  font-family: var(--eb-mono, monospace);
+  color: var(--eb-faint);
+  text-align: center;
+}
+
+.switcherLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcherHint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+/* Status-message recents (M9 step 7): one-click chips in the editor. */
+.statusRecents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+}
+
+.statusRecentChip {
+  max-width: 100%;
+  padding: 3px 8px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--eb-side2);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.statusRecentChip:hover {
+  color: var(--eb-text);
+  background: var(--eb-hover);
 }

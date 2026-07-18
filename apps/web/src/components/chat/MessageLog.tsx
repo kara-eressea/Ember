@@ -97,11 +97,45 @@ export function MessageLog({
       });
   }, [identityId, convId]);
 
+  // Search jump (M9): once the history page is in, scroll the target row
+  // into view. One scroll per target — the ref guards re-renders; the flash
+  // itself is a per-row class + one-shot CSS animation, no state involved.
+  const jumpTarget = useMessagesStore((s) => s.jumpTarget);
+  const scrolledTargetRef = useRef<number>(undefined);
+  useEffect(() => {
+    if (
+      jumpTarget?.convId !== convId ||
+      scrolledTargetRef.current === jumpTarget.messageId
+    ) {
+      return;
+    }
+    const index = rows.findIndex(
+      (row) =>
+        row.type === "message" && row.message.id === jumpTarget.messageId,
+    );
+    if (index >= 0) {
+      scrolledTargetRef.current = jumpTarget.messageId;
+      atBottomRef.current = false;
+      virtualizer.scrollToIndex(index, { align: "center" });
+    }
+  }, [jumpTarget, rows, convId, virtualizer]);
+
   // Stick to the bottom while the user is there. The second pass after the
   // frame catches row-measurement adjustments to the total size.
   const lastKey = rows.at(-1)?.key;
+  const detachedTail = buffer?.detachedTail === true;
+  // Leaving the detached history view means "take me back to now" — stick
+  // to the bottom deliberately, not via the scroll-clamp accident the
+  // audit called out.
+  const wasDetachedRef = useRef(false);
   useEffect(() => {
-    if (!atBottomRef.current) {
+    if (wasDetachedRef.current && !detachedTail) {
+      atBottomRef.current = true;
+    }
+    wasDetachedRef.current = detachedTail;
+  }, [detachedTail]);
+  useEffect(() => {
+    if (!atBottomRef.current || detachedTail) {
       return;
     }
     const toBottom = () => {
@@ -115,7 +149,7 @@ export function MessageLog({
     return () => {
       cancelAnimationFrame(raf);
     };
-  }, [lastKey]);
+  }, [lastKey, detachedTail]);
 
   // After older history prepends, restore the previous top row so the view
   // doesn't jump.
@@ -198,6 +232,22 @@ export function MessageLog({
       onScroll={onScroll}
       data-testid="message-log"
     >
+      {detachedTail && (
+        <div className={styles.historyBanner} role="status">
+          Viewing older history — new messages are hidden.
+          <button
+            type="button"
+            className={styles.historyBannerButton}
+            onClick={() => {
+              void useMessagesStore
+                .getState()
+                .backToPresent(identityId, convId);
+            }}
+          >
+            Back to present
+          </button>
+        </div>
+      )}
       {buffer?.loadingOlder && (
         <div className={styles.logNote}>Loading older messages…</div>
       )}
@@ -216,7 +266,12 @@ export function MessageLog({
               key={row.key}
               ref={virtualizer.measureElement}
               data-index={item.index}
-              className={styles.logRow}
+              className={`${styles.logRow} ${
+                row.type === "message" &&
+                row.message.id === jumpTarget?.messageId
+                  ? (styles.jumpFlash ?? "")
+                  : ""
+              }`}
               style={{ transform: `translateY(${String(item.start)}px)` }}
             >
               {row.type === "divider" ? (
@@ -292,6 +347,7 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
         <RichText bbcode={emote ? emote.action : item.bbcode} />
       </span>
       <span className={styles.pendingMeta}>
+        {item.kind === "lrp" && <span className={styles.adTag}>AD</span>}{" "}
         {item.state === "failed"
           ? `could not send${item.failureReason ? ` — ${item.failureReason}` : ""}`
           : `sending in ${String(seconds)}s`}

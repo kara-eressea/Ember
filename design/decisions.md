@@ -100,7 +100,7 @@ This gives pinning one crisp meaning: *"channels this character is always in whe
 Settled with the user before M5 step 1:
 
 - **All prefs sync cross-device.** One `user_preferences.prefs` jsonb per app-account; a preference set anywhere applies everywhere. No device-local carve-outs (density/font size included) — revisit only if it proves annoying in practice. localStorage keeps a copy of paint-affecting prefs (accent) purely as a pre-hydration flash cache.
-- **Base theme = dark variants only in M5** (current Dusk-dark plus a dimmer/OLED-black neutral set). A true light theme is a full token-set design pass and ships as a follow-up, not rushed into M5.
+- **Base theme = dark variants only in M5** (current Dusk-dark plus a dimmer/OLED-black neutral set). A true light theme is a full token-set design pass and ships as a follow-up, not rushed into M5. *→ Shipped 2026-07-18 (M9 step 5): the Parchment light theme + a colorblind mode (Okabe–Ito status hues, shape-coded presence dots), built directly against the token architecture.*
 - **Regex rules run on RE2** (linear-time guarantee, native dep accepted): a catastrophic pattern in the persist-time matcher would be a service-wide DoS, not self-harm — heuristic backtracking guards are known-incomplete, so the engine itself must be safe. Word/nick rules stay plain string/boundary matching.
 - **Rule changes affect new messages only.** The stored `messages.mention` flag is immutable — written once at persist time under the rules active at that moment. No history re-flagging; old badge counts stay as they were.
 - **Muting silences alerts only** (notifications, sound, title flash). Unread/mention badges still accrue and rows still tint — you stop being interrupted without losing track. Applies to both per-identity and per-conversation mutes.
@@ -217,7 +217,12 @@ citizen".
   disconnected. The session notice states why ("disconnected after 72h
   with no attached device").
 - **Opt-in at-rest credential storage is committed for M9** — amends §3's
-  "never persisted". §3 was written against the multi-tenant threat model
+  "never persisted". *→ Shipped 2026-07-18 (M9 step 1) exactly per the
+  constraints below; the credentials table rides the pg dumps (decided at
+  build time as anticipated), and the restart resume is verified by an
+  integration test that boots a second server instance (fresh buildApp —
+  new vault/registry/store) over the same database, a fair restart
+  equivalent.* §3 was written against the multi-tenant threat model
   (a breached managed service leaking *many users'* F-List passwords);
   after §2's pivot the deployment is the admin's own box holding their own
   credentials — the same trust model as the desktop clients
