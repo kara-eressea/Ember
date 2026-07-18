@@ -22,6 +22,7 @@ export type SlashCommand =
   | { type: "timeout"; character: string; minutes: number }
   | { type: "setmode"; mode: "ads" | "both" | "chat" }
   | { type: "banlist" }
+  | { type: "help" }
   | { type: "unknown"; name: string };
 
 /** The documented RLL grammar, checked client-side for a friendly error
@@ -95,6 +96,8 @@ export function parseSlash(text: string): SlashCommand | undefined {
     }
     case "banlist":
       return { type: "banlist" };
+    case "help":
+      return { type: "help" };
     default: {
       if (Object.hasOwn(MOD_ACTIONS, name)) {
         if (args === "") {

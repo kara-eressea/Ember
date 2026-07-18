@@ -6,7 +6,7 @@
 // the server measures.
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { mdToBBCode } from "@emberchat/markdown-bbcode";
+import { BB_COLORS, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
   useSessionsStore,
@@ -16,6 +16,7 @@ import type { CardAnchor } from "../../stores/profile.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
+import { HelpPanel } from "./HelpPanel.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
 import { parseSlash, SlashUsageError } from "./slash.js";
@@ -67,6 +68,9 @@ export function Composer({
   const [error, setError] = useState<string>();
   const [markdown, setMarkdown] = useState(savedMarkdownMode);
   const [eiconAnchor, setEiconAnchor] = useState<CardAnchor>();
+  const [helpOpen, setHelpOpen] = useState(false);
+  /** The extended formatting toolbar (M9 step 4), collapsed by default. */
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [adChosen, setAdChosen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
@@ -177,8 +181,8 @@ export function Composer({
     });
   }
 
-  /** Wraps the selection (or empty caret) in a Markdown marker pair. */
-  function wrapSelection(marker: string) {
+  /** Wraps the selection (or empty caret) in an open/close marker pair. */
+  function wrapPair(open: string, close: string) {
     const el = inputRef.current;
     if (!el) {
       return;
@@ -186,11 +190,27 @@ export function Composer({
     const from = el.selectionStart;
     const to = el.selectionEnd;
     const selected = text.slice(from, to);
-    setText(text.slice(0, from) + marker + selected + marker + text.slice(to));
+    setText(text.slice(0, from) + open + selected + close + text.slice(to));
     requestAnimationFrame(() => {
       el.focus();
-      el.setSelectionRange(from + marker.length, to + marker.length);
+      el.setSelectionRange(from + open.length, to + open.length);
     });
+  }
+
+  /** Wraps the selection (or empty caret) in a Markdown marker pair. */
+  function wrapSelection(marker: string) {
+    wrapPair(marker, marker);
+  }
+
+  /** Markdown-aware format wrapper: the md marker when Markdown is on and
+   * one exists; the BBCode tag otherwise (the md dialect passes wrapper/
+   * color tags through, so BBCode also works with Markdown on). */
+  function wrapFormat(md: string | undefined, tag: string, param?: string) {
+    if (markdown && md !== undefined) {
+      wrapSelection(md);
+      return;
+    }
+    wrapPair(`[${tag}${param !== undefined ? `=${param}` : ""}]`, `[/${tag}]`);
   }
 
   async function send() {
@@ -211,7 +231,13 @@ export function Composer({
     }
     if (slash) {
       if (slash.type === "unknown") {
-        setError(`Unknown command /${slash.name}`);
+        setError(`Unknown command /${slash.name} — try /help`);
+        return;
+      }
+      if (slash.type === "help") {
+        setHelpOpen(true);
+        setText("");
+        requestAnimationFrame(autogrow);
         return;
       }
       if (channelKey === undefined) {
@@ -391,6 +417,13 @@ export function Composer({
           </div>
         </div>
       )}
+      {helpOpen && (
+        <HelpPanel
+          onClose={() => {
+            setHelpOpen(false);
+          }}
+        />
+      )}
       {eiconAnchor && (
         <EiconPicker
           identityId={session.identityId}
@@ -427,11 +460,10 @@ export function Composer({
           <button
             type="button"
             className={styles.formatHint}
-            title="Bold (wrap in **)"
+            title={markdown ? "Bold (wrap in **)" : "Bold (wrap in [b])"}
             aria-label="Bold"
-            disabled={!markdown}
             onClick={() => {
-              wrapSelection("**");
+              wrapFormat("**", "b");
             }}
           >
             **B**
@@ -447,6 +479,99 @@ export function Composer({
             }}
           >
             `code`
+          </button>
+          <button
+            type="button"
+            className={`${styles.formatHint} ${toolsOpen ? (styles.formatHintOn ?? "") : ""}`}
+            title="More formatting"
+            aria-label="More formatting"
+            aria-pressed={toolsOpen}
+            onClick={() => {
+              setToolsOpen((open) => !open);
+            }}
+          >
+            Aa
+          </button>
+          {toolsOpen && (
+            <>
+              <button
+                type="button"
+                className={styles.formatHint}
+                title={markdown ? "Italic (wrap in *)" : "Italic ([i])"}
+                aria-label="Italic"
+                onClick={() => {
+                  wrapFormat("*", "i");
+                }}
+              >
+                <i>i</i>
+              </button>
+              <button
+                type="button"
+                className={styles.formatHint}
+                title="Underline ([u] — BBCode works in both modes)"
+                aria-label="Underline"
+                onClick={() => {
+                  wrapFormat(undefined, "u");
+                }}
+              >
+                <u>u</u>
+              </button>
+              <button
+                type="button"
+                className={styles.formatHint}
+                title={
+                  markdown
+                    ? "Strikethrough (wrap in ~~)"
+                    : "Strikethrough ([s])"
+                }
+                aria-label="Strikethrough"
+                onClick={() => {
+                  wrapFormat("~~", "s");
+                }}
+              >
+                <s>s</s>
+              </button>
+              <select
+                className={styles.formatSelect}
+                title="Wrap in a color"
+                aria-label="Color"
+                value=""
+                onChange={(event) => {
+                  if (event.target.value !== "") {
+                    wrapFormat(undefined, "color", event.target.value);
+                  }
+                }}
+              >
+                <option value="">color…</option>
+                {BB_COLORS.map((color) => (
+                  <option key={color} value={color}>
+                    {color}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={styles.formatHint}
+                title="Show markup literally ([noparse])"
+                aria-label="Noparse"
+                onClick={() => {
+                  wrapFormat(undefined, "noparse");
+                }}
+              >
+                [np]
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className={styles.formatHint}
+            title="Commands & formatting reference (/help)"
+            aria-label="Help"
+            onClick={() => {
+              setHelpOpen(true);
+            }}
+          >
+            ?
           </button>
           <button
             type="button"
