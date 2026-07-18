@@ -38,10 +38,16 @@ export interface ConvBuffer {
   /** Initial REST page loaded — the log can render. */
   backfilled: boolean;
   loadingOlder: boolean;
+  /** Viewing history after a search jump (M9): the live tail is NOT in
+   * this buffer, so live appends are skipped (they would leave a hole) —
+   * "Back to present" reloads the tail. */
+  detachedTail: boolean;
 }
 
 interface MessagesState {
   buffers: Record<string, ConvBuffer>;
+  /** Search hit awaiting scroll-to-and-flash in the log (M9). */
+  jumpTarget: { convId: string; messageId: number } | undefined;
 
   appendLive(convId: string, message: MessageDto): void;
   appendMany(convId: string, messages: MessageDto[]): void;
@@ -60,6 +66,10 @@ interface MessagesState {
   backfill(identityId: string, convId: string): Promise<void>;
   /** Scroll-up: one older page before the current buffer start. */
   loadOlder(identityId: string, convId: string): Promise<number>;
+  /** Land the log on the page containing a search hit (M9). */
+  jumpTo(identityId: string, convId: string, messageId: number): Promise<void>;
+  /** Leave the detached history view: reload the live tail. */
+  backToPresent(identityId: string, convId: string): Promise<void>;
   reset(): void;
 }
 
@@ -69,6 +79,7 @@ const EMPTY_BUFFER: ConvBuffer = {
   hasMoreBefore: false,
   backfilled: false,
   loadingOlder: false,
+  detachedTail: false,
 };
 
 let presenceCounter = 0;
@@ -112,8 +123,15 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
 
   return {
     buffers: {},
+    jumpTarget: undefined,
 
     appendLive(convId, message) {
+      // Detached history view: a live append would leave an unreachable
+      // hole between the old page and the new row. The message is safe on
+      // the server; Back to present reloads it.
+      if (get().buffers[convId]?.detachedTail) {
+        return;
+      }
       put(convId, [message]);
     },
 
@@ -129,6 +147,8 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         // scroll-up backfill fetch it contiguously via REST.
         hasMoreBefore: true,
         backfilled: false,
+        // A catch-up replay IS the live tail — any detached view is over.
+        detachedTail: false,
       }));
     },
 
@@ -186,8 +206,44 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       }
     },
 
+    async jumpTo(identityId, convId, messageId) {
+      // Mark first, synchronously: a concurrent mount backfill must see
+      // backfilled=true and skip, or its latest-page merge would race the
+      // history page in.
+      patch(convId, (buffer) => ({
+        ...buffer,
+        messages: [],
+        hasMoreBefore: false,
+        backfilled: true,
+        detachedTail: true,
+      }));
+      set({ jumpTarget: { convId, messageId } });
+      // `before` is exclusive — +1 keeps the target as the page's last row.
+      const page = await api.listMessages(identityId, convId, {
+        before: messageId + 1,
+        limit: PAGE_SIZE,
+      });
+      patch(convId, (buffer) => ({
+        ...buffer,
+        messages: page.messages,
+        hasMoreBefore: page.hasMore,
+      }));
+    },
+
+    async backToPresent(identityId, convId) {
+      patch(convId, (buffer) => ({
+        ...buffer,
+        messages: [],
+        hasMoreBefore: false,
+        backfilled: false,
+        detachedTail: false,
+      }));
+      set({ jumpTarget: undefined });
+      await get().backfill(identityId, convId);
+    },
+
     reset() {
-      set({ buffers: {} });
+      set({ buffers: {}, jumpTarget: undefined });
     },
   };
 });

@@ -30,6 +30,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
+import { SearchPanel } from "../chat/SearchPanel.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { useProfileStore } from "../../stores/profile.js";
@@ -62,6 +63,7 @@ export function AppShell() {
   const profileViewing = useProfileStore((s) => s.viewing);
   const profileCard = useProfileStore((s) => s.card);
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
+  const searchOpen = useUiStore((s) => s.searchOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -154,9 +156,16 @@ export function AppShell() {
 
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.
-  const newestId = useMessagesStore((s) =>
-    convId === undefined ? undefined : s.buffers[convId]?.messages.at(-1)?.id,
-  );
+  // Never while a search jump detached the view from the live tail — the
+  // newest *buffered* id is then an old message and would drag the cursor
+  // backward.
+  const newestId = useMessagesStore((s) => {
+    if (convId === undefined) {
+      return undefined;
+    }
+    const buffer = s.buffers[convId];
+    return buffer?.detachedTail ? undefined : buffer?.messages.at(-1)?.id;
+  });
   useEffect(() => {
     if (identityId !== undefined && convId !== undefined) {
       useSessionsStore.getState().clearUnread(identityId, convId);
@@ -285,6 +294,15 @@ export function AppShell() {
               }
             />
           </>
+        )}
+        {searchOpen && (
+          <SearchPanel
+            session={session}
+            convId={convId}
+            onClose={() => {
+              useUiStore.getState().setSearchOpen(false);
+            }}
+          />
         )}
       </main>
       {showMembers && channel && (

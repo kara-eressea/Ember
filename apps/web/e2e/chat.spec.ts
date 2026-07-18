@@ -259,6 +259,31 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
         timeout: 1_000,
       });
     }).toPass({ timeout: 20_000 });
+
+    // ── In-log search + jump-to-context (M9 step 3) ───────────────────────
+    await page.getByRole("button", { name: "Search log" }).click();
+    const searchPanel = page.getByRole("dialog", { name: "Search log" });
+    const searchInput = searchPanel.getByRole("textbox", {
+      name: "Search messages",
+    });
+    // The from: filter rides along to prove the mini-language end to end.
+    await searchInput.fill('seed #33 from:"birch rowan"');
+    await searchInput.press("Enter");
+    const hit = searchPanel.getByRole("button", { name: /seed #33/ });
+    await expect(hit).toBeVisible({ timeout: 10_000 });
+    await hit.click();
+    // The log lands on the history page containing the hit and detaches
+    // from the live tail.
+    await expect(
+      log.getByText("Viewing older history", { exact: false }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(log.getByText("seed #33", { exact: true })).toBeVisible();
+    await log.getByRole("button", { name: "Back to present" }).click();
+    await expect(
+      log.getByText(`seed #${String(SEED_COUNT)}`, { exact: true }),
+    ).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press("Escape");
+    await expect(searchPanel).not.toBeVisible();
   } finally {
     birch.close();
   }
