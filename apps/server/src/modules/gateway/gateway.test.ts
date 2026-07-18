@@ -951,7 +951,7 @@ describe("gateway fan-out", () => {
       prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
-      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
+      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000, lfrpFlood: 0 },
     });
     expect(snapshot.d.channels).toHaveLength(2);
     const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
@@ -2164,6 +2164,14 @@ describe("gateway commands", () => {
         await client.nextEvent("ads.cooldowns"),
       ).waits,
     ).toEqual({ Development: 0 });
+
+    // Raise the pace VAR live (the suite's sim zeroes lfrp_flood so other
+    // tests can post freely): the gate reads the live VAR, so the next ad
+    // opens a real window and the wait becomes deterministic.
+    await inject(session, {
+      cmd: "VAR",
+      payload: { variable: "lfrp_flood", value: 600 },
+    });
 
     // Posting an ad starts the per-channel window; the next query reports
     // a remaining wait derived from the live lfrp_flood VAR.
