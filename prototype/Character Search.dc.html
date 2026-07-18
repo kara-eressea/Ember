@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.cs *{box-sizing:border-box}
+.csscroll::-webkit-scrollbar{width:8px}
+.csscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.csscroll::-webkit-scrollbar-track{background:transparent}
+.cscap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:520px;line-height:1.5}
+.cscap b{color:#a892c6;font-weight:600}
+</style>
+</helmet>
+<div class="cs" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="4">
+  <div style="display:flex;flex-direction:column">
+    <div class="cscap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  gl(txt){const t=this.T();return this.h('div',{fontSize:'10px',fontWeight:700,letterSpacing:'.08em',
+    textTransform:'uppercase',color:t.faint},txt);}
+
+  // ---- MatchTier ----
+  tiers(){const t=this.T();return{
+    match:{frac:1,label:'Match',color:t.ok},weakMatch:{frac:.75,label:'Weak match',color:this.mix(t.ok,t.warn,.55)},
+    neutral:{frac:.5,label:'Neutral',color:this.mix(t.dim,t.faint,.4)},weakMismatch:{frac:.25,label:'Weak mismatch',color:t.warn},
+    mismatch:{frac:0,label:'Mismatch',color:t.danger}};}
+  pie(key,size,color){
+    const T=this.tiers()[key];const c=color||T.color;const r=size/2,cx=r,cy=r,sw=1.4,rr=r-sw/2;const frac=T.frac;
+    let fill=null;
+    if(frac>=1)fill=React.createElement('circle',{cx,cy,r:rr,fill:c,stroke:'none'});
+    else if(frac>0){const a=frac*2*Math.PI-Math.PI/2;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);const large=frac>.5?1:0;
+      fill=React.createElement('path',{d:`M ${cx} ${cy} L ${cx} ${cy-rr} A ${rr} ${rr} 0 ${large} 1 ${x} ${y} Z`,fill:c,stroke:'none'});}
+    return React.createElement('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,
+      style:{display:'inline-block',flexShrink:0,verticalAlign:'middle'}},fill,
+      React.createElement('circle',{cx,cy,r:rr,fill:'none',stroke:c,strokeWidth:sw}));}
+  matchPill(key){
+    const t=this.T(),T=this.tiers()[key];
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',padding:'2.5px 9px 2.5px 7px',borderRadius:'20px',
+      fontSize:'10.5px',fontWeight:600,whiteSpace:'nowrap',color:T.color,background:this.mix(T.color,t.bg,.83),
+      border:`1px solid ${this.mix(T.color,t.bg,.58)}`},this.pie(key,10),T.label.replace(' match','').replace(' mismatch',''));}
+
+  avatar(size,color,initial){
+    const t=this.T();
+    return this.h('div',{width:size+'px',height:size+'px',borderRadius:'7px',flexShrink:0,
+      background:`linear-gradient(150deg,${this.mix(color,t.text,.15)},${color})`,display:'flex',alignItems:'center',
+      justifyContent:'center',fontFamily:t.mono,fontWeight:600,fontSize:(size*0.42)+'px',color:t.bg},initial);}
+
+  // ---- filter primitives ----
+  filterChip(txt,on){const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',padding:'4px 10px',borderRadius:'20px',fontSize:'11.5px',
+      fontWeight:on?600:500,cursor:'pointer',color:on?t.bg:t.dim,background:on?t.accent:t.bg,
+      border:`1px solid ${on?t.accent:t.border}`},txt);}
+  filterGroup(label,opts,sel,extra){const t=this.T();
+    return this.h('div',{display:'grid',gridTemplateColumns:'92px 1fr',gap:'12px',alignItems:'start',padding:'10px 0',
+      borderTop:`1px solid ${this.mix(t.border,t.side,.5)}`},
+      this.h('div',{fontSize:'11px',fontWeight:600,color:t.faint,paddingTop:'4px'},label),
+      this.h('div',{display:'flex',flexWrap:'wrap',gap:'6px'},
+        ...opts.map((o,i)=>this.hk(i,'span',{},this.filterChip(o,sel.indexOf(o)>=0))),
+        extra?this.h('span',{display:'inline-flex',alignItems:'center',padding:'4px 9px',fontSize:'11px',color:t.faint,
+          fontFamily:t.mono},'+'+extra+' more'):null));}
+  kinkChip(txt,removable){const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',padding:removable?'3px 6px 3px 9px':'3px 9px',
+      borderRadius:'5px',fontSize:'11.5px',fontWeight:500,color:t.accent,background:t.accentSoft,border:`1px solid ${t.accentMed}`},
+      txt,removable?this.h('span',{fontFamily:t.mono,fontSize:'11px',color:this.mix(t.accent,t.bg,.35),cursor:'pointer'},'✕'):null);}
+  btn(txt,kind,disabled){const t=this.T();const p=kind==='primary';
+    return this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'0 18px',height:'36px',
+      borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:p?700:600,cursor:disabled?'not-allowed':'pointer',opacity:disabled?.55:1,
+      color:p?t.bg:t.text,background:p?t.accent:t.bg,border:p?'none':`1px solid ${t.border}`},txt);}
+
+  // ---- dialog shell ----
+  dialog(inner){
+    const t=this.T();
+    return this.h('div',{width:'748px',height:'596px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+5+'px',boxShadow:'0 40px 100px -20px rgba(0,0,0,.7)',display:'flex',overflow:'hidden',
+      fontFamily:t.ui,color:t.text},inner);
+  }
+  savedRail(active){
+    const t=this.T();
+    const saved=[
+      {name:'Arctic slow-burn',meta:'6 kinks · 2 filters',new:3},
+      {name:'Any switch, online',meta:'3 kinks · 1 filter',new:0},
+      {name:'Furry doms EU',meta:'8 kinks · 4 filters',new:0},
+    ];
+    const row=(s,on)=>this.h('div',{padding:'8px 10px',margin:'1px 8px',borderRadius:t.radius+'px',cursor:'pointer',
+      background:on?t.accentSoft:'transparent',boxShadow:on?`inset 2px 0 0 ${t.accent}`:'none'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'7px'},
+        this.h('div',{fontSize:'12.5px',fontWeight:on?600:500,color:on?t.text:t.dim,flex:1,overflow:'hidden',
+          textOverflow:'ellipsis',whiteSpace:'nowrap'},s.name),
+        s.new?this.h('span',{fontFamily:t.mono,fontSize:'9.5px',fontWeight:700,color:t.bg,background:t.accent,borderRadius:'10px',
+          padding:'0 6px',flexShrink:0},s.new+' new'):null),
+      this.h('div',{fontFamily:t.mono,fontSize:'10px',color:t.faint,marginTop:'2px'},s.meta));
+    return this.h('div',{width:'196px',flexShrink:0,background:t.side2,borderRight:`1px solid ${t.border}`,
+      display:'flex',flexDirection:'column'},
+      this.h('div',{padding:'15px 14px 10px'},this.gl('Saved searches')),
+      this.h('div',{className:'csscroll',flex:1,overflowY:'auto',minHeight:0},
+        row(this.savedList()[0],active===0),row(this.savedList()[1],active===1),row(this.savedList()[2],active===2)),
+      this.h('div',{padding:'10px 12px',borderTop:`1px solid ${t.border}`},
+        this.h('div',{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',height:'32px',borderRadius:t.radius+'px',
+          border:`1px dashed ${t.border}`,color:t.dim,fontSize:'11.5px',fontWeight:600,cursor:'pointer'},
+          this.h('span',{fontFamily:t.mono},'☆'),'Save current')));
+  }
+  savedList(){return[
+    {name:'Arctic slow-burn',meta:'6 kinks · 2 filters',new:3},
+    {name:'Any switch, online',meta:'3 kinks · 1 filter',new:0},
+    {name:'Furry doms EU',meta:'8 kinks · 4 filters',new:0}];}
+
+  headBar(sub){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'16px 18px 14px',
+      borderBottom:`1px solid ${t.border}`,gap:'12px'},
+      this.h('div',{minWidth:0},
+        this.h('div',{fontSize:'17px',fontWeight:700,color:t.text},'Search characters'),
+        this.h('div',{fontFamily:t.mono,fontSize:'11px',color:t.faint,marginTop:'3px'},sub)),
+      this.h('span',{fontSize:'13px',color:t.faint,cursor:'pointer',padding:'2px'},'✕'));
+  }
+  kinkField(kinks,required){
+    const t=this.T();
+    return this.h('div',{padding:'12px 0 4px'},
+      this.h('div',{display:'flex',alignItems:'baseline',justifyContent:'space-between',marginBottom:'7px'},
+        this.h('div',{display:'flex',alignItems:'center',gap:'7px'},this.gl('Kinks'),
+          this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:700,color:t.accent,background:t.accentSoft,
+            border:`1px solid ${t.accentMed}`,borderRadius:'4px',padding:'0 5px'},'required')),
+        this.h('span',{fontSize:'11px',color:t.faint},kinks.length+' selected · the wire needs at least one')),
+      this.h('div',{minHeight:'40px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'6px',padding:'8px 10px',
+        background:t.bg,border:`1px solid ${required?this.mix(t.danger,t.bg,.5):t.border}`,borderRadius:t.radius+'px'},
+        ...kinks.map((k,i)=>this.hk(i,'span',{},this.kinkChip(k,true))),
+        this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'12px',color:t.accent,cursor:'pointer',fontWeight:600},
+          this.h('span',{fontFamily:t.mono,fontSize:'13px'},'+'),'Add kinks…')));
+  }
+  actionBar(state){
+    const t=this.T();
+    const cooling=state==='cooldown';
+    return this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 18px',
+      borderTop:`1px solid ${t.border}`,background:t.side2},
+      this.h('span',{fontSize:'11.5px',color:t.faint},
+        state==='ready'?'Kinks + optional filters · online characters only':
+        cooling?'Server paces searches — one every 5 seconds':
+        'Pick at least one kink to search'),
+      cooling?this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:'7px',padding:'0 18px',height:'36px',
+        borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:700,color:t.faint,background:t.bg,border:`1px solid ${t.border}`,cursor:'not-allowed'},
+        this.h('span',{width:'12px',height:'12px',borderRadius:'50%',border:`2px solid ${t.border}`,borderTopColor:t.accent}),'Wait 3s…'):
+        this.btn('Search','primary',state==='disabled'));
+  }
+
+  // ---- results ----
+  resultRow(r){
+    const t=this.T();
+    const gc={female:'#c294b0',male:'#8f9bc9',herm:'#a6bd94',cunt:'#cfa2d4'}[r.gender]||t.accent;
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'8px 12px',margin:'0 2px',borderRadius:t.radius+'px',
+      cursor:'pointer',borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+      this.avatar(30,r.color,r.initial),
+      this.h('span',{fontFamily:t.ui,fontSize:'13.5px',fontWeight:600,color:gc,overflow:'hidden',textOverflow:'ellipsis',
+        whiteSpace:'nowrap',flex:1,minWidth:0},r.name),
+      r.match?this.h('span',{flexShrink:0},this.matchPill(r.match)):null,
+      this.h('span',{width:'7px',height:'7px',borderRadius:'50%',background:t.ok,flexShrink:0,boxShadow:`0 0 4px ${t.ok}`}));
+  }
+  resultsPanel(rows,count){
+    const t=this.T();
+    return this.h('div',{flex:1,display:'flex',flexDirection:'column',minHeight:0},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',padding:'11px 16px',borderBottom:`1px solid ${t.border}`,background:t.head},
+        this.h('div',{display:'flex',alignItems:'center',gap:'8px',flex:1,height:'32px',padding:'0 11px',background:t.bg,
+          border:`1px solid ${t.border}`,borderRadius:t.radius+'px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.faint},'⌕'),
+          this.h('span',{flex:1,fontSize:'12.5px',color:t.faint},'Filter these names…')),
+        this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.dim},count)),
+      this.h('div',{className:'csscroll',flex:1,overflowY:'auto',padding:'8px 12px',minHeight:0},
+        ...rows.map((r,i)=>this.hk(i,'div',{},this.resultRow(r)))));
+  }
+
+  data(){return {
+    kinks:['Anthro','Romance','Slow build','Snuggling','Dominance','Winter/cold play','Storytelling'],
+    genders:['Male','Female','Transgender','Herm','Shemale','Male-Herm','Cunt-boy','None'],
+    orients:['Straight','Gay','Bisexual','Pansexual','Asexual','Bi — male pref'],
+    roles:['Always dom','Usually dom','Switch','Usually sub','Always sub','None'],
+    results:[
+      {name:'Kolvarr',gender:'male',color:'#4f6d7a',initial:'K',match:'match'},
+      {name:'Vesna Marlowe',gender:'female',color:'#7a5c86',initial:'V',match:'weakMatch'},
+      {name:'Bramble',gender:'herm',color:'#5f7a5c',initial:'B'},
+      {name:'Sable Winters',gender:'female',color:'#86677a',initial:'S'},
+      {name:'Thistledown',gender:'cunt',color:'#7a6a5c',initial:'T'},
+      {name:'Frostpaw',gender:'male',color:'#5c6a7a',initial:'F'},
+      {name:'Marrow',gender:'male',color:'#6a5c7a',initial:'M',match:'neutral'},
+      {name:'Юки',gender:'female',color:'#7a5c6a',initial:'Ю'},
+    ],
+  };}
+
+  // ===== frames =====
+  frameDefault(){
+    const t=this.T();const d=this.data();
+    const main=this.h('div',{flex:1,display:'flex',flexDirection:'column',minWidth:0},
+      this.headBar('online now · F-List kink search (FKS)'),
+      this.h('div',{className:'csscroll',flex:1,overflowY:'auto',padding:'6px 18px 14px',minHeight:0},
+        this.kinkField([],true),
+        this.h('div',{display:'flex',alignItems:'flex-start',gap:'10px',padding:'14px',marginTop:'6px',borderRadius:t.radius+'px',
+          background:this.mix(t.accent,t.side,.9),border:`1px dashed ${t.accentMed}`},
+          this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.accent},'◷'),
+          this.h('div',{fontSize:'12px',color:t.dim,lineHeight:1.5},
+            this.h('b',{style:{color:t.text}},'Pick at least one kink to search.'),
+            ' The wire requires kink ids; genders, orientations, languages, furry preference and roles are optional filters that narrow the results.')),
+        this.h('div',{marginTop:'6px'},
+          this.filterGroup('Genders',d.genders,[]),
+          this.filterGroup('Orientation',d.orients,[],3),
+          this.filterGroup('Role',d.roles,[]),
+          this.filterGroup('Languages',['English','Spanish','French','German'],[],10),
+          this.filterGroup('Furry',['No furry','Furries ok','Furry pref','Furs only','Human only'],[]))),
+      this.actionBar('disabled'));
+    return this.dialog(this.h('div',{display:'flex',width:'100%'},this.savedRail(-1),main));
+  }
+  framePicker(){
+    const t=this.T();const d=this.data();
+    const vocab=[['Anthro',true],['Anthro (partial)',false],['Anal sex',false],['Bondage',false],['Cuddling',true],
+      ['Dominance',true],['Denial',false],['Exhibitionism',false],['Feral',false],['Romance',true]];
+    const picker=this.h('div',{width:'320px',background:t.side,border:`1px solid ${t.border}`,borderRadius:'11px',
+      boxShadow:'0 24px 60px -14px rgba(0,0,0,.7)',overflow:'hidden'},
+      this.h('div',{padding:'10px 11px 8px'},
+        this.h('div',{display:'flex',alignItems:'center',gap:'8px',height:'32px',padding:'0 11px',background:t.bg,
+          border:`1px solid ${t.accentMed}`,borderRadius:t.radius+'px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.faint},'⌕'),
+          this.h('span',{flex:1,fontSize:'12.5px',color:t.text},'anth'),
+          this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint},'~300 kinks'))),
+      this.h('div',{className:'csscroll',maxHeight:'240px',overflowY:'auto',padding:'2px 6px 8px'},
+        ...vocab.map((v,i)=>this.hk(i,'div',{display:'flex',alignItems:'center',gap:'9px',padding:'7px 9px',borderRadius:'6px',
+          cursor:'pointer',background:v[1]?t.accentSoft:'transparent'},
+          this.h('span',{width:'16px',height:'16px',borderRadius:'4px',flexShrink:0,display:'inline-flex',alignItems:'center',
+            justifyContent:'center',fontSize:'10px',fontWeight:700,color:v[1]?t.bg:'transparent',background:v[1]?t.accent:t.bg,
+            border:`1px solid ${v[1]?t.accent:t.border}`},'✓'),
+          this.h('span',{fontSize:'12.5px',color:v[1]?t.text:t.dim,flex:1},v[0])))),
+      this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 11px',borderTop:`1px solid ${t.border}`,
+        background:t.head,fontFamily:t.mono,fontSize:'10px',color:t.faint},
+        this.h('span',{},'4 selected'),this.h('span',{color:t.accent,cursor:'pointer',fontWeight:600},'Done')));
+    const main=this.h('div',{flex:1,display:'flex',flexDirection:'column',minWidth:0},
+      this.headBar('online now · F-List kink search (FKS)'),
+      this.h('div',{flex:1,overflowY:'auto',padding:'6px 18px 14px',minHeight:0,position:'relative'},
+        this.kinkField(d.kinks,false),
+        this.h('div',{marginTop:'8px'},picker),
+        this.h('div',{marginTop:'12px'},
+          this.filterGroup('Genders',d.genders,['Female','Herm']),
+          this.filterGroup('Role',d.roles,['Switch','Usually dom']))),
+      this.actionBar('ready'));
+    return this.dialog(this.h('div',{display:'flex',width:'100%'},this.savedRail(-1),main));
+  }
+  frameResults(){
+    const t=this.T();const d=this.data();
+    const main=this.h('div',{flex:1,display:'flex',flexDirection:'column',minWidth:0},
+      this.headBar('“Arctic slow-burn” · 6 kinks · 2 filters'),
+      this.resultsPanel(d.results,d.results.length+' online'),
+      this.actionBar('cooldown'));
+    return this.dialog(this.h('div',{display:'flex',width:'100%'},this.savedRail(0),main));
+  }
+  emptyState(glyph,title,sub){
+    const t=this.T();
+    return this.h('div',{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+      textAlign:'center',gap:'11px',padding:'40px'},
+      this.h('div',{width:'52px',height:'52px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,display:'flex',
+        alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'20px',color:t.faint},glyph),
+      this.h('div',{fontSize:'14px',fontWeight:700,color:t.text},title),
+      this.h('div',{fontSize:'12px',color:t.faint,lineHeight:1.55,maxWidth:'300px'},sub));
+  }
+  frameStates(){
+    const t=this.T();
+    const shell=(rail,inner,sub)=>this.dialog(this.h('div',{display:'flex',width:'100%'},rail,
+      this.h('div',{flex:1,display:'flex',flexDirection:'column',minWidth:0},this.headBar(sub),inner,this.actionBar('ready'))));
+    const noRes=shell(this.savedRail(1),this.emptyState('∅','No characters found',
+      'No online characters matched this search. Loosen the optional filters or drop a kink, then search again.'),'no matches · 6 kinks');
+    const tooMany=shell(this.savedRail(-1),this.emptyState('⊞','Too many results',
+      'The server capped this search — add another kink or an optional filter to narrow it below the limit, then search again.'),'capped · narrow to continue');
+    return this.h('div',{display:'flex',flexDirection:'column',gap:'40px'},
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 10px'},'Server refusal — no results'),noRes),
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 10px'},'Server refusal — too many results'),tooMany));
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'CS·A',cap:'Search characters — default / cleared state in the Channel-Browser dialog language. Kinks are required (empty field flagged in danger, a plain-language nudge, Search disabled). Optional multi-select filter groups: genders, orientation, role, languages, furry. Saved-searches rail on the left.',el:this.frameDefault()},
+      {id:'CS·B',cap:'Kink picker — the required multi-select over F-List’s ~300-entry vocabulary with search-within-the-picker (checkbox rows, selected chips fill the field). Optional filter groups populated. Search now enabled.',el:this.framePicker()},
+      {id:'CS·C',cap:'Results — Channel-Browser row language: avatar, gender-accented name, cached-only MatchTier chip (same rule as ad rows — absence is normal), online dot. A free-text box narrows the returned names client-side. Search button shown in its 5-second server-pace cooldown.',el:this.frameResults()},
+      {id:'CS·D',cap:'Server refusals — no results (loosen filters or drop a kink, then retry) and too-many-results (capped — narrow to continue).',el:this.frameStates()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>
