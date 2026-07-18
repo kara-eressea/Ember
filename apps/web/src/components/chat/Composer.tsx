@@ -314,6 +314,7 @@ export function Composer({
   }
 
   async function recall(outboxId: string) {
+    const recalled = pending.find((item) => item.id === outboxId);
     const ack = await gateway.cmd({
       identityId: session.identityId,
       action: "outbox.recall",
@@ -321,6 +322,11 @@ export function Composer({
     });
     if (ack.ok && ack.markdown !== undefined) {
       setText(ack.markdown);
+      // A recalled ad re-sends as an ad, not a plain MSG (M6 audit): the
+      // Ad toggle follows the recalled row's kind.
+      if (recalled) {
+        setAdChosen(recalled.kind === "lrp");
+      }
       requestAnimationFrame(autogrow);
     }
   }

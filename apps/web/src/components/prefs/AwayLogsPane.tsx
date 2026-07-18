@@ -15,6 +15,19 @@ import styles from "./prefs.module.css";
 const IDLE_MINUTES = ["5", "10", "30", "60"] as const;
 const DETACHED_MINUTES = ["10", "30", "60", "180"] as const;
 
+/** A stored value off the preset list (another client, an old build) must
+ * render as a selected segment, not as nothing-selected — the same
+ * pattern M4's delay select uses (M5 audit backlog). */
+function withStored(
+  presets: readonly string[],
+  stored: string,
+): { value: string; label: string }[] {
+  const values = presets.includes(stored)
+    ? [...presets]
+    : [...presets, stored].sort((a, b) => Number(a) - Number(b));
+  return values.map((value) => ({ value, label: `${value} min` }));
+}
+
 export function AwayLogsPane({ identityId }: { identityId: string }) {
   const prefs = useSessionsStore(
     (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
@@ -68,10 +81,7 @@ export function AwayLogsPane({ identityId }: { identityId: string }) {
       <FieldRow label="Idle threshold">
         <Segmented
           label="Idle threshold"
-          options={IDLE_MINUTES.map((value) => ({
-            value,
-            label: `${value} min`,
-          }))}
+          options={withStored(IDLE_MINUTES, String(prefs.autoAwayMinutes))}
           value={String(prefs.autoAwayMinutes)}
           onChange={(value) => {
             set({ autoAwayMinutes: Number(value) });
@@ -129,10 +139,10 @@ export function AwayLogsPane({ identityId }: { identityId: string }) {
       <FieldRow label="Detached threshold">
         <Segmented
           label="Detached threshold"
-          options={DETACHED_MINUTES.map((value) => ({
-            value,
-            label: `${value} min`,
-          }))}
+          options={withStored(
+            DETACHED_MINUTES,
+            String(prefs.detachedAwayMinutes),
+          )}
           value={String(prefs.detachedAwayMinutes)}
           onChange={(value) => {
             set({ detachedAwayMinutes: Number(value) });

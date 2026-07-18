@@ -71,6 +71,13 @@
       "when": 1784265189204,
       "tag": "0009_m8-profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784331954527,
+      "tag": "0010_m9-outbox-failed-at",
+      "breakpoints": true
     }
   ]
 }

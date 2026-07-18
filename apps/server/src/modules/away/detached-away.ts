@@ -12,9 +12,9 @@
 // the credentials, so the next attach reconnects automatically with the
 // exact channel set (§9 scenario 2).
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { resolvePrefs } from "@emberchat/protocol";
-import type { ClientSettableStatus } from "@emberchat/protocol";
+import type { ClientSettableStatus, UserPrefs } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities, userPreferences } from "../../db/schema.js";
 import type { GatewayHub } from "../gateway/gateway.js";
@@ -131,6 +131,10 @@ export class DetachedAway {
           this.#detachedSince.delete(identityId);
         }
       }
+      const candidates: {
+        identityId: string;
+        session: (typeof entries)[number][1];
+      }[] = [];
       for (const [identityId, session] of entries) {
         if (this.#options.hub.hasSubscribers(identityId)) {
           this.#detachedSince.delete(identityId);
@@ -172,9 +176,23 @@ export class DetachedAway {
         if (session.ownStatus.status !== "online") {
           continue; // a chosen status is the user's — never clobber it
         }
+        candidates.push({ identityId, session });
+      }
+      if (candidates.length === 0) {
+        return;
+      }
+      // One prefs query per sweep, not one per detached identity (M5
+      // audit backlog) — a bouncer with many idle identities was paying
+      // N queries a minute for a feature most users leave off.
+      const prefsById = await this.#userPrefsBatch(
+        candidates.map((candidate) => candidate.identityId),
+      );
+      for (const { identityId, session } of candidates) {
+        const since = this.#detachedSince.get(identityId);
+        const prefs = prefsById.get(identityId);
         try {
-          const prefs = await this.#userPrefs(identityId);
           if (
+            since === undefined ||
             !prefs?.detachedAwayEnabled ||
             now - since < prefs.detachedAwayMinutes * 60_000
           ) {
@@ -183,10 +201,7 @@ export class DetachedAway {
           // A browser may have attached during the prefs await — onAttach
           // clears #detachedSince, so a vanished stamp (or a live
           // subscriber) means the user is looking again: don't go away.
-          if (
-            !this.#detachedSince.has(identityId) ||
-            this.#options.hub.hasSubscribers(identityId)
-          ) {
+          if (this.#options.hub.hasSubscribers(identityId)) {
             continue;
           }
           const previous = session.ownStatus;
@@ -215,21 +230,21 @@ export class DetachedAway {
     }
   }
 
-  /** The owning user's resolved prefs; undefined if the identity vanished. */
-  async #userPrefs(identityId: string) {
-    const [row] = await this.#options.db
-      .select({ prefs: userPreferences.prefs })
+  /** Owning users' resolved prefs for a batch of identities, one query. */
+  async #userPrefsBatch(identityIds: string[]) {
+    const rows = await this.#options.db
+      .select({ identityId: identities.id, prefs: userPreferences.prefs })
       .from(identities)
       .innerJoin(flistAccounts, eq(identities.flistAccountId, flistAccounts.id))
       .leftJoin(
         userPreferences,
         eq(userPreferences.userId, flistAccounts.userId),
       )
-      .where(eq(identities.id, identityId))
-      .limit(1);
-    if (!row) {
-      return undefined;
+      .where(inArray(identities.id, identityIds));
+    const resolved = new Map<string, UserPrefs>();
+    for (const row of rows) {
+      resolved.set(row.identityId, resolvePrefs(row.prefs ?? undefined));
     }
-    return resolvePrefs(row.prefs ?? undefined);
+    return resolved;
   }
 }

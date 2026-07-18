@@ -169,6 +169,10 @@ export const outboxMessages = pgTable(
      * recallable) | "failed" (release refused; failureReason says why). */
     state: text().notNull().default("scheduled"),
     failureReason: text(),
+    /** When the row entered "failed" — the failed-row TTL keys on this,
+     * not releaseAt: crash-recovery can fail a row long after its release
+     * and the user still deserves the full window to see it (M7 audit). */
+    failedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   // The release worker's poll: due scheduled rows in release order.

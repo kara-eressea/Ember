@@ -199,7 +199,11 @@ function CardContent({
           ?
         </span>
         <span className={styles.emptyTitle}>
-          {budget ? "Profile budget exhausted" : "Profile not found"}
+          {budget
+            ? "Profile budget exhausted"
+            : loaded.state === "error"
+              ? "Couldn't load profile"
+              : "Profile not found"}
         </span>
         <span className={styles.emptyBody}>
           {loaded.error ??
