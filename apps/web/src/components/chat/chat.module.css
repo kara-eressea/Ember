@@ -1556,6 +1556,45 @@
   background: var(--eb-border);
 }
 
+/* Chat/Ads/Both view selector in the channel header (M10, spec §4). */
+.showSelector {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.showLabel {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+  letter-spacing: 0.04em;
+}
+
+.showSeg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.showSegButton {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: calc(var(--eb-radius) - 3px);
+}
+
+.showSegOn {
+  color: var(--eb-bg);
+  background: var(--eb-accent);
+}
+
 /* Advisory lossiness line under the composer preview (M10). */
 .previewLossiness {
   padding: 5px 10px;

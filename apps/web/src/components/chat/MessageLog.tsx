@@ -13,7 +13,7 @@ import { useMessagesStore } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
-import { adsHidden } from "./ads.js";
+import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
@@ -61,15 +61,15 @@ export function MessageLog({
   );
   const pending = outbox.filter((item) => item.convId === convId);
   const presence = prefs.showJoinPartQuit ? buffer?.presence : undefined;
-  const hideAds = adsHidden(prefs, channelKey);
+  const view = adViewFor(prefs, channelKey);
   const rows = useMemo(
     () =>
       buildRows(messages, newSinceId, ignores, {
         groupConsecutive: prefs.groupConsecutive,
-        hideAds,
+        view,
         presence,
       }),
-    [messages, newSinceId, ignores, prefs.groupConsecutive, hideAds, presence],
+    [messages, newSinceId, ignores, prefs.groupConsecutive, view, presence],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);

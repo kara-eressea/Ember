@@ -89,3 +89,39 @@ describe("resolvePrefs", () => {
     });
   });
 });
+
+describe("resolvePrefs M6→M10 ad-view migration", () => {
+  it("maps hideAds:true onto adViewDefault chat, once", () => {
+    expect(resolvePrefs({ hideAds: true })).toEqual({
+      ...PREFS_DEFAULTS,
+      adViewDefault: "chat",
+    });
+    expect(resolvePrefs({ hideAds: false })).toEqual(PREFS_DEFAULTS);
+    // A written tri-state wins over the legacy boolean.
+    expect(resolvePrefs({ hideAds: true, adViewDefault: "both" })).toEqual(
+      PREFS_DEFAULTS,
+    );
+  });
+
+  it("maps channelAdVisibility onto channelAdView (hide→chat, show→both)", () => {
+    expect(
+      resolvePrefs({ channelAdVisibility: { dev: "hide", garden: "show" } }),
+    ).toEqual({
+      ...PREFS_DEFAULTS,
+      channelAdView: { dev: "chat", garden: "both" },
+    });
+    // A written record wins over the legacy one.
+    expect(
+      resolvePrefs({
+        channelAdVisibility: { dev: "hide" },
+        channelAdView: { dev: "ads" },
+      }),
+    ).toEqual({ ...PREFS_DEFAULTS, channelAdView: { dev: "ads" } });
+  });
+
+  it("ignores a malformed legacy record", () => {
+    expect(resolvePrefs({ channelAdVisibility: { dev: "sideways" } })).toEqual(
+      PREFS_DEFAULTS,
+    );
+  });
+});

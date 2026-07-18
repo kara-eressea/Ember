@@ -26,6 +26,7 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { adViewFor } from "../chat/ads.js";
 import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
@@ -298,12 +299,21 @@ export function AppShell() {
               convId={convId}
               channelKey={channel?.key}
               channelMode={channel?.mode}
+              adView={
+                channel && channel.mode === "both"
+                  ? adViewFor(session.prefs, channel.key)
+                  : undefined
+              }
               partner={
                 conversation.kind === "pm" ? conversation.dm.partner : undefined
               }
               placeholder={
                 conversation.kind === "channel"
-                  ? `Message #${conversation.channel.title}`
+                  ? channel &&
+                    channel.mode === "both" &&
+                    adViewFor(session.prefs, channel.key) === "ads"
+                    ? `Compose an ad for #${conversation.channel.title}`
+                    : `Message #${conversation.channel.title}`
                   : `Message ${conversation.dm.partner}`
               }
               maxBytes={

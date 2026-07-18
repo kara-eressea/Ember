@@ -25,7 +25,8 @@ export const UNREAD_CAP = 99;
  * conversation at UNREAD_CAP, newest first (a deterministic window walking
  * the (conversation_id, id desc) index and stopping early) — a busy channel
  * with 40k unread costs the same as one with 99. Own sends never count as
- * unread (matching the client's live bump). Mentions read the stored
+ * unread (matching the client's live bump), and neither do roleplay ads —
+ * ads never affect unread in any view (M10). Mentions read the stored
  * `messages.mention` flag the sink stamped at persist time (M5) — no
  * matching happens here anymore.
  */
@@ -47,6 +48,7 @@ async function conversationCounts(
         where m.conversation_id = c.id
           and m.id > coalesce(c.last_read_message_id, 0)
           and not m.sent_by_us
+          and m.kind <> 'lrp'
         order by m.id desc
         limit ${UNREAD_CAP}
       ) t

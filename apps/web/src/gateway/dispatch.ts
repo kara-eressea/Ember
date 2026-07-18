@@ -5,7 +5,7 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
-import { adsHidden } from "../components/chat/ads.js";
+
 import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
 import { errNotice } from "../lib/err-codes.js";
 import { loadSocial } from "../lib/social.js";
@@ -105,13 +105,10 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // alerts only: badges, tint and the bump still accrue (decisions.md
       // §10).
       const prefs = sessions.sessions[identityId]?.prefs;
-      // A hidden ad is invisible end to end: no unread, no alerts (the
-      // buffer keeps it, so flipping ads back on reveals it in place).
-      if (
-        message.kind === "lrp" &&
-        prefs &&
-        adsHidden(prefs, sessions.sessions[identityId]?.channelByConvId[convId])
-      ) {
+      // Ads never affect unread counts or alerts in any view (M10 mandate;
+      // the buffer keeps them, so the Chat/Ads/Both selector reveals them
+      // in place).
+      if (message.kind === "lrp") {
         return;
       }
       const muted =

@@ -36,13 +36,15 @@ export function GeneralPane({
       <GroupLabel>Roleplay ads</GroupLabel>
       <FieldRow
         label="Hide ads everywhere"
-        help="Channels inherit this default; the ♥ ads chip in a channel's header overrides it per channel. Hidden ads are kept in history."
+        help="Channels inherit this default; the Show selector in a channel's header overrides it per channel. Hidden ads are kept in history."
       >
         <Toggle
           label="Hide ads everywhere"
-          checked={prefs.hideAds}
-          onChange={(hideAds) => {
-            void patchPrefs(identityId, { hideAds });
+          checked={prefs.adViewDefault === "chat"}
+          onChange={(hide) => {
+            void patchPrefs(identityId, {
+              adViewDefault: hide ? "chat" : "both",
+            });
           }}
         />
       </FieldRow>
