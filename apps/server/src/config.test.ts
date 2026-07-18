@@ -23,6 +23,15 @@ describe("loadConfig", () => {
     ).toThrow(/placeholder/);
   });
 
+  it("treats an empty CREDENTIALS_KEY as unset, refuses a malformed one", () => {
+    expect(
+      loadConfig({ ...BASE_ENV, CREDENTIALS_KEY: "" }).CREDENTIALS_KEY,
+    ).toBeUndefined();
+    expect(() =>
+      loadConfig({ ...BASE_ENV, CREDENTIALS_KEY: "too-short" }),
+    ).toThrow(/32 bytes/);
+  });
+
   it("refuses a non-websocket FCHAT_URL", () => {
     expect(() =>
       loadConfig({ ...BASE_ENV, FCHAT_URL: "https://chat.f-list.net/chat2" }),

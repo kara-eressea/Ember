@@ -4,7 +4,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 
 ## Current state
 
-**Milestones 1–7 shipped (v0.6.0, 2026-07-16)** — the bouncer, web client, and self-host hardening are implemented and released. Work follows the milestone plan in `design/`: check `design/milestones.md` for current status, then work the next unchecked step (next up: Milestone 8 — profile viewer, compatibility matcher, eicon search). Update the tracker as steps complete.
+**Milestones 1–9 shipped (v0.8.0, 2026-07-18)** — the bouncer, web client, self-host hardening, profile viewer/matcher/eicon search, and the client-polish round are implemented and released. Work follows the milestone plan in `design/`: check `design/milestones.md` for current status, then work the next unchecked step (next up: Milestone 10 — ads & character search, being specced with the user). Update the tracker as steps complete.
 
 ## Dev environment
 
