@@ -595,3 +595,90 @@
   background: transparent;
   border: 1.5px solid var(--eb-faint);
 }
+
+/* ── Quick-switcher (M9 step 6) ─────────────────────────────────────────── */
+
+.switcherOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgb(0 0 0 / 25%);
+}
+
+.switcher {
+  position: fixed;
+  top: 18vh;
+  left: 50%;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100vw - 32px));
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 24px 60px -18px rgb(0 0 0 / 65%);
+  transform: translateX(-50%);
+}
+
+.switcherInput {
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: none;
+  border-bottom: 1px solid var(--eb-border);
+  outline: none;
+}
+
+.switcherList {
+  max-height: 320px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.switcherEmpty {
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--eb-faint);
+}
+
+.switcherRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--eb-text);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.switcherRowActive {
+  background: var(--eb-accent-soft);
+}
+
+.switcherGlyph {
+  flex: none;
+  width: 16px;
+  font-family: var(--eb-mono, monospace);
+  color: var(--eb-faint);
+  text-align: center;
+}
+
+.switcherLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcherHint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}

@@ -38,6 +38,7 @@ import { LinkPreview } from "../chat/LinkPreview.js";
 import { MiniProfileCard } from "../profile/MiniProfileCard.js";
 import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
+import { QuickSwitcher } from "./QuickSwitcher.js";
 import { Sidebar } from "./Sidebar.js";
 import styles from "./shell.module.css";
 
@@ -64,6 +65,7 @@ export function AppShell() {
   const profileCard = useProfileStore((s) => s.card);
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
   const searchOpen = useUiStore((s) => s.searchOpen);
+  const switcherOpen = useUiStore((s) => s.switcherOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -87,6 +89,21 @@ export function AppShell() {
   // Idle detection lives with the shell: it exists exactly while the user
   // is in the app, across identity/conversation navigation.
   useEffect(() => startAutoAway(), []);
+
+  // Ctrl/Cmd+K toggles the quick-switcher (M9) from anywhere in the shell.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        const ui = useUiStore.getState();
+        ui.setSwitcherOpen(!ui.switcherOpen);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   // The routed identity subscribes immediately (its snapshot should win the
   // race); the rest follow once ready lists them, so background badges and
@@ -325,6 +342,18 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setChannelBrowserOpen(false);
+          }}
+        />
+      )}
+      {switcherOpen && identities !== undefined && (
+        <QuickSwitcher
+          session={session}
+          identities={identities.map((identity) => ({
+            id: identity.id,
+            name: identity.name,
+          }))}
+          onClose={() => {
+            useUiStore.getState().setSwitcherOpen(false);
           }}
         />
       )}
