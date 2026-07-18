@@ -106,8 +106,23 @@ export class EiconIndexService {
         .where(eq(flistMappings.source, SOURCE))
         .limit(1);
       if (row) {
-        const payload = row.payload as unknown as IndexPayload;
-        this.#adopt(payload.names, payload.asOf, row.fetchedAt.getTime());
+        // A malformed/legacy row must degrade to a fresh download, not
+        // 502 every search until someone hand-deletes it (M8 audit).
+        try {
+          const payload = row.payload as unknown as IndexPayload;
+          if (
+            !Array.isArray(payload.names) ||
+            typeof payload.asOf !== "number"
+          ) {
+            throw new Error("persisted eicon index has an unexpected shape");
+          }
+          this.#adopt(payload.names, payload.asOf, row.fetchedAt.getTime());
+        } catch (error) {
+          this.#logger?.warn(
+            { err: error },
+            "persisted eicon index unusable; falling back to a full fetch",
+          );
+        }
       }
     }
     if (this.#names.length === 0) {

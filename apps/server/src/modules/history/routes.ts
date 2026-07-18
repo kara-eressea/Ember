@@ -296,9 +296,13 @@ const EXPORT_CONTENT_TYPES = {
 } as const;
 
 function renderTxtRow(row: ExportRow): string {
+  // Multiline bodies keep the one-row-per-message shape: continuation
+  // lines are indented under their row instead of masquerading as new
+  // rows (M5 audit backlog).
+  const body = row.bbcode.replace(/\r?\n/g, "\n    ");
   return row.kind === "sys"
-    ? `[${exportTimestamp(row.createdAt)}] * ${row.bbcode}`
-    : `[${exportTimestamp(row.createdAt)}] ${row.senderCharacter}: ${row.bbcode}`;
+    ? `[${exportTimestamp(row.createdAt)}] * ${body}`
+    : `[${exportTimestamp(row.createdAt)}] ${row.senderCharacter}: ${body}`;
 }
 
 function renderHtmlRow(row: ExportRow): string {

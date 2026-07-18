@@ -341,6 +341,20 @@
   font-family: inherit;
 }
 
+/* Right side of a section header when it holds count + refresh together. */
+.sectionMeta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* §4 relationship glyph on friend/bookmark rows (★ friend, ⚑ bookmark). */
+.socialGlyph {
+  flex: none;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
 .socialEmpty {
   margin: 1px 6px;
   padding: 3px 10px;

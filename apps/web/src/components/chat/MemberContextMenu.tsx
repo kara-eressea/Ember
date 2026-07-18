@@ -8,6 +8,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -33,6 +34,7 @@ export function MemberContextMenu({
   identityId,
   ownCharacter,
   channelKey,
+  channelTitle,
   member,
   role,
   viewerRole,
@@ -44,6 +46,9 @@ export function MemberContextMenu({
   /** The viewing identity's character (self rows lose Message/Ignore). */
   ownCharacter: string;
   channelKey: string;
+  /** Display title — SFC reports carry this, not the key: private rooms'
+   * keys are opaque ADH- ids moderators can't recognize (M7 audit). */
+  channelTitle: string;
   member: MemberDto;
   role: ChannelRole;
   viewerRole: ChannelRole;
@@ -55,6 +60,23 @@ export function MemberContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const [reporting, setReporting] = useState(false);
   const [reportText, setReportText] = useState("");
+
+  // Clamp against the *measured* menu — a full social+admin menu is 2–3×
+  // the old fixed guess and could run off-screen (M6 audit). DOM write,
+  // not state: the pre-paint nudge must not re-render. Re-runs when the
+  // report form expands the menu.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) {
+      return;
+    }
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+    const left = Math.min(position.x, window.innerWidth - rect.width - margin);
+    const top = Math.min(position.y, window.innerHeight - rect.height - margin);
+    el.style.left = `${String(Math.max(margin, left))}px`;
+    el.style.top = `${String(Math.max(margin, top))}px`;
+  }, [position, reporting]);
   const self = member.character.toLowerCase() === ownCharacter.toLowerCase();
   const powers = modPowers({
     viewer: viewerRole,
@@ -227,7 +249,7 @@ export function MemberContextMenu({
         action: "user.report",
         d: {
           character: member.character,
-          report: `Current Tab/Channel: ${channelKey} | Reporting User: ${member.character} | ${complaint}`,
+          report: `Current Tab/Channel: ${channelTitle} | Reporting User: ${member.character} | ${complaint}`,
         },
       })
       .then((ack) => {

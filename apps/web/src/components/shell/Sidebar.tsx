@@ -13,6 +13,7 @@ import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
+import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import {
@@ -43,12 +44,6 @@ async function waitForJoin(
   }
   return undefined;
 }
-
-const DOT_CLASS: Record<DotKind, string> = {
-  ok: styles.dotOk!,
-  warn: styles.dotWarn!,
-  faint: styles.dotFaint!,
-};
 
 export interface SidebarProps {
   session: IdentitySession;
@@ -441,12 +436,12 @@ function NavRow({
           className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}
           data-testid="nav-badge"
         >
-          @{mentions > 99 ? "99+" : mentions}
+          @{clampBadge(mentions)}
         </span>
       ) : (
         unread > 0 && (
           <span className={styles.navBadge} data-testid="nav-badge">
-            {unread > 99 ? "99+" : unread}
+            {clampBadge(unread)}
           </span>
         )
       )}
@@ -607,7 +602,10 @@ function SocialSections({ session }: { session: IdentitySession }) {
     <>
       <div className={styles.sectionHeader}>
         <span>Friends</span>
-        {refresh}
+        <span className={styles.sectionMeta}>
+          {social?.friends.length ?? ""}
+          {refresh}
+        </span>
       </div>
       {loadError !== undefined && (
         <div className={styles.socialEmpty} role="alert">
@@ -642,7 +640,12 @@ function SocialSections({ session }: { session: IdentitySession }) {
         </div>
       ))}
       {social?.friends.map((friend) => (
-        <SocialRow key={friend.name} session={session} character={friend} />
+        <SocialRow
+          key={friend.name}
+          session={session}
+          character={friend}
+          glyph="★"
+        />
       ))}
       {social !== undefined && social.friends.length === 0 && (
         <div className={styles.socialEmpty}>No friends yet.</div>
@@ -653,7 +656,12 @@ function SocialSections({ session }: { session: IdentitySession }) {
         <span>{social?.bookmarks.length ?? ""}</span>
       </div>
       {social?.bookmarks.map((bookmark) => (
-        <SocialRow key={bookmark.name} session={session} character={bookmark} />
+        <SocialRow
+          key={bookmark.name}
+          session={session}
+          character={bookmark}
+          glyph="⚑"
+        />
       ))}
       {social !== undefined && social.bookmarks.length === 0 && (
         <div className={styles.socialEmpty}>No bookmarks yet.</div>
@@ -662,13 +670,17 @@ function SocialSections({ session }: { session: IdentitySession }) {
   );
 }
 
-/** One friend/bookmark: presence dot + name; clicking opens the DM. */
+/** One friend/bookmark: presence dot + relationship glyph (§4: ★ friend,
+ * ⚑ bookmark — same vocabulary as the profile badges) + name; clicking
+ * opens the DM. */
 function SocialRow({
   session,
   character,
+  glyph,
 }: {
   session: IdentitySession;
   character: SocialCharacter;
+  glyph: string;
 }) {
   const navigate = useNavigate();
 
@@ -712,6 +724,9 @@ function SocialRow({
       <span
         className={`${styles.navDot} ${DOT_CLASS[presenceDot(character.online, character.status)]}`}
       />
+      <span className={styles.socialGlyph} aria-hidden>
+        {glyph}
+      </span>
       <span className={styles.navLabel}>{character.name}</span>
     </button>
   );

@@ -130,17 +130,7 @@ export class ProfileService {
     refresh: boolean,
   ): Promise<ProfileResult> {
     const lower = name.toLowerCase();
-    // One payload load per character at a time; joiners share the result.
-    // A joiner's refresh flag is satisfied either way: an in-flight load
-    // only exists when it is already deciding against the cache/upstream.
-    let load = this.#profileLoads.get(lower);
-    if (!load) {
-      load = this.#loadPayload(identity, lower, name, refresh).finally(() => {
-        this.#profileLoads.delete(lower);
-      });
-      this.#profileLoads.set(lower, load);
-    }
-    const result = await load;
+    const result = await this.#coalescedLoad(identity, name, refresh);
     if (result.status !== "ok") {
       return result;
     }
@@ -156,6 +146,25 @@ export class ProfileService {
       budgetExhausted: result.budgetExhausted,
       note,
     };
+  }
+
+  /** One payload load per character at a time; joiners share the result.
+   * A joiner's refresh flag is satisfied either way: an in-flight load
+   * only exists when it is already deciding against the cache/upstream. */
+  #coalescedLoad(
+    identity: ProfileIdentity,
+    name: string,
+    refresh: boolean,
+  ): Promise<PayloadResult> {
+    const lower = name.toLowerCase();
+    let load = this.#profileLoads.get(lower);
+    if (!load) {
+      load = this.#loadPayload(identity, lower, name, refresh).finally(() => {
+        this.#profileLoads.delete(lower);
+      });
+      this.#profileLoads.set(lower, load);
+    }
+    return load;
   }
 
   /** The character-scoped half: cache read → budget → upstream → cache
@@ -328,14 +337,17 @@ export class ProfileService {
     name: string,
     page: number,
   ): Promise<GuestbookResult> {
-    const profile = await this.getProfile(identity, name, false);
-    if (profile.status === "budget-exhausted") {
-      return profile;
+    // The payload path directly, NOT getProfile: paging a guestbook must
+    // not bump the view history / timesViewed once per page (M8 audit).
+    const loaded = await this.#coalescedLoad(identity, name, false);
+    if (loaded.status === "budget-exhausted") {
+      return loaded;
     }
-    if (profile.status === "not-found") {
-      return { status: "upstream-error", error: profile.error };
+    if (loaded.status === "not-found") {
+      return { status: "upstream-error", error: loaded.error };
     }
-    if (!profile.profile.settings.guestbook) {
+    const resolved = await this.#resolve(loaded.payload);
+    if (!resolved.settings.guestbook) {
       return { status: "no-guestbook" };
     }
     if (!this.#budget.tryConsume()) {
@@ -345,7 +357,7 @@ export class ProfileService {
       };
     }
     const result = await withTicket(this.#tickets, identity, (auth) =>
-      this.#api.guestbook(auth, profile.profile.id, page),
+      this.#api.guestbook(auth, resolved.id, page),
     );
     if (result.error !== "") {
       return result.error.includes("does not have a guestbook")

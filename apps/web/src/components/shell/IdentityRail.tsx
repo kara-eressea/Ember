@@ -26,19 +26,17 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { Avatar } from "../common/Avatar.js";
+import { clampBadge, DOT_CLASS } from "./badges.js";
 import { railBadge, railDot } from "./rail-data.js";
 import styles from "./shell.module.css";
-
-const DOT_CLASS: Record<string, string | undefined> = {
-  ok: styles.dotOk,
-  warn: styles.dotWarn,
-  faint: styles.dotFaint,
-};
 
 interface MenuState {
   identityId: string;
   x: number;
   y: number;
+  /** The rail item that opened the menu — focus returns here on close so
+   * keyboard users don't land back at the document root (M3 audit). */
+  trigger: HTMLElement;
 }
 
 export function IdentityRail({ activeId }: { activeId: string }) {
@@ -67,6 +65,7 @@ export function IdentityRail({ activeId }: { activeId: string }) {
               identityId: identity.id,
               x: keyboard ? rect.right : event.clientX,
               y: keyboard ? rect.top : event.clientY,
+              trigger: event.currentTarget as HTMLElement,
             });
           }}
         />
@@ -85,6 +84,7 @@ export function IdentityRail({ activeId }: { activeId: string }) {
           identities={identities}
           position={menu}
           onClose={() => {
+            menu.trigger.focus();
             setMenu(undefined);
           }}
         />
@@ -133,18 +133,18 @@ function RailItem({
     >
       <span className={styles.railAvatar}>
         <Avatar name={identity.name} size={40} square={active} />
-        <span className={`${styles.railDot} ${DOT_CLASS[dot] ?? ""}`} />
+        <span className={`${styles.railDot} ${DOT_CLASS[dot]}`} />
         {!active && badge.mentions > 0 && (
           <span
             className={`${styles.railBadge} ${styles.railBadgeMention ?? ""}`}
             data-testid="rail-badge"
           >
-            @{badge.mentions > 99 ? "99+" : badge.mentions}
+            @{clampBadge(badge.mentions)}
           </span>
         )}
         {!active && badge.mentions === 0 && badge.unread > 0 && (
           <span className={styles.railBadge} data-testid="rail-badge">
-            {badge.unread > 99 ? "99+" : badge.unread}
+            {clampBadge(badge.unread)}
           </span>
         )}
       </span>
@@ -309,7 +309,7 @@ function RailMenu({
             }}
           >
             <span
-              className={`${styles.navDot} ${DOT_CLASS[presenceDot(true, status)] ?? ""}`}
+              className={`${styles.navDot} ${DOT_CLASS[presenceDot(true, status)]}`}
             />
             {status}
             {online && slice.ownStatus === status ? " ✓" : ""}

@@ -59,7 +59,16 @@ export function LinkPreview() {
   return (
     <>
       {preview.mode === "click" && (
-        <div className={styles.previewOverlay} onClick={close} />
+        <div
+          className={styles.previewOverlay}
+          onClick={close}
+          onContextMenu={(event) => {
+            // Same convention as the mini-card overlay: a right-click
+            // dismisses instead of silently eating the interaction.
+            event.preventDefault();
+            close();
+          }}
+        />
       )}
       <div
         ref={panelRef}

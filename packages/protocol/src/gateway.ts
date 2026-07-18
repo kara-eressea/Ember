@@ -359,6 +359,9 @@ export interface OutboxItemDto {
   releaseAt: string;
   /** ISO timestamp of the send — ArrowUp recalls the newest-created. */
   createdAt: string;
+  /** "lrp" = a delayed roleplay ad — labeled distinctly in the pending
+   * list, and recall restores the composer's Ad toggle (M6 audit). */
+  kind: "msg" | "lrp";
   state: "scheduled" | "failed";
   /** Why a failed row failed, for the pending-row label. */
   failureReason?: string;

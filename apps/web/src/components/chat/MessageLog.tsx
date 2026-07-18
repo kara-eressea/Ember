@@ -292,6 +292,7 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
         <RichText bbcode={emote ? emote.action : item.bbcode} />
       </span>
       <span className={styles.pendingMeta}>
+        {item.kind === "lrp" && <span className={styles.adTag}>AD</span>}{" "}
         {item.state === "failed"
           ? `could not send${item.failureReason ? ` — ${item.failureReason}` : ""}`
           : `sending in ${String(seconds)}s`}

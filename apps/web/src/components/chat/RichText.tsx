@@ -13,8 +13,12 @@ import {
   openPreviewFrom,
   useLinkPreviewStore,
 } from "../../stores/link-preview.js";
+import { useNavigate } from "react-router";
+import { gateway } from "../../gateway/socket.js";
+import { channelPath } from "../../lib/routes.js";
 import { openCardFrom } from "../../stores/profile.js";
-import { useUserPrefs } from "../../stores/sessions.js";
+import { useSessionsStore, useUserPrefs } from "../../stores/sessions.js";
+import { useUiStore } from "../../stores/ui.js";
 import { textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
 
@@ -129,11 +133,7 @@ function renderText(text: string, keyBase: string): ReactNode[] {
           </span>
         );
       case "channel":
-        return (
-          <span key={key} className={styles.bodyChannel}>
-            #{token.name}
-          </span>
-        );
+        return <ChannelChip key={key} name={token.name} />;
     }
   });
 }
@@ -148,6 +148,40 @@ function renderText(text: string, keyBase: string): ReactNode[] {
  * ~250ms, off = plain links everywhere.
  */
 const HOVER_DELAY_MS = 250;
+
+/** A `#Channel` text token: click joins and navigates (the cursor promised
+ * an action since M4; the M6 audit called the missing handler out). Only
+ * official channels appear as #tokens, so the name doubles as the key.
+ * Join-while-joined is a harmless no-op; the route canonicalizes the
+ * moment the JCH echo lands. */
+function ChannelChip({ name }: { name: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      className={`${styles.bodyChannel} ${styles.nameButton}`}
+      title={`Join #${name}`}
+      onClick={() => {
+        const identityId = useUiStore.getState().activeIdentityId;
+        if (identityId === undefined) {
+          return;
+        }
+        const session = useSessionsStore.getState().sessions[identityId];
+        if (!session?.synced) {
+          return;
+        }
+        void gateway.cmd({
+          identityId,
+          action: "channel.join",
+          d: { key: name },
+        });
+        void navigate(channelPath(session.character, name));
+      }}
+    >
+      #{name}
+    </button>
+  );
+}
 
 function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
   const mode = useUserPrefs().linkPreviewMode;

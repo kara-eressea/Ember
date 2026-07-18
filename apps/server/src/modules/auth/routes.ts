@@ -93,8 +93,10 @@ export async function authRoutes(
     if (!session) {
       throw new Error("session insert returned no row");
     }
-    // Evict beyond the cap, oldest first (keep the newest N — including the
-    // row just inserted).
+    // Evict beyond the cap, stalest first — by lastSeenAt, not createdAt:
+    // a long-lived daily-refreshed device is old by creation but the most
+    // alive by use, and one-shot logins nobody refreshed should go first
+    // (M7 audit backlog). The just-inserted row has lastSeenAt = now.
     await db
       .delete(authSessions)
       .where(
@@ -106,7 +108,7 @@ export async function authRoutes(
               .select({ id: authSessions.id })
               .from(authSessions)
               .where(eq(authSessions.userId, user.id))
-              .orderBy(desc(authSessions.createdAt), desc(authSessions.id))
+              .orderBy(desc(authSessions.lastSeenAt), desc(authSessions.id))
               .limit(MAX_SESSIONS_PER_USER),
           ),
         ),
