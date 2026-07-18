@@ -10,6 +10,7 @@ import {
   CLIENT_SETTABLE_STATUSES,
   TYPING_STATUSES,
 } from "@emberchat/fchat-protocol";
+import type { AdDto } from "./ads.js";
 import { FLIST_NAME_RE } from "./highlights.js";
 import { userPrefsPatchSchema, type UserPrefs } from "./prefs.js";
 
@@ -484,6 +485,12 @@ export type GatewayEvent =
        * release, recall, failure) — an idempotent overwrite that keeps
        * every attached device's pending indicators in sync. */
       d: { items: OutboxItemDto[] };
+    }
+  | {
+      kind: "ads.updated";
+      /** The identity's full ad library after a PUT (M10) — an idempotent
+       * overwrite for every attached device's ad manager. */
+      d: { ads: AdDto[] };
     }
   | {
       kind: "prefs.updated";

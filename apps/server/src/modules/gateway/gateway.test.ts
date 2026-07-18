@@ -2099,6 +2099,33 @@ describe("gateway commands", () => {
     });
   });
 
+  it("ad-library PUT fans out ads.updated to subscribed devices (M10)", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    const put = await app.inject({
+      method: "PUT",
+      url: `/api/identities/${identityId}/ads`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ads: [{ content: "hello scene", tags: ["fantasy"], disabled: false }],
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    const event = eventPayload<{
+      ads: { content: string; tags: string[]; disabled: boolean }[];
+    }>(await client.nextEvent("ads.updated"));
+    expect(event.ads).toHaveLength(1);
+    expect(event.ads[0]).toMatchObject({
+      content: "hello scene",
+      tags: ["fantasy"],
+      disabled: false,
+    });
+  });
+
   it("delayed send parks in the outbox, recalls, and releases due rows", async () => {
     const { identityId, token } = await createIdentity();
     await startSession(identityId);
