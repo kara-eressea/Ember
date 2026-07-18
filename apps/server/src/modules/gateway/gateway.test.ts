@@ -2237,6 +2237,61 @@ describe("gateway commands", () => {
     ).toMatchObject({ kind: "msg", bbcode: "right now", sentByUs: true });
   }, 30_000);
 
+  it("character.search round-trips FKS results and refusals (M10)", async () => {
+    sim.setCharacterProfile("Nyx Firemane", { kinks: { "523": "fave" } });
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // A kink Nyx faves: the reply carries the bare name (never ourselves).
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "character.search",
+        d: { kinks: ["523"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: true },
+    });
+    const hit = eventPayload<{
+      ok: boolean;
+      characters?: string[];
+      kinks?: string[];
+    }>(await client.nextEvent("character.search", 15_000));
+    expect(hit.ok).toBe(true);
+    expect(hit.characters).toContain("Nyx Firemane");
+    expect(hit.characters).not.toContain(CHARACTER);
+    expect(hit.kinks).toEqual(["523"]);
+
+    // A kink nobody has: the server's ERR 18 comes back as a refusal.
+    // (The session's own FKS gate paces this second search past the sim's
+    // 5s window, so the refusal is the no-results one, not the flood.)
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "character.search",
+        d: { kinks: ["999999"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    const miss = eventPayload<{ ok: boolean; code?: number }>(
+      await client.nextEvent("character.search", 20_000),
+    );
+    expect(miss.ok).toBe(false);
+    expect(miss.code).toBe(18);
+  }, 40_000);
+
   it("delayed send parks in the outbox, recalls, and releases due rows", async () => {
     const { identityId, token } = await createIdentity();
     await startSession(identityId);

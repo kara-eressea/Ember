@@ -71,6 +71,44 @@ export async function profilesRoutes(
   const readLimit = { rateLimit: { max: 120, timeWindow: "1 minute" } };
   const fetchLimit = { rateLimit: { max: 60, timeWindow: "1 minute" } };
 
+  // The F-List kink vocabulary (M10 search dialog): served from the cached
+  // mapping list — ticketless upstream, week-scale TTL, no budget cost.
+  app.get(
+    "/:identityId/kinks",
+    {
+      config: readLimit,
+      schema: {
+        params: identityParams,
+        response: {
+          200: z.object({
+            kinks: z.array(
+              z.object({
+                id: z.string(),
+                name: z.string(),
+                group: z.string().optional(),
+              }),
+            ),
+          }),
+          404: errorResponse,
+          502: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { identityId } = request.params;
+      if (!(await ownedIdentity(identityId, request.user.sub))) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      try {
+        return { kinks: await profiles.kinkVocabulary() };
+      } catch {
+        return reply
+          .code(502)
+          .send({ error: "The kink list is unavailable right now" });
+      }
+    },
+  );
+
   app.get(
     "/:identityId/profile/:name",
     {

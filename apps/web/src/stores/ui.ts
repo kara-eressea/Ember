@@ -30,6 +30,8 @@ interface UiState {
   adCenterOpen: boolean;
   /** Post Ads dialog (M10), opened from the Ad Center. */
   postAdsOpen: boolean;
+  /** Character-search dialog (M10), beside the channel browser. */
+  characterSearchOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -44,6 +46,7 @@ interface UiState {
   setSwitcherOpen: (open: boolean) => void;
   setAdCenterOpen: (open: boolean) => void;
   setPostAdsOpen: (open: boolean) => void;
+  setCharacterSearchOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -58,6 +61,7 @@ export const useUiStore = create<UiState>()((set) => ({
   switcherOpen: false,
   adCenterOpen: false,
   postAdsOpen: false,
+  characterSearchOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -93,5 +97,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setPostAdsOpen(open) {
     set({ postAdsOpen: open });
+  },
+  setCharacterSearchOpen(open) {
+    set({ characterSearchOpen: open });
   },
 }));

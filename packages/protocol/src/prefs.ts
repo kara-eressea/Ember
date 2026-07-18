@@ -143,6 +143,24 @@ const prefsShape = {
    * Patches replace the whole array. */
   mutedIdentityIds: z.array(z.uuid()).max(64),
   mutedConvIds: z.array(z.uuid()).max(500),
+  /** Saved character searches (M10) — filter definitions only, synced like
+   * every pref; each device keeps its own last-run name set for the "N new"
+   * diff (result lists are too heavy for the prefs fan-out). Patches
+   * replace the whole array. */
+  savedSearches: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        name: z.string().min(1).max(60),
+        kinks: z.array(z.string().min(1).max(16)).min(1).max(64),
+        genders: z.array(z.string().min(1).max(32)).max(16).optional(),
+        orientations: z.array(z.string().min(1).max(32)).max(16).optional(),
+        languages: z.array(z.string().min(1).max(32)).max(16).optional(),
+        furryprefs: z.array(z.string().min(1).max(64)).max(8).optional(),
+        roles: z.array(z.string().min(1).max(32)).max(8).optional(),
+      }),
+    )
+    .max(12),
   /** Channel view default (M10, replaces M6's hideAds boolean): what a
    * channel shows unless overridden — "both" everything, "chat" hides ad
    * rows, "ads" hides chat rows. Ads never count toward unread regardless
@@ -216,6 +234,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   desktopNotifyNotes: false,
   mutedIdentityIds: [],
   mutedConvIds: [],
+  savedSearches: [],
   adViewDefault: "both",
   channelAdView: {},
 };

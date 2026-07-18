@@ -12,6 +12,7 @@ import { loadSocial } from "../lib/social.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useAdsStore } from "../stores/ads.js";
 import { useMessagesStore } from "../stores/messages.js";
+import { useSearchStore } from "../stores/search.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
 import { hydrateTheme } from "../theme/theme.js";
@@ -242,6 +243,10 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // Reply to our own cooldown query — waits become absolute expiries so
       // the post dialog can count down without re-asking.
       useAdsStore.getState().applyCooldowns(identityId, event.d.waits);
+      return;
+    case "character.search":
+      // Reply to our own search (M10) — results or the server's refusal.
+      useSearchStore.getState().applyOutcome(identityId, event.d);
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);

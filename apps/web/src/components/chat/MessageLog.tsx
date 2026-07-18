@@ -6,14 +6,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { match } from "@emberchat/matcher";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
 import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
-import { openCardFrom, useProfileStore } from "../../stores/profile.js";
+import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
-import { MatchPill } from "../profile/MatchTier.js";
+import { CachedMatchChip } from "../profile/CachedMatchChip.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
@@ -393,23 +392,6 @@ function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
       </div>
     </div>
   );
-}
-
-/** Cache-only compatibility chip (M10 step 8): renders the M8 MatchPill
- * compact size when — and only when — both profiles are already loaded in
- * this session. Never triggers a fetch. */
-function CachedMatchChip({ name }: { name: string }) {
-  const loaded = useProfileStore((s) => s.profiles[name.toLowerCase()]);
-  const own = useProfileStore((s) => s.ownProfile?.profile);
-  const theirs = loaded?.response?.profile;
-  const tier = useMemo(
-    () => (own && theirs ? match(own, theirs).overall : undefined),
-    [own, theirs],
-  );
-  if (tier === undefined) {
-    return null;
-  }
-  return <MatchPill tier={tier} short compact />;
 }
 
 function MessageLine({
