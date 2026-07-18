@@ -1,0 +1,708 @@
+/* Character search (M10, COMPONENTS-ad-center-search.md §6) — the FKS
+   dialog in the Channel-Browser language: saved rail + filters/results.
+   Tokens only; accent shades via color-mix so every accent survives. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 45%);
+}
+
+.window {
+  display: grid;
+  grid-template-columns: 196px 1fr;
+  width: 748px;
+  height: 596px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 5px);
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 60%);
+}
+
+/* ── Saved rail ───────────────────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--eb-side2);
+  border-right: 1px solid var(--eb-border);
+}
+
+.railTitle {
+  padding: 15px 14px 10px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.railList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.railEmpty {
+  padding: 4px 14px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--eb-faint);
+}
+
+.savedRow {
+  display: flex;
+  gap: 2px;
+  align-items: flex-start;
+  margin: 1px 8px;
+  border-radius: var(--eb-radius);
+}
+
+.savedRow:hover {
+  background: var(--eb-hover);
+}
+
+.savedRowOn,
+.savedRowOn:hover {
+  background: var(--eb-accent-soft);
+  box-shadow: inset 2px 0 0 var(--eb-accent);
+}
+
+.savedBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 0 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.savedName {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.savedLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.savedRowOn .savedLabel {
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.newBadge {
+  flex: none;
+  padding: 0 6px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  background: var(--eb-accent);
+  border-radius: 10px;
+}
+
+.savedMeta {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.savedRemove {
+  flex: none;
+  padding: 8px 8px 0 2px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  opacity: 0;
+}
+
+.savedRow:hover .savedRemove,
+.savedRemove:focus-visible {
+  opacity: 0.8;
+}
+
+.savedRemove:hover {
+  color: var(--eb-danger);
+}
+
+.railFoot {
+  padding: 10px 12px;
+  border-top: 1px solid var(--eb-border);
+}
+
+.saveCurrent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.saveCurrent:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.saveNameInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+  outline: none;
+}
+
+/* ── Main column ──────────────────────────────────────────────────────── */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--eb-heading);
+}
+
+.sub {
+  display: block;
+  margin-top: 3px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+.close {
+  padding: 2px;
+  font-size: 13px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 6px 18px 14px;
+  overflow-y: auto;
+}
+
+/* ── Kink field ───────────────────────────────────────────────────────── */
+
+.kinkField {
+  padding: 12px 0 4px;
+}
+
+.kinkHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.kinkLabel {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.requiredTag {
+  padding: 0 5px;
+  font-size: 9px;
+  color: var(--eb-accent);
+  letter-spacing: 0.02em;
+  background: var(--eb-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: 4px;
+}
+
+.kinkCount {
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+.kinkChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 10px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.kinkChipsEmpty {
+  border-color: color-mix(in srgb, var(--eb-danger) 50%, var(--eb-bg));
+}
+
+.kinkChip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 3px 6px 3px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--eb-accent);
+  background: var(--eb-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: 5px;
+}
+
+.kinkRemove {
+  padding: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--eb-accent) 65%, var(--eb-bg));
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.kinkRemove:hover {
+  color: var(--eb-danger);
+}
+
+.addKinks {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.addKinks:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.vocabError {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--eb-danger);
+}
+
+/* ── Kink picker ──────────────────────────────────────────────────────── */
+
+.picker {
+  margin-top: 8px;
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: 11px;
+  box-shadow: 0 24px 60px -14px rgb(0 0 0 / 60%);
+}
+
+.pickerBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 11px 8px;
+}
+
+.pickerInput {
+  flex: 1;
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+  outline: none;
+}
+
+.pickerCount {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.pickerList {
+  max-height: 240px;
+  padding: 2px 6px 8px;
+  overflow-y: auto;
+}
+
+.pickerRow {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 6px;
+}
+
+.pickerRow:hover {
+  background: var(--eb-hover);
+}
+
+.pickerRowOn,
+.pickerRowOn:hover {
+  background: var(--eb-accent-soft);
+}
+
+.pickerCheck {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 4px;
+}
+
+.pickerRowOn .pickerCheck {
+  background: var(--eb-accent);
+  border-color: var(--eb-accent);
+}
+
+.pickerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerRowOn .pickerName {
+  color: var(--eb-text);
+}
+
+.pickerGroup {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--eb-faint);
+}
+
+.pickerFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 11px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+  background: var(--eb-head);
+  border-top: 1px solid var(--eb-border);
+}
+
+.pickerDone {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* ── Primer + filter groups ───────────────────────────────────────────── */
+
+.primer {
+  padding: 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--eb-dim);
+  background: color-mix(in srgb, var(--eb-accent) 10%, var(--eb-side));
+  border: 1px dashed color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+}
+
+.primer strong {
+  color: var(--eb-text);
+}
+
+.filterGroup {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 50%, var(--eb-side));
+}
+
+.filterGroup:first-of-type {
+  margin-top: 6px;
+}
+
+.filterLabel {
+  padding-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--eb-faint);
+}
+
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filterChip {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 20px;
+}
+
+.filterChipOn {
+  font-weight: 600;
+  color: var(--eb-bg);
+  background: var(--eb-accent);
+  border-color: var(--eb-accent);
+}
+
+/* ── Results ──────────────────────────────────────────────────────────── */
+
+.resultsPane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 8px;
+}
+
+.resultsBar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-bottom: 8px;
+}
+
+.nameFilter {
+  flex: 1;
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  outline: none;
+}
+
+.nameFilter::placeholder {
+  color: var(--eb-faint);
+}
+
+.resultsCount {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-dim);
+}
+
+.resultsList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.resultRow {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--eb-border) 40%, var(--eb-side));
+  border-radius: var(--eb-radius);
+}
+
+.resultRow:hover {
+  background: var(--eb-hover);
+}
+
+.resultName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onlineDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: var(--eb-ok);
+  border-radius: 50%;
+  box-shadow: 0 0 4px var(--eb-ok);
+}
+
+/* ── Empty / refusal tiles ────────────────────────────────────────────── */
+
+.emptyTile {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 11px;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.emptyGlyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 20px;
+  color: var(--eb-faint);
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.emptyTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--eb-text);
+}
+
+.emptyCopy {
+  max-width: 300px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--eb-faint);
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: var(--eb-side2);
+  border-top: 1px solid var(--eb-border);
+}
+
+.footStatus {
+  font-size: 11.5px;
+  color: var(--eb-faint);
+}
+
+.footButtons {
+  display: flex;
+  gap: 9px;
+}
+
+.button,
+.buttonPrimary {
+  height: 36px;
+  padding: 0 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--eb-radius);
+}
+
+.button {
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+}
+
+.buttonPrimary {
+  font-weight: 700;
+  color: var(--eb-bg);
+  background: var(--eb-accent);
+  border: none;
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

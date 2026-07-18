@@ -712,3 +712,10 @@
   color: var(--eb-text);
   background: var(--eb-hover);
 }
+
+/* Two header actions side by side (M10: character search + browser). */
+.sectionActions {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}

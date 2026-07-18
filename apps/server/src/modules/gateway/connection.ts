@@ -713,6 +713,37 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "character.search": {
+        // FKS bridge (M10): the session fires the query on the server's
+        // 5s pace and correlates the reply; the outcome goes back to the
+        // asking connection only (other devices didn't ask).
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          // Not awaited past the ack: the pace gate can hold the frame for
+          // seconds, and the outcome arrives as its own event.
+          session.searchCharacters(cmd.d).then(
+            (outcome) => {
+              this.deliver(identity.id, {
+                kind: "character.search",
+                d: outcome,
+              });
+            },
+            (error: unknown) => {
+              this.deliver(identity.id, {
+                kind: "character.search",
+                d: {
+                  ok: false,
+                  code: 0,
+                  message:
+                    error instanceof Error ? error.message : "Search failed",
+                },
+              });
+            },
+          );
+          this.#ack(id, { ok: true });
+        }
+        return;
+      }
       case "ads.cooldowns": {
         // Per-channel ad-cooldown query (M10 post flow). The waits are this
         // session's volatile rate-gate state, so the reply goes to the

@@ -225,6 +225,22 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
+    // M10: character search (FKS). Kinks are required by the wire (ids as
+    // strings); the other filters are optional enum-name arrays. The reply
+    // is a `character.search` event to the asking connection; the session
+    // paces searches at the server's one-per-5s.
+    action: z.literal("character.search"),
+    d: z.object({
+      kinks: z.array(z.string().min(1).max(16)).min(1).max(64),
+      genders: z.array(z.string().min(1).max(32)).max(16).optional(),
+      orientations: z.array(z.string().min(1).max(32)).max(16).optional(),
+      languages: z.array(z.string().min(1).max(32)).max(16).optional(),
+      furryprefs: z.array(z.string().min(1).max(64)).max(8).optional(),
+      roles: z.array(z.string().min(1).max(32)).max(8).optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
     // RLL: "bottle" or a dice expression ("2d6", "1d20+5", …). The server
     // validates the grammar and broadcasts the computed result.
     action: z.literal("channel.roll"),
@@ -512,6 +528,16 @@ export type GatewayEvent =
        * milliseconds per queried channel key (0 = clear to post). Volatile
        * per-session state — delivered to the asking connection only. */
       d: { waits: Record<string, number> };
+    }
+  | {
+      kind: "character.search";
+      /** Reply to the `character.search` cmd (M10), delivered to the
+       * asking connection only. `ok` carries the online characters that
+       * matched (bare names — the wire returns nothing else); a refusal
+       * carries the server's reason (0 = the search timed out). */
+      d:
+        | { ok: true; characters: string[]; kinks: string[] }
+        | { ok: false; code: number; message: string };
     }
   | {
       kind: "prefs.updated";

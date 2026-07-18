@@ -450,6 +450,14 @@ export const api = {
     );
   },
 
+  /** The F-List kink vocabulary (M10 search picker) — cached server-side
+   * off the mapping list, no budget cost. */
+  getKinks(identityId: string) {
+    return apiRequest<{
+      kinks: { id: string; name: string; group?: string }[];
+    }>(`/identities/${identityId}/kinks`, { auth: true });
+  },
+
   /** Server-local eicon index search (M8) — pref-gated (403 when off). */
   searchEicons(query: string) {
     return apiRequest<{ results: string[] }>(

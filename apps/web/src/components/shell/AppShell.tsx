@@ -32,6 +32,7 @@ import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
 import { SearchPanel } from "../chat/SearchPanel.js";
+import { CharacterSearch } from "../search/CharacterSearch.js";
 import { AdCenter } from "../ads/AdCenter.js";
 import { PostAdsDialog } from "../ads/PostAdsDialog.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
@@ -71,6 +72,7 @@ export function AppShell() {
   const switcherOpen = useUiStore((s) => s.switcherOpen);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const postAdsOpen = useUiStore((s) => s.postAdsOpen);
+  const characterSearchOpen = useUiStore((s) => s.characterSearchOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -377,6 +379,14 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setPostAdsOpen(false);
+          }}
+        />
+      )}
+      {characterSearchOpen && (
+        <CharacterSearch
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setCharacterSearchOpen(false);
           }}
         />
       )}
