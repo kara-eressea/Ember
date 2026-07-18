@@ -15,9 +15,10 @@ import { z } from "zod";
 export const ACCENT_IDS = ["amber", "clay", "dusk", "burnt", "moss"] as const;
 export type AccentId = (typeof ACCENT_IDS)[number];
 
-/** Base (neutral) themes — dark variants only in M5 (decisions.md §10);
- * "slate" is the original Slate Cozy set, "charcoal" the dimmer near-black. */
-export const BASE_THEME_IDS = ["slate", "charcoal"] as const;
+/** Base (neutral) themes: "slate" is the original Slate Cozy set,
+ * "charcoal" the dimmer near-black, "parchment" the M9 light variant
+ * (the token pass deferred from M5, decisions.md §10). */
+export const BASE_THEME_IDS = ["slate", "charcoal", "parchment"] as const;
 export type BaseThemeId = (typeof BASE_THEME_IDS)[number];
 
 export const DENSITIES = ["cozy", "compact"] as const;
@@ -61,6 +62,10 @@ const prefsShape = {
   density: z.enum(DENSITIES),
   /** Message body font size. */
   fontSize: z.enum(FONT_SIZES),
+  /** Colorblind-friendly status colors + shape-coded presence dots (M9):
+   * ok/warn/danger move to an Okabe–Ito-derived set and the away/offline
+   * dots gain distinct shapes so hue is never the only signal. */
+  colorblindMode: z.boolean(),
   /** Timestamp rendering in the log. */
   timestampFormat: z.enum(TIMESTAMP_FORMATS),
   use24HourClock: z.boolean(),
@@ -166,6 +171,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   baseTheme: "slate",
   density: "cozy",
   fontSize: "m",
+  colorblindMode: false,
   timestampFormat: "time",
   use24HourClock: true,
   groupConsecutive: false,
