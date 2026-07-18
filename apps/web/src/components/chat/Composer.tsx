@@ -13,6 +13,7 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import type { CardAnchor } from "../../stores/profile.js";
+import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
@@ -72,6 +73,7 @@ export function Composer({
   /** The extended formatting toolbar (M9 step 4), collapsed by default. */
   const [toolsOpen, setToolsOpen] = useState(false);
   const [adChosen, setAdChosen] = useState(false);
+  const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
   // Room mode decides what a send is: ads-only rooms force LRP, chat-only
@@ -593,6 +595,18 @@ export function Composer({
             }}
           >
             ☺
+          </button>
+          <span className={styles.hintDivider} aria-hidden />
+          <button
+            type="button"
+            className={`${styles.formatHint} ${adCenterOpen ? (styles.formatHintOn ?? "") : ""}`}
+            title="Your ad library — write once, post anywhere"
+            aria-label="Open the Ad Center"
+            onClick={() => {
+              useUiStore.getState().setAdCenterOpen(true);
+            }}
+          >
+            ▤ Ad
           </button>
         </span>
       </div>

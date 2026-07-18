@@ -10,6 +10,7 @@ import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
 import { errNotice } from "../lib/err-codes.js";
 import { loadSocial } from "../lib/social.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
+import { useAdsStore } from "../stores/ads.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
@@ -234,6 +235,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "prefs.updated":
       sessions.applyPrefs(identityId, event.d);
       hydrateTheme(event.d.prefs);
+      return;
+    case "ads.updated":
+      // Ad-library fan-out (M10): another device PUT the list; converge the
+      // mirror so an open Ad Center shows the current library.
+      useAdsStore.getState().applyAds(identityId, event.d.ads);
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);

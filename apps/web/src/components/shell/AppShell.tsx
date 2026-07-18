@@ -31,6 +31,7 @@ import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
 import { SearchPanel } from "../chat/SearchPanel.js";
+import { AdCenter } from "../ads/AdCenter.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { useProfileStore } from "../../stores/profile.js";
@@ -66,6 +67,7 @@ export function AppShell() {
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
   const searchOpen = useUiStore((s) => s.searchOpen);
   const switcherOpen = useUiStore((s) => s.switcherOpen);
+  const adCenterOpen = useUiStore((s) => s.adCenterOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -347,6 +349,14 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setChannelBrowserOpen(false);
+          }}
+        />
+      )}
+      {adCenterOpen && (
+        <AdCenter
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setAdCenterOpen(false);
           }}
         />
       )}

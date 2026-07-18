@@ -1,0 +1,741 @@
+/* Ad Center (M10, COMPONENTS-ad-center-search.md §2) — the ad-library
+   modal in the Preferences-window language. Tokens only; accent shades are
+   color-mix derivations so every accent option survives. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 45%);
+}
+
+.window {
+  display: grid;
+  grid-template-columns: 278px 1fr;
+  width: 880px;
+  height: 588px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 5px);
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 60%);
+  outline: none;
+}
+
+/* ── Library column ───────────────────────────────────────────────────── */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--eb-side2);
+  border-right: 1px solid var(--eb-border);
+}
+
+.libraryHead {
+  padding: 15px 16px 12px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.libraryTitleRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.libraryTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--eb-heading);
+}
+
+.libraryCap,
+.libraryIdentity {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.libraryIdentity {
+  display: block;
+  margin-top: 3px;
+}
+
+.libraryList {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+}
+
+.libraryError {
+  padding: 10px 14px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--eb-danger);
+}
+
+.adRow {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  margin: 1px 6px;
+  cursor: pointer;
+  border-radius: var(--eb-radius);
+}
+
+.adRow:hover {
+  background: var(--eb-hover);
+}
+
+.adRowActive,
+.adRowActive:hover {
+  background: var(--eb-accent-soft);
+  box-shadow: inset 2px 0 0 var(--eb-accent);
+}
+
+.adRowDisabled {
+  opacity: 0.6;
+}
+
+.adGrip {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--eb-faint);
+  letter-spacing: -1px;
+  cursor: grab;
+}
+
+.adRowBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.adRowTitleLine {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.adRowTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--eb-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adRowDisabled .adRowTitle {
+  color: var(--eb-faint);
+}
+
+.adOff {
+  flex: none;
+  padding: 0 5px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--eb-border);
+  border-radius: 4px;
+}
+
+.adRowTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.adRowTag {
+  padding: 1px 7px;
+  font-size: 10.5px;
+  color: var(--eb-dim);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 5px;
+}
+
+.adRowActions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.adAction {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 6px;
+}
+
+.adAction:hover {
+  color: var(--eb-dim);
+  background: var(--eb-hover);
+}
+
+.adDelete:hover {
+  color: var(--eb-danger);
+}
+
+.libraryFoot {
+  padding: 10px 12px;
+  border-top: 1px solid var(--eb-border);
+}
+
+.newAd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: 1px dashed color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+}
+
+.newAd:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Editor pane ──────────────────────────────────────────────────────── */
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.paneHead {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.paneTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--eb-heading);
+}
+
+.disabledToggle {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.disabledText {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+}
+
+.disabledLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.disabledHint {
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+.editorBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 13px;
+  min-height: 0;
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+}
+
+.field {
+  flex: none;
+}
+
+.fieldHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.fieldLabel {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.fieldNote {
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+.fieldInput {
+  width: 100%;
+  min-height: 120px;
+  padding: 11px 13px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--eb-text);
+  resize: vertical;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.fieldInput:focus {
+  border-color: color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  outline: none;
+  box-shadow: 0 0 0 3px var(--eb-accent-soft);
+}
+
+.fieldHint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--eb-faint);
+}
+
+.fieldHint code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  color: var(--eb-dim);
+}
+
+/* ── Byte counter (COMPONENTS §2c) ────────────────────────────────────── */
+
+.counter {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.counterTrack {
+  display: inline-block;
+  flex: none;
+  width: 54px;
+  height: 4px;
+  overflow: hidden;
+  background: var(--eb-bg);
+  border-radius: 3px;
+}
+
+.counterFill {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: 3px;
+}
+
+.counter[data-level="amber"] .counterFill {
+  background: var(--eb-warn);
+}
+
+.counter[data-level="red"] .counterFill,
+.counter[data-level="cap"] .counterFill {
+  background: var(--eb-danger);
+}
+
+.counterCount {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+.counter[data-level="amber"] .counterCount {
+  color: var(--eb-warn);
+}
+
+.counter[data-level="red"] .counterCount,
+.counter[data-level="cap"] .counterCount {
+  color: var(--eb-danger);
+}
+
+.counterCap {
+  padding: 1px 5px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--eb-danger);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: color-mix(in srgb, var(--eb-danger) 15%, var(--eb-bg));
+  border: 1px solid color-mix(in srgb, var(--eb-danger) 40%, var(--eb-bg));
+  border-radius: 4px;
+}
+
+/* ── Lossiness strip (COMPONENTS §2d) ─────────────────────────────────── */
+
+.lossiness {
+  flex: none;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--eb-warn) 10%, var(--eb-side));
+  border: 1px solid color-mix(in srgb, var(--eb-warn) 38%, var(--eb-side));
+  border-radius: var(--eb-radius);
+}
+
+.lossinessHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 11px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-warn);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: color-mix(in srgb, var(--eb-warn) 16%, var(--eb-side));
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--eb-warn) 38%, var(--eb-side));
+}
+
+.lossinessNote {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--eb-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.lossinessRow {
+  display: flex;
+  gap: 9px;
+  padding: 8px 11px;
+}
+
+.lossinessRow + .lossinessRow,
+.lossinessMore {
+  border-top: 1px solid color-mix(in srgb, var(--eb-warn) 22%, var(--eb-side));
+}
+
+.lossinessGlyph {
+  flex: none;
+  margin-top: 1px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--eb-warn);
+}
+
+.lossinessText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lossinessLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.lossinessCopy {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--eb-dim);
+}
+
+.lossinessSnippet {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 7px;
+  margin-top: 3px;
+  overflow: hidden;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 5px;
+}
+
+.lossinessLine {
+  flex: none;
+  margin-top: 2px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.lossinessMore {
+  padding: 6px 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--eb-warn);
+}
+
+/* ── Preview ──────────────────────────────────────────────────────────── */
+
+.preview {
+  flex: none;
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.previewHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--eb-side2);
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.previewNote {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.previewBody {
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--eb-text);
+}
+
+/* ── Tags ─────────────────────────────────────────────────────────────── */
+
+.tagField {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.tagChip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 2px 5px 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--eb-dim);
+  white-space: nowrap;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: 5px;
+}
+
+.tagRemove {
+  padding: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  opacity: 0.7;
+}
+
+.tagRemove:hover {
+  color: var(--eb-danger);
+  opacity: 1;
+}
+
+.tagInput {
+  flex: 1;
+  min-width: 80px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--eb-text);
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.tagInput::placeholder {
+  color: var(--eb-faint);
+}
+
+/* ── Conflict banner (COMPONENTS §2f) ─────────────────────────────────── */
+
+.conflict {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--eb-danger) 14%, var(--eb-side));
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--eb-danger) 40%, var(--eb-side));
+}
+
+.conflictBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conflictBody strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.conflictBody span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--eb-dim);
+}
+
+.conflictReload {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  cursor: pointer;
+  background: var(--eb-danger);
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+/* ── Footer + buttons ─────────────────────────────────────────────────── */
+
+.editorFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--eb-side2);
+  border-top: 1px solid var(--eb-border);
+}
+
+.dirtyState {
+  font-size: 11.5px;
+  color: var(--eb-faint);
+}
+
+.footerButtons {
+  display: flex;
+  gap: 9px;
+}
+
+.button,
+.buttonPrimary {
+  height: 34px;
+  padding: 0 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--eb-radius);
+}
+
+.button {
+  color: var(--eb-text);
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+}
+
+.buttonPrimary {
+  font-weight: 700;
+  color: var(--eb-bg);
+  background: var(--eb-accent);
+  border: none;
+}
+
+.buttonPrimary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Empty state (COMPONENTS §2a) ─────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.emptyGlyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 22px;
+  color: var(--eb-faint);
+  border: 1px dashed var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--eb-heading);
+}
+
+.emptyCopy {
+  max-width: 320px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--eb-faint);
+}

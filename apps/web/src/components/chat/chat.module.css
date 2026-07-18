@@ -1548,6 +1548,14 @@
   background: var(--eb-accent-soft);
 }
 
+/* Hairline between the format cluster and the Ad Center entry (M10). */
+.hintDivider {
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  background: var(--eb-border);
+}
+
 .formatSelect {
   max-width: 76px;
   padding: 2px 4px;
