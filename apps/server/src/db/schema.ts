@@ -345,3 +345,24 @@ export const characterNotes = pgTable(
   },
   (t) => [primaryKey({ columns: [t.identityId, t.characterLower] })],
 );
+
+// Per-identity roleplay-ad library (M10) — the Horizon-faithful shape:
+// content + tags + disabled, ordered by sortOrder (array position in the
+// PUT). Tags are local campaign selectors; channel targeting is post-time
+// state and deliberately never stored here.
+export const ads = pgTable(
+  "ads",
+  {
+    id: uuid().primaryKey().default(uuidv7),
+    identityId: uuid()
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    /** Markdown; translated to BBCode at post time. */
+    content: text().notNull(),
+    tags: jsonb().$type<string[]>().notNull().default([]),
+    disabled: boolean().notNull().default(false),
+    sortOrder: integer().notNull().default(0),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ads_identity_idx").on(t.identityId)],
+);

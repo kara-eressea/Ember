@@ -85,6 +85,13 @@
       "when": 1784333237122,
       "tag": "0011_m9-credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784367379457,
+      "tag": "0012_m10-ads",
+      "breakpoints": true
     }
   ]
 }
