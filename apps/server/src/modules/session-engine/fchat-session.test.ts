@@ -884,16 +884,32 @@ describe("FchatSession against fchat-sim", () => {
 
     // A fresh connection resets F-Chat to plain "online" — the session
     // re-sends its chosen status right after identifying, and the sim's
-    // broadcast of that STA is the proof it went out.
+    // broadcast of that STA is the proof it went out. The listener attaches
+    // BEFORE waiting for online: the restore fires immediately after IDN,
+    // and on a starved runner its broadcast can land before an
+    // attach-after-online listener exists (CI flake, M9 step 4). Gated on
+    // the new connection's own NLN so a still-queued duplicate of the
+    // pre-disconnect STA can never satisfy it.
     sim.disconnect(CHARACTER);
-    await waitForStatus(session, "online", { next: true });
-    const restored = await waitForCommand(
+    let reconnected = false;
+    const restoredEcho = waitForCommand(
       session,
-      (c) =>
-        c.cmd === "STA" &&
-        c.payload.character === CHARACTER &&
-        c.payload.status === "away",
+      (c) => {
+        if (c.cmd === "NLN" && c.payload.identity === CHARACTER) {
+          reconnected = true;
+          return false;
+        }
+        return (
+          reconnected &&
+          c.cmd === "STA" &&
+          c.payload.character === CHARACTER &&
+          c.payload.status === "away"
+        );
+      },
+      15_000,
     );
+    await waitForStatus(session, "online", { next: true });
+    const restored = await restoredEcho;
     expect(restored.cmd === "STA" && restored.payload.statusmsg).toBe(
       "brb tea",
     );
