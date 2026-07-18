@@ -128,12 +128,19 @@ Per decisions.md §15 (amending §3; custody resolved disclosure-only):
 
 ### 8. Verification suite + docs
 
-- E2E: search round-trip incl. jump-to-context; credential opt-in →
-  restart → auto-reconnect (the sim + spawned-server harness can restart
-  the server process); quick-switcher navigation; light-theme toggle
-  persistence; toolbar insertions.
+- E2E: search round-trip incl. jump-to-context; quick-switcher
+  navigation; light-theme toggle; toolbar insertions; status recents.
+- Credential restart-resume: verified by a **two-server-process
+  integration test** (credentials.test.ts boots a second `buildApp` over
+  the same database and polls the resumed session online). A
+  browser-level restart E2E was considered and rejected at build time:
+  the E2E harness shares one spawned server across all parallel specs,
+  so killing it mid-suite would destabilize every other spec for
+  coverage the integration test already provides at the real process
+  boundary.
 - Docs: self-hosting.md (CREDENTIALS_KEY, backup/restore interaction),
-  decisions.md cross-check, tracker upkeep.
+  decisions.md cross-check (§10 light-theme note, §15 shipped notes),
+  tracker upkeep.
 
 ## Parked (not in M9)
 
