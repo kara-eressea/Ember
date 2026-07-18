@@ -1,6 +1,6 @@
 # Dev-only services. Apps run on the host (HMR); this provides Postgres.
-# fchat-sim runs on the host too for now (`pnpm --filter @emberchat/fchat-sim start`);
-# it joins this file when the prod image exists (M1 step 11).
+# fchat-sim also runs on the host (`pnpm --filter @emberchat/fchat-sim start`);
+# the containerized sim exists only as the prod compose file's smoke profile.
 #
 # Credentials below are local-dev fixtures, never used in production.
 services:

@@ -96,19 +96,23 @@ const configSchema = z.object({
    * This protects backups, NOT a full-box compromise — the desktop-client
    * guarantee, stated plainly in docs/self-hosting.md.
    */
-  CREDENTIALS_KEY: z
-    .string()
-    .refine(
-      (key) => {
-        try {
-          return Buffer.from(key, "base64url").length === 32;
-        } catch {
-          return false;
-        }
-      },
-      { message: "CREDENTIALS_KEY must be 32 bytes of base64url" },
-    )
-    .optional(),
+  CREDENTIALS_KEY: z.preprocess(
+    // docker-compose passes `${CREDENTIALS_KEY:-}` — empty means unset.
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .refine(
+        (key) => {
+          try {
+            return Buffer.from(key, "base64url").length === 32;
+          } catch {
+            return false;
+          }
+        },
+        { message: "CREDENTIALS_KEY must be 32 bytes of base64url" },
+      )
+      .optional(),
+  ),
   /**
    * Disconnect a session from F-Chat after this many hours with zero
    * attached devices (0 = never; decisions.md §15). Courtesy toward

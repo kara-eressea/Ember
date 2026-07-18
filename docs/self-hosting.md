@@ -36,8 +36,8 @@ $EDITOR .env
 docker compose up -d
 
 # 4. Create your account (registration is disabled by design — the admin
-#    CLI is how accounts are born; it prompts nothing, the password arrives
-#    on stdin so it never touches your shell history or process list).
+#    CLI is how accounts are born; the password arrives on stdin so it
+#    never appears in the process list).
 docker compose exec -T server node apps/server/dist/cli/admin.js \
   create-user --email you@example.com --username you --password-stdin <<< 'your app password'
 ```
@@ -53,8 +53,10 @@ you@example.com --password-stdin`, same shape.
 
 > The `<<<` herestring above writes the password into your shell history.
 > For a one-off it's usually fine on a machine only you use; to avoid it,
-> pipe from a file you delete after (`--password-stdin < pw.txt`) or drop
-> the flag to be prompted interactively.
+> pipe from a file you delete after (`--password-stdin < pw.txt`), or run
+> the command with `--password-stdin` and no redirection at all — type the
+> password and press Ctrl-D. (There is no interactive prompt; without one
+> of the password flags the CLI exits with an error.)
 
 By default the server binds loopback only (`BIND_ADDRESS=127.0.0.1`), so
 nothing is internet-reachable until you put a reverse proxy in front.
@@ -196,9 +198,10 @@ docker compose pull server && docker compose up -d server
 Pin `IMAGE_TAG=vX.Y` if you want bugfixes without feature jumps, or an
 exact `vX.Y.Z` if you want nothing to change without your say-so. The app
 shows its version (and a quiet update hint) under Preferences → General.
-Heads-up: **every server restart logs your characters out of F-Chat** until
-you re-enter your F-List password — credentials live only in memory
-(that's the point) — so upgrade at a quiet moment.
+Heads-up: unless you've set `CREDENTIALS_KEY` and opted in to "Remember on
+this server", **every server restart logs your characters out of F-Chat**
+until you re-enter your F-List password — credentials live only in memory
+by default — so upgrade at a quiet moment.
 
 ## Backups & the restore drill
 
@@ -261,5 +264,7 @@ Replace `image:` with `build: { context: ., target: runtime }` in
   `APP_BASE_URL`; fix the URL scheme/host in `.env`.
 - **Locked out of the app** — `reset-password` via the admin CLI (Quick
   start step 4).
-- **Everything logged out after a restart** — expected; re-enter your
-  F-List password (credentials are memory-only by design).
+- **Everything logged out after a restart** — expected with the default
+  memory-only credential model; re-enter your F-List password. If you want
+  restarts to reconnect on their own, set `CREDENTIALS_KEY` and opt in to
+  "Remember on this server" (see Configuration reference).
