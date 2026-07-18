@@ -4,7 +4,7 @@
 // the client can prepend them directly.
 
 import { Readable } from "node:stream";
-import { and, desc, eq, gt, lt } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -15,6 +15,7 @@ import {
   identities,
   messages,
 } from "../../db/schema.js";
+import { escapeLike, parseSearchQuery } from "./search.js";
 
 const conversationResponse = z.object({
   id: z.string(),
@@ -38,6 +39,19 @@ const messageResponse = z.object({
 });
 
 const errorResponse = z.object({ error: z.string() });
+
+/** One in-log search hit: the message plus enough conversation context to
+ * label the row and jump to it. */
+const searchResultResponse = z.object({
+  id: z.number(),
+  convId: z.string(),
+  conversationTitle: z.string(),
+  conversationKind: z.enum(["channel", "pm"]),
+  senderCharacter: z.string(),
+  kind: z.enum(["msg", "lrp", "rll", "sys", "pm"]),
+  bbcode: z.string(),
+  createdAt: z.date(),
+});
 
 export interface HistoryRoutesOptions {
   db: Db;
@@ -100,6 +114,98 @@ export async function historyRoutes(
         .where(eq(conversations.identityId, identity.id))
         .orderBy(conversations.createdAt);
       return reply.send({ conversations: rows });
+    },
+  );
+
+  // In-log search (M9, milestone-9 §2): ILIKE over the identity's own
+  // messages, newest first, cursor-paged; `from:` / `before:` / `after:`
+  // filters parsed server-side (search.ts). Rate-limited — an unindexed
+  // substring scan is the one read here that costs real work.
+  app.get(
+    "/:identityId/search",
+    {
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      schema: {
+        params: z.object({ identityId: z.uuid() }),
+        querystring: z.object({
+          q: z.string().min(1).max(200),
+          /** Restrict to one conversation (the "current" scope). */
+          convId: z.uuid().optional(),
+          /** Return results older than this message id. */
+          cursor: z.coerce.number().int().positive().optional(),
+          limit: z.coerce.number().int().min(1).max(50).default(25),
+        }),
+        response: {
+          200: z.object({
+            results: z.array(searchResultResponse),
+            /** Present when another page exists. */
+            nextCursor: z.number().optional(),
+          }),
+          400: errorResponse,
+          404: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await findOwnedIdentity(
+        request.params.identityId,
+        request.user.sub,
+      );
+      if (!identity) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      const { q, convId, cursor, limit } = request.query;
+      const parsed = parseSearchQuery(q);
+      if (parsed.text === "" && parsed.from === undefined) {
+        return reply
+          .code(400)
+          .send({ error: "Search needs some text or a from: filter" });
+      }
+      const conditions = [eq(conversations.identityId, identity.id)];
+      if (convId !== undefined) {
+        conditions.push(eq(messages.conversationId, convId));
+      }
+      if (parsed.text !== "") {
+        conditions.push(ilike(messages.bbcode, `%${escapeLike(parsed.text)}%`));
+      }
+      if (parsed.from !== undefined) {
+        conditions.push(
+          eq(
+            sql`lower(${messages.senderCharacter})`,
+            parsed.from.toLowerCase(),
+          ),
+        );
+      }
+      if (parsed.beforeMs !== undefined) {
+        conditions.push(lt(messages.createdAt, new Date(parsed.beforeMs)));
+      }
+      if (parsed.afterMs !== undefined) {
+        conditions.push(gte(messages.createdAt, new Date(parsed.afterMs)));
+      }
+      if (cursor !== undefined) {
+        conditions.push(lt(messages.id, cursor));
+      }
+      const rows = await db
+        .select({
+          id: messages.id,
+          convId: messages.conversationId,
+          conversationTitle: conversations.title,
+          conversationKind: conversations.kind,
+          senderCharacter: messages.senderCharacter,
+          kind: messages.kind,
+          bbcode: messages.bbcode,
+          createdAt: messages.createdAt,
+        })
+        .from(messages)
+        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+        .where(and(...conditions))
+        .orderBy(desc(messages.id))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      return reply.send({
+        results: page,
+        ...(rows.length > limit ? { nextCursor: page.at(-1)!.id } : {}),
+      });
     },
   );
 
