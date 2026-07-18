@@ -78,8 +78,21 @@ export class DetachedAway {
    * replaced. Restore only overwrites our own work: if the status moved
    * since (another client, a manual STA racing the attach), it stays.
    */
+  /**
+   * Seed the detachment clock from persisted state (boot resume,
+   * decisions.md §15): the ceiling counts from the pre-restart detach
+   * where known, not from the restart.
+   */
+  seedDetachment(identityId: string, sinceMs: number): void {
+    if (!this.#detachedSince.has(identityId)) {
+      this.#detachedSince.set(identityId, sinceMs);
+    }
+  }
+
   onAttach(identityId: string): void {
-    this.#detachedSince.delete(identityId);
+    if (this.#detachedSince.delete(identityId)) {
+      this.#persistDetachedAt(identityId, null);
+    }
     const remembered = this.#applied.get(identityId);
     if (!remembered) {
       return;
@@ -146,6 +159,9 @@ export class DetachedAway {
         const since = this.#detachedSince.get(identityId);
         if (since === undefined) {
           this.#detachedSince.set(identityId, now);
+          // Persisted so the ceiling and boot resume survive restarts
+          // (§15) — one write per detachment, not per sweep.
+          this.#persistDetachedAt(identityId, new Date(now));
           continue;
         }
         // Detached-disconnect ceiling (decisions.md §15): a session in
@@ -228,6 +244,20 @@ export class DetachedAway {
     } finally {
       this.#sweeping = false;
     }
+  }
+
+  /** Fire-and-forget lastDetachedAt write; a miss self-heals next sweep. */
+  #persistDetachedAt(identityId: string, value: Date | null): void {
+    this.#options.db
+      .update(identities)
+      .set({ lastDetachedAt: value })
+      .where(eq(identities.id, identityId))
+      .catch((error: unknown) => {
+        this.#options.logger.warn(
+          { err: error, identityId },
+          "lastDetachedAt persist failed",
+        );
+      });
   }
 
   /** Owning users' resolved prefs for a batch of identities, one query. */
