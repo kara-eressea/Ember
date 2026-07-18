@@ -42,7 +42,7 @@ exist (project-description.md):
 | Channel browser (official/open, filter, create) | ✅ M6 |
 | Pin/close/unread per conversation | ✅ M2/M3 (pinning doubles as the reconnect-rejoin set) |
 | Recent conversations | ≠ design — conversations are server-persisted and never vanish from the sidebar unless removed; "recent" is the DM list itself |
-| Channel modes chat/ads/both + ad countdown | ✅ M6 (mode gating); ⛔ per-channel ad countdown timer — the composer surfaces the flood refusal instead; revisit if users ask |
+| Channel modes chat/ads/both + ad countdown | ✅ M6 (mode gating) + **M10** (per-channel "next allowed in Xm" in the post flow via the `ads.cooldowns` query; the composer still surfaces flood refusals in friendly copy) |
 | In-tab message search | 📅 M8 (client polish; server history makes this a REST query, arguably better than chat3's buffer-only search) |
 | Tab settings (per-conversation overrides) | ≠ design — per-conversation mute exists (M5); finer per-tab overrides deferred until asked for |
 | Typing indicators (PMs) | ✅ M4 (both directions) |
@@ -56,7 +56,7 @@ exist (project-description.md):
 
 | chat3client feature | EmberChat |
 |---|---|
-| **Character search (FKS)** — kinks/genders/orientations/languages/roles filters | ❓ **decision 1** |
+| **Character search (FKS)** — kinks/genders/orientations/languages/roles filters | ✅ **M10** (full filter set, client-side name filter over the returned names, cache-only match chips, saved searches with a "N new" rerun diff) |
 | **In-app profile viewer** (character-data API: infotags, kinks, images, guestbook, memos) | ❓ **decision 2** — today profile links open f-list.net in a new tab (deliberate M6 choice) |
 | Memo dialog | folds into decision 2 (same API family) |
 | Report character from profile | folds into decision 4 (SFC) |
@@ -80,7 +80,7 @@ exist (project-description.md):
 | Right-click user menu (profile, PM, bookmark, ignore, memo, report, kick) | ✅ M6 (memo/report per decisions 2/4) |
 | Friend request send/accept/deny/cancel | ✅ M6 |
 | Ignore list (/ignore etc. + anti-circumvention notify) | ✅ M3 (IGN notify included) |
-| Hide ads from specific users | ≠ design — EmberChat has global + per-channel ad visibility (M6); per-user hiding stacks on ignore; revisit on demand |
+| Hide ads from specific users | ≠ design — EmberChat has a view default + per-channel Chat/Ads/Both selector (M6 boolean → M10 tri-state); per-user hiding stacks on ignore; parked in the M11 pool |
 | Click-user behavior setting | ⛔ — left-click profile, right-click menu, Message item for PMs |
 
 ### Logs and settings
@@ -128,7 +128,8 @@ messages on the user's behalf — same caution.
 1. **FKS character search — skipped for now, revisit later.** No in-app
    search for v1.0; recorded on the post-v1.0 wishlist in `milestones.md`.
    *(Superseded 2026-07-16: scoped into **M10**,
-   `milestone-10-ads-and-search.md`.)*
+   `milestone-10-ads-and-search.md`; **shipped 2026-07-18** with M10
+   step 9.)*
 2. **In-app profile viewer — eventually, but not v1.0.** Website links
    stay for now; the viewer (character-data + mapping-list, memos riding
    along, <200 character-data requests/hour budget) joins the post-v1.0

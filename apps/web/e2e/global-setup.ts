@@ -72,7 +72,13 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         { id: 9002, extension: "jpg", description: "A portrait" },
         { id: 9003, extension: "png" },
       ],
+      // M10 fks E2E: Nyx (always-online NPC) is the first search hit for
+      // "Campfire Stories" (id 501, in the sim's canned vocabulary).
+      kinks: { "501": "fave" },
     });
+    // Kolvarr is offline until m10.spec connects him — the saved-search
+    // rerun then finds one NEW character and the badge reads "1 new".
+    sim.setCharacterProfile("Kolvarr", { kinks: { "501": "yes" } });
     sim.setGuestbook(
       "Nyx Firemane",
       Array.from({ length: 12 }, (_, index) => ({

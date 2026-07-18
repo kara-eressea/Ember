@@ -106,6 +106,12 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Ivy Bramblewood", "Moss Tinker"],
     },
+    // Reserved for the M10 ads+search E2E (same parallelism rule); Kolvarr
+    // is its raw-SimClient "other side" (Aurora Den op, search target).
+    "vesna@example.test": {
+      password: "hunter2",
+      characters: ["Vesna Marlowe", "Kolvarr"],
+    },
     // Reserved for the M6 op-tooling E2E (same parallelism rule); Alder Fen
     // (Potting Shed owner) and Sorrel Vane (moderation target) are its
     // raw-SimClient "other sides".
@@ -193,6 +199,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "both",
       description: "Warm glass and growing things.",
       oplist: ["Moss Tinker"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the M10 ads+search E2E: a "both"-mode room with the
+    // community [ads: N min] cadence token in its description. Hidden and
+    // NPC-free for the same isolation reasons as the Greenhouse.
+    {
+      name: "ADH-m10aurora00dd11ee22ff",
+      title: "Aurora Den",
+      mode: "both",
+      description: "Snowed-in scenes under green light. [ads: 15 min] please.",
+      oplist: ["Kolvarr"],
       npcs: [],
       listed: false,
     },

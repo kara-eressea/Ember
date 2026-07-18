@@ -193,9 +193,17 @@ export function AdCenter({
     }
     const saved = await putList(list);
     if (saved) {
+      // Reselect from the RESPONSE list — the closure's `ads` is the
+      // pre-save render's value (empty on the very first save).
       const index = Math.min(savedIndex, saved.length - 1);
-      if (index >= 0) {
-        select(index);
+      const ad = index >= 0 ? saved[index] : undefined;
+      if (ad) {
+        const next = draftOf(ad);
+        setSelected(index);
+        setDraft(next);
+        setBaseline(next);
+        setTagText("");
+        setError(undefined);
       } else {
         setSelected(undefined);
       }
