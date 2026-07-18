@@ -203,7 +203,7 @@ it("boot resume reconnects autoConnect identities; the ceiling gates it", async 
   }
 });
 
-it("without CREDENTIALS_KEY the feature is hidden and the toggle refuses", async () => {
+it("without CREDENTIALS_KEY: enabling refuses, but a stored row stays visible and deletable", async () => {
   const keyless = await makeApp({ CREDENTIALS_KEY: "" });
   try {
     const list = await keyless.inject({
@@ -211,15 +211,38 @@ it("without CREDENTIALS_KEY the feature is hidden and the toggle refuses", async
       url: "/api/flist-accounts",
       headers: auth(),
     });
-    expect(list.json<{ canRemember: boolean }>().canRemember).toBe(false);
+    const body = list.json<{
+      canRemember: boolean;
+      accounts: { id: string; remembered: boolean }[];
+    }>();
+    expect(body.canRemember).toBe(false);
+    // The row stored while the key existed is not silently hidden (audit).
+    expect(
+      body.accounts.find((account) => account.id === accountId)?.remembered,
+    ).toBe(true);
 
-    const put = await keyless.inject({
+    const enable = await keyless.inject({
       method: "PUT",
       url: `/api/flist-accounts/${accountId}/remember`,
       headers: auth(),
       payload: { remember: true },
     });
-    expect(put.statusCode).toBe(409);
+    expect(enable.statusCode).toBe(409);
+
+    // Deleting needs no key — the ciphertext is the user's to revoke.
+    const disable = await keyless.inject({
+      method: "PUT",
+      url: `/api/flist-accounts/${accountId}/remember`,
+      headers: auth(),
+      payload: { remember: false },
+    });
+    expect(disable.statusCode).toBe(200);
+    expect(
+      await db
+        .select()
+        .from(flistCredentials)
+        .where(eq(flistCredentials.accountId, accountId)),
+    ).toHaveLength(0);
   } finally {
     await keyless.close();
   }

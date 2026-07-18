@@ -34,13 +34,31 @@ export async function resumeStoredSessions(
   deps: BootResumeDeps,
 ): Promise<void> {
   const now = deps.now ?? Date.now;
+  if (!deps.store.enabled) {
+    // The promised loud refusal (decisions.md §15): rows left behind by a
+    // since-removed CREDENTIALS_KEY must never be silently ignored — the
+    // admin believes storage is off while ciphertext still rides every
+    // backup. Counting needs no key.
+    const orphaned = await deps.store.storedAccountIds();
+    if (orphaned.size > 0) {
+      deps.logger.error(
+        { count: orphaned.size },
+        "flist_credentials holds stored rows but CREDENTIALS_KEY is unset — they are unusable and still ride backups; users can delete them via the Forget toggle, or restore the key",
+      );
+    }
+    return;
+  }
   const stored = await deps.store.loadAll();
   if (stored.length === 0) {
     return;
   }
   const byAccount = new Map(stored.map((entry) => [entry.accountId, entry]));
   for (const entry of stored) {
-    deps.vault.set(entry.accountId, entry.password);
+    // A concurrent unlock may already have vaulted a FRESHER password
+    // (changed on F-List since it was stored) — never downgrade it (audit).
+    if (!deps.vault.has(entry.accountId)) {
+      deps.vault.set(entry.accountId, entry.password);
+    }
   }
   const wanted = await deps.db
     .select({

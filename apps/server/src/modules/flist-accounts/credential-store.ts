@@ -1,9 +1,10 @@
 // Opt-in at-rest credential storage (M9, decisions.md §15). AES-256-GCM
 // under the env-file CREDENTIALS_KEY; the blob is base64(iv ‖ tag ‖ ct).
-// No key configured → the store is disabled: nothing saves, nothing loads,
-// and any rows a previous configuration left behind are refused loudly at
-// boot rather than silently ignored. Plaintext passwords still never touch
-// logs or error paths — the vault hygiene rules apply here unchanged.
+// No key configured → the store is disabled: nothing saves, nothing loads;
+// boot-resume.ts counts any rows a previous configuration left behind and
+// reports them loudly (they still ride backups), and the Forget toggle can
+// delete them without a key. Plaintext passwords still never touch logs or
+// error paths — the vault hygiene rules apply here unchanged.
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { eq, sql } from "drizzle-orm";

@@ -40,14 +40,17 @@ export function SearchPanel({
 
   useEffect(() => {
     inputRef.current?.focus();
+    // Capture + stopPropagation (the HelpPanel pattern): one Escape closes
+    // one layer, not this panel plus whatever sits above it (M9 audit).
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        event.stopPropagation();
         onClose();
       }
     }
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
     };
   }, [onClose]);
 
@@ -159,12 +162,24 @@ export function SearchPanel({
           <div className={styles.searchNote}>No matches.</div>
         )}
         {results?.map((result) => (
-          <button
+          // A div, not a <button>: the RichText snippet renders its own
+          // buttons (link chips, #channel, [user]) and nesting them in a
+          // button is invalid HTML with double-action clicks (audit). The
+          // snippet is inert (CSS pointer-events: none) — the row is the
+          // one action.
+          <div
             key={result.id}
-            type="button"
+            role="button"
+            tabIndex={0}
             className={styles.searchHit}
             onClick={() => {
               jump(result);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                jump(result);
+              }
             }}
           >
             <span className={styles.searchHitMeta}>
@@ -183,7 +198,7 @@ export function SearchPanel({
             <span className={styles.searchHitBody}>
               <RichText bbcode={result.bbcode} />
             </span>
-          </button>
+          </div>
         ))}
         {nextCursor !== undefined && (
           <button

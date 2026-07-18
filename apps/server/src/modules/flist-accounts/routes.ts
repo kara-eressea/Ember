@@ -118,9 +118,9 @@ export async function flistAccountsRoutes(
         .select()
         .from(flistAccounts)
         .where(eq(flistAccounts.userId, request.user.sub));
-      const stored = store.enabled
-        ? await store.storedAccountIds()
-        : new Set<string>();
+      // Always queried, even key-less: a row stored under a since-removed
+      // key must stay visible (and Forget-able) — never silently hidden.
+      const stored = await store.storedAccountIds();
       return {
         accounts: rows.map((row) => present(row, stored.has(row.id))),
         canRemember: store.enabled,
@@ -309,13 +309,16 @@ export async function flistAccountsRoutes(
       if (!row) {
         return reply.code(404).send({ error: "Account not found" });
       }
-      if (!store.enabled) {
-        return reply.code(409).send({
-          error:
-            "This server has no CREDENTIALS_KEY configured — remembering is disabled",
-        });
-      }
       if (request.body.remember) {
+        // Only ENABLING needs the key; deleting a stored row must work on
+        // a keyless server too — a user who opted in before the admin
+        // removed CREDENTIALS_KEY still owns that ciphertext (audit).
+        if (!store.enabled) {
+          return reply.code(409).send({
+            error:
+              "This server has no CREDENTIALS_KEY configured — remembering is disabled",
+          });
+        }
         const password = vault.get(row.id);
         if (password === undefined) {
           return reply

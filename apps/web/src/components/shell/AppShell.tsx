@@ -93,7 +93,12 @@ export function AppShell() {
   // Ctrl/Cmd+K toggles the quick-switcher (M9) from anywhere in the shell.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "k"
+      ) {
         event.preventDefault();
         const ui = useUiStore.getState();
         ui.setSwitcherOpen(!ui.switcherOpen);

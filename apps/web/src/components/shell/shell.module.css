@@ -601,7 +601,10 @@
 .switcherOverlay {
   position: fixed;
   inset: 0;
-  z-index: 44;
+  /* Above every other layer (profile modal 45, previews 46/47, menus
+     50/51): the switcher is user-invoked and must never open invisibly
+     beneath a modal while stealing focus (M9 audit). */
+  z-index: 52;
   background: rgb(0 0 0 / 25%);
 }
 
@@ -609,7 +612,7 @@
   position: fixed;
   top: 18vh;
   left: 50%;
-  z-index: 45;
+  z-index: 53;
   display: flex;
   flex-direction: column;
   width: min(480px, calc(100vw - 32px));

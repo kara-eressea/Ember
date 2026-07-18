@@ -84,6 +84,24 @@ const EMPTY_BUFFER: ConvBuffer = {
 
 let presenceCounter = 0;
 
+/** Per-conversation buffer epochs (M9 audit): every wholesale buffer
+ * transition (jump, back-to-present, catch-up reset) bumps the epoch, and
+ * every async load captures it at start and refuses to patch a buffer
+ * whose epoch moved — a stale response landing after a transition would
+ * otherwise stitch disjoint history pages into one buffer with a silent,
+ * unreachable hole. */
+const epochs = new Map<string, number>();
+
+function epochOf(convId: string): number {
+  return epochs.get(convId) ?? 0;
+}
+
+function bumpEpoch(convId: string): number {
+  const next = epochOf(convId) + 1;
+  epochs.set(convId, next);
+  return next;
+}
+
 /** Merge ascending & dedupe by id, then trim to the window from the front. */
 function merge(existing: MessageDto[], incoming: MessageDto[]): MessageDto[] {
   const byId = new Map<number, MessageDto>();
@@ -140,6 +158,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     },
 
     resetTo(convId, messages) {
+      bumpEpoch(convId);
       patch(convId, (buffer) => ({
         ...buffer,
         messages: messages.slice(-BUFFER_WINDOW),
@@ -147,9 +166,13 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         // scroll-up backfill fetch it contiguously via REST.
         hasMoreBefore: true,
         backfilled: false,
-        // A catch-up replay IS the live tail — any detached view is over.
+        // A catch-up replay IS the live tail — any detached view is over,
+        // and a jump target pointing into the destroyed window with it.
         detachedTail: false,
       }));
+      if (get().jumpTarget?.convId === convId) {
+        set({ jumpTarget: undefined });
+      }
     },
 
     appendPresence(convId, kind, character) {
@@ -171,9 +194,13 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       if (buffer?.backfilled) {
         return;
       }
+      const epoch = epochOf(convId);
       const page = await api.listMessages(identityId, convId, {
         limit: PAGE_SIZE,
       });
+      if (epochOf(convId) !== epoch) {
+        return; // the buffer transitioned while we fetched — stale page
+      }
       patch(convId, (current) => ({
         ...current,
         // Live events may have raced the fetch — merge, don't replace.
@@ -190,11 +217,15 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         return 0;
       }
       patch(convId, (current) => ({ ...current, loadingOlder: true }));
+      const epoch = epochOf(convId);
       try {
         const page = await api.listMessages(identityId, convId, {
           before: oldest.id,
           limit: PAGE_SIZE,
         });
+        if (epochOf(convId) !== epoch) {
+          return 0; // the window this page extends no longer exists
+        }
         patch(convId, (current) => ({
           ...current,
           messages: merge(current.messages, page.messages),
@@ -208,8 +239,10 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
 
     async jumpTo(identityId, convId, messageId) {
       // Mark first, synchronously: a concurrent mount backfill must see
-      // backfilled=true and skip, or its latest-page merge would race the
-      // history page in.
+      // backfilled=true and skip; the epoch bump invalidates any load
+      // already awaiting its response (audit HIGH — a stale page landing
+      // after a later transition would stitch an unreachable hole).
+      const epoch = bumpEpoch(convId);
       patch(convId, (buffer) => ({
         ...buffer,
         messages: [],
@@ -223,6 +256,9 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         before: messageId + 1,
         limit: PAGE_SIZE,
       });
+      if (epochOf(convId) !== epoch) {
+        return; // superseded by back-to-present / another jump / a reset
+      }
       patch(convId, (buffer) => ({
         ...buffer,
         messages: page.messages,
@@ -231,6 +267,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     },
 
     async backToPresent(identityId, convId) {
+      bumpEpoch(convId);
       patch(convId, (buffer) => ({
         ...buffer,
         messages: [],
@@ -243,6 +280,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     },
 
     reset() {
+      epochs.clear();
       set({ buffers: {}, jumpTarget: undefined });
     },
   };
@@ -253,7 +291,14 @@ export function resumeCursorsFor(convIds: string[]): Record<string, number> {
   const { buffers } = useMessagesStore.getState();
   const cursors: Record<string, number> = {};
   for (const convId of convIds) {
-    const newest = buffers[convId]?.messages.at(-1);
+    const buffer = buffers[convId];
+    // A detached history view's newest row is an OLD message — advertising
+    // it would trigger a huge replay or a gap reset mid-read (audit).
+    // No cursor = the server treats the conv as fresh, which is truthful.
+    if (buffer?.detachedTail) {
+      continue;
+    }
+    const newest = buffer?.messages.at(-1);
     if (newest) {
       cursors[convId] = newest.id;
     }

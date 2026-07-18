@@ -124,6 +124,16 @@ export function MessageLog({
   // frame catches row-measurement adjustments to the total size.
   const lastKey = rows.at(-1)?.key;
   const detachedTail = buffer?.detachedTail === true;
+  // Leaving the detached history view means "take me back to now" — stick
+  // to the bottom deliberately, not via the scroll-clamp accident the
+  // audit called out.
+  const wasDetachedRef = useRef(false);
+  useEffect(() => {
+    if (wasDetachedRef.current && !detachedTail) {
+      atBottomRef.current = true;
+    }
+    wasDetachedRef.current = detachedTail;
+  }, [detachedTail]);
   useEffect(() => {
     if (!atBottomRef.current || detachedTail) {
       return;
