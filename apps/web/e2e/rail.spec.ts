@@ -114,6 +114,22 @@ test("identity rail: full context swap, background badges, @me alias", async ({
       /Petal Thorn/,
     );
 
+    // ── Status-message recents (M9 step 7): set → chip → one-click reuse ─
+    await page.getByRole("button", { name: "Set status" }).click();
+    await page.getByLabel("Status message").fill("Tending the seedlings");
+    await page.getByRole("button", { name: "Set", exact: true }).click();
+    await page.getByRole("button", { name: "Set status" }).click();
+    const recentChip = page.getByRole("button", {
+      name: "Tending the seedlings",
+    });
+    await expect(recentChip).toBeVisible({ timeout: 10_000 });
+    await page.getByLabel("Status message").fill("");
+    await recentChip.click();
+    await expect(page.getByLabel("Status message")).toHaveValue(
+      "Tending the seedlings",
+    );
+    await page.keyboard.press("Escape");
+
     // ── Quick-switcher (M9 step 6): Ctrl+K → fuzzy jump ─────────────────
     await page.keyboard.press("Control+k");
     const switcher = page.getByRole("dialog", { name: "Quick switcher" });

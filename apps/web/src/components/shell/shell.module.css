@@ -682,3 +682,30 @@
   font-size: 10.5px;
   color: var(--eb-faint);
 }
+
+/* Status-message recents (M9 step 7): one-click chips in the editor. */
+.statusRecents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+}
+
+.statusRecentChip {
+  max-width: 100%;
+  padding: 3px 8px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--eb-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--eb-side2);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.statusRecentChip:hover {
+  color: var(--eb-text);
+  background: var(--eb-hover);
+}
