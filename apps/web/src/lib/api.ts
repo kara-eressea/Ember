@@ -24,6 +24,18 @@ export interface TokenResponse {
   refreshToken: string;
 }
 
+/** One in-log search hit (M9). */
+export interface SearchResultDto {
+  id: number;
+  convId: string;
+  conversationTitle: string;
+  conversationKind: "channel" | "pm";
+  senderCharacter: string;
+  kind: "msg" | "lrp" | "rll" | "sys" | "pm";
+  bbcode: string;
+  createdAt: string;
+}
+
 export interface FlistAccountDto {
   id: string;
   accountName: string;
@@ -296,6 +308,23 @@ export const api = {
   },
 
   /** One page of history, ascending; `before` walks toward older messages. */
+  searchMessages(
+    identityId: string,
+    q: string,
+    options: { convId?: string; cursor?: number } = {},
+  ) {
+    const query = new URLSearchParams({ q });
+    if (options.convId !== undefined) {
+      query.set("convId", options.convId);
+    }
+    if (options.cursor !== undefined) {
+      query.set("cursor", String(options.cursor));
+    }
+    return apiRequest<{ results: SearchResultDto[]; nextCursor?: number }>(
+      `/identities/${identityId}/search?${query.toString()}`,
+      { auth: true },
+    );
+  },
   listMessages(
     identityId: string,
     conversationId: string,

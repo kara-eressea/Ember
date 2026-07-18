@@ -537,6 +537,16 @@ export function ChannelHeader({
         <span className={styles.headerSpacer} />
         <button
           className={styles.headerButton}
+          title="Search this channel's log"
+          aria-label="Search log"
+          onClick={() => {
+            useUiStore.getState().setSearchOpen(true);
+          }}
+        >
+          ⌕
+        </button>
+        <button
+          className={styles.headerButton}
           onClick={toggleMembers}
           title="Toggle member list"
         >
@@ -608,6 +618,16 @@ export function DmHeader({
           <span className={styles.typing}>is typing…</span>
         )}
         <span className={styles.headerSpacer} />
+        <button
+          className={styles.headerButton}
+          title="Search this conversation's log"
+          aria-label="Search log"
+          onClick={() => {
+            useUiStore.getState().setSearchOpen(true);
+          }}
+        >
+          ⌕
+        </button>
       </div>
       {(dm.statusmsg || dm.status) && (
         <div className={styles.description}>

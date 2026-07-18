@@ -22,6 +22,8 @@ interface UiState {
   /** Channel browser dialog (COMPONENTS.md §11), opened from the sidebar
    * Channels section. */
   channelBrowserOpen: boolean;
+  /** In-log search panel (M9), opened from the conversation header. */
+  searchOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -32,6 +34,7 @@ interface UiState {
   toggleMembers: () => void;
   setPrefsOpen: (open: boolean) => void;
   setChannelBrowserOpen: (open: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -42,6 +45,7 @@ export const useUiStore = create<UiState>()((set) => ({
   membersOpen: true,
   prefsOpen: false,
   channelBrowserOpen: false,
+  searchOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -65,5 +69,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setChannelBrowserOpen(open) {
     set({ channelBrowserOpen: open });
+  },
+  setSearchOpen(open) {
+    set({ searchOpen: open });
   },
 }));

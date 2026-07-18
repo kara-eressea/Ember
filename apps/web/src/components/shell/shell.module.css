@@ -163,6 +163,8 @@
 }
 
 .main {
+  /* Anchor for the absolutely-positioned search panel (M9). */
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
