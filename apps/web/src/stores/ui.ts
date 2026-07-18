@@ -24,6 +24,8 @@ interface UiState {
   channelBrowserOpen: boolean;
   /** In-log search panel (M9), opened from the conversation header. */
   searchOpen: boolean;
+  /** Quick-switcher palette (M9), toggled by Ctrl/Cmd+K. */
+  switcherOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -35,6 +37,7 @@ interface UiState {
   setPrefsOpen: (open: boolean) => void;
   setChannelBrowserOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
+  setSwitcherOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -46,6 +49,7 @@ export const useUiStore = create<UiState>()((set) => ({
   prefsOpen: false,
   channelBrowserOpen: false,
   searchOpen: false,
+  switcherOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -72,5 +76,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setSearchOpen(open) {
     set({ searchOpen: open });
+  },
+  setSwitcherOpen(open) {
+    set({ switcherOpen: open });
   },
 }));

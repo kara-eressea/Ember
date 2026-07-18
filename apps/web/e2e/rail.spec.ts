@@ -113,6 +113,26 @@ test("identity rail: full context swap, background badges, @me alias", async ({
     await expect(rail.getByTestId("rail-item").first()).toHaveAccessibleName(
       /Petal Thorn/,
     );
+
+    // ── Quick-switcher (M9 step 6): Ctrl+K → fuzzy jump ─────────────────
+    await page.keyboard.press("Control+k");
+    const switcher = page.getByRole("dialog", { name: "Quick switcher" });
+    await expect(switcher).toBeVisible();
+    await switcher.getByRole("combobox").fill("gard");
+    await expect(
+      switcher.getByRole("option", { name: /Gardening/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(switcher).not.toBeVisible();
+    await expect(page).toHaveURL(/\/c\/Gardening$/);
+    // Identities rank too — Escape closes without navigating.
+    await page.keyboard.press("Control+k");
+    await switcher.getByRole("combobox").fill("petal");
+    await expect(
+      switcher.getByRole("option", { name: /Petal Thorn/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(switcher).not.toBeVisible();
   } finally {
     bramble.close();
   }
