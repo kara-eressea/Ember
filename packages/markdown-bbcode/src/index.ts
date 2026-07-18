@@ -13,3 +13,8 @@ export {
   type BBWrapperTag,
 } from "./bbcode.js";
 export { mdToBBCode } from "./markdown.js";
+export {
+  analyzeMarkdown,
+  type MdLossDiagnostic,
+  type MdLossKind,
+} from "./lossiness.js";
