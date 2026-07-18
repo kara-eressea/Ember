@@ -47,10 +47,23 @@ export function AppearancePane({ identityId }: { identityId: string }) {
           options={[
             { value: "slate", label: "Slate" },
             { value: "charcoal", label: "Charcoal" },
+            { value: "parchment", label: "Parchment" },
           ]}
           value={prefs.baseTheme}
           onChange={(baseTheme) => {
             set({ baseTheme });
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Colorblind-friendly status colors"
+        help="Okabe–Ito ok/warn/danger hues, and presence dots gain distinct shapes so hue is never the only signal"
+      >
+        <Toggle
+          label="Colorblind-friendly status colors"
+          checked={prefs.colorblindMode}
+          onChange={(colorblindMode) => {
+            set({ colorblindMode });
           }}
         />
       </FieldRow>

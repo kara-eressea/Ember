@@ -108,6 +108,37 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await dialog.getByRole("button", { name: "Appearance" }).click();
   await dialog.getByRole("radio", { name: "Moss Green" }).click();
   await expect.poll(() => appliedAccent(page), { timeout: 5000 }).toBe(MOSS);
+
+  // ── Light theme + colorblind mode (M9 step 5) ─────────────────────────
+  await dialog.getByRole("radio", { name: "Parchment" }).click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--eb-bg")
+            .trim(),
+        ),
+      { timeout: 5000 },
+    )
+    .toBe("#f6f1e7");
+  await dialog
+    .getByRole("switch", { name: "Colorblind-friendly status colors" })
+    .click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          document.documentElement.classList.contains("eb-colorblind"),
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+  // Back to the dark default for the rest of the spec.
+  await dialog
+    .getByRole("switch", { name: "Colorblind-friendly status colors" })
+    .click();
+  await dialog.getByRole("radio", { name: "Slate" }).click();
   await page.keyboard.press("Escape");
 
   // Survives a reload (flash cache + server prefs agree).

@@ -583,3 +583,15 @@
   background: var(--eb-accent);
   color: var(--eb-bg);
 }
+
+/* Colorblind mode (M9): shape-code the presence dots — round filled =
+   online, square = idle/warn, hollow ring = offline. Hue is never the
+   only signal; applyTheme stamps the root class. */
+:global(.eb-colorblind) .dotWarn {
+  border-radius: 2px;
+}
+
+:global(.eb-colorblind) .dotFaint {
+  background: transparent;
+  border: 1.5px solid var(--eb-faint);
+}
