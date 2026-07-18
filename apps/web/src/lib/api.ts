@@ -28,6 +28,8 @@ export interface FlistAccountDto {
   id: string;
   accountName: string;
   unlocked: boolean;
+  /** An encrypted at-rest credential is stored on the server (§15). */
+  remembered: boolean;
   createdAt: string;
 }
 
@@ -213,21 +215,32 @@ export const api = {
   },
 
   listFlistAccounts() {
-    return apiRequest<{ accounts: FlistAccountDto[] }>("/flist-accounts", {
-      auth: true,
-    });
+    return apiRequest<{ accounts: FlistAccountDto[]; canRemember: boolean }>(
+      "/flist-accounts",
+      { auth: true },
+    );
   },
-  addFlistAccount(input: { accountName: string; password: string }) {
+  addFlistAccount(input: {
+    accountName: string;
+    password: string;
+    remember?: boolean;
+  }) {
     return apiRequest<{ account: FlistAccountDto }>("/flist-accounts", {
       method: "POST",
       body: input,
       auth: true,
     });
   },
-  unlockFlistAccount(id: string, password: string) {
+  unlockFlistAccount(id: string, password: string, remember?: boolean) {
     return apiRequest<{ account: FlistAccountDto; reconnected: string[] }>(
       `/flist-accounts/${id}/unlock`,
-      { method: "POST", body: { password }, auth: true },
+      { method: "POST", body: { password, remember }, auth: true },
+    );
+  },
+  setFlistAccountRemember(id: string, remember: boolean) {
+    return apiRequest<{ account: FlistAccountDto }>(
+      `/flist-accounts/${id}/remember`,
+      { method: "PUT", body: { remember }, auth: true },
     );
   },
   deleteFlistAccount(id: string) {

@@ -59,6 +59,24 @@ export const flistAccounts = pgTable(
   ],
 );
 
+/**
+ * Opt-in at-rest F-List credentials (M9, decisions.md §15): one row per
+ * account that chose "Remember on this server". The ciphertext is
+ * AES-256-GCM under the env-file CREDENTIALS_KEY — the key never enters
+ * the database, so dumps/backups alone stay ciphertext. Its own table,
+ * never a column on flist_accounts: backup and pruning stories stay
+ * independent, and dropping the feature is dropping the table.
+ */
+export const flistCredentials = pgTable("flist_credentials", {
+  accountId: uuid()
+    .primaryKey()
+    .references(() => flistAccounts.id, { onDelete: "cascade" }),
+  /** base64(iv ‖ auth tag ‖ ciphertext). */
+  ciphertext: text().notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
 export const identities = pgTable(
   "identities",
   {
@@ -69,6 +87,10 @@ export const identities = pgTable(
     characterName: text().notNull(),
     /** Connect automatically once the account's vault is unlocked. */
     autoConnect: boolean().notNull().default(false),
+    /** When the identity last went subscriber-less (null = attached, or
+     * never detached). Persisted so the detached-disconnect ceiling and
+     * boot-time session resume count across restarts (decisions.md §15). */
+    lastDetachedAt: timestamp({ withTimezone: true }),
     sortOrder: integer().notNull().default(0),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },

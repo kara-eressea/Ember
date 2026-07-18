@@ -117,6 +117,7 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `TRUST_PROXY` | unset | **Required behind a proxy** — hop count or CIDRs |
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
 | `APP_NAME` / `CLIENT_NAME` | `EmberChat` | Branding / IDN `cname` (keep it honest) |
+| `CREDENTIALS_KEY` | unset | Enables "Remember on this server" (see below); 32 bytes base64url, generated like `AUTH_SECRET` |
 | `RETENTION_POLICY` | `forever` | `forever` \| `30d` \| `90d` \| `1y` message retention |
 | `DETACHED_DISCONNECT_HOURS` | `72` | Log a character out of F-Chat after this long with no device attached (`0` = never); reopening the app reconnects automatically |
 | `UPDATE_CHECK_ENABLED` | `true` | Daily GitHub Releases check; `false` = no phone-home |
@@ -128,6 +129,24 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `FLIST_MAPPINGS_TTL_MS` | `604800000` (7 d) | Refresh window for F-List's bulk infotag/kink mapping lists |
 | `EICON_INDEX_BASE_URL` | `https://xariah.net` | Eicon search index host (see the privacy note below) |
 | `EICON_INDEX_REFRESH_MS` | `86400000` (24 h) | Delta-refresh cadence for the eicon index |
+
+**Remembered credentials & restarts**: by default F-List passwords live
+only in server memory — every restart (including upgrades) logs your
+characters out until you re-enter them. Setting `CREDENTIALS_KEY` enables
+a per-account **"Remember on this server"** opt-in: the password is stored
+AES-256-GCM-encrypted in the database, and on boot the server unlocks
+those accounts and reconnects your auto-connect characters with their
+exact channels (characters already past the `DETACHED_DISCONNECT_HOURS`
+window stay logged out). Be clear-eyed about the guarantee: the key sits
+in your `.env` next to the server, so someone with full access to the box
+gets both — what this protects is **database dumps and backups on their
+own** (they carry only ciphertext), the same promise desktop chat clients
+make when they remember your login. Backups: `flist_credentials` rides
+the automatic pg dumps by design — restoring a dump onto a box with the
+same `.env` restores the no-relogin property; restoring it anywhere else
+leaves the rows undecryptable (each account then just needs one manual
+unlock). Rotating or losing the key has the same effect. Never commit or
+copy the `.env` off the box with the dumps.
 
 **Profile viewer & the request budget**: the in-app profile viewer (M8)
 fetches character data from F-List's JSON API through one global
@@ -210,7 +229,9 @@ docker compose exec -T postgres pg_restore \
 docker compose up -d
 
 # 4. Verify: log in — identities, history, and read positions are back.
-#    (F-List passwords were never stored; re-enter them to reconnect.)
+#    (Without CREDENTIALS_KEY, F-List passwords were never stored —
+#    re-enter them to reconnect. With it, and the same .env as the dump's
+#    box, remembered accounts reconnect on their own.)
 ```
 
 ## Smoke test without touching F-List
