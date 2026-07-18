@@ -27,6 +27,7 @@ import {
   validHref,
   BB_COLORS,
 } from "./bbcode.js";
+import type { MdLossReporter } from "./lossiness.js";
 
 const ESCAPABLE = new Set(["*", "`", "~", "[", "]", "\\", "("]);
 
@@ -41,7 +42,7 @@ const RAW_BODY_TAGS = new Set(["noparse", "user", "icon", "eicon"]);
  * span can ever terminate an outer construct — positions map 1:1 back to
  * the original.
  */
-function maskCodeSpans(input: string): string {
+export function maskCodeSpans(input: string): string {
   if (!input.includes("`")) {
     return input;
   }
@@ -107,7 +108,21 @@ export function mdToBBCode(markdown: string): string {
   return translate(markdown);
 }
 
-function translate(input: string): string {
+/**
+ * The M10 lossiness hook: translation with the walk's own failure points
+ * reported (unterminated emphasis/BBCode, invalid params). The translator
+ * IS the diagnostic engine for inline constructs — no mirror matcher to
+ * drift (analyzeMarkdown in lossiness.ts adds the block-level scans the
+ * inline walk never sees).
+ */
+export function translateReporting(
+  input: string,
+  report: MdLossReporter,
+): string {
+  return translate(input, report);
+}
+
+function translate(input: string, report?: MdLossReporter, base = 0): string {
   let out = "";
   let at = 0;
   const masked = maskCodeSpans(input);
@@ -139,6 +154,7 @@ function translate(input: string): string {
             at = end;
             continue;
           }
+          report?.("unterminated-bbcode", base + at, token.raw);
         }
         const nestable =
           (WRAPPER_TAGS.has(token.tag) && token.param === undefined) ||
@@ -156,10 +172,27 @@ function translate(input: string): string {
             const end = close + `[/${token.tag}]`.length;
             out +=
               input.slice(at, bodyStart) +
-              translate(input.slice(bodyStart, close)) +
+              translate(
+                input.slice(bodyStart, close),
+                report,
+                base + bodyStart,
+              ) +
               input.slice(close, end);
             at = end;
             continue;
+          }
+          report?.("unterminated-bbcode", base + at, token.raw);
+        } else if (!rawBody) {
+          // A subset tag that literalized over its parameter: [b=x],
+          // [user=x], [color]/[color=notacolor], [url=badhref]. Foreign
+          // tags ([center], [img]…) are the pre-pass's business.
+          const paramProblem =
+            ((WRAPPER_TAGS.has(token.tag) || RAW_BODY_TAGS.has(token.tag)) &&
+              token.param !== undefined) ||
+            token.tag === "color" ||
+            token.tag === "url";
+          if (paramProblem) {
+            report?.("invalid-bbcode-param", base + at, token.raw);
           }
         }
       }
@@ -193,9 +226,12 @@ function translate(input: string): string {
     if (input.startsWith("**", at)) {
       const close = findDelimiter(masked, at + 2, "**");
       if (close !== undefined) {
-        out += `[b]${translate(input.slice(at + 2, close))}[/b]`;
+        out += `[b]${translate(input.slice(at + 2, close), report, base + at + 2)}[/b]`;
         at = close + 2;
         continue;
+      }
+      if (masked[at + 2] !== undefined && masked[at + 2] !== " ") {
+        report?.("unterminated-emphasis", base + at, "**");
       }
       out += "**";
       at += 2;
@@ -205,9 +241,19 @@ function translate(input: string): string {
     if (ch === "*") {
       const close = findDelimiter(masked, at + 1, "*");
       if (close !== undefined && masked[close + 1] !== "*") {
-        out += `[i]${translate(input.slice(at + 1, close))}[/i]`;
+        out += `[i]${translate(input.slice(at + 1, close), report, base + at + 1)}[/i]`;
         at = close + 1;
         continue;
+      }
+      // A lone `*` only warns at a word start ("see *this") — mid-word
+      // asterisks ("5*3") are far more often arithmetic than intent.
+      if (
+        close === undefined &&
+        masked[at + 1] !== undefined &&
+        masked[at + 1] !== " " &&
+        (at === 0 || masked[at - 1] === " ")
+      ) {
+        report?.("unterminated-emphasis", base + at, "*");
       }
       out += ch;
       at += 1;
@@ -217,9 +263,12 @@ function translate(input: string): string {
     if (input.startsWith("~~", at)) {
       const close = findDelimiter(masked, at + 2, "~~");
       if (close !== undefined) {
-        out += `[s]${translate(input.slice(at + 2, close))}[/s]`;
+        out += `[s]${translate(input.slice(at + 2, close), report, base + at + 2)}[/s]`;
         at = close + 2;
         continue;
+      }
+      if (masked[at + 2] !== undefined && masked[at + 2] !== " ") {
+        report?.("unterminated-emphasis", base + at, "~~");
       }
       out += "~~";
       at += 2;
