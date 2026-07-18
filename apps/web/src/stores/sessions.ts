@@ -68,7 +68,12 @@ export interface IdentitySession {
    * persisted but are hidden from render. */
   ignores: string[];
   /** Live server VARs (bytes) from the snapshot — composer limits. */
-  limits: { chatMax: number; privMax: number; lfrpMax: number };
+  limits: {
+    chatMax: number;
+    privMax: number;
+    lfrpMax: number;
+    lfrpFlood: number;
+  };
   /** Channels where the server disallows [icon]/[eicon] (icon_blacklist). */
   iconBlacklist: string[];
   /** Own character is a chatop (global moderator) — unlocks the admin UI. */
@@ -157,7 +162,12 @@ interface SessionsState {
       status: string;
       statusmsg: string;
       ignores: string[];
-      limits: { chatMax: number; privMax: number; lfrpMax: number };
+      limits: {
+        chatMax: number;
+        privMax: number;
+        lfrpMax: number;
+        lfrpFlood: number;
+      };
       iconBlacklist: string[];
       chatop: boolean;
       sendDelaySeconds: number;
@@ -263,7 +273,7 @@ function emptySession(identityId: string): IdentitySession {
     ownStatusmsg: "",
     ignores: [],
     // Placeholder until the snapshot delivers the live VARs.
-    limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
+    limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000, lfrpFlood: 600 },
     iconBlacklist: [],
     chatop: false,
     sendDelaySeconds: 0,

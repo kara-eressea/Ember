@@ -316,6 +316,16 @@ export class FchatSession {
   }
 
   /**
+   * Remaining ad cooldown for a channel in ms (0 = clear to post). Reads
+   * the per-channel LRP rate-gate timeline — volatile per-session state,
+   * reset on disconnect like the gate itself. The M10 post flow surfaces
+   * this as "next allowed in Xm".
+   */
+  adWaitMs(channel: string): number {
+    return this.#rateGate.waitMs(`LRP:${channel}`);
+  }
+
+  /**
    * Rolls dice or spins the bottle (RLL). No "sent" event: the server
    * computes the result and echoes the RLL back to us — persisting that
    * echo is the only truthful record. Rides the MSG pace.

@@ -207,6 +207,20 @@ const cmdSchema = z.discriminatedUnion("action", [
       bbcode: z.string().min(1).max(65_536),
       markdown: z.string().max(65_536).optional(),
       kind: z.enum(["msg", "lrp"]).optional(),
+      /** Skip the outbox delay pref for this send (M10 post flow: "posts
+       * immediately" is the dialog's contract, and a parked ad would report
+       * a sent-outcome it can't honestly claim). */
+      immediate: z.boolean().optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M10: per-channel ad-cooldown query for the post flow. The reply is an
+    // `ads.cooldowns` event delivered to the asking connection only — the
+    // remaining waits are per-session volatile state, not shared fan-out.
+    action: z.literal("ads.cooldowns"),
+    d: z.object({
+      keys: z.array(z.string().min(1).max(128)).max(200),
     }),
   }),
   z.object({
@@ -493,6 +507,13 @@ export type GatewayEvent =
       d: { ads: AdDto[] };
     }
   | {
+      kind: "ads.cooldowns";
+      /** Reply to the `ads.cooldowns` cmd (M10): remaining wait in
+       * milliseconds per queried channel key (0 = clear to post). Volatile
+       * per-session state — delivered to the asking connection only. */
+      d: { waits: Record<string, number> };
+    }
+  | {
       kind: "prefs.updated";
       /** Per-user preference change, broadcast to each identity's
        * subscribers (idempotent duplicates across identities). Carries the
@@ -549,8 +570,14 @@ export type ServerFrame =
            * without a live session). Messages from these characters are
            * hidden from render client-side but still persisted. */
           ignores: string[];
-          /** Live server VARs (bytes) — composer limits, never hardcoded. */
-          limits: { chatMax: number; privMax: number; lfrpMax: number };
+          /** Live server VARs — composer limits (bytes) and the per-channel
+           * ad pace (seconds), never hardcoded. */
+          limits: {
+            chatMax: number;
+            privMax: number;
+            lfrpMax: number;
+            lfrpFlood: number;
+          };
           /** Channels where the server disallows [icon]/[eicon] (the
            * icon_blacklist VAR) — the composer warns before inserting. */
           iconBlacklist: string[];

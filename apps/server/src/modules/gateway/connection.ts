@@ -449,6 +449,7 @@ export class GatewayConnection {
             chatMax: vars.chat_max,
             privMax: vars.priv_max,
             lfrpMax: vars.lfrp_max,
+            lfrpFlood: vars.lfrp_flood,
           },
           iconBlacklist: [...(session?.state.vars.icon_blacklist ?? [])],
           chatop: session?.state.ownIsChatop ?? false,
@@ -712,6 +713,21 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "ads.cooldowns": {
+        // Per-channel ad-cooldown query (M10 post flow). The waits are this
+        // session's volatile rate-gate state, so the reply goes to the
+        // asking connection only — not a hub fan-out.
+        const session = this.#requireSession(identity.id, id);
+        if (session) {
+          const waits: Record<string, number> = {};
+          for (const key of cmd.d.keys) {
+            waits[key] = session.adWaitMs(key);
+          }
+          this.deliver(identity.id, { kind: "ads.cooldowns", d: { waits } });
+          this.#ack(id, { ok: true });
+        }
+        return;
+      }
       case "channel.roll": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
@@ -923,6 +939,7 @@ export class GatewayConnection {
       bbcode: string;
       markdown?: string;
       kind?: "lrp" | "msg";
+      immediate?: boolean;
     },
     id: number | undefined,
   ): Promise<void> {
@@ -951,8 +968,10 @@ export class GatewayConnection {
     }
     // A non-zero send delay parks the message in the server-side outbox —
     // the release worker puts it on the wire when due, tab or no tab.
+    // `immediate` (M10 post flow) opts a send out of the delay: the dialog
+    // reports per-channel outcomes, and a parked ad has none to report.
     const { sendDelaySeconds: delaySeconds } = await this.#userPrefs();
-    if (delaySeconds > 0) {
+    if (delaySeconds > 0 && d.immediate !== true) {
       // Validate against the live VAR limit NOW, like the immediate path —
       // deferring the check to release time would fail silently long after
       // the user could react (audit).

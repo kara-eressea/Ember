@@ -28,6 +28,8 @@ interface UiState {
   switcherOpen: boolean;
   /** Ad Center modal (M10), opened from the composer's Ad button. */
   adCenterOpen: boolean;
+  /** Post Ads dialog (M10), opened from the Ad Center. */
+  postAdsOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -41,6 +43,7 @@ interface UiState {
   setSearchOpen: (open: boolean) => void;
   setSwitcherOpen: (open: boolean) => void;
   setAdCenterOpen: (open: boolean) => void;
+  setPostAdsOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -54,6 +57,7 @@ export const useUiStore = create<UiState>()((set) => ({
   searchOpen: false,
   switcherOpen: false,
   adCenterOpen: false,
+  postAdsOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -86,5 +90,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setAdCenterOpen(open) {
     set({ adCenterOpen: open });
+  },
+  setPostAdsOpen(open) {
+    set({ postAdsOpen: open });
   },
 }));
