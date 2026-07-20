@@ -11,6 +11,7 @@ import {
   TYPING_STATUSES,
 } from "@emberchat/fchat-protocol";
 import type { AdDto } from "./ads.js";
+import { campaignStartSchema, type CampaignDto } from "./campaigns.js";
 import { FLIST_NAME_RE } from "./highlights.js";
 import { userPrefsPatchSchema, type UserPrefs } from "./prefs.js";
 
@@ -238,6 +239,33 @@ const cmdSchema = z.discriminatedUnion("action", [
       furryprefs: z.array(z.string().min(1).max(64)).max(8).optional(),
       roles: z.array(z.string().min(1).max(32)).max(8).optional(),
     }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M11: start (or, with replace, restart) the identity's one rotation
+    // campaign. The server refuses when a campaign is already running and
+    // `replace` is absent — replacing is an explicit client confirmation.
+    // State flows back as `campaign.updated` on the identity.
+    action: z.literal("campaign.start"),
+    d: campaignStartSchema,
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M11: the global kill switch — stops every channel at once.
+    action: z.literal("campaign.stop"),
+    d: z.object({}),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M11: renew the running (or just-expired) campaign for another hour.
+    action: z.literal("campaign.renew"),
+    d: z.object({}),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M11: drop one channel from the campaign (the removed-row "Drop ×").
+    action: z.literal("campaign.drop"),
+    d: z.object({ key: z.string().min(1).max(100) }),
   }),
   z.object({
     identityId: z.uuid(),
@@ -540,6 +568,15 @@ export type GatewayEvent =
         | { ok: false; code: number; message: string };
     }
   | {
+      kind: "campaign.updated";
+      /** M11: the identity's rotation campaign changed (started, ticked,
+       * a channel paused/resumed/dropped, renewed, stopped, expired, or
+       * the attached state flipped). Broadcast on the identity with the
+       * full state — an idempotent overwrite; null = no campaign exists
+       * (never ran, or was replaced away). */
+      d: { campaign: CampaignDto | null };
+    }
+  | {
       kind: "prefs.updated";
       /** Per-user preference change, broadcast to each identity's
        * subscribers (idempotent duplicates across identities). Carries the
@@ -617,6 +654,9 @@ export type ServerFrame =
           prefs: UserPrefs;
           /** Messages still waiting in the delayed-send outbox. */
           outbox: OutboxItemDto[];
+          /** The identity's rotation campaign (M11) — present whenever one
+           * exists, running or expired; null when none does. */
+          campaign: CampaignDto | null;
         };
         channels: SnapshotChannel[];
         dms: SnapshotDm[];
