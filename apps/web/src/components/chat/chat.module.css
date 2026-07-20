@@ -215,15 +215,33 @@
   font-style: italic;
 }
 
-/* Roleplay ads (LRP, M6): a quiet tinted wash + AD tag so ads scan apart
-   from chat without shouting. */
-.adLine,
-.adLine:hover {
-  padding-top: 4px;
-  padding-bottom: 4px;
-  background: color-mix(in srgb, var(--eb-accent) 6%, transparent);
-  box-shadow: inset 3px 0 0
-    color-mix(in srgb, var(--eb-accent) 45%, transparent);
+/* Roleplay ads (M10, CD spec §5): a distinct bordered block with a 3px
+   accent rail and a faint accent tint — never reads as a plain chat line.
+   The optional MatchTier chip lives in the flex spacer, so its absence
+   (the normal, cache-only case) leaves no hole. */
+.adBlock {
+  padding: 8px 12px 9px;
+  margin: 4px 16px;
+  background: color-mix(in srgb, var(--eb-accent) 7%, var(--eb-side));
+  border: 1px solid var(--eb-border);
+  border-left: 3px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+}
+
+.adBlockHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.adBlockSpacer {
+  flex: 1;
+}
+
+.adBlockBody {
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .adTag {
@@ -1546,6 +1564,62 @@
 .formatHintOn {
   color: var(--eb-accent);
   background: var(--eb-accent-soft);
+}
+
+/* Hairline between the format cluster and the Ad Center entry (M10). */
+.hintDivider {
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  background: var(--eb-border);
+}
+
+/* Chat/Ads/Both view selector in the channel header (M10, spec §4). */
+.showSelector {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.showLabel {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+  letter-spacing: 0.04em;
+}
+
+.showSeg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.showSegButton {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: calc(var(--eb-radius) - 3px);
+}
+
+.showSegOn {
+  color: var(--eb-bg);
+  background: var(--eb-accent);
+}
+
+/* Advisory lossiness line under the composer preview (M10). */
+.previewLossiness {
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--eb-warn);
+  background: color-mix(in srgb, var(--eb-warn) 10%, var(--eb-side));
+  border-top: 1px solid color-mix(in srgb, var(--eb-warn) 30%, var(--eb-side));
 }
 
 .formatSelect {

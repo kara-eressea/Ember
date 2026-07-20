@@ -951,7 +951,7 @@ describe("gateway fan-out", () => {
       prefs: PREFS_DEFAULTS,
       outbox: [],
       // The sim serves the documented default VARs.
-      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000 },
+      limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000, lfrpFlood: 0 },
     });
     expect(snapshot.d.channels).toHaveLength(2);
     const channel = snapshot.d.channels.find((c) => c.key === "Development")!;
@@ -2098,6 +2098,216 @@ describe("gateway commands", () => {
       d: { ok: false, error: "identity not found" },
     });
   });
+
+  it("ad-library PUT fans out ads.updated to subscribed devices (M10)", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    const put = await app.inject({
+      method: "PUT",
+      url: `/api/identities/${identityId}/ads`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ads: [{ content: "hello scene", tags: ["fantasy"], disabled: false }],
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    const event = eventPayload<{
+      ads: { content: string; tags: string[]; disabled: boolean }[];
+    }>(await client.nextEvent("ads.updated"));
+    expect(event.ads).toHaveLength(1);
+    expect(event.ads[0]).toMatchObject({
+      content: "hello scene",
+      tags: ["fantasy"],
+      disabled: false,
+    });
+  });
+
+  it("ads.cooldowns reports per-channel waits; immediate bypasses the delay (M10)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Development"); // mode "both": ads allowed
+    await app.history.flush();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.channelKey, "Development"),
+        ),
+      );
+    const convId = conv!.id;
+
+    // Fresh session: the channel is clear to post.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "ads.cooldowns",
+        d: { keys: ["Development"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: true },
+    });
+    expect(
+      eventPayload<{ waits: Record<string, number> }>(
+        await client.nextEvent("ads.cooldowns"),
+      ).waits,
+    ).toEqual({ Development: 0 });
+
+    // Raise the pace VAR live (the suite's sim zeroes lfrp_flood so other
+    // tests can post freely): the gate reads the live VAR, so the next ad
+    // opens a real window and the wait becomes deterministic.
+    await inject(session, {
+      cmd: "VAR",
+      payload: { variable: "lfrp_flood", value: 600 },
+    });
+
+    // Posting an ad starts the per-channel window; the next query reports
+    // a remaining wait derived from the live lfrp_flood VAR.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "cooldown probe ad", kind: "lrp" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    await client.nextEvent("message.new");
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "ads.cooldowns",
+        d: { keys: ["Development"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 3,
+      d: { ok: true },
+    });
+    const after = eventPayload<{ waits: Record<string, number> }>(
+      await client.nextEvent("ads.cooldowns"),
+    ).waits;
+    expect(after["Development"]).toBeGreaterThan(0);
+
+    // A second immediate ad inside the window REFUSES with the friendly
+    // cooldown copy (M10 step 10: the ERR-56-class refusal surface) —
+    // never a silent queue that would ghost-post minutes later.
+    client.send({
+      t: "cmd",
+      id: 30,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "too soon", kind: "lrp" },
+      },
+    });
+    const refused = await client.nextOfType("ack");
+    expect(refused.id).toBe(30);
+    expect(refused.d.ok).toBe(false);
+    expect(refused.d.error).toContain("next available in");
+
+    // With a send delay set, `immediate: true` (the post flow) skips the
+    // outbox and puts the message on the wire now.
+    client.send({
+      t: "cmd",
+      id: 4,
+      d: { identityId, action: "prefs.set", d: { sendDelaySeconds: 60 } },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 4,
+      d: { ok: true },
+    });
+    client.send({
+      t: "cmd",
+      id: 5,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "right now", immediate: true },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 5,
+      d: { ok: true },
+    });
+    expect(
+      eventPayload<{ message: object }>(await client.nextEvent("message.new"))
+        .message,
+    ).toMatchObject({ kind: "msg", bbcode: "right now", sentByUs: true });
+  }, 30_000);
+
+  it("character.search round-trips FKS results and refusals (M10)", async () => {
+    sim.setCharacterProfile("Nyx Firemane", { kinks: { "523": "fave" } });
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // A kink Nyx faves: the reply carries the bare name (never ourselves).
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "character.search",
+        d: { kinks: ["523"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 1,
+      d: { ok: true },
+    });
+    const hit = eventPayload<{
+      ok: boolean;
+      characters?: string[];
+      kinks?: string[];
+    }>(await client.nextEvent("character.search", 15_000));
+    expect(hit.ok).toBe(true);
+    expect(hit.characters).toContain("Nyx Firemane");
+    expect(hit.characters).not.toContain(CHARACTER);
+    expect(hit.kinks).toEqual(["523"]);
+
+    // A kink nobody has: the server's ERR 18 comes back as a refusal.
+    // (The session's own FKS gate paces this second search past the sim's
+    // 5s window, so the refusal is the no-results one, not the flood.)
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "character.search",
+        d: { kinks: ["999999"] },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 2,
+      d: { ok: true },
+    });
+    const miss = eventPayload<{ ok: boolean; code?: number }>(
+      await client.nextEvent("character.search", 20_000),
+    );
+    expect(miss.ok).toBe(false);
+    expect(miss.code).toBe(18);
+  }, 40_000);
 
   it("delayed send parks in the outbox, recalls, and releases due rows", async () => {
     const { identityId, token } = await createIdentity();

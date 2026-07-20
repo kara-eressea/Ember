@@ -569,6 +569,27 @@ export class ProfileService {
 
   /** The bulk mapping payload, DB-cached (~7 days) with an in-memory memo.
    * Concurrent refreshes coalesce onto one upstream call. */
+  /**
+   * The F-List kink vocabulary — id (as the string the FKS wire wants),
+   * name, group — off the cached mapping list (M10 search picker).
+   */
+  async kinkVocabulary(): Promise<
+    { id: string; name: string; group?: string }[]
+  > {
+    const mappings = await this.#getMappings();
+    const groups = new Map(
+      (mappings.kink_groups ?? []).map((group) => [group.id, group.name]),
+    );
+    return (mappings.kinks ?? []).map((kink) => {
+      const group = groups.get(kink.group_id);
+      return {
+        id: String(kink.id),
+        name: kink.name,
+        ...(group !== undefined ? { group } : {}),
+      };
+    });
+  }
+
   async #getMappings(): Promise<MappingList> {
     if (
       this.#mappings &&

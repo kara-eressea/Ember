@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.pa *{box-sizing:border-box}
+.pascroll::-webkit-scrollbar{width:8px}
+.pascroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.pascroll::-webkit-scrollbar-track{background:transparent}
+.pacap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:460px;line-height:1.5}
+.pacap b{color:#a892c6;font-weight:600}
+</style>
+</helmet>
+<div class="pa" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="4">
+  <div style="display:flex;flex-direction:column">
+    <div class="pacap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  gl(txt){const t=this.T();return this.h('div',{fontSize:'10px',fontWeight:700,letterSpacing:'.09em',
+    textTransform:'uppercase',color:t.faint},txt);}
+  stepLabel(n,txt,hint){const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'9px',marginBottom:'11px'},
+      this.h('span',{width:'18px',height:'18px',borderRadius:'50%',background:t.accentSoft,border:`1px solid ${t.accentMed}`,
+        display:'inline-flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'10px',fontWeight:700,color:t.accent,flexShrink:0},n),
+      this.h('span',{fontSize:'13px',fontWeight:600,color:t.text},txt),
+      hint?this.h('span',{fontSize:'11px',color:t.faint},hint):null);}
+
+  // tag select chip w/ count
+  tagPick(tag,count,on){const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'5px 6px 5px 11px',borderRadius:'20px',
+      fontSize:'12px',fontWeight:600,cursor:'pointer',color:on?t.bg:t.dim,background:on?t.accent:t.bg,
+      border:`1px solid ${on?t.accent:t.border}`},tag,
+      this.h('span',{fontFamily:t.mono,fontSize:'10px',fontWeight:700,minWidth:'16px',height:'16px',padding:'0 4px',
+        borderRadius:'10px',display:'inline-flex',alignItems:'center',justifyContent:'center',
+        color:on?t.accent:t.faint,background:on?this.mix(t.bg,t.accent,.15):t.side2},count));}
+  modeBadge(mode){const t=this.T();const isAds=mode==='ads';
+    return this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:600,letterSpacing:'.05em',textTransform:'uppercase',
+      color:isAds?t.accent:t.dim,background:isAds?t.accentSoft:t.bg,border:`1px solid ${isAds?t.accentMed:t.border}`,
+      borderRadius:'4px',padding:'1px 6px',flexShrink:0},mode);}
+  cadenceHint(min){const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'4px',fontFamily:t.mono,fontSize:'10px',
+      color:t.dim,border:`1px solid ${t.border}`,borderRadius:'4px',padding:'1px 6px',flexShrink:0},
+      this.h('span',{fontSize:'10px'},'◷'),min+'m');}
+  check(on){const t=this.T();
+    return this.h('span',{width:'18px',height:'18px',borderRadius:'5px',flexShrink:0,display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,
+      color:on?t.bg:'transparent',background:on?t.accent:t.bg,border:`1px solid ${on?t.accent:t.border}`},'✓');}
+  btn(txt,kind){const t=this.T();const p=kind==='primary';
+    return this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',padding:'0 18px',height:'36px',
+      borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:p?700:600,cursor:'pointer',
+      color:p?t.bg:t.text,background:p?t.accent:t.bg,border:p?'none':`1px solid ${t.border}`},txt);}
+
+  // ---- channel row ----
+  chanRow(c){
+    const t=this.T();const cd=c.cooldown!=null;
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'9px 12px',borderRadius:t.radius+'px',
+      margin:'0 2px',opacity:cd?.62:1,cursor:cd?'not-allowed':'pointer',
+      background:c.sel&&!cd?this.mix(t.accent,t.side,.9):'transparent',
+      boxShadow:c.sel&&!cd?`inset 2px 0 0 ${t.accent}`:'none',borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+      cd?this.h('span',{width:'18px',height:'18px',flexShrink:0,display:'inline-flex',alignItems:'center',justifyContent:'center',
+        fontFamily:t.mono,fontSize:'12px',color:t.faint},'◷'):this.check(c.sel),
+      this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+      this.h('div',{minWidth:0,flex:1,display:'flex',flexDirection:'column',gap:'2px'},
+        this.h('div',{display:'flex',alignItems:'center',gap:'7px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text,overflow:'hidden',
+            textOverflow:'ellipsis',whiteSpace:'nowrap'},c.name),
+          this.modeBadge(c.mode),
+          c.cadence?this.cadenceHint(c.cadence):null),
+        cd?this.h('div',{fontSize:'11px',color:t.warn},'On the server ad window · next allowed in '+c.cooldown):null),
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.dim,display:'flex',alignItems:'center',gap:'5px',flexShrink:0},
+        this.h('span',{width:'6px',height:'6px',borderRadius:'50%',background:t.ok}),c.members));
+  }
+
+  // ---- dialog shell ----
+  dialog(h_,head,body,footer){
+    const t=this.T();
+    return this.h('div',{width:'648px',height:h_+'px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+5+'px',boxShadow:'0 40px 100px -20px rgba(0,0,0,.7)',display:'flex',flexDirection:'column',
+      overflow:'hidden',fontFamily:t.ui,color:t.text},head,body,footer);
+  }
+  headBar(title,sub){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'18px 20px 16px',
+      borderBottom:`1px solid ${t.border}`,gap:'12px'},
+      this.h('div',{minWidth:0},
+        this.h('div',{fontSize:'17px',fontWeight:700,color:t.text},title),
+        this.h('div',{fontFamily:t.mono,fontSize:'11.5px',color:t.faint,marginTop:'3px'},sub)),
+      this.h('span',{fontSize:'13px',color:t.faint,cursor:'pointer',padding:'2px'},'✕'));
+  }
+
+  data(){return {
+    tags:[['all',5],['slowburn',2],['winter',1],['longterm',3],['plot',1],['pwp',1],['dynamic',1]],
+    selTag:'longterm',
+    ads:[
+      {title:'Long-term plot partner — canid, arctic setting',tags:['longterm','plot'],sel:true},
+      {title:'Arctic fox seeking slow-burn winter scenes',tags:['slowburn','winter','longterm'],sel:false},
+      {title:'Mentor/apprentice dynamic, dom-leaning',tags:['longterm','dynamic'],sel:false},
+    ],
+    channels:[
+      {name:'Cabin Fever',mode:'both',cadence:15,members:32,sel:true},
+      {name:'Frozen North RP',mode:'ads',cadence:10,members:88,sel:true},
+      {name:'Winter Tales',mode:'both',members:41,sel:false},
+      {name:'Northern Lights',mode:'ads',cadence:20,members:64,cooldown:'6m'},
+    ],
+  };}
+
+  // ===== PA·A compose =====
+  radio(on){const t=this.T();
+    return this.h('span',{width:'16px',height:'16px',borderRadius:'50%',flexShrink:0,display:'inline-flex',alignItems:'center',
+      justifyContent:'center',background:t.bg,border:`1px solid ${on?t.accent:t.border}`},
+      on?this.h('span',{width:'8px',height:'8px',borderRadius:'50%',background:t.accent}):null);}
+  adPick(ad){const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'9px 12px',margin:'0 2px',borderRadius:t.radius+'px',
+      cursor:'pointer',background:ad.sel?this.mix(t.accent,t.side,.9):'transparent',
+      boxShadow:ad.sel?`inset 2px 0 0 ${t.accent}`:'none',borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+      this.radio(ad.sel),
+      this.h('div',{minWidth:0,flex:1},
+        this.h('div',{fontSize:'12.5px',fontWeight:ad.sel?600:500,color:t.text,overflow:'hidden',textOverflow:'ellipsis',
+          whiteSpace:'nowrap'},ad.title),
+        this.h('div',{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'5px'},
+          ...ad.tags.map((tg,i)=>this.hk(i,'span',{fontSize:'10px',color:t.faint,background:t.bg,border:`1px solid ${t.border}`,
+            borderRadius:'4px',padding:'1px 6px'},tg)))));}
+  frameCompose(){
+    const t=this.T();const d=this.data();
+    const tagRow=this.h('div',{display:'flex',flexWrap:'wrap',gap:'7px'},
+      ...d.tags.map((tg,i)=>this.hk(i,'span',{},this.tagPick(tg[0],tg[1],d.selTag===tg[0]))));
+    const adList=this.h('div',{marginTop:'12px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden',padding:'4px 0'},
+      ...d.ads.map((a,i)=>this.hk(i,'div',{},this.adPick(a))));
+    const selAll=this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'2px 4px 9px'},
+      this.h('label',{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'},this.check(false),
+        this.h('span',{fontSize:'12px',fontWeight:600,color:t.dim},'Select all eligible')),
+      this.h('span',{fontSize:'11px',color:t.faint},'joined channels that allow ads'));
+    const body=this.h('div',{className:'pascroll',flex:1,overflowY:'auto',padding:'18px 20px',minHeight:0},
+      this.stepLabel('1','Pick one ad','tags filter the list — one ad posts per action'),
+      tagRow,adList,
+      this.h('div',{height:'20px'}),
+      this.stepLabel('2','Choose channels','only channels whose mode allows ads'),
+      selAll,
+      this.h('div',{},...d.channels.map((c,i)=>this.hk(i,'div',{},this.chanRow(c)))));
+    const footer=this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 20px',
+      borderTop:`1px solid ${t.border}`,background:t.side2},
+      this.h('div',{fontSize:'12px',color:t.dim},
+        this.h('b',{style:{color:t.text}},'1 ad'),' → ',this.h('b',{style:{color:t.text}},'2 channels'),
+        this.h('span',{style:{color:t.faint}},' · posts immediately')),
+      this.h('div',{display:'flex',gap:'9px',alignItems:'center'},
+        this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',height:'36px',padding:'0 14px',borderRadius:t.radius+'px',
+          fontSize:'12px',fontWeight:600,color:t.faint,background:'transparent',border:`1px dashed ${t.border}`,cursor:'default'},
+          'Rotate…',this.h('span',{fontFamily:t.mono,fontSize:'8.5px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',
+            color:t.faint,border:`1px solid ${t.border}`,borderRadius:'3px',padding:'0 4px'},'soon')),
+        this.btn('Post now','primary')));
+    return this.dialog(596,this.headBar('Post ads','as Vesna Marlowe · 4 enabled ads · filtered by “longterm”'),body,footer);
+  }
+
+  // ===== PA·B results =====
+  resultRow(r){
+    const t=this.T();const ok=r.ok;
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'11px 12px',borderRadius:t.radius+'px',
+      margin:'0 2px',borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+      this.h('span',{width:'20px',height:'20px',borderRadius:'50%',flexShrink:0,display:'inline-flex',alignItems:'center',
+        justifyContent:'center',fontSize:'11px',fontWeight:700,color:ok?t.ok:t.danger,
+        background:this.mix(ok?t.ok:t.danger,t.side,.84),border:`1px solid ${this.mix(ok?t.ok:t.danger,t.side,.6)}`},ok?'✓':'✕'),
+      this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+      this.h('div',{minWidth:0,flex:1},
+        this.h('div',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text},r.name),
+        r.reason?this.h('div',{fontSize:'11.5px',color:t.danger,marginTop:'2px'},r.reason):null),
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:ok?t.ok:t.faint,flexShrink:0},ok?r.at:'not sent'));
+  }
+  frameResults(){
+    const t=this.T();
+    const results=[
+      {name:'Cabin Fever',ok:true,at:'sent 14:22'},
+      {name:'Frozen North RP',ok:true,at:'sent 14:22'},
+      {name:'Winter Tales',ok:false,reason:'Server refused — posted too recently here (try again in a few minutes)'},
+      {name:'Northern Lights',ok:false,reason:'Channel no longer permits ads (mode changed to chat-only)'},
+    ];
+    const banner=this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'14px 20px',
+      background:this.mix(t.warn,t.side,.9),borderBottom:`1px solid ${this.mix(t.warn,t.side,.6)}`},
+      this.h('span',{fontFamily:t.mono,fontSize:'15px',color:t.warn},'◐'),
+      this.h('div',{},
+        this.h('div',{fontSize:'13px',fontWeight:700,color:t.text},'Posted to 2 of 4 channels'),
+        this.h('div',{fontSize:'11.5px',color:t.dim,marginTop:'2px'},'2 sent · 2 refused. Refusals carry the server’s reason — nothing was retried automatically.')));
+    const body=this.h('div',{className:'pascroll',flex:1,overflowY:'auto',padding:'12px 18px',minHeight:0},
+      banner==null?null:null,
+      ...results.map((r,i)=>this.hk(i,'div',{},this.resultRow(r))));
+    const footer=this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 20px',
+      borderTop:`1px solid ${t.border}`,background:t.side2},
+      this.h('span',{fontSize:'11.5px',color:t.faint},'One ad per action · posted in each channel above'),
+      this.h('div',{display:'flex',gap:'9px'},this.btn('Retry 2 failed'),this.btn('Done','primary')));
+    return this.dialog(520,this.headBar('Post results','posted “Arctic fox seeking slow-burn…” · 14:22'),
+      this.h('div',{display:'flex',flexDirection:'column',flex:1,minHeight:0},banner,
+        this.h('div',{className:'pascroll',flex:1,overflowY:'auto',padding:'10px 18px',minHeight:0},
+          ...results.map((r,i)=>this.hk(i,'div',{},this.resultRow(r))))),footer);
+  }
+
+  // ===== PA·C edge states =====
+  edgeCard(glyph,title,sub,cta){
+    const t=this.T();
+    return this.h('div',{width:'300px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      padding:'26px 22px',display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center',gap:'10px'},
+      this.h('div',{width:'46px',height:'46px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'19px',color:t.faint},glyph),
+      this.h('div',{fontSize:'13.5px',fontWeight:700,color:t.text},title),
+      this.h('div',{fontSize:'11.5px',color:t.faint,lineHeight:1.55},sub),
+      cta?this.h('span',{marginTop:'2px',fontSize:'11.5px',fontWeight:600,color:t.accent,cursor:'pointer'},cta):null);
+  }
+  frameEdges(){
+    return this.h('div',{display:'flex',gap:'18px',flexWrap:'wrap',width:'640px'},
+      this.edgeCard('⊘','No eligible channels','None of your joined channels allow ads right now. Join an ads or both channel from the browser first.','Browse channels →'),
+      this.edgeCard('○','No ads match those tags','No enabled ads are tagged “winter”. Pick another tag, or enable an ad in the Ad Center.','Open Ad Center →'),
+      this.edgeCard('◷','Everything on cooldown','All eligible channels are still inside the server’s ad window. The earliest opens in 6m — the picker updates live.',null));
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'PA·A',cap:'Post ads — the manual flow in the Channel-Browser dialog language. Step 1: pick exactly one ad; tag chips filter the single-select list (the tag-union idea moves to the deferred M11 campaign setup). Step 2: eligible channels with mode badge + parsed [ads: N min] cadence hint; a channel on the server’s ad window is dimmed with “next allowed in Xm” and can’t be picked. Footer: “1 ad → N channels” + Post now (a future Rotate slot is reserved).',el:this.frameCompose()},
+      {id:'PA·B',cap:'Result feedback — the one posted ad, partial failure. Per-channel outcome: sent ✓ with a timestamp, or refused with the server’s reason in friendly copy. Summary banner + Retry-failed / Done. Nothing is retried automatically.',el:this.frameResults()},
+      {id:'PA·C',cap:'Edge states — no eligible channels, no enabled ads match the selected tags, and everything-on-cooldown.',el:this.frameEdges()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,39 +1,53 @@
-// Ads-visibility resolution (M6): the account-wide hideAds preference is
-// what every channel inherits; channelAdVisibility carries the per-channel
-// overrides (keyed by lowercased channel key). Hidden ads neither render
-// nor bump unread — sending is unaffected.
+// Channel-view resolution (M10, replaces the M6 hideAds pair): every
+// channel inherits adViewDefault; channelAdView carries per-channel
+// overrides from the header's Chat/Ads/Both selector (keyed by lowercased
+// channel key). "chat" hides ad rows, "ads" hides chat rows, "both" shows
+// everything — filtered rows stay persisted, and ads never count toward
+// unread in any view. Sending is unaffected.
 
 import type { UserPrefs } from "@emberchat/protocol";
 
-export function adsHidden(
-  prefs: Pick<UserPrefs, "hideAds" | "channelAdVisibility">,
+export type AdView = "chat" | "ads" | "both";
+
+export function adViewFor(
+  prefs: Pick<UserPrefs, "adViewDefault" | "channelAdView">,
   channelKey: string | undefined,
-): boolean {
+): AdView {
   if (channelKey !== undefined) {
-    const override = prefs.channelAdVisibility[channelKey.toLowerCase()];
+    const override = prefs.channelAdView[channelKey.toLowerCase()];
     if (override !== undefined) {
-      return override === "hide";
+      return override;
     }
   }
-  return prefs.hideAds;
+  return prefs.adViewDefault;
 }
 
-/** The patch that flips one channel's effective visibility. Prunes entries
- * that just restate the global default, so the record only holds real
- * exceptions (it is capped at 500 keys). */
-export function toggleChannelAds(
-  prefs: Pick<UserPrefs, "hideAds" | "channelAdVisibility">,
+/** The patch that sets one channel's view. Prunes entries that restate the
+ * global default, so the record only holds real exceptions (capped at
+ * 500 keys). */
+export function setChannelAdView(
+  prefs: Pick<UserPrefs, "adViewDefault" | "channelAdView">,
   channelKey: string,
-): Pick<UserPrefs, "channelAdVisibility"> {
+  view: AdView,
+): Pick<UserPrefs, "channelAdView"> {
   const key = channelKey.toLowerCase();
-  const next: Record<string, "hide" | "show"> = {
-    ...prefs.channelAdVisibility,
-  };
-  const hideNow = !adsHidden(prefs, channelKey);
-  if (hideNow === prefs.hideAds) {
+  const next: Record<string, AdView> = { ...prefs.channelAdView };
+  if (view === prefs.adViewDefault) {
     delete next[key];
   } else {
-    next[key] = hideNow ? "hide" : "show";
+    next[key] = view;
   }
-  return { channelAdVisibility: next };
+  return { channelAdView: next };
+}
+
+/** Whether a message kind renders under a view. Only chat and ad rows are
+ * filtered — system lines, rolls and everything else always show. */
+export function viewShows(view: AdView, kind: string): boolean {
+  if (view === "chat") {
+    return kind !== "lrp";
+  }
+  if (view === "ads") {
+    return kind !== "msg";
+  }
+  return true;
 }

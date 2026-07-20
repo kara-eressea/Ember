@@ -20,6 +20,7 @@ import {
   serializeClientCommand,
   type ClientCommand,
   type ClientSettableStatus,
+  type ServerCommand,
   type TypingStatus,
 } from "@emberchat/fchat-protocol";
 import {
@@ -52,6 +53,28 @@ export const MAX_UNCONFIRMED_JOIN_ATTEMPTS = 2;
 /** An immediate ad may briefly wait out a short gate (tests, generous
  * VARs) but never longer than the client's ack window can survive. */
 export const AD_IMMEDIATE_WAIT_CEILING_MS = 10_000;
+
+/** The server paces character searches at one per 5 s (ERR 50) — a
+ * protocol constant; no VAR carries it. */
+export const FKS_PACE_SECONDS = 5;
+/** How long a fired search waits for its FKS/ERR before giving up. */
+const SEARCH_RESPONSE_TIMEOUT_MS = 10_000;
+/** ERR codes that are search outcomes: 18 no results, 50 pace, 61 too
+ * many terms, 72 too many results. */
+const SEARCH_ERROR_CODES = new Set([18, 50, 61, 72]);
+
+export interface CharacterSearchFilters {
+  kinks: string[];
+  genders?: string[];
+  orientations?: string[];
+  languages?: string[];
+  furryprefs?: string[];
+  roles?: string[];
+}
+
+export type CharacterSearchOutcome =
+  | { ok: true; characters: string[]; kinks: string[] }
+  | { ok: false; code: number; message: string };
 
 export interface BackoffOptions {
   readonly floorMs: number;
@@ -214,11 +237,14 @@ export class FchatSession {
     this.events = new SessionEventBus(this.#log);
     // MSG and PRI share the documented msg_flood value but the server tracks
     // them separately; ads pace on lfrp_flood (1/10 min live) per channel.
-    // Both come from live VARs at send time, never hardcoded.
+    // Both come from live VARs at send time, never hardcoded. FKS is the
+    // one protocol constant: one search per 5 s (ERR 50), no VAR for it.
     this.#rateGate = new RateGate((cls) =>
       cls.startsWith("LRP:")
         ? this.state.vars.lfrp_flood
-        : this.state.vars.msg_flood,
+        : cls === "FKS"
+          ? FKS_PACE_SECONDS
+          : this.state.vars.msg_flood,
     );
   }
 
@@ -313,6 +339,113 @@ export class FchatSession {
       }
       this.events.emit("sent", { kind: "ad", channel, message });
     });
+  }
+
+  /**
+   * Remaining ad cooldown for a channel in ms (0 = clear to post). Reads
+   * the per-channel LRP rate-gate timeline — volatile per-session state,
+   * reset on disconnect like the gate itself. The M10 post flow surfaces
+   * this as "next allowed in Xm".
+   */
+  adWaitMs(channel: string): number {
+    return this.#rateGate.waitMs(`LRP:${channel}`);
+  }
+
+  #searchInFlight = false;
+  /** Epoch ms until which one inbound FKS/search-ERR is treated as the
+   * late reply of a search that already timed out, and discarded instead
+   * of being attributed to the next search (FKS has no request id). */
+  #staleSearchReplyUntil = 0;
+
+  /**
+   * Character search (FKS, M10): fires the query on the FKS pace and
+   * awaits the reply. FKS carries no request id, so this is the directory
+   * pattern — single-flight per session, the next inbound FKS (or a
+   * search-outcome ERR: 18/50/61/72) within the window is ours, and a
+   * quiet server resolves as a timeout refusal rather than hanging.
+   */
+  async searchCharacters(
+    filters: CharacterSearchFilters,
+  ): Promise<CharacterSearchOutcome> {
+    this.#assertOnline();
+    if (this.#searchInFlight) {
+      return {
+        ok: false,
+        code: 50,
+        message: "A search is already running — give it a moment",
+      };
+    }
+    this.#searchInFlight = true;
+    try {
+      await this.#rateGate.schedule("FKS", () => {
+        if (
+          !this.#send({
+            cmd: "FKS",
+            payload: {
+              kinks: filters.kinks,
+              ...(filters.genders ? { genders: filters.genders } : {}),
+              ...(filters.orientations
+                ? { orientations: filters.orientations }
+                : {}),
+              ...(filters.languages ? { languages: filters.languages } : {}),
+              ...(filters.furryprefs ? { furryprefs: filters.furryprefs } : {}),
+              ...(filters.roles ? { roles: filters.roles } : {}),
+            },
+          })
+        ) {
+          throw new SessionNotOnlineError(this.#status);
+        }
+      });
+      return await new Promise<CharacterSearchOutcome>((resolve) => {
+        const cleanup = () => {
+          clearTimeout(timer);
+          this.events.off("command", onCommand);
+        };
+        const timer = setTimeout(() => {
+          cleanup();
+          // The reply may still arrive; give the next search a window in
+          // which to discard one stale frame rather than adopt it.
+          this.#staleSearchReplyUntil = Date.now() + SEARCH_RESPONSE_TIMEOUT_MS;
+          resolve({
+            ok: false,
+            code: 0,
+            message: "The search timed out — try again",
+          });
+        }, SEARCH_RESPONSE_TIMEOUT_MS);
+        const onCommand = (command: ServerCommand) => {
+          const searchReply =
+            command.cmd === "FKS" ||
+            (command.cmd === "ERR" &&
+              SEARCH_ERROR_CODES.has(command.payload.number));
+          if (searchReply && Date.now() < this.#staleSearchReplyUntil) {
+            // A prior search's late reply — swallow it and keep waiting.
+            this.#staleSearchReplyUntil = 0;
+            return;
+          }
+          if (command.cmd === "FKS") {
+            cleanup();
+            resolve({
+              ok: true,
+              characters: command.payload.characters,
+              kinks: command.payload.kinks,
+            });
+          } else if (
+            command.cmd === "ERR" &&
+            SEARCH_ERROR_CODES.has(command.payload.number)
+          ) {
+            cleanup();
+            resolve({
+              ok: false,
+              code: command.payload.number,
+              message: command.payload.message,
+            });
+          }
+        };
+        this.events.on("command", onCommand);
+      });
+    } finally {
+      this.#searchInFlight = false;
+    }
   }
 
   /**

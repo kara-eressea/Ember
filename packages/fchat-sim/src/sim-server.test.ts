@@ -1165,6 +1165,62 @@ describe("RP message types (M6: LRP / RLL / RMO)", () => {
   });
 });
 
+describe("character search (M10: FKS)", () => {
+  it("matches on kinks (fave/yes) filtered by gender, excluding the searcher, echoing the request", async () => {
+    const sim = await startSim();
+    sim.setCharacterProfile("Nyx Firemane", { kinks: { "523": "fave" } });
+    sim.setCharacterProfile("Tally Marsh", { kinks: { "523": "yes" } });
+    sim.setCharacterProfile("Old Greywhisker", { kinks: { "523": "no" } });
+    sim.setCharacterProfile("Amber Vale", { kinks: { "523": "fave" } });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+
+    amber.send({ cmd: "FKS", payload: { kinks: ["523"] } });
+    expect(parseServerCommand(await amber.waitFor("FKS"))).toEqual({
+      cmd: "FKS",
+      payload: {
+        // "no" is not a match, and the searcher never sees themselves.
+        characters: ["Nyx Firemane", "Tally Marsh"],
+        kinks: ["523"],
+      },
+    });
+
+    const female = await login(sim, "birch@example.test", "Birch Rowan");
+    female.send({
+      cmd: "FKS",
+      payload: { kinks: ["523"], genders: ["Female"] },
+    });
+    expect(parseServerCommand(await female.waitFor("FKS"))).toMatchObject({
+      payload: { characters: ["Nyx Firemane"] },
+    });
+  });
+
+  it("refuses the search pace (ERR 50), empty results (ERR 18), and the result cap (ERR 72)", async () => {
+    const sim = await startSim({ fksResultCap: 1 });
+    sim.setCharacterProfile("Nyx Firemane", { kinks: { "523": "fave" } });
+    sim.setCharacterProfile("Tally Marsh", { kinks: { "523": "yes" } });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+
+    // Two matches over a cap of 1 → too many results.
+    amber.send({ cmd: "FKS", payload: { kinks: ["523"] } });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 72 },
+    });
+
+    // Second search inside the 5s window → search flood.
+    amber.send({ cmd: "FKS", payload: { kinks: ["523"] } });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 50 },
+    });
+
+    // Fresh connection (its own pace clock), no matching kink → no results.
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "FKS", payload: { kinks: ["9999"] } });
+    expect(parseServerCommand(await birch.waitFor("ERR"))).toMatchObject({
+      payload: { number: 18 },
+    });
+  });
+});
+
 describe("channel moderation (M6: CKU / CBU / CTU / CUB / COA / COR / CSO / CDS / CBL)", () => {
   /** Amber creates a room (becoming owner) and Birch joins it. */
   async function roomWithTwo() {

@@ -14,7 +14,7 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
-import { adsHidden, toggleChannelAds } from "./ads.js";
+import { adViewFor, setChannelAdView, type AdView } from "./ads.js";
 import { RichText } from "./RichText.js";
 import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
@@ -142,12 +142,11 @@ function MuteChip({
 
 const EMPTY_MUTES = PREFS_DEFAULTS.mutedConvIds;
 
-/**
- * Ads visibility for this channel (M6): every channel inherits the global
- * hideAds preference; this chip stores a per-channel exception in the
- * synced prefs document. Render-side only — history keeps hidden ads.
- */
-function AdsChip({
+/** The Chat/Ads/Both view selector (M10, CD spec §4) — shown only when the
+ * room's server mode is "both". Chat hides ad rows, Ads hides chat rows;
+ * filtered rows stay in history and ads never count toward unread. The
+ * choice persists per channel (pruned when it restates the default). */
+function ShowSelector({
   identityId,
   channelKey,
 }: {
@@ -157,22 +156,79 @@ function AdsChip({
   const prefs = useSessionsStore(
     (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
   );
-  const hidden = adsHidden(prefs, channelKey);
+  const view = adViewFor(prefs, channelKey);
+  const options: { value: AdView; label: string }[] = [
+    { value: "chat", label: "Chat" },
+    { value: "ads", label: "Ads" },
+    { value: "both", label: "Both" },
+  ];
 
   return (
-    <button
-      className={`${styles.pinChip} ${hidden ? (styles.ignoreChipActive ?? "") : ""}`}
-      onClick={() => {
-        void patchPrefs(identityId, toggleChannelAds(prefs, channelKey));
-      }}
-      title={
-        hidden
-          ? "Ads are hidden in this channel — click to show them"
-          : "Ads are shown in this channel — click to hide them"
-      }
-    >
-      {hidden ? "♥ ads off" : "♥ ads on"}
-    </button>
+    <span className={styles.showSelector}>
+      <span className={styles.showLabel} aria-hidden>
+        SHOW
+      </span>
+      <span
+        className={styles.showSeg}
+        role="radiogroup"
+        aria-label="Show chat, ads, or both"
+      >
+        {options.map((option, index) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={view === option.value}
+            // Roving tabindex: the group is one tab stop; arrows move and
+            // select within it.
+            tabIndex={view === option.value ? 0 : -1}
+            className={`${styles.showSegButton} ${view === option.value ? (styles.showSegOn ?? "") : ""}`}
+            title={
+              option.value === "chat"
+                ? "Hide roleplay ads in this channel"
+                : option.value === "ads"
+                  ? "Show only roleplay ads (the box composes ads here)"
+                  : "Show chat and ads together"
+            }
+            onClick={() => {
+              void patchPrefs(
+                identityId,
+                setChannelAdView(prefs, channelKey, option.value),
+              );
+            }}
+            onKeyDown={(event) => {
+              const delta =
+                event.key === "ArrowRight" || event.key === "ArrowDown"
+                  ? 1
+                  : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                    ? -1
+                    : 0;
+              if (delta === 0) {
+                return;
+              }
+              event.preventDefault();
+              const next =
+                options[(index + delta + options.length) % options.length]!;
+              void patchPrefs(
+                identityId,
+                setChannelAdView(prefs, channelKey, next.value),
+              );
+              const sibling =
+                delta === 1
+                  ? event.currentTarget.nextElementSibling
+                  : event.currentTarget.previousElementSibling;
+              const wrap =
+                delta === 1
+                  ? event.currentTarget.parentElement?.firstElementChild
+                  : event.currentTarget.parentElement?.lastElementChild;
+              ((sibling ?? wrap) as HTMLElement | null)?.focus();
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </span>
+    </span>
   );
 }
 
@@ -522,8 +578,8 @@ export function ChannelHeader({
           pinned={channel.pinned}
         />
         <MuteChip identityId={identityId} convId={channel.convId} />
-        {channel.mode !== "chat" && (
-          <AdsChip identityId={identityId} channelKey={channel.key} />
+        {channel.mode === "both" && (
+          <ShowSelector identityId={identityId} channelKey={channel.key} />
         )}
         {canManageRoom && (
           <RoomChip

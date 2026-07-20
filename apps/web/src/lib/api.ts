@@ -3,6 +3,7 @@
 // proxies to the API server, production serves both from one Fastify.
 
 import type {
+  AdDto,
   GuestbookPage,
   HighlightRuleDto,
   HighlightRuleInput,
@@ -449,12 +450,41 @@ export const api = {
     );
   },
 
+  /** The F-List kink vocabulary (M10 search picker) — cached server-side
+   * off the mapping list, no budget cost. */
+  getKinks(identityId: string) {
+    return apiRequest<{
+      kinks: { id: string; name: string; group?: string }[];
+    }>(`/identities/${identityId}/kinks`, { auth: true });
+  },
+
   /** Server-local eicon index search (M8) — pref-gated (403 when off). */
   searchEicons(query: string) {
     return apiRequest<{ results: string[] }>(
       `/eicons/search?q=${encodeURIComponent(query)}`,
       { auth: true },
     );
+  },
+
+  /** The identity's ad library, in display order (M10). */
+  getAds(identityId: string) {
+    return apiRequest<{ ads: AdDto[] }>(`/identities/${identityId}/ads`, {
+      auth: true,
+    });
+  },
+  /** Idempotent full-list replacement (the highlight-rules pattern);
+   * 409 = `knownIds` no longer match — the library changed on another
+   * device since it was loaded. */
+  putAds(
+    identityId: string,
+    ads: { content: string; tags: string[]; disabled: boolean }[],
+    knownIds?: string[],
+  ) {
+    return apiRequest<{ ads: AdDto[] }>(`/identities/${identityId}/ads`, {
+      method: "PUT",
+      body: { ads, ...(knownIds !== undefined ? { knownIds } : {}) },
+      auth: true,
+    });
   },
 
   listHighlightRules() {

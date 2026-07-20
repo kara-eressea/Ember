@@ -12,8 +12,9 @@ import { formatTime, type TimeFormat } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { CachedMatchChip } from "../profile/CachedMatchChip.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
-import { adsHidden } from "./ads.js";
+import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
@@ -61,15 +62,15 @@ export function MessageLog({
   );
   const pending = outbox.filter((item) => item.convId === convId);
   const presence = prefs.showJoinPartQuit ? buffer?.presence : undefined;
-  const hideAds = adsHidden(prefs, channelKey);
+  const view = adViewFor(prefs, channelKey);
   const rows = useMemo(
     () =>
       buildRows(messages, newSinceId, ignores, {
         groupConsecutive: prefs.groupConsecutive,
-        hideAds,
+        view,
         presence,
       }),
-    [messages, newSinceId, ignores, prefs.groupConsecutive, hideAds, presence],
+    [messages, newSinceId, ignores, prefs.groupConsecutive, view, presence],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -296,6 +297,8 @@ export function MessageLog({
                 <SystemLine message={row.message} prefs={prefs} />
               ) : row.message.kind === "rll" ? (
                 <RollLine message={row.message} prefs={prefs} />
+              ) : row.message.kind === "lrp" ? (
+                <AdLine message={row.message} prefs={prefs} />
               ) : (
                 <MessageLine
                   message={row.message}
@@ -356,6 +359,41 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
   );
 }
 
+/** A roleplay ad (M10, CD spec §5): a distinct bordered block with an
+ * accent rail, so an ad never reads as a normal chat line. The MatchTier
+ * chip appears ONLY when the poster's profile is already in the local
+ * cache — no fetch-on-render, so most rows carry no chip and its absence
+ * is the normal look (it sits in the flex spacer, not a reserved column).
+ */
+function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
+  const time = formatTime(message.createdAt, timeFormat(prefs));
+  return (
+    <div className={styles.adBlock} data-ad>
+      <div className={styles.adBlockHead}>
+        <span className={styles.adTag} title="Roleplay ad">
+          AD
+        </span>
+        <button
+          type="button"
+          className={`${styles.nick} ${styles.nameButton ?? ""}`}
+          style={{ color: nickColor(message.senderCharacter) }}
+          onClick={(event) => {
+            openCardFrom(event.currentTarget, message.senderCharacter);
+          }}
+        >
+          {message.senderCharacter}
+        </button>
+        {time !== "" && <span className={styles.time}>{time}</span>}
+        <span className={styles.adBlockSpacer} />
+        <CachedMatchChip name={message.senderCharacter} />
+      </div>
+      <div className={styles.adBlockBody}>
+        <RichText bbcode={message.bbcode} />
+      </div>
+    </div>
+  );
+}
+
 function MessageLine({
   message,
   prefs,
@@ -367,14 +405,12 @@ function MessageLine({
 }) {
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
-  const ad = message.kind === "lrp";
   return (
     <div
       className={`${styles.messageLine} ${
         message.mention ? (styles.mentionLine ?? "") : ""
-      } ${ad ? (styles.adLine ?? "") : ""}`}
+      }`}
       data-mention={message.mention || undefined}
-      data-ad={ad || undefined}
     >
       {time !== "" && <span className={styles.time}>{time}</span>}
       {/* Grouped rows keep an invisible nick so aligned columns stay put;
@@ -398,11 +434,6 @@ function MessageLine({
         >
           {message.senderCharacter}
         </button>
-      )}
-      {ad && (
-        <span className={styles.adTag} title="Roleplay ad (LRP)">
-          AD
-        </span>
       )}
       {emote ? (
         // /me: italic action running straight off the name, no separator.

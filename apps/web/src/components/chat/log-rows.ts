@@ -4,6 +4,7 @@
 import type { MessageDto } from "@emberchat/protocol";
 import { dayKey, dayLabel } from "../../lib/time.js";
 import type { PresenceLine } from "../../stores/messages.js";
+import { viewShows, type AdView } from "./ads.js";
 
 export type LogRow =
   | { type: "divider"; key: string; label: string }
@@ -36,22 +37,24 @@ export function buildRows(
   ignores: readonly string[] = [],
   options: {
     groupConsecutive?: boolean;
-    /** Hide roleplay ads (the ads-visibility pref, resolved per channel by
-     * the caller). Render-side like ignores — ads stay persisted. */
-    hideAds?: boolean;
+    /** Channel view (M10 Chat/Ads/Both, resolved per channel by the
+     * caller): "chat" hides ad rows, "ads" hides chat rows. Render-side
+     * like ignores — everything stays persisted. */
+    view?: AdView;
     /** Live-only join/part/quit lines, merged by timestamp (the show-
      * join/part/quit pref: the caller passes nothing when it's off). */
     presence?: readonly PresenceLine[];
   } = {},
 ): LogRow[] {
-  // Ignoring and ad-hiding are render-side only (messages stay persisted;
-  // flipping the pref brings them back). Own sends always show; ignore
-  // names match case-insensitively.
+  // Ignoring and view-filtering are render-side only (messages stay
+  // persisted; flipping the view brings them back). Own sends always show;
+  // ignore names match case-insensitively.
   const ignored = new Set(ignores.map((name) => name.toLowerCase()));
+  const view = options.view ?? "both";
   const visible = messages.filter(
     (message) =>
       message.sentByUs ||
-      ((options.hideAds !== true || message.kind !== "lrp") &&
+      (viewShows(view, message.kind) &&
         !ignored.has(message.senderCharacter.toLowerCase())),
   );
   const presence = (options.presence ?? []).filter(
@@ -92,10 +95,12 @@ export function buildRows(
       groupHead = undefined;
     }
     // Emotes never group (the nick is part of the sentence) and never
-    // continue a group; sys lines have no sender at all.
+    // continue a group; sys lines have no sender at all; ads render as
+    // standalone blocks (M10) that neither group nor continue a group.
     const groupable =
       options.groupConsecutive === true &&
       message.kind !== "sys" &&
+      message.kind !== "lrp" &&
       !message.bbcode.startsWith("/me");
     const grouped =
       groupable &&

@@ -26,6 +26,12 @@ interface UiState {
   searchOpen: boolean;
   /** Quick-switcher palette (M9), toggled by Ctrl/Cmd+K. */
   switcherOpen: boolean;
+  /** Ad Center modal (M10), opened from the composer's Ad button. */
+  adCenterOpen: boolean;
+  /** Post Ads dialog (M10), opened from the Ad Center. */
+  postAdsOpen: boolean;
+  /** Character-search dialog (M10), beside the channel browser. */
+  characterSearchOpen: boolean;
 
   setActive: (
     identityId: string | undefined,
@@ -38,6 +44,9 @@ interface UiState {
   setChannelBrowserOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   setSwitcherOpen: (open: boolean) => void;
+  setAdCenterOpen: (open: boolean) => void;
+  setPostAdsOpen: (open: boolean) => void;
+  setCharacterSearchOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -50,6 +59,9 @@ export const useUiStore = create<UiState>()((set) => ({
   channelBrowserOpen: false,
   searchOpen: false,
   switcherOpen: false,
+  adCenterOpen: false,
+  postAdsOpen: false,
+  characterSearchOpen: false,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -79,5 +91,14 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setSwitcherOpen(open) {
     set({ switcherOpen: open });
+  },
+  setAdCenterOpen(open) {
+    set({ adCenterOpen: open });
+  },
+  setPostAdsOpen(open) {
+    set({ postAdsOpen: open });
+  },
+  setCharacterSearchOpen(open) {
+    set({ characterSearchOpen: open });
   },
 }));

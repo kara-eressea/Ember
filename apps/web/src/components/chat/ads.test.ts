@@ -1,54 +1,84 @@
 import { describe, expect, it } from "vitest";
-import { adsHidden, toggleChannelAds } from "./ads.js";
+import { adViewFor, setChannelAdView, viewShows } from "./ads.js";
 
-describe("adsHidden", () => {
-  it("inherits the global default when a channel has no override", () => {
-    expect(adsHidden({ hideAds: false, channelAdVisibility: {} }, "Dev")).toBe(
-      false,
+describe("adViewFor", () => {
+  it("inherits the default when a channel has no override", () => {
+    expect(adViewFor({ adViewDefault: "both", channelAdView: {} }, "Dev")).toBe(
+      "both",
     );
-    expect(adsHidden({ hideAds: true, channelAdVisibility: {} }, "Dev")).toBe(
-      true,
+    expect(adViewFor({ adViewDefault: "chat", channelAdView: {} }, "Dev")).toBe(
+      "chat",
     );
   });
 
-  it("lets a per-channel override win in both directions, case-insensitively", () => {
+  it("lets a per-channel override win, case-insensitively", () => {
     expect(
-      adsHidden(
-        { hideAds: false, channelAdVisibility: { "adh-123": "hide" } },
+      adViewFor(
+        { adViewDefault: "both", channelAdView: { "adh-123": "ads" } },
         "ADH-123",
       ),
-    ).toBe(true);
+    ).toBe("ads");
     expect(
-      adsHidden(
-        { hideAds: true, channelAdVisibility: { development: "show" } },
+      adViewFor(
+        { adViewDefault: "chat", channelAdView: { development: "both" } },
         "Development",
       ),
-    ).toBe(false);
+    ).toBe("both");
   });
 
-  it("falls back to the global default without a channel key", () => {
+  it("falls back to the default without a channel key", () => {
     expect(
-      adsHidden({ hideAds: true, channelAdVisibility: {} }, undefined),
-    ).toBe(true);
+      adViewFor({ adViewDefault: "chat", channelAdView: {} }, undefined),
+    ).toBe("chat");
   });
 });
 
-describe("toggleChannelAds", () => {
-  it("adds an override when flipping away from the global default", () => {
+describe("setChannelAdView", () => {
+  it("stores an override that differs from the default", () => {
     expect(
-      toggleChannelAds({ hideAds: false, channelAdVisibility: {} }, "Dev"),
-    ).toEqual({ channelAdVisibility: { dev: "hide" } });
-    expect(
-      toggleChannelAds({ hideAds: true, channelAdVisibility: {} }, "Dev"),
-    ).toEqual({ channelAdVisibility: { dev: "show" } });
+      setChannelAdView(
+        { adViewDefault: "both", channelAdView: {} },
+        "Dev",
+        "ads",
+      ),
+    ).toEqual({ channelAdView: { dev: "ads" } });
   });
 
-  it("prunes the override when flipping back to the global default", () => {
+  it("prunes an override that restates the default", () => {
     expect(
-      toggleChannelAds(
-        { hideAds: false, channelAdVisibility: { dev: "hide", other: "show" } },
+      setChannelAdView(
+        { adViewDefault: "both", channelAdView: { dev: "chat" } },
         "Dev",
+        "both",
       ),
-    ).toEqual({ channelAdVisibility: { other: "show" } });
+    ).toEqual({ channelAdView: {} });
+  });
+
+  it("leaves unrelated overrides alone", () => {
+    expect(
+      setChannelAdView(
+        { adViewDefault: "both", channelAdView: { other: "ads" } },
+        "Dev",
+        "chat",
+      ),
+    ).toEqual({ channelAdView: { other: "ads", dev: "chat" } });
+  });
+});
+
+describe("viewShows", () => {
+  it("chat hides ads, ads hides chat, both hides nothing", () => {
+    expect(viewShows("chat", "lrp")).toBe(false);
+    expect(viewShows("chat", "msg")).toBe(true);
+    expect(viewShows("ads", "msg")).toBe(false);
+    expect(viewShows("ads", "lrp")).toBe(true);
+    expect(viewShows("both", "lrp")).toBe(true);
+    expect(viewShows("both", "msg")).toBe(true);
+  });
+
+  it("never filters system lines or rolls", () => {
+    for (const view of ["chat", "ads", "both"] as const) {
+      expect(viewShows(view, "sys")).toBe(true);
+      expect(viewShows(view, "rll")).toBe(true);
+    }
   });
 });

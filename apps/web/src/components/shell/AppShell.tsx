@@ -26,11 +26,15 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { adViewFor } from "../chat/ads.js";
 import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { MemberList } from "../chat/MemberList.js";
 import { MessageLog } from "../chat/MessageLog.js";
 import { SearchPanel } from "../chat/SearchPanel.js";
+import { CharacterSearch } from "../search/CharacterSearch.js";
+import { AdCenter } from "../ads/AdCenter.js";
+import { PostAdsDialog } from "../ads/PostAdsDialog.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
 import { useProfileStore } from "../../stores/profile.js";
@@ -66,6 +70,9 @@ export function AppShell() {
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
   const searchOpen = useUiStore((s) => s.searchOpen);
   const switcherOpen = useUiStore((s) => s.switcherOpen);
+  const adCenterOpen = useUiStore((s) => s.adCenterOpen);
+  const postAdsOpen = useUiStore((s) => s.postAdsOpen);
+  const characterSearchOpen = useUiStore((s) => s.characterSearchOpen);
 
   const ref: ConvRef | undefined =
     channelParam !== undefined
@@ -294,12 +301,21 @@ export function AppShell() {
               convId={convId}
               channelKey={channel?.key}
               channelMode={channel?.mode}
+              adView={
+                channel && channel.mode === "both"
+                  ? adViewFor(session.prefs, channel.key)
+                  : undefined
+              }
               partner={
                 conversation.kind === "pm" ? conversation.dm.partner : undefined
               }
               placeholder={
                 conversation.kind === "channel"
-                  ? `Message #${conversation.channel.title}`
+                  ? channel &&
+                    channel.mode === "both" &&
+                    adViewFor(session.prefs, channel.key) === "ads"
+                    ? `Compose an ad for #${conversation.channel.title}`
+                    : `Message #${conversation.channel.title}`
                   : `Message ${conversation.dm.partner}`
               }
               maxBytes={
@@ -347,6 +363,30 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setChannelBrowserOpen(false);
+          }}
+        />
+      )}
+      {adCenterOpen && (
+        <AdCenter
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setAdCenterOpen(false);
+          }}
+        />
+      )}
+      {postAdsOpen && (
+        <PostAdsDialog
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setPostAdsOpen(false);
+          }}
+        />
+      )}
+      {characterSearchOpen && (
+        <CharacterSearch
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setCharacterSearchOpen(false);
           }}
         />
       )}

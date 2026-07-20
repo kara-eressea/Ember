@@ -10,6 +10,7 @@ import {
   CLIENT_SETTABLE_STATUSES,
   TYPING_STATUSES,
 } from "@emberchat/fchat-protocol";
+import type { AdDto } from "./ads.js";
 import { FLIST_NAME_RE } from "./highlights.js";
 import { userPrefsPatchSchema, type UserPrefs } from "./prefs.js";
 
@@ -206,6 +207,36 @@ const cmdSchema = z.discriminatedUnion("action", [
       bbcode: z.string().min(1).max(65_536),
       markdown: z.string().max(65_536).optional(),
       kind: z.enum(["msg", "lrp"]).optional(),
+      /** Skip the outbox delay pref for this send (M10 post flow: "posts
+       * immediately" is the dialog's contract, and a parked ad would report
+       * a sent-outcome it can't honestly claim). */
+      immediate: z.boolean().optional(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M10: per-channel ad-cooldown query for the post flow. The reply is an
+    // `ads.cooldowns` event delivered to the asking connection only — the
+    // remaining waits are per-session volatile state, not shared fan-out.
+    action: z.literal("ads.cooldowns"),
+    d: z.object({
+      keys: z.array(z.string().min(1).max(128)).max(200),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
+    // M10: character search (FKS). Kinks are required by the wire (ids as
+    // strings); the other filters are optional enum-name arrays. The reply
+    // is a `character.search` event to the asking connection; the session
+    // paces searches at the server's one-per-5s.
+    action: z.literal("character.search"),
+    d: z.object({
+      kinks: z.array(z.string().min(1).max(16)).min(1).max(64),
+      genders: z.array(z.string().min(1).max(32)).max(16).optional(),
+      orientations: z.array(z.string().min(1).max(32)).max(16).optional(),
+      languages: z.array(z.string().min(1).max(32)).max(16).optional(),
+      furryprefs: z.array(z.string().min(1).max(64)).max(8).optional(),
+      roles: z.array(z.string().min(1).max(32)).max(8).optional(),
     }),
   }),
   z.object({
@@ -486,6 +517,29 @@ export type GatewayEvent =
       d: { items: OutboxItemDto[] };
     }
   | {
+      kind: "ads.updated";
+      /** The identity's full ad library after a PUT (M10) — an idempotent
+       * overwrite for every attached device's ad manager. */
+      d: { ads: AdDto[] };
+    }
+  | {
+      kind: "ads.cooldowns";
+      /** Reply to the `ads.cooldowns` cmd (M10): remaining wait in
+       * milliseconds per queried channel key (0 = clear to post). Volatile
+       * per-session state — delivered to the asking connection only. */
+      d: { waits: Record<string, number> };
+    }
+  | {
+      kind: "character.search";
+      /** Reply to the `character.search` cmd (M10), delivered to the
+       * asking connection only. `ok` carries the online characters that
+       * matched (bare names — the wire returns nothing else); a refusal
+       * carries the server's reason (0 = the search timed out). */
+      d:
+        | { ok: true; characters: string[]; kinks: string[] }
+        | { ok: false; code: number; message: string };
+    }
+  | {
       kind: "prefs.updated";
       /** Per-user preference change, broadcast to each identity's
        * subscribers (idempotent duplicates across identities). Carries the
@@ -542,8 +596,14 @@ export type ServerFrame =
            * without a live session). Messages from these characters are
            * hidden from render client-side but still persisted. */
           ignores: string[];
-          /** Live server VARs (bytes) — composer limits, never hardcoded. */
-          limits: { chatMax: number; privMax: number; lfrpMax: number };
+          /** Live server VARs — composer limits (bytes) and the per-channel
+           * ad pace (seconds), never hardcoded. */
+          limits: {
+            chatMax: number;
+            privMax: number;
+            lfrpMax: number;
+            lfrpFlood: number;
+          };
           /** Channels where the server disallows [icon]/[eicon] (the
            * icon_blacklist VAR) — the composer warns before inserting. */
           iconBlacklist: string[];

@@ -12,6 +12,7 @@ import {
 } from "fastify-type-provider-zod";
 import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
+import { adsRoutes } from "./modules/ads/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { SessionJanitor } from "./modules/auth/session-janitor.js";
 import { DetachedAway } from "./modules/away/detached-away.js";
@@ -288,6 +289,7 @@ export async function buildApp({
     hub,
     history,
   });
+  await app.register(adsRoutes, { prefix: "/api/identities", db, hub });
   // Gateway frames are tiny; without a cap the ws default (100 MiB) lets a
   // pre-hello client force huge buffers + JSON.parse work.
   await app.register(fastifyWebsocket, {

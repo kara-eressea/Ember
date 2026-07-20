@@ -73,8 +73,8 @@ test("RP messages: ads with visibility prefs, dice and bottle, RMO gating", asyn
   const mossAd = page.locator("[data-ad]").filter({ hasText: "Trellis" });
   await expect(mossAd).toBeVisible({ timeout: 15_000 });
 
-  // Global preference: hide ads everywhere. Moss's ad vanishes, Ivy's own
-  // stays (you always see what you posted).
+  // Global preference: hide ads everywhere (view default = Chat). Moss's
+  // ad vanishes, Ivy's own stays (you always see what you posted).
   await page.getByRole("button", { name: "Preferences" }).click();
   const prefs = page.getByRole("dialog", { name: "Preferences" });
   await prefs.getByRole("switch", { name: "Hide ads everywhere" }).click();
@@ -82,17 +82,22 @@ test("RP messages: ads with visibility prefs, dice and bottle, RMO gating", asyn
   await expect(mossAd).not.toBeVisible();
   await expect(ownAd).toBeVisible();
 
-  // Per-channel override: the header chip flips this channel back on.
-  await page.getByRole("button", { name: "♥ ads off" }).click();
+  // Per-channel override: the header's Show selector (M10 tri-state) flips
+  // this channel back to Both.
+  const showSelector = page.getByRole("radiogroup", {
+    name: "Show chat, ads, or both",
+  });
+  await expect(
+    showSelector.getByRole("radio", { name: "Chat" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await showSelector.getByRole("radio", { name: "Both" }).click();
   await expect(mossAd).toBeVisible();
 
-  // RMO: the op flips the room chat-only; the Ad toggle and ads chip leave
-  // the UI live (channel.info fan-out).
+  // RMO: the op flips the room chat-only; the Ad toggle and Show selector
+  // leave the UI live (channel.info fan-out).
   moss.send("RMO", { channel: GREENHOUSE, mode: "chat" });
   await expect(adToggle).not.toBeVisible({ timeout: 15_000 });
-  await expect(
-    page.getByRole("button", { name: "♥ ads on" }),
-  ).not.toBeVisible();
+  await expect(showSelector).not.toBeVisible();
 
   moss.close();
 });

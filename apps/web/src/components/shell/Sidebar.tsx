@@ -137,17 +137,30 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
         <div className={styles.sectionHeader}>
           <span>Channels</span>
-          <button
-            type="button"
-            className={styles.sectionAction}
-            title="Browse channels"
-            aria-label="Browse channels"
-            onClick={() => {
-              useUiStore.getState().setChannelBrowserOpen(true);
-            }}
-          >
-            +
-          </button>
+          <span className={styles.sectionActions}>
+            <button
+              type="button"
+              className={styles.sectionAction}
+              title="Search characters"
+              aria-label="Search characters"
+              onClick={() => {
+                useUiStore.getState().setCharacterSearchOpen(true);
+              }}
+            >
+              ⌕
+            </button>
+            <button
+              type="button"
+              className={styles.sectionAction}
+              title="Browse channels"
+              aria-label="Browse channels"
+              onClick={() => {
+                useUiStore.getState().setChannelBrowserOpen(true);
+              }}
+            >
+              +
+            </button>
+          </span>
         </div>
         {channels.map((channel) => channelRow(channel, false))}
         {session.invites.map((invite) => (

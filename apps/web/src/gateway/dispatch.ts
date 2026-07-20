@@ -5,12 +5,14 @@
 // overwrites / set add-remove; only message.new is exactly-once.
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
-import { adsHidden } from "../components/chat/ads.js";
+
 import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
 import { errNotice } from "../lib/err-codes.js";
 import { loadSocial } from "../lib/social.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
+import { useAdsStore } from "../stores/ads.js";
 import { useMessagesStore } from "../stores/messages.js";
+import { useSearchStore } from "../stores/search.js";
 import { useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
 import { hydrateTheme } from "../theme/theme.js";
@@ -104,13 +106,10 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // alerts only: badges, tint and the bump still accrue (decisions.md
       // §10).
       const prefs = sessions.sessions[identityId]?.prefs;
-      // A hidden ad is invisible end to end: no unread, no alerts (the
-      // buffer keeps it, so flipping ads back on reveals it in place).
-      if (
-        message.kind === "lrp" &&
-        prefs &&
-        adsHidden(prefs, sessions.sessions[identityId]?.channelByConvId[convId])
-      ) {
+      // Ads never affect unread counts or alerts in any view (M10 mandate;
+      // the buffer keeps them, so the Chat/Ads/Both selector reveals them
+      // in place).
+      if (message.kind === "lrp") {
         return;
       }
       const muted =
@@ -234,6 +233,20 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "prefs.updated":
       sessions.applyPrefs(identityId, event.d);
       hydrateTheme(event.d.prefs);
+      return;
+    case "ads.updated":
+      // Ad-library fan-out (M10): another device PUT the list; converge the
+      // mirror so an open Ad Center shows the current library.
+      useAdsStore.getState().applyAds(identityId, event.d.ads);
+      return;
+    case "ads.cooldowns":
+      // Reply to our own cooldown query — waits become absolute expiries so
+      // the post dialog can count down without re-asking.
+      useAdsStore.getState().applyCooldowns(identityId, event.d.waits);
+      return;
+    case "character.search":
+      // Reply to our own search (M10) — results or the server's refusal.
+      useSearchStore.getState().applyOutcome(identityId, event.d);
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);

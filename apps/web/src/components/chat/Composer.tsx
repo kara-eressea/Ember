@@ -5,14 +5,25 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { BB_COLORS, mdToBBCode } from "@emberchat/markdown-bbcode";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import {
+  analyzeMarkdown,
+  BB_COLORS,
+  mdToBBCode,
+} from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
   useSessionsStore,
   type IdentitySession,
 } from "../../stores/sessions.js";
 import type { CardAnchor } from "../../stores/profile.js";
+import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
@@ -44,6 +55,10 @@ export interface ComposerProps {
   channelKey?: string;
   /** The channel's room mode (chat/ads/both) — gates the ad toggle. */
   channelMode?: string;
+  /** The channel's Chat/Ads/Both view (M10, "both"-mode channels only).
+   * In the Ads view the composer composes ads, with a separate draft per
+   * view so flipping never loses either text. */
+  adView?: string;
   /** DM partner — enables outbound typing telemetry (TPN, PMs only). */
   partner?: string;
   /** Channel key when the conversation is a channel we are not live in. */
@@ -58,6 +73,7 @@ export function Composer({
   convId,
   channelKey,
   channelMode,
+  adView,
   partner,
   rejoinKey,
   placeholder,
@@ -72,19 +88,49 @@ export function Composer({
   /** The extended formatting toolbar (M9 step 4), collapsed by default. */
   const [toolsOpen, setToolsOpen] = useState(false);
   const [adChosen, setAdChosen] = useState(false);
+  const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
   // Room mode decides what a send is: ads-only rooms force LRP, chat-only
   // rooms force MSG, "both" offers the toggle (RMO re-gates this live).
+  // The Ads view (M10) composes ads like an ads-only room does.
   const adsPossible = channelKey !== undefined && channelMode !== "chat";
-  const adForced = channelKey !== undefined && channelMode === "ads";
+  const adForced =
+    channelKey !== undefined && (channelMode === "ads" || adView === "ads");
   const sendAsAd = adForced || (adsPossible && adChosen);
+
+  // Separate chat/ad drafts across view flips (M10, spec §4): switching the
+  // header's Show selector stashes the current text and restores the other
+  // view's — neither draft is ever lost.
+  const draftsRef = useRef({ chat: "", ad: "" });
+  const prevViewRef = useRef(adView);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    if (prev === adView) {
+      return;
+    }
+    prevViewRef.current = adView;
+    const prevKey = prev === "ads" ? ("ad" as const) : ("chat" as const);
+    const nextKey = adView === "ads" ? ("ad" as const) : ("chat" as const);
+    if (prevKey !== nextKey) {
+      draftsRef.current[prevKey] = text;
+      setText(draftsRef.current[nextKey]);
+      requestAnimationFrame(autogrow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flip-only
+  }, [adView]);
   // What actually goes on the wire — and what the server's limit measures.
   const wire = markdown ? mdToBBCode(text) : text;
   const bytes = utf8.encode(wire).length;
   const limitBytes = sendAsAd ? session.limits.lfrpMax : maxBytes;
   const pending = session.outbox.filter((item) => item.convId === convId);
   const previewEmote = parseEmote(wire);
+  // Advisory lossiness check (M10): Markdown that reaches the wire as
+  // literal text gets a heads-up next to the preview — never a block.
+  const lossCount = useMemo(
+    () => (markdown && text.trim() !== "" ? analyzeMarkdown(text).length : 0),
+    [markdown, text],
+  );
   // Case-insensitive: the icon_blacklist VAR carries lowercase names while
   // channel keys are canonical-case (audit).
   const iconsBlacklisted =
@@ -415,6 +461,15 @@ export function Composer({
               <RichText bbcode={wire} />
             )}
           </div>
+          {lossCount > 0 && (
+            <div className={styles.previewLossiness}>
+              ⚠{" "}
+              {lossCount === 1
+                ? "1 part will post as plain text"
+                : `${String(lossCount)} parts will post as plain text`}{" "}
+              — the preview shows exactly what goes out
+            </div>
+          )}
         </div>
       )}
       {helpOpen && (
@@ -594,6 +649,18 @@ export function Composer({
           >
             ☺
           </button>
+          <span className={styles.hintDivider} aria-hidden />
+          <button
+            type="button"
+            className={`${styles.formatHint} ${adCenterOpen ? (styles.formatHintOn ?? "") : ""}`}
+            title="Your ad library — write once, post anywhere"
+            aria-label="Open the Ad Center"
+            onClick={() => {
+              useUiStore.getState().setAdCenterOpen(true);
+            }}
+          >
+            ▤ Ad
+          </button>
         </span>
       </div>
       <div className={styles.composerFooter}>
@@ -619,10 +686,12 @@ export function Composer({
             disabled={adForced}
             title={
               adForced
-                ? "This room only accepts roleplay ads (LRP)"
+                ? channelMode === "ads"
+                  ? "This room only accepts roleplay ads"
+                  : "The Ads view composes ads — set Show to Chat or Both for chat"
                 : sendAsAd
-                  ? "Sending as a roleplay ad (LRP) — 1 per 10 minutes"
-                  : "Send as a roleplay ad (LRP)"
+                  ? "Sending as a roleplay ad — each channel takes one ad per window"
+                  : "Send as a roleplay ad"
             }
             aria-pressed={sendAsAd}
           >

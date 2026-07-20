@@ -25,6 +25,9 @@ export type RateGateClass =
   | "SFC"
   | "CHA"
   | "ORS"
+  /** Character search (FKS) — the server paces searches at one per 5 s
+   * (ERR 50); a protocol constant, no VAR carries it. */
+  | "FKS"
   /** Room management (CCR/CIU/RST) shares one timeline — rare, user-clicked. */
   | "ROOM";
 

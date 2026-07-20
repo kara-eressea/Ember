@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.av *{box-sizing:border-box}
+.avscroll::-webkit-scrollbar{width:8px}
+.avscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.avcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:520px;line-height:1.5}
+.avcap b{color:#a892c6;font-weight:600}
+</style>
+</helmet>
+<div class="av" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="4">
+  <div style="display:flex;flex-direction:column">
+    <div class="avcap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,codebg:this.mix(text,bg,.9),
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  nickColor(n){const p=['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8'];
+    let s=0;for(const c of n)s+=c.charCodeAt(0);return p[s%p.length];}
+
+  // ---- MatchTier primitive (reused verbatim from M8) ----
+  tiers(){const t=this.T();return{
+    match:{frac:1,label:'Match',color:t.ok},
+    weakMatch:{frac:.75,label:'Weak match',color:this.mix(t.ok,t.warn,.55)},
+    neutral:{frac:.5,label:'Neutral',color:this.mix(t.dim,t.faint,.4)},
+    weakMismatch:{frac:.25,label:'Weak mismatch',color:t.warn},
+    mismatch:{frac:0,label:'Mismatch',color:t.danger}};}
+  pie(key,size,color){
+    const T=this.tiers()[key];const c=color||T.color;const r=size/2,cx=r,cy=r,sw=1.4,rr=r-sw/2;const frac=T.frac;
+    let fill=null;
+    if(frac>=1)fill=React.createElement('circle',{cx,cy,r:rr,fill:c,stroke:'none'});
+    else if(frac>0){const a=frac*2*Math.PI-Math.PI/2;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);const large=frac>.5?1:0;
+      fill=React.createElement('path',{d:`M ${cx} ${cy} L ${cx} ${cy-rr} A ${rr} ${rr} 0 ${large} 1 ${x} ${y} Z`,fill:c,stroke:'none'});}
+    return React.createElement('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,
+      style:{display:'inline-block',flexShrink:0,verticalAlign:'middle'}},fill,
+      React.createElement('circle',{cx,cy,r:rr,fill:'none',stroke:c,strokeWidth:sw}));}
+  matchPill(key,opts){
+    const t=this.T(),T=this.tiers()[key];const short=opts&&opts.short;
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',padding:'2.5px 9px 2.5px 7px',borderRadius:'20px',
+      fontFamily:t.ui,fontSize:'10.5px',fontWeight:600,whiteSpace:'nowrap',color:T.color,
+      background:this.mix(T.color,t.bg,.83),border:`1px solid ${this.mix(T.color,t.bg,.58)}`},
+      this.pie(key,10),short?T.label.replace(' match','').replace(' mismatch',''):T.label);}
+
+  // ---- markdown inline (message tokenizer) ----
+  inlineMd(str){
+    const t=this.T();const out=[];let k=0;
+    const re=/(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)|(@[A-Za-z0-9_]+)|(https?:\/\/[^\s]+)/g;
+    let m,last=0;
+    while((m=re.exec(str))){
+      if(m.index>last)out.push(str.slice(last,m.index));
+      const tok=m[0];
+      if(tok.startsWith('**'))out.push(this.hk('k'+(k++),'strong',{fontWeight:700,color:t.text},tok.slice(2,-2)));
+      else if(tok.startsWith('*'))out.push(this.hk('k'+(k++),'em',{fontStyle:'italic'},tok.slice(1,-1)));
+      else if(tok.startsWith('`'))out.push(this.hk('k'+(k++),'code',{fontFamily:t.mono,fontSize:'12px',background:t.codebg,borderRadius:'3px',padding:'1px 4px'},tok.slice(1,-1)));
+      else if(tok.startsWith('@'))out.push(this.hk('k'+(k++),'span',{color:t.accent,background:t.accentSoft,borderRadius:'3px',padding:'0 3px',fontWeight:600},tok));
+      else out.push(this.hk('k'+(k++),'span',{color:t.accent,textDecoration:'underline',textUnderlineOffset:'2px'},tok));
+      last=re.lastIndex;
+    }
+    if(last<str.length)out.push(str.slice(last));
+    return out;
+  }
+
+  // ---- chat line ----
+  chatLine(time,nick,body,hl){
+    const t=this.T();const nc=this.nickColor(nick);
+    return this.h('div',{display:'flex',gap:'9px',alignItems:'baseline',padding:hl?'4px 16px':'2px 16px',
+      background:hl?t.accentSoft:'transparent',boxShadow:hl?`inset 3px 0 0 ${t.accent}`:'none'},
+      this.h('span',{fontFamily:t.mono,fontSize:'11.5px',color:t.faint,fontVariantNumeric:'tabular-nums',flexShrink:0},'['+time+']'),
+      this.h('span',{fontFamily:t.mono,fontSize:'12.5px',fontWeight:600,color:nc,whiteSpace:'nowrap',flexShrink:0},'<'+nick+'>'),
+      this.h('span',{fontSize:'13px',lineHeight:1.5,color:t.text},...this.inlineMd(body)));
+  }
+
+  // ---- LRP ad row (distinct, boxed) ----
+  adLine(ad){
+    const t=this.T();const nc=ad.genderColor||this.nickColor(ad.nick);
+    const headKids=[
+      this.h('span',{fontFamily:t.mono,fontSize:'8.5px',fontWeight:700,letterSpacing:'.08em',color:t.accent,
+        background:t.accentSoft,border:`1px solid ${t.accentMed}`,borderRadius:'4px',padding:'1px 6px',flexShrink:0},'AD'),
+      this.h('span',{fontFamily:t.mono,fontSize:'12.5px',fontWeight:600,color:nc,cursor:'pointer',flexShrink:0},ad.nick),
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.faint,flexShrink:0},'['+ad.time+']'),
+      this.h('span',{flex:1}),
+      // cached-only MatchTier chip — absent on most rows, quiet bonus when present
+      ad.match?this.h('span',{flexShrink:0},this.matchPill(ad.match,{short:true})):null,
+    ];
+    const bodyLines=ad.body.split('\n');
+    return this.h('div',{margin:'4px 16px',background:this.mix(t.accent,t.side,.93),border:`1px solid ${t.border}`,
+      borderLeft:`3px solid ${t.accentMed}`,borderRadius:t.radius+'px',padding:'8px 12px 9px',fontFamily:t.ui},
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px',marginBottom:'5px'},...headKids),
+      this.h('div',{fontSize:'12.5px',lineHeight:1.5,color:t.text,display:'flex',flexDirection:'column',gap:'2px'},
+        ...bodyLines.map((ln,i)=>this.hk(i,'div',{color:ln.trim()===''?'transparent':t.text},
+          ...(ln.trim()===''?[' ']:this.inlineMd(ln))))));
+  }
+
+  // ---- channel header + Show selector ----
+  showSeg(sel){
+    const t=this.T();const opts=['Chat','Ads','Both'];
+    return this.h('div',{display:'inline-flex',alignItems:'center',gap:'6px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint,letterSpacing:'.04em'},'SHOW'),
+      this.h('div',{display:'inline-flex',gap:'2px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',padding:'2px'},
+        ...opts.map((o,i)=>this.hk(i,'span',{padding:'3px 10px',borderRadius:t.radius-3+'px',fontSize:'11.5px',fontWeight:600,
+          cursor:'pointer',color:o===sel?t.bg:t.dim,background:o===sel?t.accent:'transparent'},o))));
+  }
+  header(sel,showSelector){
+    const t=this.T();
+    return this.h('div',{padding:'11px 16px',borderBottom:`1px solid ${t.border}`,background:t.head},
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px'},
+        this.h('span',{fontFamily:t.mono,fontSize:'18px',color:t.faint},'#'),
+        this.h('span',{fontSize:'16px',fontWeight:700,color:t.text},'Cabin Fever'),
+        showSelector?this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:600,letterSpacing:'.05em',textTransform:'uppercase',
+          color:t.dim,background:t.bg,border:`1px solid ${t.border}`,borderRadius:'4px',padding:'1px 6px'},'both'):null,
+        this.h('span',{flex:1}),
+        showSelector?this.showSeg(sel):this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.faint},'☆  ⌕  ☰ 32')),
+      this.h('div',{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px'},
+        this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:700,color:t.accent,background:t.accentSoft,borderRadius:'4px',padding:'1px 5px'},'TOPIC'),
+        this.h('span',{fontSize:'12px',color:t.dim,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},'snowed-in scenes · ads welcome · [ads: 15 min] please')));
+  }
+  composerBar(mode){
+    const t=this.T();const isAd=mode==='ad';
+    return this.h('div',{padding:'10px 16px 12px'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',height:'44px',padding:'0 12px',background:t.side,
+        border:`1px solid ${isAd?t.accentMed:t.border}`,borderRadius:t.radius+'px'},
+        this.h('span',{fontFamily:t.mono,fontSize:'18px',color:t.faint},'+'),
+        isAd?this.h('span',{fontFamily:t.mono,fontSize:'8.5px',fontWeight:700,letterSpacing:'.06em',color:t.accent,
+          background:t.accentSoft,border:`1px solid ${t.accentMed}`,borderRadius:'4px',padding:'1px 6px'},'AD'):null,
+        this.h('span',{flex:1,fontSize:'13px',color:t.faint},isAd?'Compose an ad for #Cabin Fever…':'Message #Cabin Fever…'),
+        this.h('span',{fontFamily:t.mono,fontSize:'11px',color:isAd?t.accent:t.faint},isAd?'▤ Ad':'▤')));
+  }
+
+  logCard(w,sel,rows,composerMode,showSelector){
+    const t=this.T();
+    return this.h('div',{width:w+'px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden',fontFamily:t.ui,boxShadow:'0 20px 50px -18px rgba(0,0,0,.6)'},
+      this.header(sel,showSelector==null?true:showSelector),
+      this.h('div',{padding:'8px 0',minHeight:'40px'},...rows),
+      this.h('div',{borderTop:`1px solid ${t.border}`},this.composerBar(composerMode)));
+  }
+
+  data(){return {
+    // cached vs not: only Kolvarr (bookmarked, cached) carries a chip; others none
+    both:[
+      {t:'chat',time:'14:01',nick:'Sable',body:'anyone up for a slow winter thread tonight'},
+      {t:'ad',ad:{nick:'Kolvarr',time:'14:02',genderColor:'#8f9bc9',match:'match',
+        body:'**Long-term arctic plot** — timber wolf, dom-leaning.\nbuilding a slow expedition arc, want a co-writer not a vending machine. refs on my profile · @me'}},
+      {t:'chat',time:'14:03',nick:'Thistle',body:'@Sable i’m around, DM me'},
+      {t:'ad',ad:{nick:'Vesna',time:'14:04',genderColor:'#c294b0',
+        body:'*arctic fox, 24, switch* — seeking slow-burn, snowed-in cabins, the long thaw into trust. paragraph replies please.'}},
+      {t:'chat',time:'14:05',nick:'Kolvarr',body:'plenty of takers today it seems'},
+      {t:'ad',ad:{nick:'Bramble',time:'14:06',
+        body:'quick scene? PWP ok, anything goes, keep it kind. evenings EST.'}},
+    ],
+  };}
+
+  frameBoth(){
+    const d=this.data();
+    return this.logCard(560,'Both',d.both.map((r,i)=>this.hk(i,'div',{},r.t==='ad'?this.adLine(r.ad):this.chatLine(r.time,r.nick,r.body))),'chat');
+  }
+  frameChatAds(){
+    const t=this.T();const d=this.data();
+    const chatOnly=d.both.filter(r=>r.t==='chat');
+    const adsOnly=d.both.filter(r=>r.t==='ad');
+    const chatCard=this.logCard(360,'Chat',chatOnly.map((r,i)=>this.hk(i,'div',{},this.chatLine(r.time,r.nick,r.body))),'chat');
+    const adCard=this.logCard(360,'Ads',adsOnly.map((r,i)=>this.hk(i,'div',{},this.adLine(r.ad))),'ad');
+    return this.h('div',{display:'flex',gap:'22px',alignItems:'flex-start'},
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'Show = Chat — ad rows hidden, composer composes chat'),chatCard),
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'Show = Ads — chat hidden, composer switches to ad draft'),adCard));
+  }
+  frameAnatomy(){
+    const t=this.T();
+    const label=(txt)=>this.h('div',{fontFamily:t.mono,fontSize:'9.5px',fontWeight:700,letterSpacing:'.08em',
+      textTransform:'uppercase',color:t.faint,margin:'0 0 8px'},txt);
+    const withChip=this.adLine({nick:'Kolvarr',time:'14:02',genderColor:'#8f9bc9',match:'match',
+      body:'**Long-term arctic plot** — timber wolf, dom-leaning. refs on my profile · @me'});
+    const noChip=this.adLine({nick:'Bramble',time:'14:06',
+      body:'**Long-term arctic plot** — timber wolf, dom-leaning. refs on my profile · @me'});
+    const spec=this.h('div',{width:'560px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      padding:'16px 18px',display:'flex',flexDirection:'column',gap:'11px',fontSize:'12px',color:t.dim,lineHeight:1.5},
+      this.h('div',{},this.h('b',{style:{color:t.text}},'AD tag + boxed treatment'),' — an LRP ad renders as a bordered block with a 3px accent rail and a faint accent tint, distinct from the flat chat line so it never reads as a normal message.'),
+      this.h('div',{},this.h('b',{style:{color:t.text}},'Cached-only MatchTier chip'),' — the M8 pill, right-aligned on the header line, appears ',this.h('span',{style:{color:t.text,fontWeight:600}},'only when the poster’s profile is already in the local cache'),'. No fetch-on-render, so most ad rows carry no chip — the two rows above are otherwise identical.'),
+      this.h('div',{},this.h('b',{style:{color:t.text}},'Absence is the default'),' — the chip lives in a flex spacer, not a reserved column, so a missing chip leaves no hole. Presence is a quiet bonus, never a gap.'),
+      this.h('div',{},this.h('b',{style:{color:t.text}},'Clicking the nick'),' opens the existing mini profile card (§13 popover anchoring). Ads never affect unread counts.'));
+    return this.h('div',{display:'flex',flexDirection:'column',gap:'16px',width:'560px'},
+      this.h('div',{background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',padding:'8px 0'},
+        label('   cached → chip present'),withChip,
+        this.h('div',{height:'6px'}),
+        label('   not cached → no chip (the normal look)'),noChip),
+      spec);
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'AV·A',cap:'Channel view — mode = both. The header carries a Show: Chat / Ads / Both selector (only when the channel mode is both). LRP ads render as distinct boxed rows intermixed with flat chat lines; one poster is cached so its ad carries a quiet MatchTier chip, the rest don’t.',el:this.frameBoth()},
+      {id:'AV·B',cap:'Show filter — Chat hides ad rows (composer composes chat); Ads hides chat rows and the composer switches to a separate ad draft. Filtered rows still exist in history; ads never touch unread counts. Persisted per channel.',el:this.frameChatAds()},
+      {id:'AV·C',cap:'Ad row anatomy + the cached-only MatchTier rule — two otherwise-identical ad rows, one cached (chip) and one not (no chip, the normal look). The chip sits in a flex spacer so its absence is never a hole.',el:this.frameAnatomy()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>
