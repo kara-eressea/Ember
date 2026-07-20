@@ -5,6 +5,7 @@
 // and click-away, stopping propagation so stacked layers don't also close.
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Avatar } from "../common/Avatar.js";
 import { StarPicker } from "./StarRating.js";
 import { placePopover } from "../profile/popover.js";
@@ -30,6 +31,9 @@ export function RateEditor({
   const [saved, setSaved] = useState(false);
   const [failed, setFailed] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  /** Armed on Clear's pointerdown so the note field's blur-save can't
+   * race the delete and resurrect the rating. */
+  const clearingRef = useRef(false);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -69,7 +73,10 @@ export function RateEditor({
     setFailed(!ok);
   }
 
-  return (
+  // Portaled to <body>: the ad-row mount sits inside a transformed
+  // virtualizer row, which would otherwise become the containing block
+  // for this fixed-position popover (audit HIGH).
+  return createPortal(
     <div
       ref={ref}
       className={styles.editor}
@@ -120,7 +127,7 @@ export function RateEditor({
             setSaved(false);
           }}
           onBlur={() => {
-            if (score > 0) {
+            if (score > 0 && !clearingRef.current) {
               void save(score, note);
             }
           }}
@@ -134,6 +141,9 @@ export function RateEditor({
             <button
               type="button"
               className={styles.clearButton}
+              onPointerDown={() => {
+                clearingRef.current = true;
+              }}
               onClick={() => {
                 void useRatingsStore.getState().clear(character);
                 onClose();
@@ -144,6 +154,7 @@ export function RateEditor({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

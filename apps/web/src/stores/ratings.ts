@@ -36,7 +36,12 @@ export const useRatingsStore = create<RatingsState>()((set, get) => ({
         for (const rating of response.ratings) {
           byName[rating.character.toLowerCase()] = rating;
         }
-        set({ loaded: true, byName });
+        // A save that landed while the GET was in flight is newer than
+        // the fetched snapshot — local entries win the merge.
+        set((state) => ({
+          loaded: true,
+          byName: { ...byName, ...state.byName },
+        }));
       })
       .catch(() => {
         // A failed load retries on the next call.

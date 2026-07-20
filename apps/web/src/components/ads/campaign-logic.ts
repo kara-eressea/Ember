@@ -58,6 +58,16 @@ export function effectiveIntervalText(description: string): {
   return { text: "≈ one ad every 12–22 min", honored: false };
 }
 
+/** The status-row schedule fact (§3b) — a sentence, never the bracket
+ * token syntax the setup rows may show. */
+export function statusIntervalText(description: string): string {
+  const requested = parseAdsCadence(description);
+  if (requested !== undefined && requested > 12) {
+    return `every ≈${String(requested)} min · honoring their request`;
+  }
+  return "every 12–22 min";
+}
+
 /** The rotation set a tag selection resolves to: enabled ads carrying any
  * selected tag, in library order (mirrors the server's cycle). */
 export function resolveCycle(ads: AdDto[], tags: string[]): AdDto[] {

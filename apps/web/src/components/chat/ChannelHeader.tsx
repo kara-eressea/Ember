@@ -555,11 +555,25 @@ function CampaignChip({
   const campaign = useSessionsStore(
     (s) => s.sessions[identityId]?.campaign ?? null,
   );
-  const [now] = useState(() => Date.now());
+  // The clock ticks so the chip disappears when the hour runs out even
+  // if the user never leaves the channel (audit HIGH: natural expiry
+  // never sets stoppedAt).
+  const [now, setNow] = useState(() => Date.now());
   const running =
     campaign !== null &&
     campaign.stoppedAt === undefined &&
     now < campaign.expiresAt;
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [running]);
   const posting =
     running &&
     campaign.channels.some(

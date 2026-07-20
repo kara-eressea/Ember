@@ -16,6 +16,7 @@ import { useUiStore } from "../../stores/ui.js";
 import { adTitle } from "./ad-center-logic.js";
 import {
   campaignPhase,
+  statusIntervalText,
   channelCounts,
   effectiveIntervalText,
   elapsedFraction,
@@ -56,14 +57,18 @@ export function CampaignDialog({
 
   useEffect(() => {
     windowRef.current?.focus();
+    // Capture + stopPropagation (the HelpPanel layering pattern): one
+    // Escape must close only this topmost layer, never also consume the
+    // Ad Center's unsaved-draft warning underneath (audit MEDIUM).
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        event.stopPropagation();
         onClose();
       }
     }
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
     };
   }, [onClose]);
 
@@ -114,6 +119,10 @@ export function CampaignDialog({
   }, [ads]);
 
   const cycle = useMemo(() => resolveCycle(ads, tags), [ads, tags]);
+  const rotatingCount = useMemo(
+    () => (campaign ? resolveCycle(ads, campaign.tags).length : 0),
+    [ads, campaign],
+  );
 
   async function cmd(
     action: "campaign.start" | "campaign.stop" | "campaign.renew",
@@ -179,10 +188,12 @@ export function CampaignDialog({
               A campaign is already running as {session.character}
             </strong>
             <span>
-              {formatExpiry(campaign.expiresAt, now)} left ·{" "}
-              {String(channelCounts(campaign).active)} channels active. Starting
-              a new one <strong>replaces it</strong> — the current one stops
-              immediately.
+              {String(
+                Math.max(1, Math.ceil((campaign.expiresAt - now) / 60_000)),
+              )}{" "}
+              minutes left · {String(channelCounts(campaign).active)} channels
+              active. Starting a new one <strong>replaces it</strong> — the
+              current one stops immediately.
             </span>
           </span>
           <span className={styles.replaceActions}>
@@ -271,6 +282,16 @@ export function CampaignDialog({
             None of your enabled ads carry the tags you picked. Choose other
             tags, or enable an ad in the Ad Center.
           </p>
+          <button
+            type="button"
+            className={styles.edgeCta}
+            onClick={() => {
+              onClose();
+              useUiStore.getState().setAdCenterOpen(true);
+            }}
+          >
+            Open Ad Center →
+          </button>
         </div>
       )}
       {cycle.length > 0 && (
@@ -524,10 +545,7 @@ export function CampaignDialog({
             </span>
           </span>
           <span className={styles.chanInterval}>
-            {
-              effectiveIntervalText(session.channels[key]?.description ?? "")
-                .text
-            }
+            {statusIntervalText(session.channels[key]?.description ?? "")}
           </span>
         </span>
         <span className={styles.rowRight}>
@@ -560,8 +578,19 @@ export function CampaignDialog({
             ? (styles.expiryDetached ?? "")
             : (styles.expiryEnded ?? "")
       }`}
-      role="status"
     >
+      {/* The live region carries ONLY the phase sentence — the ticking
+          countdown must never re-announce the whole strip every second
+          (audit HIGH). */}
+      <span className={styles.srOnly} role="status">
+        {phase === "live"
+          ? "Campaign posting live"
+          : phase === "detached"
+            ? "Campaign paused — no device attached"
+            : phase === "stopped"
+              ? "Campaign stopped"
+              : "Campaign expired"}
+      </span>
       <div className={styles.expiryRow}>
         {phase === "live" ? (
           <span
@@ -589,11 +618,11 @@ export function CampaignDialog({
             {phase === "live"
               ? (() => {
                   const counts = channelCounts(campaign);
-                  return `${String(counts.active)} active · ${String(counts.waiting)} waiting · ${String(counts.stopped)} stopped`;
+                  return `${String(counts.active)} channels active · ${String(counts.waiting)} waiting · ${String(counts.stopped)} stopped`;
                 })()
               : phase === "detached"
                 ? "Rotation resumes on its own when you reconnect. The 1-hour clock keeps running while you're away."
-                : `ran ${formatClock(campaign.startedAt)} – ${formatClock(campaign.stoppedAt ?? campaign.expiresAt)}`}
+                : `ran ${formatClock(campaign.startedAt)} – ${formatClock(campaign.stoppedAt ?? campaign.expiresAt)}${phase === "expired" ? " · 1 hour" : ""}`}
           </span>
         </span>
         {ended ? (
@@ -663,6 +692,12 @@ export function CampaignDialog({
                   you were removed — rotation stopped here
                 </span>
               )}
+              {channel.state === "refused" && (
+                <span className={styles.rowSub}>
+                  paused part of the run — the channel was getting ads from
+                  somewhere else
+                </span>
+              )}
             </span>
             <span
               className={`${styles.summaryPosts} ${channel.posts > 0 ? (styles.summaryPostsSome ?? "") : ""}`}
@@ -704,7 +739,11 @@ export function CampaignDialog({
                 setPicked(
                   new Set(
                     campaign.channels
-                      .filter((c) => c.state !== "removed")
+                      .filter(
+                        (c) =>
+                          c.state !== "removed" &&
+                          session.channels[c.key]?.joined === true,
+                      )
                       .map((c) => c.key),
                   ),
                 );
@@ -781,8 +820,8 @@ export function CampaignDialog({
                   ? phase === "detached"
                     ? `as ${session.character} · paused while you're away`
                     : ended
-                      ? `as ${session.character} · ended ${formatClock(campaign.stoppedAt ?? campaign.expiresAt)}`
-                      : `as ${session.character} · started ${formatClock(campaign.startedAt)}`
+                      ? `as ${session.character} · ${phase === "stopped" ? "stopped" : "expired"} ${formatClock(campaign.stoppedAt ?? campaign.expiresAt)}`
+                      : `as ${session.character} · ${String(rotatingCount)} ${rotatingCount === 1 ? "ad" : "ads"} rotating · started ${formatClock(campaign.startedAt)}`
                   : ""}
             </span>
           </div>
