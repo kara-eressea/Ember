@@ -39,6 +39,7 @@ function seedSession(
       sendDelaySeconds: 0,
       prefs: options.prefs ?? PREFS_ON,
       outbox: [],
+      campaign: null,
     },
     channels: [],
     dms: [],

@@ -49,6 +49,7 @@ function session(): IdentitySession {
     sendDelaySeconds: 0,
     prefs: PREFS_DEFAULTS,
     outbox: [],
+    campaign: null,
     channels: {
       Frontpage: {
         convId: "c-1",

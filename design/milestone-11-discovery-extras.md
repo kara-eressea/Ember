@@ -135,8 +135,25 @@ is ever sent to F-List.**
   channels never resume). Integration notes: tighten the duration-card
   copy ("you can't change it here" → "The length is fixed"), and the
   hover-revealed ☆ Rate pill needs a keyboard-focus-visible equivalent
-- [ ] 5. Web: campaign setup + status surface (built to the CD spec;
-  plain-language copy pass)
+- [x] 5. Web: campaign surfaces (2026-07-20, CD spec §1–§4):
+  `CampaignDialog` (648×600, Post-Ads language) — setup (multi-tag chips
+  with enabled-ad counts, ResolveBox numbered cycle + `↺ back to 1` loop
+  marker, channel rows with honored `[ads: N min]` interval sub-lines,
+  the 1-hour fact card with the tightened copy, ReplaceBanner with the
+  explicit warn-toned Replace, no-ads/no-channels edge tiles) and status
+  (three-tone ExpiryBar with elapsed track + `expires in MM:SS` + Renew,
+  per-channel rows: live-dot active with `next ≈ HH:MM` countdowns,
+  waiting-held, warn refused with the plain reason + `retry ≈`, danger
+  removed with Drop ✕; detached whole-campaign hold; ended state with
+  the run summary + Change tags/Renew; ■ Stop everything + "Post once
+  manually →"). Entry points: the Post-Ads Rotate… slot is live (idle
+  button ↔ pulsing "Campaign live · Nm" indicator), quiet channel-header
+  "Campaign · posting here" chip. Data path: `campaign` on the session
+  slice (snapshot + `campaign.updated` dispatch), `campaignOpen` ui
+  flag. Derived setup/status mode (no state-sync effects — the React
+  Compiler rule). `campaign-logic.ts` helpers unit-tested (phase order,
+  countdown formats, honored intervals, cycle resolution, aggregates);
+  web 215
 - [ ] 6. Web: rating affordances + dimmed rendering (built to the CD
   spec; plain-language copy pass)
 - [ ] 7. Verification suite + docs: E2E campaign journey against the sim
