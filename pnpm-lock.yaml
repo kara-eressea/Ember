@@ -38,6 +38,9 @@ importers:
       '@emberchat/fchat-protocol':
         specifier: workspace:*
         version: link:../../packages/fchat-protocol
+      '@emberchat/markdown-bbcode':
+        specifier: workspace:*
+        version: link:../../packages/markdown-bbcode
       '@emberchat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

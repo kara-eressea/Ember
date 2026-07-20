@@ -14,6 +14,7 @@ import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { adsRoutes } from "./modules/ads/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { CampaignScheduler } from "./modules/campaigns/scheduler.js";
 import { ratingsRoutes } from "./modules/ratings/routes.js";
 import { SessionJanitor } from "./modules/auth/session-janitor.js";
 import { DetachedAway } from "./modules/away/detached-away.js";
@@ -169,12 +170,23 @@ export async function buildApp({
     logger: app.log,
   });
   updates.start();
+  // Ad-rotation campaigns (M11): resumes persisted campaigns and runs the
+  // conservative posting schedule. Attached-only gating rides the hub.
+  const campaignScheduler = new CampaignScheduler({
+    db,
+    sessions,
+    hub,
+    history,
+    logger: app.log,
+  });
+  await campaignScheduler.start();
   app.addHook("onClose", () => {
     updates.stop();
     sessionJanitor.stop();
     detachedAway.stop();
     retention.stop();
     outbox.stop();
+    campaignScheduler.stop();
     sessions.stopAll();
   });
 
@@ -304,6 +316,7 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    campaigns: campaignScheduler,
     // Browsers may open the gateway from the app's own origin or any
     // configured CORS origin; anything else is a hostile page. The two
     // loopback spellings are treated as one so a local `docker compose up`
