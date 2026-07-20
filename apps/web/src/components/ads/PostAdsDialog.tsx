@@ -6,7 +6,7 @@
 // retries automatically. A reserved, disabled Rotate… slot marks where the
 // deferred rotation surface will live.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
@@ -21,6 +21,25 @@ import {
   type PostOutcome,
 } from "./post-ads-logic.js";
 import styles from "./post-ads.module.css";
+
+/** Server ack errors in the user's register: cooldown refusals are already
+ * written for people; everything else is an internal message that gets a
+ * plain-language stand-in. */
+function friendlyRefusal(error: string | undefined): string {
+  if (error === undefined) {
+    return "The server refused this ad";
+  }
+  if (error.includes("next available in")) {
+    return error;
+  }
+  if (error.toLowerCase().includes("not online")) {
+    return "This character isn't connected right now";
+  }
+  if (error.includes("byte limit") || error.includes("exceeds")) {
+    return "This ad is longer than the server allows";
+  }
+  return "The server refused this ad";
+}
 
 export function PostAdsDialog({
   session,
@@ -44,6 +63,8 @@ export function PostAdsDialog({
   // Clock state so cooldown countdowns stay current while open — render
   // stays pure; the interval below advances it.
   const [now, setNow] = useState(() => Date.now());
+  const [postedAt, setPostedAt] = useState("");
+  const windowRef = useRef<HTMLDivElement>(null);
 
   const online = session.sessionStatus === "online";
   const tags = useMemo(() => tagCounts(ads), [ads]);
@@ -73,6 +94,7 @@ export function PostAdsDialog({
     : 0;
 
   useEffect(() => {
+    windowRef.current?.focus();
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -84,7 +106,7 @@ export function PostAdsDialog({
     };
   }, [onClose]);
 
-  // Library + live cooldowns on open; the countdown ticks locally.
+  // Library on open; the countdown ticks locally.
   useEffect(() => {
     if (!entry?.loaded) {
       api
@@ -94,16 +116,6 @@ export function PostAdsDialog({
         })
         .catch(() => undefined);
     }
-    const keys = Object.values(session.channels)
-      .filter((channel) => channel.joined && channel.mode !== "chat")
-      .map((channel) => channel.key);
-    if (online && keys.length > 0) {
-      void gateway.cmd({
-        identityId,
-        action: "ads.cooldowns",
-        d: { keys },
-      });
-    }
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 15_000);
@@ -112,6 +124,26 @@ export function PostAdsDialog({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- on open only
   }, []);
+
+  // Live cooldowns — refetched when the session comes online while the
+  // dialog is open (opening mid-reconnect must not freeze every channel
+  // as clear-to-post).
+  useEffect(() => {
+    if (!online) {
+      return;
+    }
+    const keys = Object.values(session.channels)
+      .filter((channel) => channel.joined && channel.mode !== "chat")
+      .map((channel) => channel.key);
+    if (keys.length > 0) {
+      void gateway.cmd({
+        identityId,
+        action: "ads.cooldowns",
+        d: { keys },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on connect only
+  }, [online, identityId]);
 
   function togglePicked(key: string) {
     setPicked((prev) => {
@@ -132,6 +164,12 @@ export function PostAdsDialog({
     }
     setPosting(true);
     setPostedTitle(chosen.content.split("\n", 1)[0]?.trim() ?? "");
+    setPostedAt(
+      new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    );
     const bbcode = mdToBBCode(chosen.content).trim();
     const outcomes: PostOutcome[] = results ? [...results] : [];
     for (const key of keys) {
@@ -160,7 +198,7 @@ export function PostAdsDialog({
             key,
             title: channel.title,
             ok: false,
-            reason: ack.error ?? "The server refused this ad",
+            reason: friendlyRefusal(ack.error),
           };
       const existing = outcomes.findIndex((o) => o.key === key);
       if (existing >= 0) {
@@ -210,6 +248,7 @@ export function PostAdsDialog({
       <>
         <div
           className={`${styles.summary} ${failed.length > 0 ? (styles.summaryPartial ?? "") : ""}`}
+          role="status"
         >
           <strong>
             Posted to {sent} of {results.length}{" "}
@@ -306,7 +345,11 @@ export function PostAdsDialog({
             </button>
           ))}
         </div>
-        <div className={styles.adList}>
+        <div
+          className={styles.adList}
+          role="radiogroup"
+          aria-label="Pick one ad"
+        >
           {matching.length === 0 && (
             <p className={styles.noMatch}>
               No enabled ads carry “{tag}”. Pick another tag, or enable an ad in
@@ -317,6 +360,8 @@ export function PostAdsDialog({
             <button
               key={ad.id}
               type="button"
+              role="radio"
+              aria-checked={index === pickedAd}
               className={`${styles.adPick} ${index === pickedAd ? (styles.adPickOn ?? "") : ""}`}
               onClick={() => {
                 setPickedAd(index);
@@ -364,7 +409,7 @@ export function PostAdsDialog({
                 );
               }}
             />
-            Select all available
+            Select all eligible
           </label>
           <span className={styles.stepHint}>
             joined channels that allow ads
@@ -378,6 +423,7 @@ export function PostAdsDialog({
                 key={channel.key}
                 type="button"
                 className={`${styles.chanRow} ${picked.has(channel.key) && !cooling ? (styles.chanRowOn ?? "") : ""} ${cooling ? (styles.chanRowCooling ?? "") : ""}`}
+                aria-pressed={picked.has(channel.key) && !cooling}
                 disabled={cooling}
                 onClick={() => {
                   togglePicked(channel.key);
@@ -439,6 +485,8 @@ export function PostAdsDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Post ads"
+        tabIndex={-1}
+        ref={windowRef}
       >
         <div className={styles.head}>
           <div>
@@ -447,8 +495,10 @@ export function PostAdsDialog({
             </h2>
             <span className={styles.sub}>
               {results
-                ? `posted “${postedTitle}”`
-                : `as ${session.character} · ${String(ads.filter((a) => !a.disabled).length)} enabled ads`}
+                ? `posted “${postedTitle}” · ${postedAt}`
+                : tag !== "all"
+                  ? `as ${session.character} · filtered by ${tag}`
+                  : `as ${session.character} · ${String(ads.filter((a) => !a.disabled).length)} enabled ads`}
             </span>
           </div>
           <button

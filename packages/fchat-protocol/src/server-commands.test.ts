@@ -143,3 +143,20 @@ describe("parseServerCommand", () => {
     });
   });
 });
+
+describe("FKS kink id normalization", () => {
+  it("accepts numeric kink ids (live server) and string ids (echoes)", () => {
+    const numeric = parseServerCommand(
+      'FKS {"characters":["Nyx Firemane"],"kinks":[523,66]}',
+    );
+    expect(numeric).toEqual({
+      cmd: "FKS",
+      payload: { characters: ["Nyx Firemane"], kinks: ["523", "66"] },
+    });
+    const strings = parseServerCommand('FKS {"characters":[],"kinks":["501"]}');
+    expect(strings).toEqual({
+      cmd: "FKS",
+      payload: { characters: [], kinks: ["501"] },
+    });
+  });
+});

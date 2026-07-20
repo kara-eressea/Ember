@@ -5,6 +5,7 @@ import {
   counterLevel,
   lineOfOffset,
   LOSSINESS_COPY,
+  movedSelection,
   reorder,
   stripModel,
 } from "./ad-center-logic.js";
@@ -106,5 +107,18 @@ describe("reorder", () => {
     expect(reorder(list, 3, 0)).toEqual(["d", "a", "b", "c"]);
     expect(reorder(list, 1, 1)).toBe(list);
     expect(list).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("movedSelection", () => {
+  it("follows the selected row through any reorder", () => {
+    // Selected row is the one dragged.
+    expect(movedSelection(0, 0, 2)).toBe(2);
+    // Another row hops over the selection from above / below.
+    expect(movedSelection(2, 0, 2)).toBe(1); // A,B,C* -> B,C*,A
+    expect(movedSelection(0, 2, 0)).toBe(1); // A*,B,C -> C,A*,B
+    // Moves entirely on one side leave it alone.
+    expect(movedSelection(0, 1, 2)).toBe(0);
+    expect(movedSelection(2, 0, 1)).toBe(2);
   });
 });

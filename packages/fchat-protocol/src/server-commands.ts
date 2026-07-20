@@ -62,10 +62,12 @@ export const serverCommandSchemas = {
   /** An error occurred. See src/error-codes.ts. */
   ERR: z.object({ number: z.int(), message: z.string() }),
   /** Search results for the client's FKS. `characters` is bare names;
-   * `kinks` echoes the requested kink ids. */
+   * `kinks` echoes the requested kink ids — the live server sends them as
+   * numbers (the official client types them number[]), the request carried
+   * strings, so accept both and normalize to strings. */
   FKS: z.object({
     characters: z.array(z.string()),
-    kinks: z.array(z.string()),
+    kinks: z.array(z.union([z.string(), z.number()]).transform(String)),
   }),
   /** A character went offline. Treat as a global LCH for that character. */
   FLN: z.object({ character: z.string() }),
