@@ -1,0 +1,347 @@
+/* Ad ratings (M11, COMPONENTS-rotation-ratings.md §5–§9). Stars ride the
+   fixed warn token so they never read as a match signal and survive all
+   five accents; the ★/☆ glyph swap carries meaning without hue. */
+
+.starRow {
+  display: inline-flex;
+  gap: 1px;
+  align-items: center;
+}
+
+.starOn {
+  line-height: 1;
+  color: var(--eb-warn);
+}
+
+.starOff {
+  line-height: 1;
+  color: color-mix(in srgb, var(--eb-faint) 55%, var(--eb-bg));
+}
+
+.starCount {
+  margin-left: 5px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--eb-dim);
+}
+
+.starPicker {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.starButton {
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* ── Ad-row affordances (§6) ───────────────────────────────────────── */
+
+/* Quiet until the row is hovered or the pill itself is keyboard-focused
+   (the CD integration note: hover-reveal needs a focus equivalent). */
+.ratePill {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 1.5px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--eb-border);
+  border-radius: 20px;
+  opacity: 0;
+}
+
+[data-ad]:hover .ratePill,
+.ratePill:focus-visible {
+  opacity: 1;
+}
+
+.ratingChip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 1.5px 7px 1.5px 6px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--eb-warn) 14%, var(--eb-bg));
+  border: 1px solid color-mix(in srgb, var(--eb-warn) 38%, var(--eb-bg));
+  border-radius: 20px;
+}
+
+.noteGlyph {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-warn);
+}
+
+/* ── Low-rated collapse (§8) ───────────────────────────────────────── */
+
+.collapsedRow {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  width: calc(100% - 32px);
+  padding: 6px 12px;
+  margin: 4px 16px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  opacity: 0.6;
+}
+
+.collapsedTag {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--eb-faint);
+  letter-spacing: 0.06em;
+  border: 1px solid var(--eb-border);
+  border-radius: 3px;
+}
+
+.collapsedNick {
+  flex-shrink: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.collapsedNote {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--eb-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsedShow {
+  flex-shrink: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+/* The surfaced note inside an expanded low-rated ad (§8). */
+.noteStrip {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  padding-top: 7px;
+  margin-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--eb-warn) 30%, var(--eb-side));
+}
+
+.noteEyebrow {
+  flex-shrink: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--eb-warn);
+  letter-spacing: 0.06em;
+}
+
+.noteText {
+  font-size: 11.5px;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--eb-dim);
+}
+
+/* ── RateEditor popover (§7) ───────────────────────────────────────── */
+
+.editor {
+  position: fixed;
+  z-index: 46;
+  width: 260px;
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%);
+}
+
+.editorHead {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 11px 14px;
+  background: var(--eb-side2);
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.editorWho {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.editorNick {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+.editorScope {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-faint);
+}
+
+.editorBody {
+  padding: 12px 14px 13px;
+}
+
+.editorEyebrowRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 11px;
+}
+
+.editorEyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--eb-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.savedMark {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--eb-ok);
+}
+
+.failedMark {
+  font-size: 10px;
+  color: var(--eb-danger);
+}
+
+.pickerRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.pickerScore {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eb-warn);
+}
+
+.pickerHint {
+  font-size: 11.5px;
+  color: var(--eb-faint);
+}
+
+.noteField {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 10px;
+  margin-bottom: 9px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--eb-text);
+  resize: vertical;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.noteField:focus {
+  border-color: color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--eb-accent) 16%, var(--eb-bg));
+}
+
+.promise {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--eb-faint);
+}
+
+.promiseDot {
+  width: 7px;
+  height: 7px;
+  background: var(--eb-ok);
+  border-radius: 50%;
+}
+
+.clearRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 11px;
+}
+
+.clearButton {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--eb-danger);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* ── Mini-card block (§9) ──────────────────────────────────────────── */
+
+.cardBlock {
+  padding: 11px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--eb-border) 65%, var(--eb-side));
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.cardScope {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  color: var(--eb-faint);
+}
+
+.cardStarsRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cardEdit {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.cardNote {
+  margin-top: 7px;
+  font-size: 11.5px;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--eb-dim);
+}
