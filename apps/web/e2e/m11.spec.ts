@@ -181,5 +181,5 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
   await stub.first().click();
   await expect(page.getByText("YOUR NOTE")).toBeVisible();
 
-  await orsolya.close();
+  orsolya.close();
 });
