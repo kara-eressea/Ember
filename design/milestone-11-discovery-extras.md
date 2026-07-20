@@ -109,12 +109,23 @@ is ever sent to F-List.**
   whole stars 1–5 and the 500-char note. 3 integration tests (upsert
   round-trip + case-insensitive update, per-user isolation + validation
   refusals + 401, delete-then-404)
-- [ ] 3. Server campaign scheduler (session engine): per-channel
-  timelines with base-12 floor + cadence-token floor + jitter, app-wide
-  7.5 s spacing + 5 s manual-post window, attached-only gating off the
-  gateway subscription count, 1 h absolute expiry + renew, ERR 56 /
-  kick / ban pause-with-warning, kill switch, persistence + restart
-  behavior; gateway wiring; sim-clock tests (no live testing)
+- [x] 3. Server campaign scheduler (2026-07-20): `modules/campaigns/`
+  `CampaignScheduler` — 5 s tick over in-memory runtimes; per-channel
+  timelines (base-12 floor, `[ads: N min]` cadence floor, live
+  `lfrp_flood` honored if larger, jitter on top, first post never
+  instant); one app-wide last-ad stamp per user covers both the 7.5 s
+  spacing and the manual-post window (manual sends stamp it via the
+  session "sent" hook); attached-only via `hub.hasSubscribers` per tick;
+  absolute 1 h expiry with a one-shot plain sys line into each rotating
+  channel's log (new `HistorySink.appendSystemLine`); refused = local
+  `AdCooldownError` preempt or an attributed live ERR 56 (≤3 s window) →
+  visible pause + auto-resume at reopen; kick/ban/leave → permanent
+  remove; kill switch, renew (revives stopped/expired, never removed
+  channels); write-through persistence with fresh staggered timelines on
+  restart (no burst-posting). Gateway: `campaign.*` cmd handlers acking
+  `CampaignError` in plain language, snapshot `self.campaign` live.
+  7 clock-controlled tests (stubbed session/hub, real Postgres; no live
+  testing per policy); server suite 267
 - [x] 4. CD brief + design pass (2026-07-20, out of order — run during
   spec review): brief `design/ui/rotation-ratings-brief.md` pushed to
   the "EmberChat Design" project; delivery accepted first pass —
