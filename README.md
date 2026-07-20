@@ -4,7 +4,7 @@ A third-party web client + server ("bouncer") for [F-Chat](https://www.f-list.ne
 
 Headline features over the official client: staying online when the app closes, catch-up on missed history, Markdown composing, delayed-send "editing", multi-device login, granular highlight rules, searchable server-side history, an in-app profile viewer with a kink-compatibility matcher, eicon search, and opt-in encrypted at-rest credentials so restarts reconnect on their own.
 
-> "EmberChat" is a working title. Status: **alpha** — the core feature set (milestones 1–10) is implemented and released (v0.9.0); pre-1.0, expect rough edges. See [`design/milestones.md`](design/milestones.md).
+> "EmberChat" is a working title. Status: **alpha** — the core feature set (milestones 1–11) is implemented and released (v0.10.0); pre-1.0, expect rough edges. See [`design/milestones.md`](design/milestones.md).
 
 EmberChat is **self-hostable software, not a hosted service** — each instance serves one person (or one real household), because F-List's abuse management correlates households by IP and a shared multi-user bouncer would misrepresent everyone behind it. Running your own is designed to be painless: see [`docs/self-hosting.md`](docs/self-hosting.md).
 
