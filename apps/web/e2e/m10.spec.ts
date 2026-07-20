@@ -45,7 +45,7 @@ test("M10: author → post → distinct ad render; kink search with saved rerun 
   // ── Post: pick the ad, pick the channel (cadence hint shown), post ────
   await adCenter.getByRole("button", { name: "Post ads…" }).click();
   const postDialog = page.getByRole("dialog", { name: "Post ads" });
-  await postDialog.getByRole("button", { name: /Arctic fox/ }).click();
+  await postDialog.getByRole("radio", { name: /Arctic fox/ }).click();
   const auroraRow = postDialog.getByRole("button", { name: /Aurora Den/ });
   await expect(auroraRow).toContainText("15m"); // parsed [ads: 15 min]
   await auroraRow.click();

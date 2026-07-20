@@ -173,12 +173,15 @@ function ShowSelector({
         role="radiogroup"
         aria-label="Show chat, ads, or both"
       >
-        {options.map((option) => (
+        {options.map((option, index) => (
           <button
             key={option.value}
             type="button"
             role="radio"
             aria-checked={view === option.value}
+            // Roving tabindex: the group is one tab stop; arrows move and
+            // select within it.
+            tabIndex={view === option.value ? 0 : -1}
             className={`${styles.showSegButton} ${view === option.value ? (styles.showSegOn ?? "") : ""}`}
             title={
               option.value === "chat"
@@ -192,6 +195,33 @@ function ShowSelector({
                 identityId,
                 setChannelAdView(prefs, channelKey, option.value),
               );
+            }}
+            onKeyDown={(event) => {
+              const delta =
+                event.key === "ArrowRight" || event.key === "ArrowDown"
+                  ? 1
+                  : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                    ? -1
+                    : 0;
+              if (delta === 0) {
+                return;
+              }
+              event.preventDefault();
+              const next =
+                options[(index + delta + options.length) % options.length]!;
+              void patchPrefs(
+                identityId,
+                setChannelAdView(prefs, channelKey, next.value),
+              );
+              const sibling =
+                delta === 1
+                  ? event.currentTarget.nextElementSibling
+                  : event.currentTarget.previousElementSibling;
+              const wrap =
+                delta === 1
+                  ? event.currentTarget.parentElement?.firstElementChild
+                  : event.currentTarget.parentElement?.lastElementChild;
+              ((sibling ?? wrap) as HTMLElement | null)?.focus();
             }}
           >
             {option.label}

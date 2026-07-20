@@ -39,6 +39,9 @@ import {
 import styles from "./search.module.css";
 
 const PACE_MS = 5000;
+/** Client-side stuck-search backstop: the server's own reply window is
+ * 5 s pace hold + 10 s wait, so anything past this is a lost reply. */
+const WATCHDOG_MS = 20_000;
 
 interface KinkEntry {
   id: string;
@@ -80,8 +83,10 @@ export function CharacterSearch({
   /** Which saved search the in-flight run belongs to (badge bookkeeping). */
   const firedForRef = useRef<string | undefined>(undefined);
   const lastSeenResultsRef = useRef<string[] | undefined>(undefined);
+  const windowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    windowRef.current?.focus();
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -165,18 +170,43 @@ export function CharacterSearch({
   });
 
   function fire(toRun: SearchFilters, savedId?: string) {
-    if (!online || toRun.kinks.length === 0) {
+    if (!online || toRun.kinks.length === 0 || state?.searching === true) {
       return;
     }
     firedForRef.current = savedId;
     // beginSearch stamps lastSearchAt; the cooldown effect's interval
     // brings `now` forward, so no clock read is needed here.
-    useSearchStore.getState().beginSearch(identityId);
-    void gateway.cmd({
-      identityId,
-      action: "character.search",
-      d: toRun,
-    });
+    const firedAt = useSearchStore.getState().beginSearch(identityId);
+    // The reply event goes only to the gateway connection that asked — a
+    // refused command or a socket blip mid-search would otherwise leave
+    // "Searching…" stuck forever. The watchdog only fires if this exact
+    // search is still marked in flight.
+    void gateway
+      .cmd({
+        identityId,
+        action: "character.search",
+        d: toRun,
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSearchStore
+            .getState()
+            .failSearch(
+              identityId,
+              firedAt,
+              ack.error ?? "The search couldn't start — try again",
+            );
+        }
+      });
+    setTimeout(() => {
+      useSearchStore
+        .getState()
+        .failSearch(
+          identityId,
+          firedAt,
+          "The search didn't come back — try again",
+        );
+    }, WATCHDOG_MS);
   }
 
   function applySaved(saved: SavedSearch) {
@@ -187,7 +217,9 @@ export function CharacterSearch({
     setLanguages(saved.languages ?? []);
     setFurryprefs(saved.furryprefs ?? []);
     setRoles(saved.roles ?? []);
-    if (coolingMs <= 0) {
+    // Same gate as the footer button: never fire over an in-flight search
+    // (its results would be credited to this saved search's "new" badge).
+    if (coolingMs <= 0 && state?.searching !== true) {
       fire(filtersOf(saved), saved.id);
     }
   }
@@ -274,6 +306,7 @@ export function CharacterSearch({
             key={option}
             type="button"
             className={`${styles.filterChip} ${values.includes(option) ? (styles.filterChipOn ?? "") : ""}`}
+            aria-pressed={values.includes(option)}
             title={option}
             onClick={() => {
               toggle(values, set, option);
@@ -331,7 +364,7 @@ export function CharacterSearch({
               setNameFilter(event.target.value);
             }}
           />
-          <span className={styles.resultsCount}>
+          <span className={styles.resultsCount} aria-live="polite">
             {shownNames.length === results.length
               ? `${String(results.length)} online`
               : `${String(shownNames.length)} of ${String(results.length)}`}
@@ -377,6 +410,8 @@ export function CharacterSearch({
         role="dialog"
         aria-modal="true"
         aria-label="Search characters"
+        tabIndex={-1}
+        ref={windowRef}
       >
         <div className={styles.rail}>
           <div className={styles.railTitle}>Saved searches</div>
@@ -544,6 +579,7 @@ export function CharacterSearch({
                         key={entry.id}
                         type="button"
                         className={`${styles.pickerRow} ${kinks.includes(entry.id) ? (styles.pickerRowOn ?? "") : ""}`}
+                        aria-pressed={kinks.includes(entry.id)}
                         onClick={() => {
                           toggle(kinks, setKinks, entry.id);
                         }}
@@ -605,7 +641,7 @@ export function CharacterSearch({
             )}
           </div>
           <div className={styles.footer}>
-            <span className={styles.footStatus}>
+            <span className={styles.footStatus} aria-live="polite">
               {!online
                 ? "Connect this character to search"
                 : searching

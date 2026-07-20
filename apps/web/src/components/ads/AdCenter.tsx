@@ -31,6 +31,7 @@ import {
   counterLevel,
   lineOfOffset,
   LOSSINESS_COPY,
+  movedSelection,
   reorder,
   stripModel,
 } from "./ad-center-logic.js";
@@ -71,6 +72,15 @@ export function AdCenter({
   const [loadError, setLoadError] = useState(false);
   const dragFrom = useRef<number>(undefined);
   const windowRef = useRef<HTMLDivElement>(null);
+  /** First close attempt with a dirty draft warns instead of discarding;
+   * the next one closes. Any edit re-arms the warning. */
+  const closeArmed = useRef(false);
+  /** The library the open editor's row index is based on — re-based on
+   * select and on every list we wrote ourselves. The store holding a
+   * DIFFERENT array means another device saved: every index into the old
+   * list is suspect, so the conflict banner shows and Save is disabled
+   * until Reload re-bases. */
+  const [baseAds, setBaseAds] = useState<AdDto[]>();
 
   const dirty =
     selected !== undefined &&
@@ -90,8 +100,25 @@ export function AdCenter({
 
   useEffect(() => {
     windowRef.current?.focus();
+  }, []);
+
+  function guardedClose() {
+    if (dirty && !closeArmed.current) {
+      closeArmed.current = true;
+      setError("Unsaved changes — close again to discard them");
+      return;
+    }
+    onClose();
+  }
+
+  useEffect(() => {
     function onKey(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
+        if (dirty && !closeArmed.current) {
+          closeArmed.current = true;
+          setError("Unsaved changes — press Escape again to discard them");
+          return;
+        }
         onClose();
       }
     }
@@ -99,7 +126,11 @@ export function AdCenter({
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, [onClose, dirty]);
+
+  const externalChange =
+    typeof selected === "number" && baseAds !== undefined && ads !== baseAds;
+  const showConflict = conflict || externalChange;
 
   useEffect(() => {
     if (entry?.loaded) {
@@ -132,6 +163,8 @@ export function AdCenter({
     setBaseline(next);
     setTagText("");
     setError(undefined);
+    setBaseAds(ads);
+    closeArmed.current = false;
   }
 
   function setContent(value: string) {
@@ -157,6 +190,7 @@ export function AdCenter({
         knownIdsFor(identityId),
       );
       useAdsStore.getState().applyAds(identityId, response.ads);
+      setBaseAds(response.ads);
       setConflict(false);
       return response.ads;
     } catch (err) {
@@ -211,33 +245,53 @@ export function AdCenter({
   }
 
   async function removeAd(index: number) {
+    // externalChange: the open editor's index is based on an older list —
+    // mutating rows now would re-base it under a stale selection. The
+    // banner directs to Reload first.
+    if (busy || externalChange) {
+      return;
+    }
     const list = inputsFrom(ads);
     list.splice(index, 1);
     const saved = await putList(list);
-    if (saved && selected === index) {
-      setSelected(undefined);
+    if (saved && typeof selected === "number") {
+      if (selected === index) {
+        setSelected(undefined);
+      } else if (selected > index) {
+        // The rows above the deleted one shift down — follow the same ad.
+        setSelected(selected - 1);
+      }
     }
   }
 
   async function toggleRowDisabled(index: number) {
+    if (busy || externalChange) {
+      return;
+    }
     const list = inputsFrom(ads);
     list[index] = { ...list[index]!, disabled: !list[index]!.disabled };
-    await putList(list);
-    if (selected === index) {
+    const saved = await putList(list);
+    if (saved && selected === index) {
       setDraft((d) => ({ ...d, disabled: !d.disabled }));
       setBaseline((b) => ({ ...b, disabled: !b.disabled }));
     }
   }
 
-  async function dropOn(index: number) {
-    const from = dragFrom.current;
-    dragFrom.current = undefined;
-    if (from === undefined || from === index) {
+  async function moveAd(from: number, to: number) {
+    if (busy || externalChange || to < 0 || to >= ads.length || from === to) {
       return;
     }
-    await putList(inputsFrom(reorder(ads, from, index)));
-    if (selected === from) {
-      setSelected(index);
+    const saved = await putList(inputsFrom(reorder(ads, from, to)));
+    if (saved && typeof selected === "number") {
+      setSelected(movedSelection(selected, from, to));
+    }
+  }
+
+  function dropOn(index: number) {
+    const from = dragFrom.current;
+    dragFrom.current = undefined;
+    if (from !== undefined) {
+      void moveAd(from, index);
     }
   }
 
@@ -245,7 +299,14 @@ export function AdCenter({
     try {
       const response = await api.getAds(identityId);
       useAdsStore.getState().applyAds(identityId, response.ads);
+      setBaseAds(response.ads);
       setConflict(false);
+      // The old row index means nothing against the reloaded list: a kept
+      // draft re-targets as a new ad (saving appends, nothing is lost); a
+      // clean editor just closes.
+      if (typeof selected === "number") {
+        setSelected(dirty ? "new" : undefined);
+      }
     } catch {
       setError("Couldn't reload the library — try again");
     }
@@ -305,7 +366,7 @@ export function AdCenter({
           />
         </label>
       </div>
-      {conflict && (
+      {showConflict && (
         <div className={styles.conflict} role="alert">
           <div className={styles.conflictBody}>
             <strong>Your ads changed on another device</strong>
@@ -457,7 +518,9 @@ export function AdCenter({
           <button
             type="button"
             className={styles.buttonPrimary}
-            disabled={busy || draft.content.trim() === "" || !dirty}
+            disabled={
+              busy || showConflict || draft.content.trim() === "" || !dirty
+            }
             onClick={() => {
               void save();
             }}
@@ -497,7 +560,7 @@ export function AdCenter({
       className={styles.overlay}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) {
-          onClose();
+          guardedClose();
         }
       }}
     >
@@ -539,7 +602,7 @@ export function AdCenter({
                   event.preventDefault();
                 }}
                 onDrop={() => {
-                  void dropOn(index);
+                  dropOn(index);
                 }}
                 onClick={() => {
                   select(index);
@@ -548,7 +611,25 @@ export function AdCenter({
                 <span className={styles.adGrip} aria-hidden>
                   ⁝⁝
                 </span>
-                <span className={styles.adRowBody}>
+                <button
+                  type="button"
+                  className={styles.adRowBody}
+                  title="Open to edit · Alt+↑/↓ moves this ad"
+                  aria-label={`Edit ad: ${adTitle(ad.content)}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    select(index);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.altKey && event.key === "ArrowUp") {
+                      event.preventDefault();
+                      void moveAd(index, index - 1);
+                    } else if (event.altKey && event.key === "ArrowDown") {
+                      event.preventDefault();
+                      void moveAd(index, index + 1);
+                    }
+                  }}
+                >
                   <span className={styles.adRowTitleLine}>
                     <span className={styles.adRowTitle}>
                       {adTitle(ad.content)}
@@ -564,7 +645,7 @@ export function AdCenter({
                       ))}
                     </span>
                   )}
-                </span>
+                </button>
                 <span className={styles.adRowActions}>
                   <button
                     type="button"

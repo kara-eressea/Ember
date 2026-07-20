@@ -5,7 +5,7 @@
 // ads.updated on the identity, so other devices' ad managers converge
 // without a refetch.
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -123,6 +123,13 @@ export async function adsRoutes(
           tags: ad.tags.length > 0 ? ad.tags : ["default"],
         }));
       const conflicted = await db.transaction(async (tx) => {
+        // Serialize PUTs per identity: under READ COMMITTED a plain select
+        // can't stop two concurrent replacements from interleaving their
+        // inserts (both CAS checks pass on the same snapshot). The advisory
+        // lock is transaction-scoped, so it releases on commit/rollback.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${identityId}))`,
+        );
         if (request.body.knownIds !== undefined) {
           const current = await tx
             .select({ id: ads.id })

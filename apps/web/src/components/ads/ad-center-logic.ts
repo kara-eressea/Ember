@@ -107,6 +107,20 @@ export function adTitle(content: string): string {
 }
 
 /** Moves index `from` to position `to` in a copy of the list. */
+/** Where a selected row index lands after `reorder(list, from, to)`. */
+export function movedSelection(s: number, from: number, to: number): number {
+  if (s === from) {
+    return to;
+  }
+  if (from < s && to >= s) {
+    return s - 1;
+  }
+  if (from > s && to <= s) {
+    return s + 1;
+  }
+  return s;
+}
+
 export function reorder<T>(list: T[], from: number, to: number): T[] {
   if (from === to || from < 0 || from >= list.length) {
     return list;

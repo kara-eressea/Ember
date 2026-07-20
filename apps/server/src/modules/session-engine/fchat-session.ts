@@ -352,6 +352,10 @@ export class FchatSession {
   }
 
   #searchInFlight = false;
+  /** Epoch ms until which one inbound FKS/search-ERR is treated as the
+   * late reply of a search that already timed out, and discarded instead
+   * of being attributed to the next search (FKS has no request id). */
+  #staleSearchReplyUntil = 0;
 
   /**
    * Character search (FKS, M10): fires the query on the FKS pace and
@@ -399,6 +403,9 @@ export class FchatSession {
         };
         const timer = setTimeout(() => {
           cleanup();
+          // The reply may still arrive; give the next search a window in
+          // which to discard one stale frame rather than adopt it.
+          this.#staleSearchReplyUntil = Date.now() + SEARCH_RESPONSE_TIMEOUT_MS;
           resolve({
             ok: false,
             code: 0,
@@ -406,6 +413,15 @@ export class FchatSession {
           });
         }, SEARCH_RESPONSE_TIMEOUT_MS);
         const onCommand = (command: ServerCommand) => {
+          const searchReply =
+            command.cmd === "FKS" ||
+            (command.cmd === "ERR" &&
+              SEARCH_ERROR_CODES.has(command.payload.number));
+          if (searchReply && Date.now() < this.#staleSearchReplyUntil) {
+            // A prior search's late reply — swallow it and keep waiting.
+            this.#staleSearchReplyUntil = 0;
+            return;
+          }
           if (command.cmd === "FKS") {
             cleanup();
             resolve({
