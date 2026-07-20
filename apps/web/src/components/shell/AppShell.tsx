@@ -34,6 +34,8 @@ import { MessageLog } from "../chat/MessageLog.js";
 import { SearchPanel } from "../chat/SearchPanel.js";
 import { CharacterSearch } from "../search/CharacterSearch.js";
 import { AdCenter } from "../ads/AdCenter.js";
+import { CampaignDialog } from "../ads/CampaignDialog.js";
+import { useRatingsStore } from "../../stores/ratings.js";
 import { PostAdsDialog } from "../ads/PostAdsDialog.js";
 import { ChannelBrowser } from "../browser/ChannelBrowser.js";
 import { PreferencesWindow } from "../prefs/PreferencesWindow.js";
@@ -72,6 +74,7 @@ export function AppShell() {
   const switcherOpen = useUiStore((s) => s.switcherOpen);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const postAdsOpen = useUiStore((s) => s.postAdsOpen);
+  const campaignOpen = useUiStore((s) => s.campaignOpen);
   const characterSearchOpen = useUiStore((s) => s.characterSearchOpen);
 
   const ref: ConvRef | undefined =
@@ -91,6 +94,9 @@ export function AppShell() {
 
   useEffect(() => {
     gateway.connect();
+    // Ad ratings load once per app session (M11) — every ad row and mini
+    // card reads the shared map.
+    void useRatingsStore.getState().load();
   }, []);
 
   // Idle detection lives with the shell: it exists exactly while the user
@@ -379,6 +385,14 @@ export function AppShell() {
           session={session}
           onClose={() => {
             useUiStore.getState().setPostAdsOpen(false);
+          }}
+        />
+      )}
+      {campaignOpen && (
+        <CampaignDialog
+          session={session}
+          onClose={() => {
+            useUiStore.getState().setCampaignOpen(false);
           }}
         />
       )}

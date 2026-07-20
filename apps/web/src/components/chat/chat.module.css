@@ -1715,3 +1715,47 @@
   background: transparent !important;
   border: 1.5px solid var(--eb-faint);
 }
+
+/* M11: the quiet campaign pill on channels a running campaign posts into. */
+.campaignChip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 9px 3px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: color-mix(in srgb, var(--eb-accent) 16%, var(--eb-bg));
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: 20px;
+}
+
+.campaignChipDot {
+  width: 8px;
+  height: 8px;
+  background: var(--eb-ok);
+  border-radius: 50%;
+  box-shadow: 0 0 5px var(--eb-ok);
+  animation: campaign-chip-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes campaign-chip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Bare button wrapper so the RatingChip pill inside stays the visual. */
+.chipReset {
+  display: inline-flex;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+}

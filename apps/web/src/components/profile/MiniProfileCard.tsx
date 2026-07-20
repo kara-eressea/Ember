@@ -23,6 +23,10 @@ import {
 } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
+import { RateEditor } from "../ratings/RateEditor.js";
+import { StarRow } from "../ratings/StarRating.js";
+import ratingsStyles from "../ratings/ratings.module.css";
+import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { DimChip, MatchPill, TierPie } from "./MatchTier.js";
 import { notableDimensions } from "./match-utils.js";
 import { placePopover } from "./popover.js";
@@ -34,6 +38,49 @@ const CARD_WIDTH = 300;
 /** The key-infotag chips row, by mapping id (design: e.g. "Bisexual · 24 ·
  * Arctic fox · Switch") — orientation, age, species, sub/dom role. */
 const CHIP_INFOTAG_IDS = [2, 1, 9, 15];
+
+/** "Your rating" block (M11 §9): composes below compatibility when the
+ * user has rated this person. A low rating never hides the card — only
+ * the in-log ad row collapses. */
+function CardRating({ name }: { name: string }) {
+  const rating = useRatingsStore((s) => ratingFor(s.byName, name));
+  const [editorAnchor, setEditorAnchor] = useState<DOMRect>();
+  if (!rating) {
+    return null;
+  }
+  return (
+    <div className={ratingsStyles.cardBlock}>
+      <div className={ratingsStyles.cardHead}>
+        <span className={styles.groupLabel}>Your rating</span>
+        <span className={ratingsStyles.cardScope}>this server only</span>
+      </div>
+      <div className={ratingsStyles.cardStarsRow}>
+        <StarRow score={rating.score} size={15} count />
+        <button
+          type="button"
+          className={ratingsStyles.cardEdit}
+          onClick={(event) => {
+            setEditorAnchor(event.currentTarget.getBoundingClientRect());
+          }}
+        >
+          Edit
+        </button>
+      </div>
+      {rating.note !== undefined && (
+        <div className={ratingsStyles.cardNote}>“{rating.note}”</div>
+      )}
+      {editorAnchor && (
+        <RateEditor
+          character={name}
+          anchor={editorAnchor}
+          onClose={() => {
+            setEditorAnchor(undefined);
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
 export function MiniProfileCard({
   identityId,
@@ -309,6 +356,7 @@ function CardContent({
             Connect your own character to compare
           </div>
         ))}
+      {!self && <CardRating name={name} />}
       {response && (response.stale || response.budgetExhausted) && (
         <div className={styles.cardStale}>
           <span aria-hidden>⟲</span>

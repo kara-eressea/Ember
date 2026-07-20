@@ -565,29 +565,62 @@
   align-items: center;
 }
 
-.rotateSlot {
+/* The reserved Rotate… slot, alive since M11: an outline button when no
+   campaign runs, a pulsing live indicator when one does. */
+.rotateButton {
   display: inline-flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
   height: 36px;
   padding: 0 14px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--eb-faint);
-  cursor: default;
-  border: 1px dashed var(--eb-border);
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
   border-radius: var(--eb-radius);
 }
 
-.soon {
-  padding: 0 4px;
+.campaignLive {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  height: 36px;
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eb-accent);
+  cursor: pointer;
+  background: color-mix(in srgb, var(--eb-accent) 16%, var(--eb-bg));
+  border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
+  border-radius: var(--eb-radius);
+}
+
+.campaignDot {
+  width: 8px;
+  height: 8px;
+  background: var(--eb-ok);
+  border-radius: 50%;
+  box-shadow: 0 0 5px var(--eb-ok);
+  animation: post-ads-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes post-ads-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.campaignLeft {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 8.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border: 1px solid var(--eb-border);
-  border-radius: 3px;
+  font-size: 10.5px;
+  color: var(--eb-dim);
 }
 
 .button,

@@ -13,6 +13,10 @@ import { useMessagesStore } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { CachedMatchChip } from "../profile/CachedMatchChip.js";
+import { RateEditor } from "../ratings/RateEditor.js";
+import { StarRow } from "../ratings/StarRating.js";
+import ratingsStyles from "../ratings/ratings.module.css";
+import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
@@ -367,6 +371,95 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
  */
 function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
   const time = formatTime(message.createdAt, timeFormat(prefs));
+  const sender = message.senderCharacter;
+  const rating = useRatingsStore((s) => ratingFor(s.byName, sender));
+  const [expanded, setExpanded] = useState(false);
+  const [editorAnchor, setEditorAnchor] = useState<DOMRect>();
+
+  // Rating the poster (M11 §6): never on our own ads. A rated poster's
+  // ads carry their stars; unrated ones get the quiet hover/focus pill.
+  const rateAffordance = message.sentByUs ? null : (
+    <button
+      type="button"
+      className={rating ? styles.chipReset : (ratingsStyles.ratePill ?? "")}
+      aria-label={
+        rating
+          ? `Your rating for ${sender}: ${String(rating.score)} of 5 — edit`
+          : `Rate ${sender}`
+      }
+      onClick={(event) => {
+        setEditorAnchor(event.currentTarget.getBoundingClientRect());
+      }}
+    >
+      {rating ? (
+        <span className={ratingsStyles.ratingChip}>
+          <StarRow score={rating.score} size={11} />
+          {rating.note !== undefined && (
+            <span className={ratingsStyles.noteGlyph} aria-hidden>
+              ✎
+            </span>
+          )}
+        </span>
+      ) : (
+        <>
+          <span aria-hidden>☆</span> Rate
+        </>
+      )}
+    </button>
+  );
+
+  const editor = editorAnchor && (
+    <RateEditor
+      character={sender}
+      anchor={editorAnchor}
+      onClose={() => {
+        setEditorAnchor(undefined);
+      }}
+    />
+  );
+
+  // A poster rated ≤2★ collapses to a dimmed one-line stub (§8) — the ad
+  // is never unreachable; "show ▾" expands in place.
+  if (
+    rating !== undefined &&
+    rating.score <= 2 &&
+    !expanded &&
+    !message.sentByUs
+  ) {
+    return (
+      <>
+        <button
+          type="button"
+          className={ratingsStyles.collapsedRow}
+          aria-label={`Show the ad from ${sender}, whom you rated ${String(rating.score)} of 5`}
+          onClick={() => {
+            setExpanded(true);
+          }}
+        >
+          <span className={ratingsStyles.collapsedTag} aria-hidden>
+            AD
+          </span>
+          <span
+            className={ratingsStyles.collapsedNick}
+            style={{ color: nickColor(sender) }}
+          >
+            {sender}
+          </span>
+          <StarRow score={rating.score} size={10} />
+          <span className={ratingsStyles.collapsedNote}>
+            {rating.note !== undefined
+              ? `“${rating.note}”`
+              : "you rated this poster low — ad hidden"}
+          </span>
+          <span className={ratingsStyles.collapsedShow} aria-hidden>
+            show ▾
+          </span>
+        </button>
+        {editor}
+      </>
+    );
+  }
+
   return (
     <div className={styles.adBlock} data-ad>
       <div className={styles.adBlockHead}>
@@ -386,10 +479,18 @@ function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
         {time !== "" && <span className={styles.time}>{time}</span>}
         <span className={styles.adBlockSpacer} />
         <CachedMatchChip name={message.senderCharacter} />
+        {rateAffordance}
       </div>
       <div className={styles.adBlockBody}>
         <RichText bbcode={message.bbcode} />
       </div>
+      {rating?.note !== undefined && expanded && (
+        <div className={ratingsStyles.noteStrip}>
+          <span className={ratingsStyles.noteEyebrow}>YOUR NOTE</span>
+          <span className={ratingsStyles.noteText}>{rating.note}</span>
+        </div>
+      )}
+      {editor}
     </div>
   );
 }

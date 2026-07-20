@@ -121,6 +121,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // WS origin check must know it (Vite proxies /api same-origin, but
         // the Origin header still names the page's origin).
         CORS_ORIGIN: `http://127.0.0.1:${String(WEB_PORT)}`,
+        // M11 campaign E2E: shrunken rotation timings so a real posted ad
+        // lands inside the test budget — legal only against the sim (the
+        // config guard refuses these against real F-Chat).
+        CAMPAIGN_TICK_MS: "250",
+        CAMPAIGN_BASE_INTERVAL_MS: "2000",
+        CAMPAIGN_START_JITTER_MS: "0",
+        CAMPAIGN_INTERVAL_JITTER_MS: "0",
+        CAMPAIGN_SPACING_MS: "250",
         // No phone-home from CI runs.
         UPDATE_CHECK_ENABLED: "false",
       },

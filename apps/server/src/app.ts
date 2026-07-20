@@ -14,6 +14,8 @@ import { trustProxyValue, type AppConfig } from "./config.js";
 import type { Db } from "./db/index.js";
 import { adsRoutes } from "./modules/ads/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { CampaignScheduler } from "./modules/campaigns/scheduler.js";
+import { ratingsRoutes } from "./modules/ratings/routes.js";
 import { SessionJanitor } from "./modules/auth/session-janitor.js";
 import { DetachedAway } from "./modules/away/detached-away.js";
 import {
@@ -108,6 +110,11 @@ export async function buildApp({
     });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const highlights = new HighlightMatcher(db, app.log);
+  // Late-bound: the session registry's start callback needs it, but the
+  // scheduler itself needs the hub/history built below.
+  // Assigned once below; the session-start callback must close over it.
+  // eslint-disable-next-line prefer-const -- forward declaration
+  let campaignScheduler: CampaignScheduler | undefined;
   const history = new HistorySink(db, app.log, { highlights });
   const hub = new GatewayHub({ history, logger: app.log });
   const directory = new ChannelDirectory(
@@ -130,6 +137,9 @@ export async function buildApp({
       history.attach(identityId, session);
       hub.attachSession(identityId, session);
       directory.attach(session);
+      // Every session's manual ads must stamp the campaign scheduler's
+      // app-wide spacing clock, campaign or not (M11 audit).
+      campaignScheduler?.observeSession(identityId, session);
     },
   });
   app.decorate("sessions", sessions);
@@ -168,12 +178,29 @@ export async function buildApp({
     logger: app.log,
   });
   updates.start();
+  // Ad-rotation campaigns (M11): resumes persisted campaigns and runs the
+  // conservative posting schedule. Attached-only gating rides the hub.
+  campaignScheduler = new CampaignScheduler({
+    db,
+    sessions,
+    hub,
+    history,
+    logger: app.log,
+    // Test-only shrunken timings (config guards them against real F-Chat).
+    tickMs: config.CAMPAIGN_TICK_MS,
+    baseIntervalMs: config.CAMPAIGN_BASE_INTERVAL_MS,
+    startJitterMs: config.CAMPAIGN_START_JITTER_MS,
+    intervalJitterMs: config.CAMPAIGN_INTERVAL_JITTER_MS,
+    spacingMs: config.CAMPAIGN_SPACING_MS,
+  });
+  await campaignScheduler.start();
   app.addHook("onClose", () => {
     updates.stop();
     sessionJanitor.stop();
     detachedAway.stop();
     retention.stop();
     outbox.stop();
+    campaignScheduler.stop();
     sessions.stopAll();
   });
 
@@ -290,6 +317,7 @@ export async function buildApp({
     history,
   });
   await app.register(adsRoutes, { prefix: "/api/identities", db, hub });
+  await app.register(ratingsRoutes, { prefix: "/api/ad-ratings", db });
   // Gateway frames are tiny; without a cap the ws default (100 MiB) lets a
   // pre-hello client force huge buffers + JSON.parse work.
   await app.register(fastifyWebsocket, {
@@ -302,6 +330,7 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    campaigns: campaignScheduler,
     // Browsers may open the gateway from the app's own origin or any
     // configured CORS origin; anything else is a hostile page. The two
     // loopback spellings are treated as one so a local `docker compose up`

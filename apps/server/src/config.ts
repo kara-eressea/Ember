@@ -28,6 +28,17 @@ const configSchema = z.object({
    * local fchat-sim don't serialize on a pointless throttle.
    */
   FLIST_API_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(1000),
+  /**
+   * Campaign-scheduler timing overrides (M11) — TEST KNOBS ONLY, for E2E
+   * runs against the local fchat-sim. Unset = the policy constants
+   * (12-min floor, jitter, 7.5 s spacing). Sub-policy values against the
+   * real F-Chat refuse to boot, like the API-interval guard below.
+   */
+  CAMPAIGN_TICK_MS: z.coerce.number().int().min(50).optional(),
+  CAMPAIGN_BASE_INTERVAL_MS: z.coerce.number().int().min(500).optional(),
+  CAMPAIGN_START_JITTER_MS: z.coerce.number().int().min(0).optional(),
+  CAMPAIGN_INTERVAL_JITTER_MS: z.coerce.number().int().min(0).optional(),
+  CAMPAIGN_SPACING_MS: z.coerce.number().int().min(0).optional(),
   /** Global per-IP request backstop (requests/minute). Generous for a
    * single-tenant instance; the E2E stack raises it — a whole parallel
    * suite shares one loopback IP. */
@@ -168,6 +179,27 @@ export function loadConfig(
   ) {
     throw new Error(
       "FLIST_API_MIN_INTERVAL_MS below 1000 is only allowed against a local fchat-sim, never the real F-List API",
+    );
+  }
+  // Same guardrail for the campaign schedule: shrunken rotation timings
+  // exist for sim-backed test stacks only, never against the real F-Chat.
+  const campaignShrunk =
+    (config.CAMPAIGN_BASE_INTERVAL_MS !== undefined &&
+      config.CAMPAIGN_BASE_INTERVAL_MS < 12 * 60_000) ||
+    (config.CAMPAIGN_SPACING_MS !== undefined &&
+      config.CAMPAIGN_SPACING_MS < 7_500) ||
+    // Zeroed jitter = metronomic posting; the "never looks mechanical"
+    // posture is as binding as the floors (audit).
+    (config.CAMPAIGN_INTERVAL_JITTER_MS !== undefined &&
+      config.CAMPAIGN_INTERVAL_JITTER_MS < 10 * 60_000) ||
+    (config.CAMPAIGN_START_JITTER_MS !== undefined &&
+      config.CAMPAIGN_START_JITTER_MS < 3 * 60_000);
+  if (
+    campaignShrunk &&
+    new URL(config.FCHAT_URL).hostname.endsWith("f-list.net")
+  ) {
+    throw new Error(
+      "CAMPAIGN_* timings below the policy floors are only allowed against a local fchat-sim, never the real F-Chat",
     );
   }
   return config;

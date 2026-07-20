@@ -247,6 +247,24 @@ export class HistorySink {
     await Promise.all(this.#queues.values());
   }
 
+  /** Persist an app-generated system line into a channel's log (M11: the
+   * campaign scheduler's expiry notice) — same shape as a server SYS, so
+   * history and every attached device agree. */
+  appendSystemLine(
+    identityId: string,
+    session: FchatSession,
+    channelKey: string,
+    text: string,
+  ): void {
+    this.#enqueueMessage(identityId, {
+      target: this.#channelTarget(session, channelKey),
+      senderCharacter: "",
+      kind: "sys",
+      bbcode: text,
+      sentByUs: false,
+    });
+  }
+
   /** Find-or-create a PM conversation (gateway `pm.open`). */
   async ensurePmConversation(
     identityId: string,

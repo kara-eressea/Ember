@@ -8,6 +8,7 @@
 import { create } from "zustand";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type {
+  CampaignDto,
   OutboxItemDto,
   ConversationDto,
   GatewaySessionStatus,
@@ -84,6 +85,8 @@ export interface IdentitySession {
   prefs: UserPrefs;
   /** Messages waiting in the server-side outbox for this identity. */
   outbox: OutboxItemDto[];
+  /** The identity's ad-rotation campaign (M11); null = none exists. */
+  campaign: CampaignDto | null;
   /** Keyed by channel key (events address channels by key). */
   channels: Record<string, ChannelView>;
   /** Keyed by conversation id. */
@@ -173,12 +176,15 @@ interface SessionsState {
       sendDelaySeconds: number;
       prefs: UserPrefs;
       outbox: OutboxItemDto[];
+      campaign: CampaignDto | null;
     };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
   }): void;
   /** Full pending-outbox overwrite (outbox.updated / snapshot). */
   applyOutbox(identityId: string, items: OutboxItemDto[]): void;
+  /** Full campaign overwrite (campaign.updated / snapshot). */
+  applyCampaign(identityId: string, campaign: CampaignDto | null): void;
   applySendDelay(identityId: string, sendDelaySeconds: number): void;
   applySocial(identityId: string, social: SocialData): void;
   /** Full resolved-prefs overwrite (prefs.updated). */
@@ -279,6 +285,7 @@ function emptySession(identityId: string): IdentitySession {
     sendDelaySeconds: 0,
     prefs: PREFS_DEFAULTS,
     outbox: [],
+    campaign: null,
     channels: {},
     dms: {},
     channelByConvId: {},
@@ -434,6 +441,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         sendDelaySeconds: d.self.sendDelaySeconds,
         prefs: d.self.prefs,
         outbox: [...d.self.outbox],
+        campaign: d.self.campaign,
         channels,
         dms,
         channelByConvId,
@@ -443,6 +451,10 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyOutbox(identityId, items) {
       patch(identityId, (session) => ({ ...session, outbox: [...items] }));
+    },
+
+    applyCampaign(identityId, campaign) {
+      patch(identityId, (session) => ({ ...session, campaign }));
     },
 
     applySocial(identityId, social) {

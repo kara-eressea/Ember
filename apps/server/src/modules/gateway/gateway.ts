@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import type WebSocket from "ws";
 import type { ServerCommand } from "@emberchat/fchat-protocol";
 import { GATEWAY_CLOSE, type GatewayEvent } from "@emberchat/protocol";
+import type { CampaignScheduler } from "../campaigns/scheduler.js";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
@@ -375,6 +376,7 @@ export interface GatewayRoutesOptions {
   hub: GatewayHub;
   outbox: Outbox;
   highlights: HighlightMatcher;
+  campaigns: CampaignScheduler;
   /**
    * Origins allowed to open the gateway from a browser (M7 exposure
    * hardening). A request WITHOUT an Origin header is allowed — non-browser
@@ -391,8 +393,16 @@ export async function gatewayRoutes(
   instance: FastifyInstance,
   options: GatewayRoutesOptions,
 ): Promise<void> {
-  const { db, sessions, history, hub, outbox, highlights, allowedOrigins } =
-    options;
+  const {
+    db,
+    sessions,
+    history,
+    hub,
+    outbox,
+    highlights,
+    campaigns,
+    allowedOrigins,
+  } = options;
   const originAllowList = new Set(
     allowedOrigins.map((origin) => origin.toLowerCase()),
   );
@@ -461,6 +471,7 @@ export async function gatewayRoutes(
       hub,
       outbox,
       highlights,
+      campaigns,
       verifyToken,
       sessionAlive,
       helloBudget,

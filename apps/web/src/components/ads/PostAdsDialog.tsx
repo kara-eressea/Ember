@@ -67,6 +67,15 @@ export function PostAdsDialog({
   const windowRef = useRef<HTMLDivElement>(null);
 
   const online = session.sessionStatus === "online";
+  // The Rotate… slot shows a live indicator while a campaign runs (M11).
+  const campaign = session.campaign;
+  const campaignLive =
+    campaign !== null &&
+    campaign.stoppedAt === undefined &&
+    now < campaign.expiresAt;
+  const campaignMinutesLeft = campaignLive
+    ? `${String(Math.max(1, Math.ceil((campaign.expiresAt - now) / 60_000)))}m`
+    : "";
   const tags = useMemo(() => tagCounts(ads), [ads]);
   const matching = useMemo(() => filterAds(ads, tag), [ads, tag]);
 
@@ -549,12 +558,35 @@ export function PostAdsDialog({
                 · posts right away
               </span>
               <span className={styles.footButtons}>
-                <span
-                  className={styles.rotateSlot}
-                  title="Automatic rotation is planned — posting stays manual for now"
-                >
-                  Rotate… <span className={styles.soon}>soon</span>
-                </span>
+                {campaignLive ? (
+                  <button
+                    type="button"
+                    className={styles.campaignLive}
+                    title="A campaign is posting on its own — open its status"
+                    onClick={() => {
+                      onClose();
+                      useUiStore.getState().setCampaignOpen(true);
+                    }}
+                  >
+                    <span className={styles.campaignDot} aria-hidden />
+                    Campaign live
+                    <span className={styles.campaignLeft}>
+                      {campaignMinutesLeft}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.rotateButton}
+                    title="Set up a campaign — posts your tagged ads on their own for an hour"
+                    onClick={() => {
+                      onClose();
+                      useUiStore.getState().setCampaignOpen(true);
+                    }}
+                  >
+                    ↻ Rotate…
+                  </button>
+                )}
                 <button
                   type="button"
                   className={styles.buttonPrimary}

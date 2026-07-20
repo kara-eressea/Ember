@@ -950,6 +950,7 @@ describe("gateway fan-out", () => {
       sendDelaySeconds: 0,
       prefs: PREFS_DEFAULTS,
       outbox: [],
+      campaign: null,
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000, lfrpFlood: 0 },
     });

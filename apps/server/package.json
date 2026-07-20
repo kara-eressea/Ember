@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@emberchat/fchat-protocol": "workspace:*",
+    "@emberchat/markdown-bbcode": "workspace:*",
     "@emberchat/protocol": "workspace:*",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.0",

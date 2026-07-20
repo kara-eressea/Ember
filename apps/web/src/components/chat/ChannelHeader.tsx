@@ -543,6 +543,62 @@ function RoomChip({
   );
 }
 
+/** A quiet pill on channels the running campaign posts into (M11 CM-F).
+ * Subtle, never a banner; clicking opens the campaign status surface. */
+function CampaignChip({
+  identityId,
+  channelKey,
+}: {
+  identityId: string;
+  channelKey: string;
+}) {
+  const campaign = useSessionsStore(
+    (s) => s.sessions[identityId]?.campaign ?? null,
+  );
+  // The clock ticks so the chip disappears when the hour runs out even
+  // if the user never leaves the channel (audit HIGH: natural expiry
+  // never sets stoppedAt).
+  const [now, setNow] = useState(() => Date.now());
+  const running =
+    campaign !== null &&
+    campaign.stoppedAt === undefined &&
+    now < campaign.expiresAt;
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [running]);
+  const posting =
+    running &&
+    campaign.channels.some(
+      (c) =>
+        c.key.toLowerCase() === channelKey.toLowerCase() &&
+        c.state !== "removed",
+    );
+  if (!posting) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className={styles.campaignChip}
+      title="A campaign posts ads here on its own — open its status"
+      onClick={() => {
+        useUiStore.getState().setCampaignOpen(true);
+      }}
+    >
+      <span className={styles.campaignChipDot} aria-hidden />
+      Campaign · posting here
+    </button>
+  );
+}
+
 export function ChannelHeader({
   identityId,
   channel,
@@ -578,6 +634,7 @@ export function ChannelHeader({
           pinned={channel.pinned}
         />
         <MuteChip identityId={identityId} convId={channel.convId} />
+        <CampaignChip identityId={identityId} channelKey={channel.key} />
         {channel.mode === "both" && (
           <ShowSelector identityId={identityId} channelKey={channel.key} />
         )}

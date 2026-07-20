@@ -234,6 +234,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyPrefs(identityId, event.d);
       hydrateTheme(event.d.prefs);
       return;
+    case "campaign.updated":
+      // Rotation-campaign fan-out (M11): full-state idempotent overwrite —
+      // ticks, pauses, renewals, stops, and attach flips all land here.
+      useSessionsStore.getState().applyCampaign(identityId, event.d.campaign);
+      return;
     case "ads.updated":
       // Ad-library fan-out (M10): another device PUT the list; converge the
       // mirror so an open Ad Center shows the current library.

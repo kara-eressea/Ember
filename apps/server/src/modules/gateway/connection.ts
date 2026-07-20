@@ -25,6 +25,10 @@ import {
   type UserPrefs,
   type UserPrefsPatch,
 } from "@emberchat/protocol";
+import {
+  CampaignError,
+  type CampaignScheduler,
+} from "../campaigns/scheduler.js";
 import type { Db } from "../../db/index.js";
 import {
   conversations,
@@ -76,6 +80,7 @@ export interface GatewayConnectionContext {
   readonly hub: GatewayHub;
   readonly outbox: Outbox;
   readonly highlights: Pick<HighlightMatcher, "invalidate">;
+  readonly campaigns: CampaignScheduler;
   readonly verifyToken: (
     token: string,
   ) => Promise<{ userId: string; sid: string } | undefined>;
@@ -456,6 +461,7 @@ export class GatewayConnection {
           sendDelaySeconds,
           prefs,
           outbox: await this.#ctx.outbox.list(identityId),
+          campaign: this.#ctx.campaigns.dtoFor(identityId),
         },
         channels: snapshot.channels,
         dms: snapshot.dms,
@@ -741,6 +747,37 @@ export class GatewayConnection {
             },
           );
           this.#ack(id, { ok: true });
+        }
+        return;
+      }
+      case "campaign.start":
+      case "campaign.stop":
+      case "campaign.renew":
+      case "campaign.drop": {
+        // M11 rotation campaigns. State fans out as campaign.updated on
+        // the identity; the ack only carries success or a plain-language
+        // refusal (CampaignError).
+        try {
+          if (cmd.action === "campaign.start") {
+            await this.#ctx.campaigns.startCampaign(
+              identity.id,
+              this.#userId!,
+              cmd.d,
+            );
+          } else if (cmd.action === "campaign.stop") {
+            await this.#ctx.campaigns.stopCampaign(identity.id);
+          } else if (cmd.action === "campaign.renew") {
+            await this.#ctx.campaigns.renewCampaign(identity.id);
+          } else {
+            await this.#ctx.campaigns.dropChannel(identity.id, cmd.d.key);
+          }
+          this.#ack(id, { ok: true });
+        } catch (error) {
+          if (error instanceof CampaignError) {
+            this.#ack(id, { ok: false, error: error.message });
+          } else {
+            throw error;
+          }
         }
         return;
       }

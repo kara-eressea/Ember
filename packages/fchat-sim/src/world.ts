@@ -112,6 +112,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Vesna Marlowe", "Kolvarr"],
     },
+    // Reserved for the M11 campaigns+ratings E2E (same parallelism rule);
+    // Orsolya is its raw-SimClient "other side" (Borealis Lounge op, the
+    // rated ad poster).
+    "linden@example.test": {
+      password: "hunter2",
+      characters: ["Linden Frost", "Orsolya"],
+    },
     // Reserved for the M6 op-tooling E2E (same parallelism rule); Alder Fen
     // (Potting Shed owner) and Sorrel Vane (moderation target) are its
     // raw-SimClient "other sides".
@@ -211,6 +218,29 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "both",
       description: "Snowed-in scenes under green light. [ads: 15 min] please.",
       oplist: ["Kolvarr"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the M11 campaigns+ratings E2E: two "both"-mode rooms —
+    // the campaign rotates into both; a manual post closes Borealis's ad
+    // window first so the campaign's attempt there pauses visibly while
+    // Polar Court takes a real rotation post. Hidden and NPC-free for the
+    // usual isolation.
+    {
+      name: "ADH-m11borealis33aa44bb",
+      title: "Borealis Lounge",
+      mode: "both",
+      description: "Green skies, low fires.",
+      oplist: ["Orsolya"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-m11polar55cc66dd77",
+      title: "Polar Court",
+      mode: "both",
+      description: "Ice pillars and patient company.",
+      oplist: ["Orsolya"],
       npcs: [],
       listed: false,
     },

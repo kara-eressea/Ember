@@ -49,10 +49,15 @@ was settled with the user against the M10 step-1 Horizon survey.
   devices is attached to the bouncer; detaching pauses the campaign and
   re-attaching resumes it (the expiry clock keeps running — a campaign
   never outlives its hour by being paused).
-- On **ERR 56 or a kick/ban** from a channel: that channel's rotation
-  **pauses with a visible warning** explaining what happened — never
-  silently skip and retry (strictly better than Horizon, which loses
-  refused ads).
+- On **ERR 56** (the channel got an ad from elsewhere inside its
+  window): that channel's rotation **pauses visibly** — the reason and
+  the estimated reopen time are on screen — and **resumes on its own
+  once the window reopens** (decided with the user at design review,
+  2026-07-20: the "never silently skip and retry" mandate is about
+  silence, not about resuming; nothing here is silent). On a **kick or
+  ban**: the channel stops **permanently** with the reason shown — it
+  never resumes (strictly better than Horizon, which loses refused ads
+  without a word).
 - **Global kill switch** (one control stops every channel at once) and a
   per-channel **"next post at…"** status surface.
 - Campaign state persists (DB) so a page reload or bouncer restart
@@ -82,30 +87,111 @@ is ever sent to F-List.**
 
 ## Step checklist (dependency-ordered)
 
-- [ ] 1. Protocol + DB groundwork: campaign & rating DTOs and gateway
-  cmds/events in `packages/protocol` (`campaign.start/stop/renew` +
-  status events; ratings ride REST only), migrations for `campaigns` and
-  `ad_ratings`
-- [ ] 2. Server ratings module: ownership-scoped CRUD
-  (`GET/PUT/DELETE` by rated character), validation (1–5, note length),
-  integration tests
-- [ ] 3. Server campaign scheduler (session engine): per-channel
-  timelines with base-12 floor + cadence-token floor + jitter, app-wide
-  7.5 s spacing + 5 s manual-post window, attached-only gating off the
-  gateway subscription count, 1 h absolute expiry + renew, ERR 56 /
-  kick / ban pause-with-warning, kill switch, persistence + restart
-  behavior; gateway wiring; sim-clock tests (no live testing)
-- [ ] 4. CD brief for the campaign surface (Rotate… slot setup +
-  status/countdown/warning states, renewal, kill switch) and the rating
-  affordances (row control, dimmed/collapsed ad, note editor) →
-  design pass → review → sync deliverables into the repo
-- [ ] 5. Web: campaign setup + status surface (built to the CD spec;
-  plain-language copy pass)
-- [ ] 6. Web: rating affordances + dimmed rendering (built to the CD
-  spec; plain-language copy pass)
-- [ ] 7. Verification suite + docs: E2E campaign journey against the sim
-  (start → tick → refusal pause → renew → kill), ratings journey,
-  feature-parity-audit rows, tracker sweep
+- [x] 1. Protocol + DB groundwork (2026-07-20): `campaigns.ts` (start
+  schema with the explicit `replace` confirmation, `CampaignDto` with
+  per-channel `active/waiting/refused/removed` states + `nextAt/retryAt`
+  timelines, `CAMPAIGN_DURATION_MS`/`MAX_CAMPAIGN_CHANNELS`,
+  `campaignRunning`) + `ratings.ts` (`putRatingSchema` ★1–5 int + ≤500
+  note, `RatingDto`; REST-only by design — low-churn personal
+  annotations skip the gateway fan-out). Gateway: cmds
+  `campaign.start/stop/renew/drop`, event `campaign.updated` (full-state
+  idempotent overwrite, null = none), snapshot `self.campaign` (server
+  emits null until step 3). Migration 0013: `campaigns` (unique
+  `identity_id` IS the one-per-character rule; jsonb per-channel
+  persisted state; absolute `expires_at`; `stopped_at` for the kill
+  switch) + `ad_ratings` (pk user + character_lower — per app user,
+  shared across identities). Protocol 19 tests, suites green
+- [x] 2. Server ratings module (2026-07-20): `modules/ratings` at
+  `/api/ad-ratings` — GET lists the user's ratings (sorted by character),
+  PUT `/:character` upserts on (user, lowercased name) with display-case
+  refresh + note trimming (empty → cleared), DELETE 404s when nothing
+  existed. Name validated against `FLIST_NAME_RE`; schema bounds enforce
+  whole stars 1–5 and the 500-char note. 3 integration tests (upsert
+  round-trip + case-insensitive update, per-user isolation + validation
+  refusals + 401, delete-then-404)
+- [x] 3. Server campaign scheduler (2026-07-20): `modules/campaigns/`
+  `CampaignScheduler` — 5 s tick over in-memory runtimes; per-channel
+  timelines (base-12 floor, `[ads: N min]` cadence floor, live
+  `lfrp_flood` honored if larger, jitter on top, first post never
+  instant); one app-wide last-ad stamp per user covers both the 7.5 s
+  spacing and the manual-post window (manual sends stamp it via the
+  session "sent" hook); attached-only via `hub.hasSubscribers` per tick;
+  absolute 1 h expiry with a one-shot plain sys line into each rotating
+  channel's log (new `HistorySink.appendSystemLine`); refused = local
+  `AdCooldownError` preempt or an attributed live ERR 56 (≤3 s window) →
+  visible pause + auto-resume at reopen; kick/ban/leave → permanent
+  remove; kill switch, renew (revives stopped/expired, never removed
+  channels); write-through persistence with fresh staggered timelines on
+  restart (no burst-posting). Gateway: `campaign.*` cmd handlers acking
+  `CampaignError` in plain language, snapshot `self.campaign` live.
+  7 clock-controlled tests (stubbed session/hub, real Postgres; no live
+  testing per policy); server suite 260
+- [x] 4. CD brief + design pass (2026-07-20, out of order — run during
+  spec review): brief `design/ui/rotation-ratings-brief.md` pushed to
+  the "EmberChat Design" project; delivery accepted first pass —
+  `prototype/{Campaign Flow, Ad Ratings}.dc.html` +
+  `design/ui/COMPONENTS-rotation-ratings.md` synced. One semantics call
+  settled with the user (refused channels auto-resume visibly; removed
+  channels never resume). Integration notes: tighten the duration-card
+  copy ("you can't change it here" → "The length is fixed"), and the
+  hover-revealed ☆ Rate pill needs a keyboard-focus-visible equivalent
+- [x] 5. Web: campaign surfaces (2026-07-20, CD spec §1–§4):
+  `CampaignDialog` (648×600, Post-Ads language) — setup (multi-tag chips
+  with enabled-ad counts, ResolveBox numbered cycle + `↺ back to 1` loop
+  marker, channel rows with honored `[ads: N min]` interval sub-lines,
+  the 1-hour fact card with the tightened copy, ReplaceBanner with the
+  explicit warn-toned Replace, no-ads/no-channels edge tiles) and status
+  (three-tone ExpiryBar with elapsed track + `expires in MM:SS` + Renew,
+  per-channel rows: live-dot active with `next ≈ HH:MM` countdowns,
+  waiting-held, warn refused with the plain reason + `retry ≈`, danger
+  removed with Drop ✕; detached whole-campaign hold; ended state with
+  the run summary + Change tags/Renew; ■ Stop everything + "Post once
+  manually →"). Entry points: the Post-Ads Rotate… slot is live (idle
+  button ↔ pulsing "Campaign live · Nm" indicator), quiet channel-header
+  "Campaign · posting here" chip. Data path: `campaign` on the session
+  slice (snapshot + `campaign.updated` dispatch), `campaignOpen` ui
+  flag. Derived setup/status mode (no state-sync effects — the React
+  Compiler rule). `campaign-logic.ts` helpers unit-tested (phase order,
+  countdown formats, honored intervals, cycle resolution, aggregates);
+  web 215
+- [x] 6. Web: ratings surfaces (2026-07-20, CD spec §5–§9): `StarRow`/
+  `StarPicker` primitives (warn-token stars, ★/☆ glyph swap as the
+  colorblind channel; the picker is a real radiogroup), `RateEditor`
+  popover (§13 placement, PrivateNote language, star row + trimmed note,
+  Saved ✓ / failure line, Clear rating, the "saved on this server only ·
+  never sent to F-List" promise; HelpPanel capture-dismissal). Ad block:
+  hover-revealed ☆ Rate pill with a `:focus-visible` reveal (the CD
+  integration note), RatingChip with ✎ on rated posters' ads, never on
+  own ads; **≤2★ collapse** to the dimmed one-line stub (nick + stars +
+  note excerpt + show ▾) with in-place expand + the YOUR NOTE strip.
+  Mini card gains the "Your rating" block below compatibility (stars +
+  n/5 + Edit + note; a low rating never hides the card). Data:
+  `/api/ad-ratings` client methods, `useRatingsStore` (one load per app
+  session, lowercase-keyed, optimistic clear) loaded from AppShell.
+  Store unit tests (single-flight load, save verdicts, offline-tolerant
+  clear); web 218
+- [x] 7. Verification suite + docs (2026-07-20): new **m11.spec E2E**
+  (owns `linden@example.test` + the hidden Borealis Lounge / Polar Court
+  both-mode rooms) driving the whole journey — author a tagged ad, close
+  Borealis's window with a MANUAL post (the scheduler schedules around
+  its own window, so a visible refusal needs the window closed from
+  elsewhere), start a two-channel campaign through the live Rotate…
+  slot, watch a **real rotation post** land in Polar Court while
+  Borealis pauses with the plain reason + `retry ≈`, header chip,
+  kill switch → run summary ("1 post" / "0 posts"), renew → live →
+  stop; then rate Orsolya's ad ≤2★ (editor popover, note) and watch
+  both her ads collapse to the stub with in-place expand + YOUR NOTE.
+  Enabled by **test-only `CAMPAIGN_*` env knobs** (config-guarded:
+  sub-policy timings refuse to boot against real F-Chat, the
+  FLIST_API_MIN_INTERVAL_MS pattern) — the E2E stack shrinks the
+  schedule against the sim only. 19s green; full E2E 18/18. Docs:
+  parity-audit rows flipped (auto-posting caution resolved → shipped
+  M11; ad ratings ✅; per-user hiding note). Noted: a ≤2★ pick collapses
+  the rated ad instantly, remounting the editor (the collapse is the
+  save feedback; ≥3★ keeps the Saved ✓ flag) — accepted; the M9-era STA
+  reconnect test flaked ONCE on a loaded CI runner despite the #124
+  deterministic fix (passes 3× locally, web-only diff) — recurrence
+  logged for the standing backlog
 - [ ] 8. Three-reviewer audit + fix pass, then the wrap-up ritual
   (user sign-off → main merge → v0.10.0)
 

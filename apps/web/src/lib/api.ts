@@ -4,6 +4,7 @@
 
 import type {
   AdDto,
+  RatingDto,
   GuestbookPage,
   HighlightRuleDto,
   HighlightRuleInput,
@@ -483,6 +484,29 @@ export const api = {
     return apiRequest<{ ads: AdDto[] }>(`/identities/${identityId}/ads`, {
       method: "PUT",
       body: { ads, ...(knownIds !== undefined ? { knownIds } : {}) },
+      auth: true,
+    });
+  },
+
+  /** The user's local ad ratings (M11) — shared across identities. */
+  getRatings() {
+    return apiRequest<{ ratings: RatingDto[] }>("/ad-ratings/", {
+      auth: true,
+    });
+  },
+  putRating(character: string, score: number, note?: string) {
+    return apiRequest<{ rating: RatingDto }>(
+      `/ad-ratings/${encodeURIComponent(character)}`,
+      {
+        method: "PUT",
+        body: { score, ...(note !== undefined && note !== "" ? { note } : {}) },
+        auth: true,
+      },
+    );
+  },
+  deleteRating(character: string) {
+    return apiRequest<void>(`/ad-ratings/${encodeURIComponent(character)}`, {
+      method: "DELETE",
       auth: true,
     });
   },
