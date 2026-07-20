@@ -80,7 +80,7 @@ exist (project-description.md):
 | Right-click user menu (profile, PM, bookmark, ignore, memo, report, kick) | ✅ M6 (memo/report per decisions 2/4) |
 | Friend request send/accept/deny/cancel | ✅ M6 |
 | Ignore list (/ignore etc. + anti-circumvention notify) | ✅ M3 (IGN notify included) |
-| Hide ads from specific users | ≠ design — EmberChat has a view default + per-channel Chat/Ads/Both selector (M6 boolean → M10 tri-state); per-user hiding stacks on ignore; parked in the M11 pool |
+| Hide ads from specific users | ≠ design — EmberChat has a view default + per-channel Chat/Ads/Both selector (M6 boolean → M10 tri-state); M11's ratings cover the sharper want (≤2★ posters collapse to a stub); full per-user hiding stays pooled |
 | Click-user behavior setting | ⛔ — left-click profile, right-click menu, Message item for PMs |
 
 ### Logs and settings
@@ -116,12 +116,17 @@ legacy or trivia; the rest are covered by the decisions below or the staff
 
 The parity target is the official client. Rising's additions are noted for
 later milestones, not gaps: profile match scoring and kink comparison,
-smart filters with auto-reply, ad ratings, link/image hover previews,
+smart filters with auto-reply, ad ratings *(✅ shipped M11 — local ★1–5 +
+note, ≤2★ collapse; never sent to F-List)*, link/image hover previews,
 search history and extra search filters, status-message history, unread
 counters, colorblind mode. Two cautions: **auto ad posting** (rotation/
 reposting) is automation the F-List policy environment may frown on for a
-hosted service — treat as ⛔ unless cleared; smart-filter auto-replies send
-messages on the user's behalf — same caution.
+hosted service — treat as ⛔ unless cleared *(cleared for the self-host
+admin-only posture and shipped M11 as attached-only campaigns: 12-min
+floors, honored `[ads: N min]`, 1-hour renewable expiry, visible pauses,
+kill switch — see `milestone-11-discovery-extras.md`)*; smart-filter
+auto-replies send messages on the user's behalf — same caution (still ⛔,
+parked in the M11 deferred pool).
 
 ## Decisions (made with the user, 2026-07-15)
 

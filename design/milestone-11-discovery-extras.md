@@ -170,9 +170,28 @@ is ever sent to F-List.**
   session, lowercase-keyed, optimistic clear) loaded from AppShell.
   Store unit tests (single-flight load, save verdicts, offline-tolerant
   clear); web 218
-- [ ] 7. Verification suite + docs: E2E campaign journey against the sim
-  (start → tick → refusal pause → renew → kill), ratings journey,
-  feature-parity-audit rows, tracker sweep
+- [x] 7. Verification suite + docs (2026-07-20): new **m11.spec E2E**
+  (owns `linden@example.test` + the hidden Borealis Lounge / Polar Court
+  both-mode rooms) driving the whole journey — author a tagged ad, close
+  Borealis's window with a MANUAL post (the scheduler schedules around
+  its own window, so a visible refusal needs the window closed from
+  elsewhere), start a two-channel campaign through the live Rotate…
+  slot, watch a **real rotation post** land in Polar Court while
+  Borealis pauses with the plain reason + `retry ≈`, header chip,
+  kill switch → run summary ("1 post" / "0 posts"), renew → live →
+  stop; then rate Orsolya's ad ≤2★ (editor popover, note) and watch
+  both her ads collapse to the stub with in-place expand + YOUR NOTE.
+  Enabled by **test-only `CAMPAIGN_*` env knobs** (config-guarded:
+  sub-policy timings refuse to boot against real F-Chat, the
+  FLIST_API_MIN_INTERVAL_MS pattern) — the E2E stack shrinks the
+  schedule against the sim only. 19s green; full E2E 18/18. Docs:
+  parity-audit rows flipped (auto-posting caution resolved → shipped
+  M11; ad ratings ✅; per-user hiding note). Noted: a ≤2★ pick collapses
+  the rated ad instantly, remounting the editor (the collapse is the
+  save feedback; ≥3★ keeps the Saved ✓ flag) — accepted; the M9-era STA
+  reconnect test flaked ONCE on a loaded CI runner despite the #124
+  deterministic fix (passes 3× locally, web-only diff) — recurrence
+  logged for the standing backlog
 - [ ] 8. Three-reviewer audit + fix pass, then the wrap-up ritual
   (user sign-off → main merge → v0.10.0)
 

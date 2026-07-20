@@ -178,6 +178,12 @@ export async function buildApp({
     hub,
     history,
     logger: app.log,
+    // Test-only shrunken timings (config guards them against real F-Chat).
+    tickMs: config.CAMPAIGN_TICK_MS,
+    baseIntervalMs: config.CAMPAIGN_BASE_INTERVAL_MS,
+    startJitterMs: config.CAMPAIGN_START_JITTER_MS,
+    intervalJitterMs: config.CAMPAIGN_INTERVAL_JITTER_MS,
+    spacingMs: config.CAMPAIGN_SPACING_MS,
   });
   await campaignScheduler.start();
   app.addHook("onClose", () => {
