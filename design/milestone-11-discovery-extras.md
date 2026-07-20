@@ -101,9 +101,14 @@ is ever sent to F-List.**
   persisted state; absolute `expires_at`; `stopped_at` for the kill
   switch) + `ad_ratings` (pk user + character_lower — per app user,
   shared across identities). Protocol 19 tests, suites green
-- [ ] 2. Server ratings module: ownership-scoped CRUD
-  (`GET/PUT/DELETE` by rated character), validation (1–5, note length),
-  integration tests
+- [x] 2. Server ratings module (2026-07-20): `modules/ratings` at
+  `/api/ad-ratings` — GET lists the user's ratings (sorted by character),
+  PUT `/:character` upserts on (user, lowercased name) with display-case
+  refresh + note trimming (empty → cleared), DELETE 404s when nothing
+  existed. Name validated against `FLIST_NAME_RE`; schema bounds enforce
+  whole stars 1–5 and the 500-char note. 3 integration tests (upsert
+  round-trip + case-insensitive update, per-user isolation + validation
+  refusals + 401, delete-then-404)
 - [ ] 3. Server campaign scheduler (session engine): per-channel
   timelines with base-12 floor + cadence-token floor + jitter, app-wide
   7.5 s spacing + 5 s manual-post window, attached-only gating off the
