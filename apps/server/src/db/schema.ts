@@ -366,3 +366,58 @@ export const ads = pgTable(
   },
   (t) => [index("ads_identity_idx").on(t.identityId)],
 );
+
+// One rotation campaign per identity (M11). The scheduler's live timeline
+// (per-channel jittered nextAt, cycle position) is volatile session state;
+// what persists is the campaign's definition and coarse per-channel
+// outcome so a reload or restart never orphans a running campaign. The
+// unique identity key IS the one-campaign-per-character rule.
+export const campaigns = pgTable("campaigns", {
+  id: uuid().primaryKey().default(uuidv7),
+  identityId: uuid()
+    .notNull()
+    .unique()
+    .references(() => identities.id, { onDelete: "cascade" }),
+  tags: jsonb().$type<string[]>().notNull(),
+  /** Per-channel persisted state: key, lifecycle state, lastAt/retryAt
+   * epoch ms, post count, and the channel's cycle position. */
+  channels: jsonb()
+    .$type<
+      {
+        key: string;
+        state: "active" | "waiting" | "refused" | "removed";
+        lastAt?: number;
+        retryAt?: number;
+        posts: number;
+        cycleIndex: number;
+      }[]
+    >()
+    .notNull(),
+  startedAt: timestamp({ withTimezone: true }).notNull(),
+  /** The absolute bound — renewing moves it; the scheduler never posts
+   * past it regardless of in-memory state. */
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  /** Explicit stop (kill switch); null while running or merely expired. */
+  stoppedAt: timestamp({ withTimezone: true }),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+// The user's local ad ratings (M11): ★1–5 + optional note per rated
+// character, shared across all the user's identities (the rating describes
+// the rated character, not the rating persona). Strictly local — never
+// sent to F-List.
+export const adRatings = pgTable(
+  "ad_ratings",
+  {
+    userId: uuid()
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    characterLower: text().notNull(),
+    /** Display-case name as last seen. */
+    character: text().notNull(),
+    score: integer().notNull(),
+    note: text(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterLower] })],
+);

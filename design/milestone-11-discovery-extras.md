@@ -87,10 +87,20 @@ is ever sent to F-List.**
 
 ## Step checklist (dependency-ordered)
 
-- [ ] 1. Protocol + DB groundwork: campaign & rating DTOs and gateway
-  cmds/events in `packages/protocol` (`campaign.start/stop/renew` +
-  status events; ratings ride REST only), migrations for `campaigns` and
-  `ad_ratings`
+- [x] 1. Protocol + DB groundwork (2026-07-20): `campaigns.ts` (start
+  schema with the explicit `replace` confirmation, `CampaignDto` with
+  per-channel `active/waiting/refused/removed` states + `nextAt/retryAt`
+  timelines, `CAMPAIGN_DURATION_MS`/`MAX_CAMPAIGN_CHANNELS`,
+  `campaignRunning`) + `ratings.ts` (`putRatingSchema` ★1–5 int + ≤500
+  note, `RatingDto`; REST-only by design — low-churn personal
+  annotations skip the gateway fan-out). Gateway: cmds
+  `campaign.start/stop/renew/drop`, event `campaign.updated` (full-state
+  idempotent overwrite, null = none), snapshot `self.campaign` (server
+  emits null until step 3). Migration 0013: `campaigns` (unique
+  `identity_id` IS the one-per-character rule; jsonb per-channel
+  persisted state; absolute `expires_at`; `stopped_at` for the kill
+  switch) + `ad_ratings` (pk user + character_lower — per app user,
+  shared across identities). Protocol 19 tests, suites green
 - [ ] 2. Server ratings module: ownership-scoped CRUD
   (`GET/PUT/DELETE` by rated character), validation (1–5, note length),
   integration tests

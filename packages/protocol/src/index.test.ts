@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { clientFrameSchema, PROTOCOL_VERSION } from "./index.js";
+import {
+  clientFrameSchema,
+  PROTOCOL_VERSION,
+  putRatingSchema,
+} from "./index.js";
 
 it("exposes the protocol version", () => {
   expect(PROTOCOL_VERSION).toBe(1);
@@ -171,5 +175,44 @@ describe("clientFrameSchema", () => {
         JSON.stringify(frame),
       ).toBe(false);
     }
+  });
+});
+
+describe("M11 campaign & rating schemas", () => {
+  const ID = "11111111-1111-4111-8111-111111111111";
+  const cmd = (action: string, d: unknown) =>
+    clientFrameSchema.safeParse({
+      t: "cmd",
+      d: { id: 1, identityId: ID, action, d },
+    });
+
+  it("accepts campaign.start and demands at least one tag and channel", () => {
+    expect(
+      cmd("campaign.start", { tags: ["slowburn"], channels: ["frontpage"] })
+        .success,
+    ).toBe(true);
+    expect(cmd("campaign.start", { tags: [], channels: ["x"] }).success).toBe(
+      false,
+    );
+    expect(
+      cmd("campaign.start", { tags: ["slowburn"], channels: [] }).success,
+    ).toBe(false);
+  });
+
+  it("campaign.stop/renew take empty payloads; drop takes a key", () => {
+    expect(cmd("campaign.stop", {}).success).toBe(true);
+    expect(cmd("campaign.renew", {}).success).toBe(true);
+    expect(cmd("campaign.drop", { key: "frontpage" }).success).toBe(true);
+    expect(cmd("campaign.drop", {}).success).toBe(false);
+  });
+
+  it("putRatingSchema bounds the score to whole stars 1-5", () => {
+    expect(putRatingSchema.safeParse({ score: 3 }).success).toBe(true);
+    expect(
+      putRatingSchema.safeParse({ score: 5, note: "great pacing" }).success,
+    ).toBe(true);
+    expect(putRatingSchema.safeParse({ score: 0 }).success).toBe(false);
+    expect(putRatingSchema.safeParse({ score: 6 }).success).toBe(false);
+    expect(putRatingSchema.safeParse({ score: 2.5 }).success).toBe(false);
   });
 });

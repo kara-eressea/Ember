@@ -92,6 +92,13 @@
       "when": 1784367379457,
       "tag": "0012_m10-ads",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784565466917,
+      "tag": "0013_m11-campaigns-ratings",
+      "breakpoints": true
     }
   ]
 }

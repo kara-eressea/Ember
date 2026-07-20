@@ -456,6 +456,9 @@ export class GatewayConnection {
           sendDelaySeconds,
           prefs,
           outbox: await this.#ctx.outbox.list(identityId),
+          // M11 step 3 wires the live campaign here; until then no
+          // campaign ever exists.
+          campaign: null,
         },
         channels: snapshot.channels,
         dms: snapshot.dms,
