@@ -42,8 +42,14 @@ export function StarPicker({
   score: number;
   onPick: (score: number) => void;
 }) {
+  // Roving tabindex: the group is one tab stop; arrows move and select.
+  const tabStop = score > 0 ? score : 1;
   return (
-    <span className={styles.starPicker} role="radiogroup" aria-label="Stars">
+    <span
+      className={styles.starPicker}
+      role="radiogroup"
+      aria-label="Your rating"
+    >
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}
@@ -51,9 +57,31 @@ export function StarPicker({
           role="radio"
           aria-checked={score === star}
           aria-label={`${String(star)} ${star === 1 ? "star" : "stars"}`}
+          tabIndex={star === tabStop ? 0 : -1}
           className={`${styles.starButton} ${star <= score ? (styles.starOn ?? "") : (styles.starOff ?? "")}`}
           onClick={() => {
             onPick(star);
+          }}
+          onKeyDown={(event) => {
+            const delta =
+              event.key === "ArrowRight" || event.key === "ArrowUp"
+                ? 1
+                : event.key === "ArrowLeft" || event.key === "ArrowDown"
+                  ? -1
+                  : 0;
+            if (delta === 0) {
+              return;
+            }
+            event.preventDefault();
+            const next = Math.min(5, Math.max(1, star + delta));
+            if (next !== score) {
+              onPick(next);
+            }
+            const sibling =
+              delta === 1
+                ? event.currentTarget.nextElementSibling
+                : event.currentTarget.previousElementSibling;
+            (sibling as HTMLElement | null)?.focus();
           }}
         >
           {star <= score ? "★" : "☆"}

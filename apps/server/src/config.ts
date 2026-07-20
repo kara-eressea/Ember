@@ -187,7 +187,13 @@ export function loadConfig(
     (config.CAMPAIGN_BASE_INTERVAL_MS !== undefined &&
       config.CAMPAIGN_BASE_INTERVAL_MS < 12 * 60_000) ||
     (config.CAMPAIGN_SPACING_MS !== undefined &&
-      config.CAMPAIGN_SPACING_MS < 7_500);
+      config.CAMPAIGN_SPACING_MS < 7_500) ||
+    // Zeroed jitter = metronomic posting; the "never looks mechanical"
+    // posture is as binding as the floors (audit).
+    (config.CAMPAIGN_INTERVAL_JITTER_MS !== undefined &&
+      config.CAMPAIGN_INTERVAL_JITTER_MS < 10 * 60_000) ||
+    (config.CAMPAIGN_START_JITTER_MS !== undefined &&
+      config.CAMPAIGN_START_JITTER_MS < 3 * 60_000);
   if (
     campaignShrunk &&
     new URL(config.FCHAT_URL).hostname.endsWith("f-list.net")

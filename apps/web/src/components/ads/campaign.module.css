@@ -556,6 +556,17 @@
   border: none;
 }
 
+/* Screen-reader-only phase announcer (the countdown must stay outside
+   any live region). */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ── Status ────────────────────────────────────────────────────────── */
 
 .expiryBar {

@@ -306,6 +306,15 @@ describe("campaign scheduler", () => {
       channels: ["Aurora Den", "Frozen North"],
     });
     h.controls.setChannels([{ key: "Frozen North" }]);
+    // One absent tick is NOT a removal — reconnect rejoins take a while;
+    // only continuous absence past the grace window is terminal.
+    await h.scheduler.tickOnce();
+    expect(
+      h.scheduler
+        .dtoFor(h.identityId)!
+        .channels.find((c) => c.key === "Aurora Den")!.state,
+    ).not.toBe("removed");
+    h.clock.value += 30_000;
     await h.scheduler.tickOnce();
     const dto = h.scheduler.dtoFor(h.identityId)!;
     const aurora = dto.channels.find((c) => c.key === "Aurora Den")!;
@@ -430,9 +439,12 @@ describe("campaign scheduler", () => {
     revived.stop();
     const dto = revived.dtoFor(h.identityId)!;
     expect(dto.channels[0]!.posts).toBe(1);
+    // The persisted lastAt floors the rebuilt timeline: nothing may post
+    // under the per-channel floor just because the process restarted.
+    h.clock.value += 1_000;
     await revived.tickOnce();
     expect(h.controls.sent).toHaveLength(1);
-    h.clock.value += 1_000;
+    h.clock.value += 60_000;
     await revived.tickOnce();
     expect(h.controls.sent).toHaveLength(2);
 
@@ -441,5 +453,24 @@ describe("campaign scheduler", () => {
       .from(campaigns)
       .where(eq(campaigns.identityId, h.identityId));
     expect(row!.channels[0]!.posts).toBe(2);
+  });
+});
+
+describe("dropChannel", () => {
+  it("removes exactly the named channel, case-insensitively", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }, { key: "Winter Tales" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Cabin Fever", "Winter Tales"],
+    });
+    await h.scheduler.dropChannel(h.identityId, "cabin fever");
+    const dto = h.scheduler.dtoFor(h.identityId)!;
+    expect(dto.channels.map((c) => c.key)).toEqual(["Winter Tales"]);
+    await expect(
+      h.scheduler.dropChannel(h.identityId, "Cabin Fever"),
+    ).rejects.toThrow(CampaignError);
   });
 });

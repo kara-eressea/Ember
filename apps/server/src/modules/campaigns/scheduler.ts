@@ -53,6 +53,9 @@ export const CAMPAIGN_AD_SPACING_MS = 7_500;
 /** A live ERR 56 this soon after our own campaign LRP is attributed to it
  * (LRP carries no correlation on the wire). */
 const REFUSAL_ATTRIBUTION_MS = 3_000;
+/** A channel must be continuously absent from a live session's map this
+ * long before it counts as a removal — reconnect rejoins take a while. */
+const REMOVAL_GRACE_MS = 30_000;
 
 /** The community `[ads: N min]` cadence token (mirrors the web parser in
  * post-ads-logic.ts — a display convention there, an enforced floor here). */
@@ -76,6 +79,10 @@ interface RuntimeChannel {
   cycleIndex: number;
   /** Sticky note for the run summary ("removed at HH:MM" etc.). */
   removedAt?: number;
+  /** First tick the channel was absent from a live session's map —
+   * removal only after a grace window, because reconnects flip online at
+   * IDN while the channel map is still refilling from JCH echoes. */
+  missingSince?: number;
 }
 
 interface Runtime {
@@ -149,6 +156,10 @@ export class CampaignScheduler {
   >();
   /** Sessions already carrying our listeners. */
   readonly #hooked = new WeakSet<FchatSession>();
+  /** Sessions carrying the app-wide spacing stamp (observeSession). */
+  readonly #observed = new WeakSet<FchatSession>();
+  /** identity → app user, cached for the spacing stamp. */
+  readonly #userByIdentity = new Map<string, string>();
   #timer: NodeJS.Timeout | undefined;
   #ticking = false;
 
@@ -203,10 +214,18 @@ export class CampaignScheduler {
           posts: c.posts,
           cycleIndex: c.cycleIndex,
           // A fresh jittered timeline: the volatile nextAt does not
-          // survive restarts, and restarting must not burst-post.
+          // survive restarts, and restarting must not burst-post OR dip
+          // under the per-channel floor — the persisted lastAt keeps
+          // flooring the schedule across reboots (audit HIGH). The live
+          // cadence/flood floors re-apply at post time.
           ...(c.state === "removed"
             ? {}
-            : { nextAt: now + this.#startDelay() }),
+            : {
+                nextAt: Math.max(
+                  now + this.#startDelay(),
+                  (c.lastAt ?? 0) + this.#baseMs,
+                ),
+              }),
         })),
         startedAt: row.startedAt.getTime(),
         expiresAt: row.expiresAt.getTime(),
@@ -230,7 +249,51 @@ export class CampaignScheduler {
 
   dtoFor(identityId: string): CampaignDto | null {
     const runtime = this.#runtimes.get(identityId);
-    return runtime ? this.#dto(runtime) : null;
+    if (!runtime) {
+      return null;
+    }
+    // Attachment is read live so a hello snapshot taken between ticks
+    // never shows a freshly attached device "paused".
+    runtime.attached = this.#hub.hasSubscribers(identityId);
+    return this.#dto(runtime);
+  }
+
+  /**
+   * Hooks the app-wide ad-spacing stamp onto ANY session (campaign or
+   * not) — a user's manual ad from one character must hold the next
+   * campaign post of another (audit MEDIUM). The identity→user mapping
+   * resolves lazily on the first ad and is cached.
+   */
+  observeSession(identityId: string, session: FchatSession): void {
+    if (this.#observed.has(session)) {
+      return;
+    }
+    this.#observed.add(session);
+    session.events.on("sent", (sent: { kind: string }) => {
+      if (sent.kind !== "ad") {
+        return;
+      }
+      const cached = this.#userByIdentity.get(identityId);
+      if (cached !== undefined) {
+        this.#lastAdAtByUser.set(cached, this.#now());
+        return;
+      }
+      void this.#db
+        .select({ userId: flistAccounts.userId })
+        .from(identities)
+        .innerJoin(
+          flistAccounts,
+          eq(identities.flistAccountId, flistAccounts.id),
+        )
+        .where(eq(identities.id, identityId))
+        .then(([row]) => {
+          if (row) {
+            this.#userByIdentity.set(identityId, row.userId);
+            this.#lastAdAtByUser.set(row.userId, this.#now());
+          }
+        })
+        .catch(() => undefined);
+    });
   }
 
   /** `campaign.start` — validates against the live session and library. */
@@ -256,16 +319,21 @@ export class CampaignScheduler {
       throw new CampaignError("This character isn't connected right now");
     }
     const channels: RuntimeChannel[] = [];
+    const seen = new Set<string>();
     for (const key of input.channels) {
       const channel = this.#findChannel(session, key);
       if (!channel) {
         throw new CampaignError(
-          `You're not in one of those channels any more (${key})`,
+          "You're not in one of those channels any more — reopen the setup and pick again",
         );
       }
+      if (seen.has(channel.key.toLowerCase())) {
+        continue;
+      }
+      seen.add(channel.key.toLowerCase());
       if (channel.state.mode === "chat") {
         throw new CampaignError(
-          `${channel.state.title || key} doesn't allow ads`,
+          `${channel.state.title || channel.key} doesn't allow ads`,
         );
       }
       channels.push({
@@ -317,9 +385,15 @@ export class CampaignScheduler {
     runtime.expiresAt = now + CAMPAIGN_DURATION_MS;
     runtime.expiredNotified = false;
     for (const channel of runtime.channels) {
-      if (channel.state !== "removed" && channel.nextAt === undefined) {
-        channel.nextAt = now + this.#startDelay();
+      if (channel.state === "removed") {
+        continue;
       }
+      // Fresh staggered timeline — a stale past nextAt from before the
+      // stop/expiry must not burst-post on revival (audit MEDIUM). The
+      // post-time floor guard keeps lastAt honored on top.
+      channel.state = "active";
+      channel.retryAt = undefined;
+      channel.nextAt = now + this.#startDelay();
     }
     await this.#persist(runtime);
     this.#broadcast(runtime);
@@ -358,6 +432,12 @@ export class CampaignScheduler {
   }
 
   #intervalFor(session: FchatSession | undefined, key: string): number {
+    return this.#floorFor(session, key) + this.#random() * this.#jitterMs;
+  }
+
+  /** The non-jittered per-channel floor: base, raised by the channel's
+   * [ads: N min] request and the live flood VAR. */
+  #floorFor(session: FchatSession | undefined, key: string): number {
     let floorMs = this.#baseMs;
     const channel = session ? this.#findChannel(session, key) : undefined;
     const match = channel ? CADENCE_RE.exec(channel.state.description) : null;
@@ -373,7 +453,7 @@ export class CampaignScheduler {
     if (flood > floorMs) {
       floorMs = flood;
     }
-    return floorMs + this.#random() * this.#jitterMs;
+    return floorMs;
   }
 
   #findChannel(
@@ -514,7 +594,10 @@ export class CampaignScheduler {
       changed = true;
       if (session && this.#history) {
         for (const channel of runtime.channels) {
-          if (channel.state !== "removed") {
+          if (
+            channel.state !== "removed" &&
+            this.#findChannel(session, channel.key) !== undefined
+          ) {
             this.#history.appendSystemLine(
               runtime.identityId,
               session,
@@ -541,19 +624,26 @@ export class CampaignScheduler {
         changed = true;
       }
       // A channel we're no longer in (kick, ban, or leaving) stops
-      // permanently. Only judged against a live, seeded session — a
-      // reconnect mid-rejoin must not read as a removal.
+      // permanently — but only after a grace window of continuous absence:
+      // the session flips online at IDN while its channel map is still
+      // refilling from JCH echoes, and a tick in that gap must not read
+      // as a removal (audit HIGH).
       if (
         channel.state !== "removed" &&
         online &&
         session !== undefined &&
         this.#findChannel(session, channel.key) === undefined
       ) {
-        channel.state = "removed";
-        channel.nextAt = undefined;
-        channel.retryAt = undefined;
-        channel.removedAt = now;
-        changed = true;
+        channel.missingSince ??= now;
+        if (now - channel.missingSince >= REMOVAL_GRACE_MS) {
+          channel.state = "removed";
+          channel.nextAt = undefined;
+          channel.retryAt = undefined;
+          channel.removedAt = now;
+          changed = true;
+        }
+      } else if (channel.missingSince !== undefined) {
+        channel.missingSince = undefined;
       }
     }
 
@@ -572,7 +662,9 @@ export class CampaignScheduler {
       }
     }
 
-    if (changed) {
+    if (changed && this.#runtimes.get(runtime.identityId) === runtime) {
+      // A replace mid-await must not let the old runtime clobber the new
+      // campaign's row or fan-out.
       await this.#persist(runtime);
       this.#broadcast(runtime);
     }
@@ -589,6 +681,14 @@ export class CampaignScheduler {
       // The library changed under the campaign (ads disabled/deleted) —
       // nothing to post; try again next interval rather than spinning.
       channel.nextAt = now + this.#intervalFor(session, channel.key);
+      return true;
+    }
+    // Never dip under the live per-channel floor relative to the last
+    // post, whatever the in-memory timeline says (restart rebuilds, stale
+    // renews — audit HIGH).
+    const floor = this.#floorFor(session, channel.key);
+    if (channel.lastAt !== undefined && now - channel.lastAt < floor) {
+      channel.nextAt = channel.lastAt + floor + this.#random() * this.#jitterMs;
       return true;
     }
     const ad = rotation[channel.cycleIndex % rotation.length]!;

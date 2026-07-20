@@ -8,6 +8,7 @@ import {
   formatExpiry,
   formatIn,
   resolveCycle,
+  statusIntervalText,
   totalPosts,
 } from "./campaign-logic.js";
 
@@ -95,5 +96,15 @@ describe("status aggregates", () => {
     expect(elapsedFraction(0, 100, 200)).toBe(1);
     expect(elapsedFraction(0, 100, -10)).toBe(0);
     expect(elapsedFraction(100, 100, 100)).toBe(1);
+  });
+});
+
+describe("statusIntervalText", () => {
+  it("renders sentences, never the bracket token", () => {
+    expect(statusIntervalText("plain room")).toBe("every 12–22 min");
+    expect(statusIntervalText("[ads: 20 min]")).toBe(
+      "every ≈20 min · honoring their request",
+    );
+    expect(statusIntervalText("[ads: 5 min]")).toBe("every 12–22 min");
   });
 });

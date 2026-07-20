@@ -77,7 +77,7 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
 
   // ── Status: live; Polar takes a real rotation post, Borealis pauses ──
   const status = page.getByRole("dialog", { name: "Campaign", exact: true });
-  await expect(status.getByText("Posting live")).toBeVisible();
+  await expect(status.getByText("Posting live", { exact: true })).toBeVisible();
   await expect(status.getByText(/expires in/)).toBeVisible();
   await expect(
     status.getByText(
@@ -116,7 +116,7 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
   await expect(status.getByText("1 post", { exact: true })).toBeVisible();
   await expect(status.getByText("0 posts", { exact: true })).toBeVisible();
   await status.getByRole("button", { name: "↻ Renew for 1 hour" }).click();
-  await expect(status.getByText("Posting live")).toBeVisible();
+  await expect(status.getByText("Posting live", { exact: true })).toBeVisible();
   await status.getByRole("button", { name: "■ Stop everything" }).click();
   await expect(
     status.getByText("Campaign stopped — posting has stopped"),

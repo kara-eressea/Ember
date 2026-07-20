@@ -110,6 +110,11 @@ export async function buildApp({
     });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const highlights = new HighlightMatcher(db, app.log);
+  // Late-bound: the session registry's start callback needs it, but the
+  // scheduler itself needs the hub/history built below.
+  // Assigned once below; the session-start callback must close over it.
+  // eslint-disable-next-line prefer-const -- forward declaration
+  let campaignScheduler: CampaignScheduler | undefined;
   const history = new HistorySink(db, app.log, { highlights });
   const hub = new GatewayHub({ history, logger: app.log });
   const directory = new ChannelDirectory(
@@ -132,6 +137,9 @@ export async function buildApp({
       history.attach(identityId, session);
       hub.attachSession(identityId, session);
       directory.attach(session);
+      // Every session's manual ads must stamp the campaign scheduler's
+      // app-wide spacing clock, campaign or not (M11 audit).
+      campaignScheduler?.observeSession(identityId, session);
     },
   });
   app.decorate("sessions", sessions);
@@ -172,7 +180,7 @@ export async function buildApp({
   updates.start();
   // Ad-rotation campaigns (M11): resumes persisted campaigns and runs the
   // conservative posting schedule. Attached-only gating rides the hub.
-  const campaignScheduler = new CampaignScheduler({
+  campaignScheduler = new CampaignScheduler({
     db,
     sessions,
     hub,
