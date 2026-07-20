@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.rt *{box-sizing:border-box}
+.rtcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:520px;line-height:1.5}
+.rtcap b{color:#a892c6;font-weight:600}
+</style>
+</helmet>
+<div class="rt" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="6">
+  <div style="display:flex;flex-direction:column">
+    <div class="rtcap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,codebg:this.mix(text,bg,.9),
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  nickColor(n){const p=['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8'];
+    let s=0;for(const c of n)s+=c.charCodeAt(0);return p[s%p.length];}
+
+  // ---- markdown inline (message tokenizer) ----
+  inlineMd(str){
+    const t=this.T();const out=[];let k=0;
+    const re=/(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)|(@[A-Za-z0-9_]+)|(https?:\/\/[^\s]+)/g;
+    let m,last=0;
+    while((m=re.exec(str))){
+      if(m.index>last)out.push(str.slice(last,m.index));
+      const tok=m[0];
+      if(tok.startsWith('**'))out.push(this.hk('k'+(k++),'strong',{fontWeight:700,color:t.text},tok.slice(2,-2)));
+      else if(tok.startsWith('*'))out.push(this.hk('k'+(k++),'em',{fontStyle:'italic'},tok.slice(1,-1)));
+      else if(tok.startsWith('`'))out.push(this.hk('k'+(k++),'code',{fontFamily:t.mono,fontSize:'12px',background:t.codebg,borderRadius:'3px',padding:'1px 4px'},tok.slice(1,-1)));
+      else if(tok.startsWith('@'))out.push(this.hk('k'+(k++),'span',{color:t.accent,background:t.accentSoft,borderRadius:'3px',padding:'0 3px',fontWeight:600},tok));
+      else out.push(this.hk('k'+(k++),'span',{color:t.accent,textDecoration:'underline',textUnderlineOffset:'2px'},tok));
+      last=re.lastIndex;
+    }
+    if(last<str.length)out.push(str.slice(last));
+    return out;
+  }
+
+  // ---- StarRating primitive ----
+  // display: filled=warn, empty=faint at low weight. size drives glyph px.
+  stars(n,size,opts){
+    opts=opts||{};const t=this.T();const max=5;
+    const kids=[];
+    for(let i=1;i<=max;i++){
+      const on=i<=n;
+      kids.push(this.hk('s'+i,'span',{fontSize:size+'px',lineHeight:1,color:on?t.warn:this.mix(t.faint,t.bg,.45),
+        cursor:opts.interactive?'pointer':'default'},on?'★':'☆'));
+    }
+    const row=this.h('span',{display:'inline-flex',alignItems:'center',gap:opts.gap||'1px'},...kids);
+    if(opts.count){
+      return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px'},row,
+        this.h('span',{fontFamily:t.mono,fontSize:(size-2)+'px',color:t.dim,fontWeight:600},n+'/5'));
+    }
+    return row;
+  }
+  // small inline rating chip for an ad header (stars + optional note glyph)
+  ratingChip(r){
+    const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',padding:'1.5px 7px 1.5px 6px',borderRadius:'20px',
+      background:this.mix(t.warn,t.bg,.86),border:`1px solid ${this.mix(t.warn,t.bg,.62)}`,cursor:'pointer'},
+      this.stars(r.score,11),
+      r.note?this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.warn},'✎'):null);
+  }
+
+  // ---- LRP ad row, extended with rating ----
+  adLine(ad,opts){
+    opts=opts||{};const t=this.T();const nc=ad.genderColor||this.nickColor(ad.nick);
+    const rateAffordance = ad.rating
+      ? this.ratingChip(ad.rating)
+      : this.h('span',{display:'inline-flex',alignItems:'center',gap:'4px',padding:'1.5px 8px',borderRadius:'20px',
+          fontSize:'10.5px',fontWeight:600,color:t.faint,background:'transparent',border:`1px solid ${t.border}`,
+          cursor:'pointer',opacity:opts.showRate?1:.0},
+          this.h('span',{color:this.mix(t.faint,t.bg,.3),fontSize:'11px'},'☆'),'Rate');
+    const headKids=[
+      this.h('span',{fontFamily:t.mono,fontSize:'8.5px',fontWeight:700,letterSpacing:'.08em',color:t.accent,
+        background:t.accentSoft,border:`1px solid ${t.accentMed}`,borderRadius:'4px',padding:'1px 6px',flexShrink:0},'AD'),
+      this.h('span',{fontFamily:t.mono,fontSize:'12.5px',fontWeight:600,color:nc,cursor:'pointer',flexShrink:0},ad.nick),
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.faint,flexShrink:0},'['+ad.time+']'),
+      this.h('span',{flex:1}),
+      ad.match?this.h('span',{flexShrink:0},this.matchPill(ad.match,{short:true})):null,
+      this.h('span',{flexShrink:0},rateAffordance),
+    ];
+    const bodyLines=ad.body.split('\n');
+    const noteLine = ad.rating&&ad.rating.note&&opts.showNote
+      ? this.h('div',{display:'flex',alignItems:'baseline',gap:'7px',marginTop:'7px',paddingTop:'7px',
+          borderTop:`1px solid ${this.mix(t.warn,t.side,.7)}`},
+          this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:700,letterSpacing:'.06em',color:t.warn,flexShrink:0},'YOUR NOTE'),
+          this.h('span',{fontSize:'11.5px',fontStyle:'italic',color:t.dim,lineHeight:1.45},ad.rating.note))
+      : null;
+    return this.h('div',{margin:'4px 16px',background:this.mix(t.accent,t.side,.93),border:`1px solid ${t.border}`,
+      borderLeft:`3px solid ${t.accentMed}`,borderRadius:t.radius+'px',padding:'8px 12px 9px',fontFamily:t.ui},
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px',marginBottom:'5px'},...headKids),
+      this.h('div',{fontSize:'12.5px',lineHeight:1.5,color:t.text,display:'flex',flexDirection:'column',gap:'2px'},
+        ...bodyLines.map((ln,i)=>this.hk(i,'div',{color:ln.trim()===''?'transparent':t.text},
+          ...(ln.trim()===''?[' ']:this.inlineMd(ln))))),
+      noteLine);
+  }
+
+  // ---- collapsed low-rated stub row (<= 2 stars) ----
+  collapsedRow(ad){
+    const t=this.T();const nc=ad.genderColor||this.nickColor(ad.nick);
+    return this.h('div',{display:'flex',alignItems:'center',gap:'9px',margin:'4px 16px',padding:'6px 12px',
+      background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',opacity:.6,cursor:'pointer'},
+      this.h('span',{fontFamily:t.mono,fontSize:'8px',fontWeight:700,letterSpacing:'.06em',color:t.faint,
+        border:`1px solid ${t.border}`,borderRadius:'3px',padding:'1px 4px',flexShrink:0},'AD'),
+      this.h('span',{fontFamily:t.mono,fontSize:'12px',fontWeight:600,color:this.mix(nc,t.bg,.4),flexShrink:0},ad.nick),
+      this.h('span',{flexShrink:0},this.stars(ad.rating.score,10)),
+      ad.rating.note?this.h('span',{fontSize:'11px',fontStyle:'italic',color:t.faint,overflow:'hidden',
+        textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0,flex:1},'“'+ad.rating.note+'”')
+        :this.h('span',{fontSize:'11px',color:t.faint,flex:1,minWidth:0},'you rated this poster low — ad hidden'),
+      this.h('span',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,flexShrink:0},'show ▾'));
+  }
+
+  // ---- MatchTier primitive (verbatim from M8/M10) ----
+  tiers(){const t=this.T();return{
+    match:{frac:1,label:'Match',color:t.ok},
+    weakMatch:{frac:.75,label:'Weak match',color:this.mix(t.ok,t.warn,.55)},
+    neutral:{frac:.5,label:'Neutral',color:this.mix(t.dim,t.faint,.4)},
+    weakMismatch:{frac:.25,label:'Weak mismatch',color:t.warn},
+    mismatch:{frac:0,label:'Mismatch',color:t.danger}};}
+  pie(key,size,color){
+    const T=this.tiers()[key];const c=color||T.color;const r=size/2,cx=r,cy=r,sw=1.4,rr=r-sw/2;const frac=T.frac;
+    let fill=null;
+    if(frac>=1)fill=React.createElement('circle',{cx,cy,r:rr,fill:c,stroke:'none'});
+    else if(frac>0){const a=frac*2*Math.PI-Math.PI/2;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);const large=frac>.5?1:0;
+      fill=React.createElement('path',{d:`M ${cx} ${cy} L ${cx} ${cy-rr} A ${rr} ${rr} 0 ${large} 1 ${x} ${y} Z`,fill:c,stroke:'none'});}
+    return React.createElement('svg',{width:size,height:size,viewBox:`0 0 ${size} ${size}`,
+      style:{display:'inline-block',flexShrink:0,verticalAlign:'middle'}},fill,
+      React.createElement('circle',{cx,cy,r:rr,fill:'none',stroke:c,strokeWidth:sw}));}
+  matchPill(key,opts){
+    const t=this.T(),T=this.tiers()[key];const short=opts&&opts.short;
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'5px',padding:'2.5px 9px 2.5px 7px',borderRadius:'20px',
+      fontFamily:t.ui,fontSize:'10.5px',fontWeight:600,whiteSpace:'nowrap',color:T.color,
+      background:this.mix(T.color,t.bg,.83),border:`1px solid ${this.mix(T.color,t.bg,.58)}`},
+      this.pie(key,10),short?T.label.replace(' match','').replace(' mismatch',''):T.label);}
+
+  // ---- log card shell ----
+  logCard(w,rows){
+    const t=this.T();
+    return this.h('div',{width:w+'px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden',fontFamily:t.ui,boxShadow:'0 20px 50px -18px rgba(0,0,0,.6)',padding:'8px 0'},...rows);
+  }
+  chatLine(time,nick,body){
+    const t=this.T();const nc=this.nickColor(nick);
+    return this.h('div',{display:'flex',gap:'9px',alignItems:'baseline',padding:'2px 16px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'11.5px',color:t.faint,flexShrink:0},'['+time+']'),
+      this.h('span',{fontFamily:t.mono,fontSize:'12.5px',fontWeight:600,color:nc,whiteSpace:'nowrap',flexShrink:0},'<'+nick+'>'),
+      this.h('span',{fontSize:'13px',lineHeight:1.5,color:t.text},...this.inlineMd(body)));
+  }
+
+  // ---- rating note popover (§13 anchoring + §4 PrivateNote editor language) ----
+  ratePopover(state){
+    const t=this.T();const score=state.score||0;
+    const editor=this.h('div',{padding:'12px 14px 13px'},
+      this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'11px'},
+        this.h('span',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:t.accent},'Rate this poster'),
+        state.saved?this.h('span',{display:'inline-flex',alignItems:'center',gap:'4px',fontFamily:t.mono,fontSize:'10px',color:t.ok},'Saved ✓'):null),
+      // big interactive stars
+      this.h('div',{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'},
+        this.h('span',{display:'inline-flex',gap:'3px'},
+          ...[1,2,3,4,5].map(i=>this.hk('bs'+i,'span',{fontSize:'24px',lineHeight:1,cursor:'pointer',
+            color:i<=score?t.warn:this.mix(t.faint,t.bg,.4)},i<=score?'★':'☆'))),
+        score?this.h('span',{fontFamily:t.mono,fontSize:'12px',fontWeight:600,color:t.warn},score+'/5'):
+          this.h('span',{fontSize:'11.5px',color:t.faint},'tap to rate')),
+      // note textarea
+      this.h('div',{marginBottom:'9px'},
+        this.h('div',{background:t.bg,border:`1px solid ${state.focus?t.accentMed:t.border}`,borderRadius:t.radius+'px',
+          boxShadow:state.focus?`0 0 0 3px ${t.accentSoft}`:'none',padding:'8px 10px',minHeight:'56px'},
+          state.note
+            ? this.h('span',{fontSize:'12px',color:t.text,lineHeight:1.5},state.note,
+                state.focus?this.h('span',{display:'inline-block',width:'1.5px',height:'13px',background:t.accent,
+                  marginLeft:'1px',verticalAlign:'text-bottom'}):null)
+            : this.h('span',{fontSize:'12px',color:t.faint},'Add a private note (optional)…'))),
+      // reassurance footer
+      this.h('div',{display:'flex',alignItems:'center',gap:'6px',fontFamily:t.mono,fontSize:'9.5px',color:t.faint,lineHeight:1.4},
+        this.h('span',{color:t.ok,fontSize:'11px'},'⬤'),'saved on this server only · never sent to F-List'),
+      state.rated?this.h('div',{display:'flex',justifyContent:'flex-end',marginTop:'11px'},
+        this.h('span',{fontSize:'11px',fontWeight:600,color:t.danger,cursor:'pointer'},'Clear rating')):null);
+    return this.h('div',{width:'260px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      boxShadow:'0 20px 50px -10px rgba(0,0,0,.7)',fontFamily:t.ui,color:t.text,overflow:'hidden'},
+      this.h('div',{display:'flex',alignItems:'center',gap:'9px',padding:'11px 14px',background:t.side2,
+        borderBottom:`1px solid ${t.border}`},
+        this.h('div',{width:'26px',height:'26px',borderRadius:'7px',flexShrink:0,
+          background:`linear-gradient(150deg,${this.mix(state.color,t.text,.15)},${state.color})`,
+          display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'12px',fontWeight:600,color:t.bg},state.initial),
+        this.h('div',{minWidth:0},
+          this.h('div',{fontSize:'13px',fontWeight:600,color:t.text},state.nick),
+          this.h('div',{fontFamily:t.mono,fontSize:'10px',color:t.faint},'shared across your characters'))),
+      editor);
+  }
+
+  // ================= FRAMES =================
+  // RT·A — rate affordance + popover
+  frameRate(){
+    const t=this.T();
+    const card=this.logCard(520,[
+      this.hk('c1','div',{},this.chatLine('14:01','Sable','anyone up for a slow winter thread tonight')),
+      this.hk('a1','div',{},this.adLine({nick:'Kolvarr',time:'14:02',genderColor:'#8f9bc9',match:'match',
+        body:'**Long-term arctic plot** — timber wolf, dom-leaning.\nbuilding a slow expedition arc, want a co-writer not a vending machine.'},{showRate:true})),
+      this.hk('a2','div',{},this.adLine({nick:'Vesna',time:'14:04',genderColor:'#c294b0',
+        body:'*arctic fox, 24, switch* — seeking slow-burn, snowed-in cabins, the long thaw into trust.'},{showRate:false})),
+    ]);
+    const pop=this.ratePopover({nick:'Kolvarr',initial:'K',color:'#4f6d7a',score:4,note:'Paragraph replies, kept a great slow pace across two scenes.',focus:true,rated:true,saved:true});
+    return this.h('div',{display:'flex',gap:'40px',alignItems:'flex-start'},
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'hovering an ad reveals a quiet ☆ Rate affordance (top row)'),card),
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'☆ opens the rating editor — popover anchored to the ad row'),pop));
+  }
+  // RT·B — stars render on subsequent ads
+  frameRated(){
+    const t=this.T();
+    const card=this.logCard(520,[
+      this.hk('a1','div',{},this.adLine({nick:'Kolvarr',time:'14:12',genderColor:'#8f9bc9',match:'match',
+        rating:{score:4,note:'Paragraph replies, kept a great slow pace across two scenes.'},
+        body:'**Long-term arctic plot** — timber wolf, dom-leaning. new thread, same tone.'},{showRate:true})),
+      this.hk('a2','div',{},this.adLine({nick:'Thistle',time:'14:15',genderColor:'#a6bd94',
+        rating:{score:5},
+        body:'gentle switch, evenings EST — looking for a steady long-term partner. refs on profile.'},{showRate:true})),
+      this.hk('a3','div',{},this.adLine({nick:'Bramble',time:'14:18',
+        body:'quick scene? PWP ok, anything goes, keep it kind.'},{showRate:false})),
+    ]);
+    return this.h('div',{display:'flex',flexDirection:'column',gap:'16px',width:'520px'},
+      this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint},'a rated poster’s future ads carry their stars in the header (4★ with note, 5★ no note); an unrated poster shows only the hover ☆ Rate'),
+      card);
+  }
+  // RT·C — collapsed <=2 star row + expanded
+  frameLowRated(){
+    const t=this.T();
+    const collapsed=this.logCard(520,[
+      this.hk('c1','div',{},this.chatLine('14:20','Sable','back for round two')),
+      this.hk('lr','div',{},this.collapsedRow({nick:'Marrow',genderColor:'#cfa2d4',
+        rating:{score:2,note:'ghosted mid-scene, twice.'}})),
+      this.hk('a2','div',{},this.adLine({nick:'Thistle',time:'14:22',genderColor:'#a6bd94',rating:{score:5},
+        body:'gentle switch, evenings EST — steady long-term partner wanted.'},{showRate:true})),
+    ]);
+    const expanded=this.logCard(520,[
+      this.hk('c1','div',{},this.chatLine('14:20','Sable','back for round two')),
+      this.hk('a1','div',{},this.adLine({nick:'Marrow',time:'14:21',genderColor:'#cfa2d4',
+        rating:{score:2,note:'ghosted mid-scene, twice.'},
+        body:'*looking for casual scenes* — flexible on setting, DM me anytime.'},{showRate:true,showNote:true})),
+      this.hk('a2','div',{},this.adLine({nick:'Thistle',time:'14:22',genderColor:'#a6bd94',rating:{score:5},
+        body:'gentle switch, evenings EST — steady long-term partner wanted.'},{showRate:true})),
+    ]);
+    return this.h('div',{display:'flex',gap:'40px',alignItems:'flex-start'},
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'≤ 2★ poster — dimmed one-line stub, never fully hidden'),collapsed),
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'clicking “show ▾” expands to the full ad — rating still editable, note surfaced'),expanded));
+  }
+  // RT·D — mini profile card with rating composed in
+  avatar(size,color,initial){
+    const t=this.T();
+    return this.h('div',{width:size+'px',height:size+'px',borderRadius:t.radius+'px',flexShrink:0,
+      background:`linear-gradient(150deg,${this.mix(color,t.text,.15)},${color})`,
+      display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontWeight:600,
+      fontSize:(size*0.42)+'px',color:t.bg,boxShadow:'inset 0 1px 0 rgba(255,255,255,.14)'},initial);
+  }
+  badge(glyph,color){const t=this.T();
+    return this.h('span',{width:'20px',height:'20px',borderRadius:'6px',flexShrink:0,display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontSize:'11px',color:color,
+      background:this.mix(color,t.bg,.84),border:`1px solid ${this.mix(color,t.bg,.62)}`},glyph);}
+  infoChip(txt){const t=this.T();
+    return this.h('span',{padding:'2.5px 8px',borderRadius:'5px',fontSize:'11px',fontWeight:500,color:t.dim,
+      background:t.bg,border:`1px solid ${t.border}`,whiteSpace:'nowrap'},txt);}
+  gl(txt){const t=this.T();return this.h('div',{fontSize:'9.5px',fontWeight:700,letterSpacing:'.1em',
+    textTransform:'uppercase',color:t.faint,margin:'0 0 8px'},txt);}
+  miniCard(d){
+    const t=this.T();
+    const genderColor={female:'#c294b0',male:'#8f9bc9',androgynous:'#a6bd94'}[d.gender]||t.accent;
+    const badges=[];
+    if(d.isFriend)badges.push(this.hk('f','span',{},this.badge('★',t.warn)));
+    if(d.isBookmarked)badges.push(this.hk('b','span',{},this.badge('⚑',t.accent)));
+    const header=this.h('div',{display:'flex',gap:'13px',padding:'16px 14px 12px',
+      background:`linear-gradient(180deg,${this.mix(genderColor,t.side,.9)},${t.side})`},
+      this.avatar(64,d.avatarColor,d.initial),
+      this.h('div',{minWidth:0,flex:1,display:'flex',flexDirection:'column'},
+        this.h('div',{display:'flex',alignItems:'flex-start',gap:'8px'},
+          this.h('div',{fontSize:'16px',fontWeight:700,color:genderColor,lineHeight:1.3,flex:1,minWidth:0,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},d.name),
+          this.h('div',{display:'flex',gap:'5px',flexShrink:0},...badges)),
+        this.h('div',{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'9px'},
+          ...d.infotags.map((x,i)=>this.hk(i,'span',{},this.infoChip(x))))));
+    const comp=this.h('div',{padding:'12px 14px 4px',borderTop:`1px solid ${this.mix(t.border,t.side,.35)}`},
+      this.gl('Compatibility'),
+      this.h('div',{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'7px'},this.matchPill(d.match)));
+    // rating block — composes below compatibility, only when the user has rated this person
+    const rating=d.rating?this.h('div',{padding:'11px 14px',borderTop:`1px solid ${this.mix(t.border,t.side,.35)}`},
+      this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'},
+        this.gl('Your rating'),
+        this.h('span',{fontFamily:t.mono,fontSize:'9px',color:t.faint},'this server only')),
+      this.h('div',{display:'flex',alignItems:'center',gap:'8px'},this.stars(d.rating.score,15,{count:true}),
+        this.h('span',{fontSize:'11px',fontWeight:600,color:t.accent,cursor:'pointer',marginLeft:'auto'},'Edit')),
+      d.rating.note?this.h('div',{fontSize:'11.5px',fontStyle:'italic',color:t.dim,lineHeight:1.45,marginTop:'7px'},
+        '“'+d.rating.note+'”'):null):null;
+    const actions=this.h('div',{display:'flex',gap:'8px',padding:'12px 14px 14px'},
+      this.h('span',{flex:1,textAlign:'center',padding:'8px 0',borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:700,
+        color:t.bg,background:t.accent,cursor:'pointer'},'Open profile'),
+      this.h('span',{flex:1,textAlign:'center',padding:'8px 0',borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:600,
+        color:t.text,background:t.bg,border:`1px solid ${t.border}`,cursor:'pointer'},'Message'));
+    return this.h('div',{width:'300px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      boxShadow:'0 20px 50px -10px rgba(0,0,0,.7)',overflow:'hidden',fontFamily:t.ui,color:t.text},
+      header,comp,rating,actions);
+  }
+  frameMiniCard(){
+    const t=this.T();
+    const koll={name:'Kolvarr',gender:'male',avatarColor:'#4f6d7a',initial:'K',isFriend:false,isBookmarked:true,
+      infotags:['Gay','31','Timber wolf','Dominant'],match:'match',
+      rating:{score:4,note:'Paragraph replies, kept a great slow pace across two scenes.'}};
+    const marrow={name:'Marrow',gender:'androgynous',avatarColor:'#7a5c86',initial:'M',isFriend:false,isBookmarked:false,
+      infotags:['Pansexual','27','Fennec','Switch'],match:'weakMatch',
+      rating:{score:2,note:'ghosted mid-scene, twice.'}};
+    return this.h('div',{display:'flex',gap:'40px',alignItems:'flex-start'},
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'mini card — the rating block composes below compatibility (4★ + note)'),this.miniCard(koll)),
+      this.h('div',{},this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},'a low (2★) rating shows the same block — the card is never hidden, only the log row collapses'),this.miniCard(marrow)));
+  }
+  // RT·E — the star + note primitive spec
+  frameSpec(){
+    const t=this.T();
+    const card=(w,...kids)=>this.h('div',{width:w+'px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+'px',padding:'18px 20px'},...kids);
+    const scoreRow=(n,label)=>this.h('div',{display:'grid',gridTemplateColumns:'118px 1fr',alignItems:'center',gap:'14px',
+      padding:'8px 0',borderTop:n===5?'none':`1px solid ${this.mix(t.border,t.side,.4)}`},
+      this.h('span',{flexShrink:0},this.stars(n,15)),
+      this.h('span',{fontSize:'12px',color:t.dim},label));
+    return this.h('div',{display:'flex',gap:'24px',flexWrap:'wrap',alignItems:'flex-start'},
+      card(340,this.gl('Star scale · warn on faint'),
+        scoreRow(5,'great partner — shown proudly'),
+        scoreRow(4,'good, worth remembering'),
+        scoreRow(3,'fine — no strong signal'),
+        scoreRow(2,'poor — ad collapses to a stub'),
+        scoreRow(1,'bad — ad collapses to a stub')),
+      card(320,this.gl('Local-only · what the copy promises'),
+        this.h('div',{fontSize:'12.5px',color:t.dim,lineHeight:1.6},
+          'Ratings live ',this.h('b',{style:{color:t.text}},'on your own server, in your seat'),' — shared across your characters, never sent to F-List. Every rating surface repeats it in plain words so the promise is never buried:'),
+        this.h('div',{marginTop:'12px',display:'flex',alignItems:'center',gap:'7px',fontFamily:t.mono,fontSize:'10.5px',
+          color:t.faint,padding:'9px 11px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px'},
+          this.h('span',{color:t.ok,fontSize:'12px'},'⬤'),'saved on this server only · never sent to F-List')));
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'RT·A',cap:'Rate affordance + editor. An unobtrusive ☆ Rate pill appears on hover in the ad-row header (invisible until then, so it never adds clutter). Clicking opens a rating editor — a popover anchored to the row (§13 language): ★ 1–5, an optional private note with a blinking caret, and a plain-words promise that the rating is saved on this server only and never sent to F-List.',el:this.frameRate()},
+      {id:'RT·B',cap:'Stars on future ads. Once you’ve rated a poster, their subsequent ads carry their stars in the header (a note adds a ✎ glyph). The rating is per person, shared across your own characters. Unrated posters show only the hover ☆ Rate.',el:this.frameRated()},
+      {id:'RT·C',cap:'Low-rated (≤ 2★) posters collapse. Instead of a full block, the ad renders as a dimmed one-line stub naming the poster + their stars + the start of your note — the ad is never unreachable. “Show ▾” expands to the full block with the rating still editable and the note surfaced.',el:this.frameLowRated()},
+      {id:'RT·D',cap:'On the mini profile card. When you’ve rated someone, a “Your rating” block composes cleanly below compatibility — stars + note + Edit + the same local-only reassurance. A low rating shows the same block; only the in-log ad row collapses, never the card.',el:this.frameMiniCard()},
+      {id:'RT·E',cap:'The star + note primitive — the 1–5 scale (warn stars on faint) with what each score means for the ad row, and the local-only promise the copy repeats on every surface.',el:this.frameSpec()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>

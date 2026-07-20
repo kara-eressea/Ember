@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141210;font-family:'IBM Plex Sans',system-ui,sans-serif}
+.cm *{box-sizing:border-box}
+.cmscroll::-webkit-scrollbar{width:8px}
+.cmscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+.cmscroll::-webkit-scrollbar-track{background:transparent}
+.cmcap{font:400 12.5px 'IBM Plex Mono',monospace;color:#726a5f;margin:0 0 12px;max-width:520px;line-height:1.5}
+.cmcap b{color:#a892c6;font-weight:600}
+@keyframes cmpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.cmlive{animation:cmpulse 1.6s ease-in-out infinite}
+</style>
+</helmet>
+<div class="cm" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:56px;padding:60px">
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="6">
+  <div style="display:flex;flex-direction:column">
+    <div class="cmcap"><b>{{ f.id }}</b> · {{ f.cap }}</div>
+    <div>{{ f.el }}</div>
+  </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);
+    return '#'+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,'0')).join('');}
+  T(){
+    const bg='#1b1917',side='#232120',side2='#2a2725',head='#201e1c',text='#ece7e0',dim='#a89e92',
+      faint='#726a5f',border='#332f2b',accent='#a892c6',ok='#8bb173',warn='#d0a24f',danger='#e08a6a',radius=9;
+    return {bg,side,side2,head,text,dim,faint,border,accent,ok,warn,danger,radius,codebg:this.mix(text,bg,.9),
+      accentSoft:this.mix(accent,bg,.84),accentMed:this.mix(accent,bg,.5),
+      mono:`'IBM Plex Mono',ui-monospace,monospace`,ui:`'IBM Plex Sans',system-ui,sans-serif`};
+  }
+  h(tag,style,...kids){return React.createElement(tag,{style},...kids);}
+  hk(key,tag,style,...kids){return React.createElement(tag,{key,style},...kids);}
+  cn(cls,tag,style,...kids){return React.createElement(tag,{className:cls,style},...kids);}
+
+  // ---- shared primitives ----
+  gl(txt){const t=this.T();return this.h('div',{fontSize:'10px',fontWeight:700,letterSpacing:'.09em',
+    textTransform:'uppercase',color:t.faint},txt);}
+  stepLabel(n,txt,hint){const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'9px',marginBottom:'11px'},
+      this.h('span',{width:'18px',height:'18px',borderRadius:'50%',background:t.accentSoft,border:`1px solid ${t.accentMed}`,
+        display:'inline-flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'10px',fontWeight:700,color:t.accent,flexShrink:0},n),
+      this.h('span',{fontSize:'13px',fontWeight:600,color:t.text},txt),
+      hint?this.h('span',{fontSize:'11px',color:t.faint},hint):null);}
+  modeBadge(mode){const t=this.T();const isAds=mode==='ads';
+    return this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:600,letterSpacing:'.05em',textTransform:'uppercase',
+      color:isAds?t.accent:t.dim,background:isAds?t.accentSoft:t.bg,border:`1px solid ${isAds?t.accentMed:t.border}`,
+      borderRadius:'4px',padding:'1px 6px',flexShrink:0},mode);}
+  check(on){const t=this.T();
+    return this.h('span',{width:'18px',height:'18px',borderRadius:'5px',flexShrink:0,display:'inline-flex',
+      alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,
+      color:on?t.bg:'transparent',background:on?t.accent:t.bg,border:`1px solid ${on?t.accent:t.border}`},'✓');}
+  btn(txt,kind){const t=this.T();const p=kind==='primary',d=kind==='danger';
+    return this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'0 18px',height:'36px',
+      borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:p?700:600,cursor:'pointer',
+      color:p?t.bg:(d?t.danger:t.text),background:p?t.accent:t.bg,
+      border:p?'none':`1px solid ${d?this.mix(t.danger,t.bg,.5):t.border}`},txt);}
+  smallBtn(txt,kind){const t=this.T();const p=kind==='primary';
+    return this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'0 12px',height:'28px',
+      borderRadius:t.radius+'px',fontSize:'11.5px',fontWeight:p?700:600,cursor:'pointer',whiteSpace:'nowrap',
+      color:p?t.bg:t.accent,background:p?t.accent:'transparent',border:p?'none':`1px solid ${t.accentMed}`},txt);}
+  liveDot(color,animate){const t=this.T();const c=color||t.ok;
+    return React.createElement('span',{className:animate?'cmlive':'',style:{width:'8px',height:'8px',borderRadius:'50%',
+      background:c,boxShadow:`0 0 5px ${c}`,flexShrink:0,display:'inline-block'}});}
+
+  // ---- dialog shell ----
+  dialog(w,h_,head,body,footer){
+    const t=this.T();
+    return this.h('div',{width:w+'px',height:h_+'px',background:t.side,border:`1px solid ${t.border}`,
+      borderRadius:t.radius+5+'px',boxShadow:'0 40px 100px -20px rgba(0,0,0,.7)',display:'flex',flexDirection:'column',
+      overflow:'hidden',fontFamily:t.ui,color:t.text},head,body,footer);
+  }
+  headBar(title,sub,rightGlyph){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'18px 20px 16px',
+      borderBottom:`1px solid ${t.border}`,gap:'12px'},
+      this.h('div',{minWidth:0},
+        this.h('div',{fontSize:'17px',fontWeight:700,color:t.text},title),
+        this.h('div',{fontFamily:t.mono,fontSize:'11.5px',color:t.faint,marginTop:'3px'},sub)),
+      this.h('span',{fontSize:'13px',color:t.faint,cursor:'pointer',padding:'2px'},rightGlyph||'✕'));
+  }
+
+  // ================= SETUP (§A) =================
+  data(){return {
+    tags:[['slowburn',2,true],['winter',1,false],['longterm',3,true],['plot',1,false],['dynamic',1,false],['pwp',1,false]],
+    cycle:[
+      'Long-term plot partner — canid, arctic setting',
+      'Arctic fox seeking slow-burn winter scenes',
+      'Mentor/apprentice dynamic, dom-leaning',
+    ],
+    channels:[
+      {name:'Cabin Fever',mode:'both',members:32,req:15,sel:true},
+      {name:'Frozen North RP',mode:'ads',members:88,sel:true},
+      {name:'Winter Tales',mode:'both',members:41,req:20,sel:true},
+      {name:'Northern Lights',mode:'ads',members:64,sel:false},
+    ],
+  };}
+  tagPickMulti(tag,count,on){const t=this.T();
+    return this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'5px 8px 5px 11px',borderRadius:'20px',
+      fontSize:'12px',fontWeight:600,cursor:'pointer',color:on?t.bg:t.dim,background:on?t.accent:t.bg,
+      border:`1px solid ${on?t.accent:t.border}`},
+      on?this.h('span',{fontSize:'10px',fontWeight:700},'✓'):null,tag,
+      this.h('span',{fontFamily:t.mono,fontSize:'10px',fontWeight:700,minWidth:'16px',height:'16px',padding:'0 4px',
+        borderRadius:'10px',display:'inline-flex',alignItems:'center',justifyContent:'center',
+        color:on?t.accent:t.faint,background:on?this.mix(t.bg,t.accent,.15):t.side2},count));}
+  resolveBox(cycle){const t=this.T();
+    return this.h('div',{marginTop:'12px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden'},
+      this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',
+        borderBottom:`1px solid ${this.mix(t.border,t.bg,.35)}`,background:t.side2},
+        this.h('span',{fontSize:'12px',fontWeight:700,color:t.accent},cycle.length+' ads will rotate'),
+        this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint,letterSpacing:'.04em'},'library order · loops')),
+      this.h('div',{padding:'6px 0'},
+        ...cycle.map((c,i)=>this.hk(i,'div',{display:'flex',alignItems:'center',gap:'10px',padding:'5px 12px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'10.5px',fontWeight:700,color:t.accent,width:'16px',flexShrink:0},(i+1)+'·'),
+          this.h('span',{fontSize:'12.5px',color:t.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},c),
+          i<cycle.length-1?null:this.h('span',{fontFamily:t.mono,fontSize:'10px',color:t.faint,marginLeft:'auto',flexShrink:0},'↺ back to 1')))));}
+  intervalText(c){
+    if(c.req)return '≈ one ad every '+c.req+' min · honoring [ads: '+c.req+' min]';
+    return '≈ one ad every 12–22 min';}
+  chanRowSetup(c){
+    const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'9px 12px',borderRadius:t.radius+'px',
+      margin:'0 2px',cursor:'pointer',background:c.sel?this.mix(t.accent,t.side,.9):'transparent',
+      boxShadow:c.sel?`inset 2px 0 0 ${t.accent}`:'none',borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+      this.check(c.sel),
+      this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+      this.h('div',{minWidth:0,flex:1,display:'flex',flexDirection:'column',gap:'3px'},
+        this.h('div',{display:'flex',alignItems:'center',gap:'7px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text,overflow:'hidden',
+            textOverflow:'ellipsis',whiteSpace:'nowrap'},c.name),
+          this.modeBadge(c.mode)),
+        this.h('div',{fontSize:'11px',color:c.req?t.accent:t.faint},this.intervalText(c))),
+      this.h('span',{fontFamily:t.mono,fontSize:'11px',color:t.dim,display:'flex',alignItems:'center',gap:'5px',flexShrink:0},
+        this.h('span',{width:'6px',height:'6px',borderRadius:'50%',background:t.ok}),c.members));
+  }
+  durationCard(){const t=this.T();
+    return this.h('div',{marginTop:'18px',display:'flex',alignItems:'center',gap:'12px',padding:'12px 14px',
+      background:t.accentSoft,border:`1px solid ${t.accentMed}`,borderRadius:t.radius+'px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'17px',color:t.accent,flexShrink:0},'◷'),
+      this.h('div',{minWidth:0},
+        this.h('div',{fontSize:'12.5px',fontWeight:700,color:t.text},'Runs for 1 hour, then stops'),
+        this.h('div',{fontSize:'11.5px',color:t.dim,marginTop:'2px'},'The length is fixed — you can’t change it here. One click renews it for another hour.')));
+  }
+  frameSetup(){
+    const t=this.T();const d=this.data();
+    const tagRow=this.h('div',{display:'flex',flexWrap:'wrap',gap:'7px'},
+      ...d.tags.map((tg,i)=>this.hk(i,'span',{},this.tagPickMulti(tg[0],tg[1],tg[2]))));
+    const chanBox=this.h('div',{marginTop:'2px',background:t.bg,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      overflow:'hidden',padding:'4px 0'},...d.channels.map((c,i)=>this.hk(i,'div',{},this.chanRowSetup(c))));
+    const body=this.cn('cmscroll','div',{flex:1,overflowY:'auto',padding:'18px 20px',minHeight:0},
+      this.stepLabel('1','Pick tags to rotate','every enabled ad with these tags cycles, in library order'),
+      tagRow,this.resolveBox(d.cycle),
+      this.h('div',{height:'20px'}),
+      this.stepLabel('2','Choose channels','each gets one ad on its own schedule — never faster than every 12 min'),
+      chanBox,
+      this.durationCard());
+    const footer=this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 20px',
+      borderTop:`1px solid ${t.border}`,background:t.side2},
+      this.h('div',{fontSize:'12px',color:t.dim,maxWidth:'340px'},
+        this.h('b',{style:{color:t.text}},'3 ads'),' → ',this.h('b',{style:{color:t.text}},'3 channels'),
+        this.h('span',{style:{color:t.faint}},' · this posts on its own until it expires')),
+      this.btn('Start campaign','primary'));
+    return this.dialog(648,600,this.headBar('Set up a campaign','as Vesna Marlowe · rotates on its own for 1 hour'),body,footer);
+  }
+
+  // ================= SETUP EDGE STATES (§A) =================
+  edgeCard(glyph,title,sub,cta){const t=this.T();
+    return this.h('div',{width:'300px',background:t.side,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',
+      padding:'26px 22px',display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center',gap:'10px'},
+      this.h('div',{width:'46px',height:'46px',borderRadius:t.radius+'px',border:`1px dashed ${t.border}`,
+        display:'flex',alignItems:'center',justifyContent:'center',fontFamily:t.mono,fontSize:'19px',color:t.faint},glyph),
+      this.h('div',{fontSize:'13.5px',fontWeight:700,color:t.text},title),
+      this.h('div',{fontSize:'11.5px',color:t.faint,lineHeight:1.55},sub),
+      cta?this.h('span',{marginTop:'2px',fontSize:'11.5px',fontWeight:600,color:t.accent,cursor:'pointer'},cta):null);}
+  replaceBanner(){const t=this.T();
+    return this.h('div',{width:'618px',display:'flex',alignItems:'center',gap:'13px',padding:'14px 16px',
+      background:this.mix(t.warn,t.side,.86),border:`1px solid ${this.mix(t.warn,t.side,.55)}`,borderRadius:t.radius+'px'},
+      this.h('span',{fontFamily:t.mono,fontSize:'17px',color:t.warn,flexShrink:0},'⚠'),
+      this.h('div',{flex:1,minWidth:0},
+        this.h('div',{fontSize:'12.5px',fontWeight:700,color:t.text},'A campaign is already running as Vesna Marlowe'),
+        this.h('div',{fontSize:'11.5px',color:t.dim,marginTop:'2px'},
+          '41 minutes left · 3 channels active. Starting a new one ',
+          this.h('b',{style:{color:t.text,fontWeight:600}},'replaces it'),' — the current one stops immediately.')),
+      this.h('div',{display:'flex',gap:'8px',flexShrink:0},
+        this.smallBtn('Keep current'),
+        this.h('span',{display:'inline-flex',alignItems:'center',height:'28px',padding:'0 12px',borderRadius:t.radius+'px',
+          fontSize:'11.5px',fontWeight:700,color:t.bg,background:t.warn,cursor:'pointer'},'Replace')));
+  }
+  frameSetupEdges(){const t=this.T();
+    return this.h('div',{display:'flex',flexDirection:'column',gap:'20px',width:'640px'},
+      this.replaceBanner(),
+      this.h('div',{display:'flex',gap:'18px',flexWrap:'wrap'},
+        this.edgeCard('○','No ads with those tags','None of your enabled ads carry the tags you picked. Choose other tags, or enable an ad in the Ad Center.','Open Ad Center →'),
+        this.edgeCard('⊘','No channels allow ads','You haven’t joined any channel whose mode is ads or both. Join one from the browser, then set up a campaign.','Browse channels →')));
+  }
+
+  // ================= STATUS (§B) =================
+  expiryBar(kind){
+    const t=this.T();
+    if(kind==='expired'){
+      return this.h('div',{padding:'14px 20px',background:this.mix(t.danger,t.side,.9),
+        borderBottom:`1px solid ${this.mix(t.danger,t.side,.55)}`},
+        this.h('div',{display:'flex',alignItems:'center',gap:'11px'},
+          this.h('span',{width:'8px',height:'8px',borderRadius:'50%',background:t.faint,flexShrink:0}),
+          this.h('div',{flex:1,minWidth:0},
+            this.h('div',{fontSize:'13px',fontWeight:700,color:t.text},'Campaign expired — posting has stopped'),
+            this.h('div',{fontFamily:t.mono,fontSize:'11px',color:t.dim,marginTop:'2px'},'ran 14:02 – 15:02 · 1 hour')),
+          this.smallBtn('Start again','primary')),
+        this.h('div',{height:'4px',marginTop:'12px',borderRadius:'2px',background:t.bg,overflow:'hidden'},
+          this.h('div',{width:'100%',height:'100%',background:this.mix(t.danger,t.side,.4)})));
+    }
+    if(kind==='detached'){
+      return this.h('div',{padding:'14px 20px',background:this.mix(t.warn,t.side,.9),
+        borderBottom:`1px solid ${this.mix(t.warn,t.side,.55)}`},
+        this.h('div',{display:'flex',alignItems:'center',gap:'11px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'15px',color:t.warn,flexShrink:0},'⏸'),
+          this.h('div',{flex:1,minWidth:0},
+            this.h('div',{fontSize:'13px',fontWeight:700,color:t.text},'Paused — no device attached'),
+            this.h('div',{fontSize:'11.5px',color:t.dim,marginTop:'2px'},'Rotation resumes on its own when you reconnect. The 1-hour clock keeps running while you’re away.')),
+          this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.warn,fontWeight:600,flexShrink:0},'expires in 22:14')),
+        this.h('div',{height:'4px',marginTop:'12px',borderRadius:'2px',background:t.bg,overflow:'hidden'},
+          this.h('div',{width:'63%',height:'100%',background:this.mix(t.warn,t.side,.35)})));
+    }
+    // live
+    return this.h('div',{padding:'14px 20px',background:this.mix(t.accent,t.side,.9),
+      borderBottom:`1px solid ${this.mix(t.accent,t.side,.55)}`},
+      this.h('div',{display:'flex',alignItems:'center',gap:'11px'},
+        this.liveDot(t.ok,true),
+        this.h('div',{flex:1,minWidth:0},
+          this.h('div',{fontSize:'13px',fontWeight:700,color:t.text},'Posting live'),
+          this.h('div',{fontFamily:t.mono,fontSize:'11px',color:t.dim,marginTop:'2px'},'2 channels active · 1 waiting · 1 stopped')),
+        this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.accent,fontWeight:600,flexShrink:0},'expires in 41:12'),
+        this.smallBtn('↻ Renew')),
+      this.h('div',{height:'4px',marginTop:'12px',borderRadius:'2px',background:t.bg,overflow:'hidden'},
+        this.h('div',{width:'31%',height:'100%',background:t.accentMed})));
+  }
+  statusRow(c){
+    const t=this.T();
+    if(c.state==='refused'){
+      return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'10px 12px',margin:'0 2px',
+        borderRadius:t.radius+'px',background:this.mix(t.warn,t.side,.93),boxShadow:`inset 2px 0 0 ${this.mix(t.warn,t.side,.45)}`,
+        borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+        this.h('span',{fontFamily:t.mono,fontSize:'13px',color:t.warn,flexShrink:0,width:'14px',textAlign:'center'},'⏸'),
+        this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+        this.h('div',{minWidth:0,flex:1},
+          this.h('div',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text},c.name),
+          this.h('div',{fontSize:'11.5px',color:t.warn,marginTop:'2px'},'This channel got an ad from somewhere else — waiting out its window.')),
+        this.h('div',{textAlign:'right',flexShrink:0},
+          this.h('div',{fontFamily:t.mono,fontSize:'12px',color:t.warn,fontWeight:600},'retry ≈ '+c.retry),
+          this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,marginTop:'2px'},'last '+c.last)));
+    }
+    if(c.state==='removed'){
+      return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'10px 12px',margin:'0 2px',
+        borderRadius:t.radius+'px',background:this.mix(t.danger,t.side,.94),boxShadow:`inset 2px 0 0 ${this.mix(t.danger,t.side,.45)}`,
+        borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+        this.h('span',{fontFamily:t.mono,fontSize:'13px',color:t.danger,flexShrink:0,width:'14px',textAlign:'center'},'⊘'),
+        this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+        this.h('div',{minWidth:0,flex:1},
+          this.h('div',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text},c.name),
+          this.h('div',{fontSize:'11.5px',color:t.danger,marginTop:'2px'},'You were removed from this channel — rotation stopped here.')),
+        this.h('span',{fontSize:'11px',fontWeight:600,color:t.faint,cursor:'pointer',flexShrink:0},'Drop ×'));
+    }
+    // active
+    const paused=c.state==='waiting';
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'10px 12px',margin:'0 2px',
+      borderRadius:t.radius+'px',borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`,opacity:paused?.7:1},
+      paused?this.h('span',{fontFamily:t.mono,fontSize:'12px',color:t.faint,flexShrink:0,width:'14px',textAlign:'center'},'◷')
+        :this.h('span',{width:'14px',display:'inline-flex',justifyContent:'center',flexShrink:0},this.liveDot(t.ok,false)),
+      this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+      this.h('div',{minWidth:0,flex:1,display:'flex',flexDirection:'column',gap:'3px'},
+        this.h('div',{display:'flex',alignItems:'center',gap:'7px'},
+          this.h('span',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text},c.name),
+          this.modeBadge(c.mode)),
+        this.h('div',{fontSize:'11px',color:t.faint},c.req?('every ≈'+c.req+' min · honoring their request'):'every 12–22 min')),
+      this.h('div',{textAlign:'right',flexShrink:0},
+        this.h('div',{fontFamily:t.mono,fontSize:'12.5px',color:t.accent,fontWeight:600},'next ≈ '+c.next),
+        this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,marginTop:'2px'},'in '+c.inMin+' · last '+c.last)));
+  }
+  statusFooter(){const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 20px',
+      borderTop:`1px solid ${t.border}`,background:t.side2},
+      this.btn('■ Stop everything','danger'),
+      this.h('span',{fontSize:'11.5px',fontWeight:600,color:t.accent,cursor:'pointer'},'Post once manually →'));
+  }
+  statusData(){return [
+    {name:'Cabin Fever',mode:'both',req:15,state:'active',next:'14:23',inMin:'2m',last:'14:08'},
+    {name:'Frozen North RP',mode:'ads',state:'active',next:'14:31',inMin:'10m',last:'14:14'},
+    {name:'Winter Tales',mode:'both',state:'refused',retry:'14:26',last:'14:05'},
+    {name:'Northern Lights',mode:'ads',state:'removed'},
+  ];}
+  frameStatusLive(){
+    const t=this.T();const rows=this.statusData();
+    const body=this.cn('cmscroll','div',{flex:1,overflowY:'auto',minHeight:0,padding:'8px 18px'},
+      ...rows.map((c,i)=>this.hk(i,'div',{},this.statusRow(c))));
+    return this.dialog(648,520,
+      this.headBar('Campaign','as Vesna Marlowe · 3 ads rotating · started 14:02','✕'),
+      this.h('div',{display:'flex',flexDirection:'column',flex:1,minHeight:0},this.expiryBar('live'),body),
+      this.statusFooter());
+  }
+  frameStatusDetached(){
+    const t=this.T();
+    const rows=[
+      {name:'Cabin Fever',mode:'both',req:15,state:'waiting',next:'—',inMin:'held',last:'14:08'},
+      {name:'Frozen North RP',mode:'ads',state:'waiting',next:'—',inMin:'held',last:'14:14'},
+      {name:'Winter Tales',mode:'both',state:'refused',retry:'held',last:'14:05'},
+    ];
+    const body=this.cn('cmscroll','div',{flex:1,overflowY:'auto',minHeight:0,padding:'8px 18px'},
+      ...rows.map((c,i)=>this.hk(i,'div',{},this.statusRow(c))));
+    return this.dialog(648,500,
+      this.headBar('Campaign','as Vesna Marlowe · paused while you’re away','✕'),
+      this.h('div',{display:'flex',flexDirection:'column',flex:1,minHeight:0},this.expiryBar('detached'),body),
+      this.statusFooter());
+  }
+  summaryRow(s){const t=this.T();
+    return this.h('div',{display:'flex',alignItems:'center',gap:'11px',padding:'9px 12px',margin:'0 2px',
+      borderBottom:`1px solid ${this.mix(t.border,t.side,.4)}`},
+      this.h('span',{fontFamily:t.mono,fontSize:'14px',color:t.faint,flexShrink:0},'#'),
+      this.h('div',{minWidth:0,flex:1},
+        this.h('div',{fontFamily:t.mono,fontSize:'13.5px',fontWeight:600,color:t.text},s.name),
+        s.note?this.h('div',{fontSize:'11px',color:t.faint,marginTop:'2px'},s.note):null),
+      this.h('span',{fontFamily:t.mono,fontSize:'12px',color:s.posts?t.ok:t.faint,fontWeight:600,flexShrink:0},
+        s.posts+' post'+(s.posts===1?'':'s')));
+  }
+  frameStatusExpired(){
+    const t=this.T();
+    const summary=[
+      {name:'Cabin Fever',posts:4},
+      {name:'Frozen North RP',posts:5},
+      {name:'Winter Tales',posts:2,note:'paused part of the run — a channel was posting elsewhere'},
+      {name:'Northern Lights',posts:1,note:'you were removed at 14:30'},
+    ];
+    const totalStrip=this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',
+      padding:'11px 20px',background:t.bg,borderBottom:`1px solid ${t.border}`},
+      this.h('span',{fontSize:'12px',color:t.dim},'What went out'),
+      this.h('span',{fontFamily:t.mono,fontSize:'11.5px',color:t.dim},'12 posts across 4 channels'));
+    const body=this.cn('cmscroll','div',{flex:1,overflowY:'auto',minHeight:0},
+      totalStrip,
+      this.h('div',{padding:'6px 18px'},...summary.map((s,i)=>this.hk(i,'div',{},this.summaryRow(s)))));
+    const footer=this.h('div',{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 20px',
+      borderTop:`1px solid ${t.border}`,background:t.side2},
+      this.h('span',{fontSize:'11.5px',color:t.faint},'Nothing is posting now — renew to run another hour.'),
+      this.h('div',{display:'flex',gap:'9px'},this.btn('Change tags'),this.btn('↻ Renew for 1 hour','primary')));
+    return this.dialog(648,516,
+      this.headBar('Campaign','as Vesna Marlowe · expired 15:02','✕'),
+      this.h('div',{display:'flex',flexDirection:'column',flex:1,minHeight:0},this.expiryBar('expired'),body),
+      footer);
+  }
+
+  // ================= ENTRY POINTS (§B compact indicator) =================
+  rotateSlotFooter(state){
+    const t=this.T();
+    let slot;
+    if(state==='live'){
+      slot=this.h('span',{display:'inline-flex',alignItems:'center',gap:'7px',height:'36px',padding:'0 13px',
+        borderRadius:t.radius+'px',fontSize:'12px',fontWeight:600,color:t.accent,background:t.accentSoft,
+        border:`1px solid ${t.accentMed}`,cursor:'pointer'},
+        this.liveDot(t.ok,true),'Campaign live',
+        this.h('span',{fontFamily:t.mono,fontSize:'10.5px',color:t.dim},'41m'));
+    }else{
+      slot=this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',height:'36px',padding:'0 14px',
+        borderRadius:t.radius+'px',fontSize:'12px',fontWeight:600,color:t.accent,background:'transparent',
+        border:`1px solid ${t.accentMed}`,cursor:'pointer'},'↻ Rotate…');
+    }
+    return this.h('div',{width:'560px',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 20px',
+      borderTop:`1px solid ${t.border}`,background:t.side2,borderRadius:'0 0 '+(t.radius+5)+'px '+(t.radius+5)+'px',
+      border:`1px solid ${t.border}`,fontFamily:t.ui},
+      this.h('div',{fontSize:'12px',color:t.dim},
+        this.h('b',{style:{color:t.text}},'1 ad'),' → ',this.h('b',{style:{color:t.text}},'2 channels'),
+        this.h('span',{style:{color:t.faint}},' · posts immediately')),
+      this.h('div',{display:'flex',gap:'9px',alignItems:'center'},slot,
+        this.h('span',{display:'inline-flex',alignItems:'center',justifyContent:'center',padding:'0 18px',height:'36px',
+          borderRadius:t.radius+'px',fontSize:'12.5px',fontWeight:700,color:t.bg,background:t.accent,cursor:'pointer'},'Post now')));
+  }
+  headerChip(){
+    const t=this.T();
+    return this.h('div',{width:'560px',display:'flex',alignItems:'center',gap:'8px',padding:'11px 16px',
+      background:t.head,border:`1px solid ${t.border}`,borderRadius:t.radius+'px',fontFamily:t.ui},
+      this.h('span',{fontFamily:t.mono,fontSize:'18px',color:t.faint},'#'),
+      this.h('span',{fontSize:'16px',fontWeight:700,color:t.text},'Cabin Fever'),
+      this.h('span',{fontFamily:t.mono,fontSize:'9px',fontWeight:600,letterSpacing:'.05em',textTransform:'uppercase',
+        color:t.dim,background:t.bg,border:`1px solid ${t.border}`,borderRadius:'4px',padding:'1px 6px'},'both'),
+      this.h('span',{flex:1}),
+      this.h('span',{display:'inline-flex',alignItems:'center',gap:'6px',padding:'3px 9px 3px 8px',borderRadius:'20px',
+        fontFamily:t.ui,fontSize:'10.5px',fontWeight:600,color:t.accent,background:t.accentSoft,border:`1px solid ${t.accentMed}`,cursor:'pointer'},
+        this.liveDot(t.ok,true),'Campaign · posting here'));
+  }
+  frameEntry(){
+    const t=this.T();
+    const lbl=txt=>this.h('div',{fontFamily:t.mono,fontSize:'10.5px',color:t.faint,margin:'0 0 8px'},txt);
+    return this.h('div',{display:'flex',flexDirection:'column',gap:'22px'},
+      this.h('div',{},lbl('Post Ads footer — idle: the reserved Rotate… slot is now a live button'),this.rotateSlotFooter('idle')),
+      this.h('div',{},lbl('Post Ads footer — a campaign is running: the slot becomes a subtle live indicator (click reopens the status)'),this.rotateSlotFooter('live')),
+      this.h('div',{},lbl('Channel header — a quiet chip marks a channel the running campaign posts into'),this.headerChip()));
+  }
+
+  renderVals(){
+    const frames=[
+      {id:'CM·A',cap:'Campaign setup — the Rotate… slot comes alive. Step 1: multi-select tags; the union of their enabled ads resolves to a numbered cycle (count + loop order shown). Step 2: eligible channels multi-select, each showing its effective interval (base 12–22 min, or an honored [ads: N min] request). The 1-hour duration is a fixed fact, not a control. Start makes “posts on its own until it expires” unmistakable.',el:this.frameSetup()},
+      {id:'CM·B',cap:'Setup edge states — a campaign already running (start-replaces-it confirmation, current one stops immediately), no enabled ads with the chosen tags, and no channels that allow ads.',el:this.frameSetupEdges()},
+      {id:'CM·C',cap:'Campaign status — the heart of the milestone, live. Expiry bar with time left + one-click Renew and an elapsed track. Per-channel rows: active with “next post ≈ HH:MM” countdowns + last-posted; one paused because the channel got an ad elsewhere (plain reason + retry estimate); one stopped because the character was removed. Global Stop always one click away; manual posting stays available.',el:this.frameStatusLive()},
+      {id:'CM·D',cap:'Paused because no device is attached — the whole-campaign away state. Plain explanation that rotation resumes on reconnect, and that the 1-hour clock keeps running while away (channels held, not cancelled).',el:this.frameStatusDetached()},
+      {id:'CM·E',cap:'Expired — a distinct state, never an empty screen. Danger-toned bar states posting stopped, with Renew / Start again, plus an earned summary of what posted where and how many times over the run.',el:this.frameStatusExpired()},
+      {id:'CM·F',cap:'Entry points — the Post Ads footer’s Rotate… slot idle vs. showing a live campaign indicator, and a subtle channel-header chip marking a channel the campaign posts into. Manual Post now is untouched beside it.',el:this.frameEntry()},
+    ];
+    return {frames};
+  }
+}
+</script>
+</body>
+</html>
