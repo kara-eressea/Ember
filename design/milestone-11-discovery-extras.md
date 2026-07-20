@@ -49,10 +49,15 @@ was settled with the user against the M10 step-1 Horizon survey.
   devices is attached to the bouncer; detaching pauses the campaign and
   re-attaching resumes it (the expiry clock keeps running — a campaign
   never outlives its hour by being paused).
-- On **ERR 56 or a kick/ban** from a channel: that channel's rotation
-  **pauses with a visible warning** explaining what happened — never
-  silently skip and retry (strictly better than Horizon, which loses
-  refused ads).
+- On **ERR 56** (the channel got an ad from elsewhere inside its
+  window): that channel's rotation **pauses visibly** — the reason and
+  the estimated reopen time are on screen — and **resumes on its own
+  once the window reopens** (decided with the user at design review,
+  2026-07-20: the "never silently skip and retry" mandate is about
+  silence, not about resuming; nothing here is silent). On a **kick or
+  ban**: the channel stops **permanently** with the reason shown — it
+  never resumes (strictly better than Horizon, which loses refused ads
+  without a word).
 - **Global kill switch** (one control stops every channel at once) and a
   per-channel **"next post at…"** status surface.
 - Campaign state persists (DB) so a page reload or bouncer restart
@@ -95,10 +100,15 @@ is ever sent to F-List.**
   gateway subscription count, 1 h absolute expiry + renew, ERR 56 /
   kick / ban pause-with-warning, kill switch, persistence + restart
   behavior; gateway wiring; sim-clock tests (no live testing)
-- [ ] 4. CD brief for the campaign surface (Rotate… slot setup +
-  status/countdown/warning states, renewal, kill switch) and the rating
-  affordances (row control, dimmed/collapsed ad, note editor) →
-  design pass → review → sync deliverables into the repo
+- [x] 4. CD brief + design pass (2026-07-20, out of order — run during
+  spec review): brief `design/ui/rotation-ratings-brief.md` pushed to
+  the "EmberChat Design" project; delivery accepted first pass —
+  `prototype/{Campaign Flow, Ad Ratings}.dc.html` +
+  `design/ui/COMPONENTS-rotation-ratings.md` synced. One semantics call
+  settled with the user (refused channels auto-resume visibly; removed
+  channels never resume). Integration notes: tighten the duration-card
+  copy ("you can't change it here" → "The length is fixed"), and the
+  hover-revealed ☆ Rate pill needs a keyboard-focus-visible equivalent
 - [ ] 5. Web: campaign setup + status surface (built to the CD spec;
   plain-language copy pass)
 - [ ] 6. Web: rating affordances + dimmed rendering (built to the CD
