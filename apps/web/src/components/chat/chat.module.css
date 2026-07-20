@@ -1750,3 +1750,12 @@
     opacity: 0.35;
   }
 }
+
+/* Bare button wrapper so the RatingChip pill inside stays the visual. */
+.chipReset {
+  display: inline-flex;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+}

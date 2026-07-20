@@ -154,8 +154,22 @@ is ever sent to F-List.**
   Compiler rule). `campaign-logic.ts` helpers unit-tested (phase order,
   countdown formats, honored intervals, cycle resolution, aggregates);
   web 215
-- [ ] 6. Web: rating affordances + dimmed rendering (built to the CD
-  spec; plain-language copy pass)
+- [x] 6. Web: ratings surfaces (2026-07-20, CD spec §5–§9): `StarRow`/
+  `StarPicker` primitives (warn-token stars, ★/☆ glyph swap as the
+  colorblind channel; the picker is a real radiogroup), `RateEditor`
+  popover (§13 placement, PrivateNote language, star row + trimmed note,
+  Saved ✓ / failure line, Clear rating, the "saved on this server only ·
+  never sent to F-List" promise; HelpPanel capture-dismissal). Ad block:
+  hover-revealed ☆ Rate pill with a `:focus-visible` reveal (the CD
+  integration note), RatingChip with ✎ on rated posters' ads, never on
+  own ads; **≤2★ collapse** to the dimmed one-line stub (nick + stars +
+  note excerpt + show ▾) with in-place expand + the YOUR NOTE strip.
+  Mini card gains the "Your rating" block below compatibility (stars +
+  n/5 + Edit + note; a low rating never hides the card). Data:
+  `/api/ad-ratings` client methods, `useRatingsStore` (one load per app
+  session, lowercase-keyed, optimistic clear) loaded from AppShell.
+  Store unit tests (single-flight load, save verdicts, offline-tolerant
+  clear); web 218
 - [ ] 7. Verification suite + docs: E2E campaign journey against the sim
   (start → tick → refusal pause → renew → kill), ratings journey,
   feature-parity-audit rows, tracker sweep
