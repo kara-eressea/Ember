@@ -31,6 +31,7 @@ function response(name: string): ProfileResponse {
       kinks: [],
       customKinks: [],
       images: [],
+      inlines: {},
       timezone: null,
     },
     fetchedAt: 1_752_000_000_000,

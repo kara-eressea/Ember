@@ -305,7 +305,10 @@ function TabContent({
             ownProfile={ownProfile}
             ownCharacter={ownCharacter}
           />
-          <ProfileBBCode bbcode={profile.description} />
+          <ProfileBBCode
+            bbcode={profile.description}
+            inlines={profile.inlines}
+          />
         </>
       );
     case "details":

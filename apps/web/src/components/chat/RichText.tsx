@@ -113,6 +113,9 @@ function renderNode(
     case "block":
     case "collapse":
       return <span key={key}>{renderNodes(node.children, key, extra)}</span>;
+    // Profile inline images never occur in a chat parse; the profile renderer
+    // claims them via `extra`. Anything reaching here degrades silently.
+    case "img":
     case "hr":
       return null;
   }

@@ -872,6 +872,37 @@
   border-top: 1px solid var(--eb-border);
 }
 
+/* Inline [img] images in the description: constrained to the content column,
+   click to open the shared lightbox. */
+.bbImgBtn {
+  display: inline-block;
+  padding: 0;
+  margin: 2px 0;
+  max-width: 100%;
+  vertical-align: middle;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.bbImg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.bbImgBroken {
+  display: inline-block;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--eb-dim);
+  border: 1px dashed var(--eb-border);
+  border-radius: 4px;
+  cursor: default;
+}
+
 /* ── Loading shimmer ──────────────────────────────────────────────────── */
 
 .shimmer {

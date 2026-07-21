@@ -50,6 +50,7 @@ beforeAll(async () => {
     // Orientation (id 2) is list-type: canned listitem 9 = "Straight".
     infotags: { "1": "116", "2": "9", "9": "Elf" },
     images: [{ id: 31, extension: "png", height: 640, width: 480 }],
+    inlines: { "42": { hash: "abcdef0123456789", extension: "png" } },
   });
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
@@ -158,6 +159,10 @@ describe("profile fetch-through-cache", () => {
       url: "https://static.f-list.net/images/charimage/31.png",
       width: 480,
       height: 640,
+    });
+    // Inline images ([img]id[/img]) resolve to the sharded charinline URL.
+    expect(body.profile.inlines["42"]).toEqual({
+      url: "https://static.f-list.net/images/charinline/ab/cd/abcdef0123456789.png",
     });
     expect(body.profile.settings.guestbook).toBe(false);
 

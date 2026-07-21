@@ -8,6 +8,7 @@ export {
   parseBBCode,
   sanitizeBBCode,
   serializeBBCode,
+  validHref,
   type BBColor,
   type BBNameTag,
   type BBNode,
