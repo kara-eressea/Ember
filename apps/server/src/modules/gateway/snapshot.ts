@@ -93,6 +93,33 @@ export async function identityBadgeTotals(
   return { unread, mentions };
 }
 
+/**
+ * A PM partner's presence from the live roster, resolved case-insensitively
+ * (a DM row keeps the casing of whoever created it — a typed lowercase
+ * partner must still find its presence entry). Absence from the roster means
+ * offline. Shared by the snapshot and the pm.open ack so a freshly opened DM
+ * row seeds the right dot immediately (#229).
+ */
+export function pmPresence(
+  state: SessionState | undefined,
+  partner: string,
+): { online: boolean; status: string; statusmsg: string } {
+  if (!state) {
+    return { online: false, status: "", statusmsg: "" };
+  }
+  const lower = partner.toLowerCase();
+  for (const [name, presence] of state.characters) {
+    if (name.toLowerCase() === lower) {
+      return {
+        online: true,
+        status: presence.status,
+        statusmsg: presence.statusmsg,
+      };
+    }
+  }
+  return { online: false, status: "", statusmsg: "" };
+}
+
 export function memberDto(state: SessionState, character: string): MemberDto {
   const presence = state.characters.get(character);
   return {

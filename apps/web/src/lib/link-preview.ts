@@ -18,6 +18,10 @@ export interface PreviewSource {
 const IMAGE_EXT = /\.(?:avif|gif|jpe?g|png|webp)$/i;
 const VIDEO_EXT = /\.(?:mp4|webm)$/i;
 
+/** Image formats some hosts (e.g. Twitter/X's pbs.twimg.com) carry in a
+ * `format=` query param instead of the path extension. */
+const IMAGE_FORMAT_PARAM = /^(?:avif|gif|jpe?g|jpg|png|webp)$/i;
+
 /** Per-host page → direct-media rewrites. Only hosts whose direct form is
  * mechanically derivable belong here — never guess (a wrong rewrite shows
  * a broken preview for a working link). */
@@ -33,6 +37,16 @@ const HOST_REWRITES: {
     rewrite: (url) => {
       const match = /^\/([A-Za-z0-9]{5,10})$/.exec(url.pathname);
       return match ? `https://i.imgur.com/${match[1]!}.jpg` : undefined;
+    },
+  },
+  {
+    // gyazo share pages: gyazo.com/<id> → i.gyazo.com/<id>.png
+    // (the direct-media host serves the right bytes for the id).
+    // Sub-paths (e.g. /captures, /<id>/thumb) are not single images.
+    host: /^(?:www\.)?gyazo\.com$/i,
+    rewrite: (url) => {
+      const match = /^\/([0-9a-f]{20,40})$/i.exec(url.pathname);
+      return match ? `https://i.gyazo.com/${match[1]!}.png` : undefined;
     },
   },
 ];
@@ -54,6 +68,13 @@ export function resolvePreview(href: string): PreviewSource | undefined {
   }
   if (VIDEO_EXT.test(url.pathname)) {
     return { src: href, kind: "video", host: url.host, path };
+  }
+  // Some hosts (Twitter/X's pbs.twimg.com) declare the image type in a
+  // `format=` query param rather than the path extension — the URL still
+  // hotlinks directly, so keep the full query (name=, etc.) on the src.
+  const format = url.searchParams.get("format");
+  if (format !== null && IMAGE_FORMAT_PARAM.test(format)) {
+    return { src: href, kind: "image", host: url.host, path };
   }
   for (const entry of HOST_REWRITES) {
     if (entry.host.test(url.hostname)) {
