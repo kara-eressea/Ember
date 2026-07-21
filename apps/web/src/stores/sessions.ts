@@ -560,6 +560,16 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             },
           };
         }
+        // For PMs the joined flag is the "window open" bit: pm.close drops
+        // it (fan-out and ack both land here), removing the DM everywhere.
+        if (!conversation.joined) {
+          if (!(conversation.id in session.dms)) {
+            return session;
+          }
+          const dms = { ...session.dms };
+          delete dms[conversation.id];
+          return { ...session, dms };
+        }
         const existing = session.dms[conversation.id];
         const dm: DmView = existing
           ? {

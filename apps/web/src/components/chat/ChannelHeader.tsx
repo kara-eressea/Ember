@@ -4,9 +4,11 @@
 // header shows the partner with presence and the TPN typing state.
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { presenceDot } from "../../lib/presence.js";
+import { identityPath } from "../../lib/routes.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -705,6 +707,48 @@ export function DmHeader({
   dm: DmView;
 }) {
   const dot = presenceDot(dm.online, dm.status);
+  const navigate = useNavigate();
+  const ownCharacter = useSessionsStore(
+    (s) => s.sessions[identityId]?.character ?? "",
+  );
+  const [closing, setClosing] = useState(false);
+
+  // Close the DM window (gateway pm.close): history is kept and the
+  // conversation reopens on the next pm.open or inbound message; only the
+  // sidebar row and this window go away. Navigate first — the fan-out
+  // removes the row from the store, which would strand this route.
+  async function close() {
+    if (closing) {
+      return;
+    }
+    setClosing(true);
+    try {
+      const ack = await gateway.cmd({
+        identityId,
+        action: "pm.close",
+        d: { convId: dm.convId },
+      });
+      if (!ack.ok) {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            identityId,
+            "error",
+            ack.error ?? "Could not close the conversation",
+          );
+        return;
+      }
+      void navigate(identityPath(ownCharacter));
+      if (ack.conversation) {
+        useSessionsStore
+          .getState()
+          .applyConversation(identityId, ack.conversation);
+      }
+    } finally {
+      setClosing(false);
+    }
+  }
+
   return (
     <header className={styles.header}>
       <div className={styles.headerRow}>
@@ -740,6 +784,17 @@ export function DmHeader({
           }}
         >
           ⌕
+        </button>
+        <button
+          className={styles.headerButton}
+          title="Close this conversation — history is kept"
+          aria-label={`Close conversation with ${dm.partner}`}
+          disabled={closing}
+          onClick={() => {
+            void close();
+          }}
+        >
+          ✕
         </button>
       </div>
       {(dm.statusmsg || dm.status) && (

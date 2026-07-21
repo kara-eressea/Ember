@@ -505,7 +505,9 @@ export class FchatSim {
           error: "",
           friends: this.#social
             .friends(account)
-            .map((pair) => ({ source: pair.friend, dest: pair.own })),
+            // Live orientation: source is the account's own character,
+            // dest the friend (matches friend-remove's source_name/dest_name).
+            .map((pair) => ({ source: pair.own, dest: pair.friend })),
         };
       case "/json/api/friend-remove.php":
         return {

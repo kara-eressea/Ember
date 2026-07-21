@@ -664,6 +664,20 @@ export class GatewayConnection {
         }
         return;
       }
+      case "pm.close": {
+        // History stays; only the "window open" flag drops. The updated row
+        // also fans out as conversation.updated, converging every tab.
+        const row = await this.#ctx.history.closePmConversation(
+          identity.id,
+          cmd.d.convId,
+        );
+        if (row) {
+          this.#ack(id, { ok: true, conversation: conversationDto(row) });
+        } else {
+          this.#ack(id, { ok: false, error: "Conversation not found" });
+        }
+        return;
+      }
       case "status.set": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
