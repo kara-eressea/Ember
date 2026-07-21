@@ -471,9 +471,15 @@ export function Composer({
         setSlashActive((i) => (Math.min(i, count - 1) + count - 1) % count);
         return;
       }
-      if (event.key === "Tab" || event.key === "Enter") {
+      const hint = slashSuggestions[slashIndex];
+      // Tab always completes the highlighted command (adding a trailing space
+      // to type args into). Enter completes too — unless the highlighted
+      // command is already exactly what's typed, in which case Enter runs it
+      // (so a bare "/help" or "/bottle" still fires on the first Enter).
+      const alreadyTyped =
+        hint !== undefined && text.slice(1).toLowerCase() === hint.name;
+      if (event.key === "Tab" || (event.key === "Enter" && !alreadyTyped)) {
         event.preventDefault();
-        const hint = slashSuggestions[slashIndex];
         if (hint) {
           completeSlash(hint);
         }
