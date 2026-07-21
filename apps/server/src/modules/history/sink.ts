@@ -282,13 +282,43 @@ export class HistorySink {
       }
     }
     const id = await this.#conversationId(identityId, target);
+    // Opening always (re)flags the DM as open: for PMs the joined flag is
+    // the "window is open" bit (pm.close clears it, snapshots skip closed
+    // rows). Emitted so every attached tab re-adds the conversation.
     const [row] = await this.#db
-      .select()
-      .from(conversations)
+      .update(conversations)
+      .set({ joined: true })
       .where(eq(conversations.id, id))
-      .limit(1);
+      .returning();
     if (!row) {
       throw new Error("conversation vanished after find-or-create");
+    }
+    this.events.emit("conversation", { identityId, conversation: row });
+    return row;
+  }
+
+  /**
+   * Close a PM conversation (gateway `pm.close`): the row and its history
+   * stay, only the joined ("window open") flag drops, so snapshots stop
+   * listing it. A later pm.open or inbound message reopens it.
+   */
+  async closePmConversation(
+    identityId: string,
+    conversationId: string,
+  ): Promise<ConversationRow | undefined> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({ joined: false })
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "pm"),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
     }
     return row;
   }
@@ -442,6 +472,28 @@ export class HistorySink {
         identityId,
         entry.target,
       );
+      // A PM message into a closed conversation reopens its window: flip
+      // the joined flag back and fan the row out so every tab re-adds the
+      // DM before the message.new lands. Conditional, so the common case
+      // (already open) costs nothing beyond the WHERE.
+      if (entry.target.kind === "pm") {
+        const [reopened] = await this.#db
+          .update(conversations)
+          .set({ joined: true })
+          .where(
+            and(
+              eq(conversations.id, conversationId),
+              eq(conversations.joined, false),
+            ),
+          )
+          .returning();
+        if (reopened) {
+          this.events.emit("conversation", {
+            identityId,
+            conversation: reopened,
+          });
+        }
+      }
       // Matched inside the serial task, before the insert: the flag is part
       // of the row (immutable, decisions.md §10), never a later update.
       const mention =
@@ -593,6 +645,9 @@ export class HistorySink {
           channelKey: target.kind === "channel" ? target.key : null,
           partnerCharacter: target.kind === "pm" ? target.key : null,
           title: target.title,
+          // PMs are born open (joined doubles as the "window open" flag);
+          // channels start unjoined until the JCH echo flips them.
+          joined: target.kind === "pm",
         })
         .returning();
       if (!created) {

@@ -1469,7 +1469,7 @@ describe("social JSON API + FRL (M6 step 7)", () => {
       }),
     ).toEqual({
       error: "",
-      friends: [{ source: "Nyx Firemane", dest: "Fern Glade" }],
+      friends: [{ source: "Fern Glade", dest: "Nyx Firemane" }],
     });
   });
 
@@ -1557,7 +1557,7 @@ describe("social JSON API + FRL (M6 step 7)", () => {
           ticket: birchTicket,
         })
       )["friends"],
-    ).toEqual([{ source: "Amber Vale", dest: "Birch Rowan" }]);
+    ).toEqual([{ source: "Birch Rowan", dest: "Amber Vale" }]);
     expect(
       (
         await socialCall(sim, "/json/api/friend-list.php", {
@@ -1565,7 +1565,7 @@ describe("social JSON API + FRL (M6 step 7)", () => {
           ticket: amberTicket,
         })
       )["friends"],
-    ).toEqual([{ source: "Birch Rowan", dest: "Amber Vale" }]);
+    ).toEqual([{ source: "Amber Vale", dest: "Birch Rowan" }]);
 
     // Removing is symmetric too.
     expect(

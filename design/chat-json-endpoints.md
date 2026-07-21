@@ -47,7 +47,7 @@ https://www.f-list.net/json/api/kink-list.php, Get the global list of kinks, gro
 https://www.f-list.net/json/api/mapping-list.php Get the global list of kinks, infotags, infotag groups, and list items. Does not require the account and ticket form fields.
 
 ===Handling friend requests, friend list data===
-https://www.f-list.net/json/api/friend-list.php, List all friends, account-wide, in a "your-character (dest) => the character's friend (source)" format.
+https://www.f-list.net/json/api/friend-list.php, List all friends, account-wide, in a "your-character (source) => the character's friend (dest)" format. (Verified against live behaviour 2026-07-21: source is your own character, dest the friend — same orientation as friend-remove's source_name/dest_name.)
 
 https://www.f-list.net/json/api/friend-remove.php, Remove a profile from your friends. Takes two argument, "source_name" (your char) and "dest_name" (the character's friend you're removing).
 
