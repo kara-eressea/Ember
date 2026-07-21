@@ -205,6 +205,9 @@ export class CharacterService {
     for (const npc of world.npcs) {
       this.#knownCharacters.add(npc.name);
       this.#npcByName.set(npc.name, npc);
+      if (npc.images && npc.images.length > 0) {
+        this.setProfile(npc.name, { images: npc.images });
+      }
     }
   }
 
