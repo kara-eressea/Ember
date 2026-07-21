@@ -38,6 +38,7 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { Avatar } from "../common/Avatar.js";
+import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
 import { matchScore } from "./quick-switch.js";
 import { orderRows, orderSocial } from "./sidebar-order.js";
@@ -72,6 +73,12 @@ const MENU_WIDTH = 216;
 /** Right-click target of a sidebar people row (DM / friend / bookmark). */
 interface PersonMenuState {
   member: MemberDto;
+  position: { x: number; y: number };
+}
+
+/** Right-click target of a sidebar channel row (#234). */
+interface ChannelMenuState {
+  key: string;
   position: { x: number; y: number };
 }
 
@@ -131,6 +138,14 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     });
   };
 
+  // Right-click channel menu (#234) — pin/mute/show/leave moved here from
+  // the channel header. Keyed by channel key so the menu tracks live store
+  // updates (a pin toggle relabels in place) instead of a stale snapshot.
+  const [channelMenu, setChannelMenu] = useState<ChannelMenuState>();
+  const menuChannel = channelMenu
+    ? session.channels[channelMenu.key]
+    : undefined;
+
   // convId "" = volatile placeholder whose conversation row is still being
   // written; it becomes routable one event later.
   const bump = session.prefs.highlightBump;
@@ -188,6 +203,16 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       pinned={pinned}
       glyph="#"
       label={channel.title}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setChannelMenu({
+          key: channel.key,
+          position: {
+            x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
+            y: Math.min(event.clientY, window.innerHeight - 160),
+          },
+        });
+      }}
     />
   );
   const dmRow = (dm: DmView, pinned: boolean) => (
@@ -309,6 +334,19 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           </button>
         )}
       </div>
+
+      {channelMenu && menuChannel && (
+        <ChannelContextMenu
+          identityId={session.identityId}
+          ownCharacter={session.character}
+          channel={menuChannel}
+          active={menuChannel.convId === activeConvId}
+          position={channelMenu.position}
+          onClose={() => {
+            setChannelMenu(undefined);
+          }}
+        />
+      )}
 
       {personMenu && (
         <MemberContextMenu
