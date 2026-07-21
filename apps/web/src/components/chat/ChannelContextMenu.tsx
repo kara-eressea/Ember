@@ -52,6 +52,9 @@ export function ChannelContextMenu({
   );
   const muted = prefs.mutedConvIds.includes(channel.convId);
   const view = adViewFor(prefs, channel.key);
+  // The Chat/Ads/Both choice only means something where the server lets
+  // both kinds of message through; elsewhere the item renders disabled.
+  const canChooseView = channel.mode === "both";
 
   // Clamp against the measured menu, DOM write pre-paint (cf. the
   // identity menu) — re-runs when the Show submenu changes the size.
@@ -224,73 +227,81 @@ export function ChannelContextMenu({
         >
           {muted ? "Unmute" : "Mute"}
         </button>
-        {channel.mode === "both" && (
-          <div
-            className={styles.memberMenuSub}
-            onMouseEnter={() => {
-              setShowOpen(true);
+        <div
+          className={styles.memberMenuSub}
+          onMouseEnter={() => {
+            setShowOpen(canChooseView);
+          }}
+          onMouseLeave={() => {
+            setShowOpen(false);
+          }}
+        >
+          <button
+            className={styles.memberMenuItem}
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={showOpen}
+            // Disabled, not hidden, in rooms the server locks to chat-only
+            // or ads-only — the choice exists but has nothing to do (PR
+            // #237 review). Native disabled also drops the item from the
+            // arrow-key walk (enabledItems skips :disabled).
+            disabled={!canChooseView}
+            aria-disabled={!canChooseView}
+            title={
+              canChooseView
+                ? "Choose whether this channel shows chat, roleplay ads, or both"
+                : "This channel allows only one kind of message, so there is nothing to choose"
+            }
+            onClick={() => {
+              setShowOpen(!showOpen);
             }}
-            onMouseLeave={() => {
-              setShowOpen(false);
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+                setShowOpen(true);
+              }
             }}
           >
-            <button
-              className={styles.memberMenuItem}
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={showOpen}
-              title="Choose whether this channel shows chat, roleplay ads, or both"
-              onClick={() => {
-                setShowOpen(!showOpen);
-              }}
+            Show
+            <span className={styles.memberMenuSubArrow} aria-hidden>
+              ▸
+            </span>
+          </button>
+          {showOpen && (
+            <div
+              className={styles.memberMenuSubPanel}
+              role="menu"
+              aria-label="Show chat, ads, or both"
               onKeyDown={(event) => {
-                if (event.key === "ArrowRight" || event.key === "Enter") {
-                  event.preventDefault();
+                if (event.key === "ArrowLeft") {
                   event.stopPropagation();
-                  setShowOpen(true);
+                  setShowOpen(false);
+                  enabledItems(menuRef.current)[0]?.focus();
                 }
               }}
             >
-              Show
-              <span className={styles.memberMenuSubArrow} aria-hidden>
-                ▸
-              </span>
-            </button>
-            {showOpen && (
-              <div
-                className={styles.memberMenuSubPanel}
-                role="menu"
-                aria-label="Show chat, ads, or both"
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowLeft") {
-                    event.stopPropagation();
-                    setShowOpen(false);
-                    enabledItems(menuRef.current)[0]?.focus();
-                  }
-                }}
-              >
-                {SHOW_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    className={styles.memberMenuItem}
-                    role="menuitemradio"
-                    aria-checked={view === option.value}
-                    onClick={() => {
-                      setView(option.value);
-                    }}
-                  >
-                    {option.label}
-                    {view === option.value && (
-                      <span className={styles.memberMenuCheck} aria-hidden>
-                        ✓
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+              {SHOW_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  className={styles.memberMenuItem}
+                  role="menuitemradio"
+                  aria-checked={view === option.value}
+                  onClick={() => {
+                    setView(option.value);
+                  }}
+                >
+                  {option.label}
+                  {view === option.value && (
+                    <span className={styles.memberMenuCheck} aria-hidden>
+                      ✓
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className={styles.memberMenuDivider} />
         <button
           className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}

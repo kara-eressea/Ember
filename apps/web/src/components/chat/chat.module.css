@@ -589,6 +589,17 @@
   outline: none;
 }
 
+/* Disabled items (#234 review): visible but inert — faint text, no hover
+   affordance; :disabled also drops them from the arrow-key walk. */
+.memberMenuItem:disabled {
+  color: var(--eb-faint);
+  cursor: default;
+}
+
+.memberMenuItem:disabled:hover {
+  background: none;
+}
+
 .memberMenuHint {
   margin-left: auto;
   font-size: 11px;

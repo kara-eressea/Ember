@@ -101,9 +101,11 @@ test("RP messages: ads with visibility prefs, dice and bottle, RMO gating", asyn
   await expect(adToggle).not.toBeVisible({ timeout: 15_000 });
   await channelRow.click({ button: "right" });
   await expect(channelMenu).toBeVisible();
+  // The Show item stays visible but disabled — the room only takes one
+  // kind of message now, so there is nothing to choose.
   await expect(
     channelMenu.getByRole("menuitem", { name: "Show" }),
-  ).not.toBeVisible();
+  ).toBeDisabled();
   await page.keyboard.press("Escape");
 
   moss.close();
