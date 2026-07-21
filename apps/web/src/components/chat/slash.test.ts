@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseSlash, SlashUsageError } from "./slash.js";
+import { parseSlash, suggestCommands, SlashUsageError } from "./slash.js";
+
+const OP = { inChannel: true, canModerate: true };
+const MEMBER = { inChannel: true, canModerate: false };
+const DM = { inChannel: false, canModerate: false };
+
+const names = (text: string, ctx: typeof OP) =>
+  suggestCommands(text, ctx).map((c) => c.name);
 
 describe("parseSlash", () => {
   it("passes plain text and /me emotes through", () => {
@@ -84,5 +91,64 @@ describe("parseSlash op commands (M6 step 6)", () => {
     });
     expect(() => parseSlash("/setmode loud")).toThrow(SlashUsageError);
     expect(parseSlash("/banlist")).toEqual({ type: "banlist" });
+  });
+});
+
+describe("suggestCommands (#235)", () => {
+  it("offers nothing until the text starts with a slash", () => {
+    expect(suggestCommands("", OP)).toEqual([]);
+    expect(suggestCommands("hello", OP)).toEqual([]);
+  });
+
+  it("lists every available command for a bare slash", () => {
+    expect(names("/", OP)).toContain("roll");
+    expect(names("/", OP)).toContain("kick");
+    expect(names("/", OP)).toContain("me");
+  });
+
+  it("filters by the command word as it is typed", () => {
+    expect(names("/ba", OP)).toEqual(["banlist", "ban"]);
+    expect(names("/rol", OP)).toEqual(["roll"]);
+    expect(names("/zzz", OP)).toEqual([]);
+  });
+
+  it("is case-insensitive on the command word", () => {
+    expect(names("/RO", OP)).toEqual(["roll"]);
+  });
+
+  it("hides moderator commands from a plain member", () => {
+    const listed = names("/", MEMBER);
+    expect(listed).toContain("roll");
+    expect(listed).toContain("bottle");
+    expect(listed).not.toContain("kick");
+    expect(listed).not.toContain("timeout");
+    expect(listed).not.toContain("setmode");
+    expect(names("/ban", MEMBER)).toEqual([]);
+  });
+
+  it("offers moderator commands once the role is present", () => {
+    expect(names("/ban", OP)).toEqual(["banlist", "ban"]);
+    expect(names("/kick", OP)).toEqual(["kick"]);
+    expect(names("/timeout", OP)).toEqual(["timeout"]);
+  });
+
+  it("drops channel-only commands in a direct message", () => {
+    const listed = names("/", DM);
+    expect(listed).toEqual(["me", "help"]);
+    expect(names("/roll", DM)).toEqual([]);
+  });
+
+  it("keeps showing the matched signature while args are typed", () => {
+    expect(names("/timeout Nyx, 30", OP)).toEqual(["timeout"]);
+    expect(names("/ban Kestrel", OP)).toEqual(["ban"]);
+  });
+
+  it("stops hinting once /me has an argument (it is an emote)", () => {
+    expect(names("/me", MEMBER)).toEqual(["me"]);
+    expect(names("/me waves", MEMBER)).toEqual([]);
+  });
+
+  it("drops the popover when the typed command has no match", () => {
+    expect(names("/frolic about", OP)).toEqual([]);
   });
 });

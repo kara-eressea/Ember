@@ -65,6 +65,30 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(help).not.toBeVisible();
   await expect(input).toHaveValue("");
 
+  // ── Slash autocomplete (#235) ─────────────────────────────────────────
+  // Typing "/" opens the command popover. Sage is a plain member here, so
+  // moderator commands (/kick, /timeout…) are hidden; everyday ones show.
+  await input.fill("/");
+  const slash = page.getByTestId("slash-autocomplete");
+  await expect(slash).toBeVisible();
+  await expect(slash.getByText("/roll <dice>")).toBeVisible();
+  await expect(slash.getByText("/me <action>")).toBeVisible();
+  await expect(slash.getByRole("option", { name: /\/kick/ })).toHaveCount(0);
+  await expect(slash.getByRole("option", { name: /\/timeout/ })).toHaveCount(0);
+  // Filtering narrows as you type; Tab completes the highlighted command.
+  await input.fill("/ro");
+  await expect(slash.getByText("/roll <dice>")).toBeVisible();
+  await input.press("Tab");
+  await expect(input).toHaveValue("/roll ");
+  // Escape dismisses without changing the text; typing reopens it.
+  await input.fill("/b");
+  await expect(slash).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(slash).not.toBeVisible();
+  await expect(input).toHaveValue("/b");
+  await input.fill("");
+  await expect(slash).not.toBeVisible();
+
   // ── Eicons render inline at a fixed 60px box ───────────────────────────
   await input.fill("look: [eicon]teacup[/eicon]");
   await input.press("Enter");

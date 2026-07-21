@@ -306,6 +306,7 @@ export function AppShell() {
               session={session}
               convId={convId}
               channelKey={channel?.key}
+              oplist={channel?.oplist}
               channelMode={channel?.mode}
               adView={
                 channel && channel.mode === "both"
