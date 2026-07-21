@@ -21,6 +21,14 @@ export function filterDirectory(
   );
 }
 
+/** Directory default order: busiest rooms first (member count descending);
+ * ties keep the server's order (Array.prototype.sort is stable). */
+export function sortByMembers(
+  channels: DirectoryChannelDto[],
+): DirectoryChannelDto[] {
+  return [...channels].sort((a, b) => b.characters - a.characters);
+}
+
 export type JoinState = "join" | "joined" | "pinned";
 
 /** Button state for a directory row: ⚲ Pinned outranks ✓ Joined; anything
