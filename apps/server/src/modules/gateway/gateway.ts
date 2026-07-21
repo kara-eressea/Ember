@@ -21,6 +21,7 @@ import type {
   SessionLogger,
 } from "../session-engine/fchat-session.js";
 import type { Outbox } from "../outbox/outbox.js";
+import type { SocialCache } from "../social/cache.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
 import { GatewayConnection, conversationDto } from "./connection.js";
 import { memberDto, messageDto } from "./snapshot.js";
@@ -377,6 +378,8 @@ export interface GatewayRoutesOptions {
   outbox: Outbox;
   highlights: HighlightMatcher;
   campaigns: CampaignScheduler;
+  /** Cached social lists — served in the snapshot (#194). */
+  social: SocialCache;
   /**
    * Origins allowed to open the gateway from a browser (M7 exposure
    * hardening). A request WITHOUT an Origin header is allowed — non-browser
@@ -401,6 +404,7 @@ export async function gatewayRoutes(
     outbox,
     highlights,
     campaigns,
+    social,
     allowedOrigins,
   } = options;
   const originAllowList = new Set(
@@ -472,6 +476,7 @@ export async function gatewayRoutes(
       outbox,
       highlights,
       campaigns,
+      social,
       verifyToken,
       sessionAlive,
       helloBudget,

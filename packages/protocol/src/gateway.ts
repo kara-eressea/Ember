@@ -431,6 +431,27 @@ export interface OutboxItemDto {
   failureReason?: string;
 }
 
+/** One bookmark or friend row, presence-enriched from the live roster. */
+export interface SocialCharacterDto {
+  name: string;
+  online: boolean;
+  status: string;
+  statusmsg: string;
+}
+
+/**
+ * The identity's social lists (bookmarks, friends, friend requests),
+ * cached server-side per identity (M12 #194) and enriched with live
+ * presence at serve time. Served in the snapshot when cached and fanned
+ * out as `social.updated` whenever the server-side lists change.
+ */
+export interface SocialDto {
+  bookmarks: SocialCharacterDto[];
+  friends: SocialCharacterDto[];
+  incoming: { id: number; name: string }[];
+  outgoing: { id: number; name: string }[];
+}
+
 export interface SnapshotChannel {
   convId: string;
   key: string;
@@ -582,6 +603,14 @@ export type GatewayEvent =
       d: { campaign: CampaignDto | null };
     }
   | {
+      kind: "social.updated";
+      /** The identity's full social lists after any server-side change
+       * (bookmark add/remove, a refresh fetch, an RTB website event) — an
+       * idempotent overwrite keeping every attached device's bookmark and
+       * friend rows live (#199). */
+      d: { social: SocialDto };
+    }
+  | {
       kind: "prefs.updated";
       /** Per-user preference change, broadcast to each identity's
        * subscribers (idempotent duplicates across identities). Carries the
@@ -662,6 +691,10 @@ export type ServerFrame =
           /** The identity's rotation campaign (M11) — present whenever one
            * exists, running or expired; null when none does. */
           campaign: CampaignDto | null;
+          /** The identity's cached social lists (#194) — null until some
+           * device has loaded them once this server run; then every attach
+           * gets them instantly, no F-List API calls. */
+          social: SocialDto | null;
         };
         channels: SnapshotChannel[];
         dms: SnapshotDm[];
