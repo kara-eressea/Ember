@@ -82,22 +82,29 @@ test("RP messages: ads with visibility prefs, dice and bottle, RMO gating", asyn
   await expect(mossAd).not.toBeVisible();
   await expect(ownAd).toBeVisible();
 
-  // Per-channel override: the header's Show selector (M10 tri-state) flips
-  // this channel back to Both.
-  const showSelector = page.getByRole("radiogroup", {
-    name: "Show chat, ads, or both",
-  });
+  // Per-channel override: the channel row's context menu (#234) carries
+  // the Show submenu; flipping it back to Both restores Moss's ad.
+  const channelRow = page.getByRole("link", { name: /Greenhouse/ });
+  await channelRow.click({ button: "right" });
+  const channelMenu = page.getByRole("menu", { name: "Greenhouse menu" });
+  await channelMenu.getByRole("menuitem", { name: "Show" }).click();
+  const showMenu = page.getByRole("menu", { name: "Show chat, ads, or both" });
   await expect(
-    showSelector.getByRole("radio", { name: "Chat" }),
+    showMenu.getByRole("menuitemradio", { name: "Chat" }),
   ).toHaveAttribute("aria-checked", "true");
-  await showSelector.getByRole("radio", { name: "Both" }).click();
+  await showMenu.getByRole("menuitemradio", { name: "Both" }).click();
   await expect(mossAd).toBeVisible();
 
-  // RMO: the op flips the room chat-only; the Ad toggle and Show selector
-  // leave the UI live (channel.info fan-out).
+  // RMO: the op flips the room chat-only; the Ad toggle and the menu's
+  // Show submenu leave the UI live (channel.info fan-out).
   moss.send("RMO", { channel: GREENHOUSE, mode: "chat" });
   await expect(adToggle).not.toBeVisible({ timeout: 15_000 });
-  await expect(showSelector).not.toBeVisible();
+  await channelRow.click({ button: "right" });
+  await expect(channelMenu).toBeVisible();
+  await expect(
+    channelMenu.getByRole("menuitem", { name: "Show" }),
+  ).not.toBeVisible();
+  await page.keyboard.press("Escape");
 
   moss.close();
 });

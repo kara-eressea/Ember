@@ -349,10 +349,19 @@ test("preferences window: gear, pane nav, accent persists across reload + device
       body: "fresh glowmoss by the waterfall",
     });
 
-    // Mute Terrarium from its header: alerts stop, badges keep counting.
-    await page.getByRole("link", { name: /Terrarium/ }).click();
-    await page.getByRole("button", { name: "🔔 mute" }).click();
-    await expect(page.getByRole("button", { name: "🔕 muted" })).toBeVisible();
+    // Mute Terrarium from its sidebar row's context menu (#234): alerts
+    // stop, badges keep counting.
+    const terrariumRow = page.getByRole("link", { name: /Terrarium/ });
+    await terrariumRow.click({ button: "right" });
+    const terrariumMenu = page.getByRole("menu", { name: "Terrarium menu" });
+    await terrariumMenu
+      .getByRole("menuitem", { name: "Mute", exact: true })
+      .click();
+    await terrariumRow.click({ button: "right" });
+    await expect(
+      terrariumMenu.getByRole("menuitem", { name: "Unmute", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.goto("/app/Hazel%20Fenwick");
     const terrariumRow2 = page.getByRole("link", { name: /Terrarium/ });
     await expect(terrariumRow2).toBeVisible({ timeout: 15_000 });

@@ -16,7 +16,6 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
-import { adViewFor, setChannelAdView, type AdView } from "./ads.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { RichText } from "./RichText.js";
 import { roleFor } from "./member-roles.js";
@@ -144,96 +143,6 @@ function MuteChip({
 }
 
 const EMPTY_MUTES = PREFS_DEFAULTS.mutedConvIds;
-
-/** The Chat/Ads/Both view selector (M10, CD spec §4) — shown only when the
- * room's server mode is "both". Chat hides ad rows, Ads hides chat rows;
- * filtered rows stay in history and ads never count toward unread. The
- * choice persists per channel (pruned when it restates the default). */
-function ShowSelector({
-  identityId,
-  channelKey,
-}: {
-  identityId: string;
-  channelKey: string;
-}) {
-  const prefs = useSessionsStore(
-    (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
-  );
-  const view = adViewFor(prefs, channelKey);
-  const options: { value: AdView; label: string }[] = [
-    { value: "chat", label: "Chat" },
-    { value: "ads", label: "Ads" },
-    { value: "both", label: "Both" },
-  ];
-
-  return (
-    <span className={styles.showSelector}>
-      <span className={styles.showLabel} aria-hidden>
-        SHOW
-      </span>
-      <span
-        className={styles.showSeg}
-        role="radiogroup"
-        aria-label="Show chat, ads, or both"
-      >
-        {options.map((option, index) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={view === option.value}
-            // Roving tabindex: the group is one tab stop; arrows move and
-            // select within it.
-            tabIndex={view === option.value ? 0 : -1}
-            className={`${styles.showSegButton} ${view === option.value ? (styles.showSegOn ?? "") : ""}`}
-            title={
-              option.value === "chat"
-                ? "Hide roleplay ads in this channel"
-                : option.value === "ads"
-                  ? "Show only roleplay ads (the box composes ads here)"
-                  : "Show chat and ads together"
-            }
-            onClick={() => {
-              void patchPrefs(
-                identityId,
-                setChannelAdView(prefs, channelKey, option.value),
-              );
-            }}
-            onKeyDown={(event) => {
-              const delta =
-                event.key === "ArrowRight" || event.key === "ArrowDown"
-                  ? 1
-                  : event.key === "ArrowLeft" || event.key === "ArrowUp"
-                    ? -1
-                    : 0;
-              if (delta === 0) {
-                return;
-              }
-              event.preventDefault();
-              const next =
-                options[(index + delta + options.length) % options.length]!;
-              void patchPrefs(
-                identityId,
-                setChannelAdView(prefs, channelKey, next.value),
-              );
-              const sibling =
-                delta === 1
-                  ? event.currentTarget.nextElementSibling
-                  : event.currentTarget.previousElementSibling;
-              const wrap =
-                delta === 1
-                  ? event.currentTarget.parentElement?.firstElementChild
-                  : event.currentTarget.parentElement?.lastElementChild;
-              ((sibling ?? wrap) as HTMLElement | null)?.focus();
-            }}
-          >
-            {option.label}
-          </button>
-        ))}
-      </span>
-    </span>
-  );
-}
 
 function PinChip({
   identityId,
@@ -631,16 +540,7 @@ export function ChannelHeader({
       <div className={styles.headerRow}>
         <span className={styles.headerGlyph}>#</span>
         <h1 className={styles.headerTitle}>{channel.title}</h1>
-        <PinChip
-          identityId={identityId}
-          convId={channel.convId}
-          pinned={channel.pinned}
-        />
-        <MuteChip identityId={identityId} convId={channel.convId} />
         <CampaignChip identityId={identityId} channelKey={channel.key} />
-        {channel.mode === "both" && (
-          <ShowSelector identityId={identityId} channelKey={channel.key} />
-        )}
         {canManageRoom && (
           <RoomChip
             identityId={identityId}
