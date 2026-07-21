@@ -6,6 +6,7 @@ import type { DirectoryChannelDto } from "../../lib/api.js";
 import {
   filterDirectory,
   joinStateFor,
+  sortByMembers,
   stalenessLabel,
 } from "./browser-data.js";
 
@@ -37,6 +38,30 @@ describe("filterDirectory", () => {
 
   it("returns everything for a blank query", () => {
     expect(filterDirectory(DIRECTORY, "  ")).toHaveLength(3);
+  });
+});
+
+describe("sortByMembers", () => {
+  it("orders busiest rooms first, without mutating the input", () => {
+    const shuffled = [DIRECTORY[2]!, DIRECTORY[0]!, DIRECTORY[1]!];
+    expect(sortByMembers(shuffled).map((c) => c.key)).toEqual([
+      "Frontpage",
+      "ADH-1a2b",
+      "Gardening",
+    ]);
+    expect(shuffled.map((c) => c.key)).toEqual([
+      "Gardening",
+      "Frontpage",
+      "ADH-1a2b",
+    ]);
+  });
+
+  it("keeps the incoming order for tied counts (stable sort)", () => {
+    const tied: DirectoryChannelDto[] = [
+      { key: "A", kind: "official", title: "A", characters: 5 },
+      { key: "B", kind: "official", title: "B", characters: 5 },
+    ];
+    expect(sortByMembers(tied).map((c) => c.key)).toEqual(["A", "B"]);
   });
 });
 

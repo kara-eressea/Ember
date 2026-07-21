@@ -10,27 +10,36 @@ Framework-agnostic build reference. Every value here is exact and taken from the
 
 ## Design Tokens
 
-### Color — neutrals (fixed across all themes)
-| Token | Hex | Use |
-|---|---|---|
-| `bg` | `#1b1917` | app background, main chat, inputs |
-| `side` | `#232120` | left sidebar surface |
-| `side2` | `#2a2725` | rail, member list, me-bar, elevated strips |
-| `head` | `#201e1c` | channel header background |
-| `text` | `#ece7e0` | primary text |
-| `dim` | `#a89e92` | secondary text, topic, muted labels |
-| `faint` | `#726a5f` | timestamps, glyphs, meta, disabled |
-| `border` | `#332f2b` | all 1px hairlines / dividers |
+### Color — neutrals (per base theme; contrast pass 2026-07-21, issue #186)
+
+Ratios are WCAG 2.1 relative-luminance contrast. Target: **4.5:1** body text · **3:1** large text and UI objects. Two text-role rules govern every neutral: **if a human must read the characters, it is `meta` or better; if it is a glyph, dot, marker, or disabled affordance, it is `faint`.**
+
+| Token | Slate | Charcoal | Parchment | Use |
+|---|---|---|---|---|
+| `bg` | `#1b1917` | `#121110` | `#f6f1e7` | app background, main chat, inputs |
+| `side` | `#232120` | `#171615` | `#efe8db` | left sidebar surface |
+| `side2` | `#2a2725` | `#1c1a19` | `#e7dfd0` | rail, member list, me-bar, elevated strips |
+| `head` | `#201e1c` | `#141312` | `#f2ecdf` | channel header background |
+| `text` | `#ece7e0` | `#e9e4dd` | `#2e2a24` | primary text |
+| `dim` | `#a89e92` | `#a49a8e` | `#675f52` | secondary text, topic, muted labels, offline names (≥4.76:1) |
+| `meta` | `#988e83` | `#8b8377` | `#696154` | **readable meta**: timestamps, helper text, placeholders, empty states, section labels, count pills (AA ≥4.6:1 on every surface) |
+| `faint` | `#787065` | `#6e675d` | `#887e70` | **decorative only**: glyphs, pin markers, disabled, presence dots — allowed to fail body contrast |
+| `border` | `#332f2b` | `#282520` | `#ddd3c2` | all 1px hairlines / dividers |
+
+Derivations: `meta = mix(dim, faint, {slate: 0.30, charcoal: 0.46, parchment: 0.05})`; `faint = mix(faint₀, text, {slate: 0.05, charcoal: 0, parchment: 0.12})`.
 
 ### Color — accent (swappable; default = Dusk Purple)
 | Token | Hex | Notes |
 |---|---|---|
-| `accent` | `#a892c6` | active markers, links, mentions, primary buttons |
+| `accent` | `#a892c6` | fills only: active bars, badges, mention-row backgrounds, buttons, dots, rings |
+| `accentText` | `mix(accent, text, W)` | accent used **as text**: links, `@mentions`, `#channel`, "Show more". `W = 0.04` on dark themes, `0.62` on Parchment. ≥4.55:1 dark / ≥4.86:1 Parchment for all five accents |
 | `ok` | `#8bb173` | online presence, success, connected |
 | `warn` (idle) | `#d0a24f` | idle presence |
 | `danger` | `#e08a6a` | ignore / destructive |
 
 **Accent options** (user-selectable): Amber `#e6a75a` · Clay Red `#c87d6a` · Dusk Purple `#a892c6` · Burnt Orange `#dd955a` · Moss Green `#88ac72`. When accent is Moss Green, shift the idle/warn dot to `#c9a25e` so it doesn't clash.
+
+`accentText` per accent (dark themes / Parchment, via `mix()`): Amber `#e6aa5f`/`#745a39` · Clay `#c9816f`/`#694a3f` · Dusk `#ab95c7`/`#5c5262` · Burnt `#de985f`/`#715339` · Moss `#8cae76`/`#505b42`.
 
 ### Derived colors (compute from a `mix(a, b, t)` = linear RGB lerp, `t` = weight toward `b`)
 | Token | Formula | Dusk value |
@@ -65,7 +74,7 @@ function mix(a, b, t) {            // a, b = "#rrggbb"
 |---|---|---|
 | online | `ok` | `box-shadow: 0 0 4px ok` (subtle glow) |
 | idle | `warn` `#d0a24f` | — |
-| offline | `faint` | containing row rendered at `opacity: .5` |
+| offline | `faint` | row reads as *secondary*, not faded: name on `dim` at full opacity, avatar at `opacity: .55`, no blanket row opacity (#186) |
 
 ### Role system (IRC)
 | Role | Glyph | Glyph color | Name weight |
@@ -76,7 +85,8 @@ function mix(a, b, t) {            // a, b = "#rrggbb"
 
 ### Per-nick colors (deterministic)
 Assign each nick a stable color: `palette[ sum(charCodes(nick)) % palette.length ]`.
-Palette: `['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']` (rotate hues with accent).
+Dark-theme palette: `['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']` (rotate hues with accent).
+Parchment palette (same hues, `mix(c, text, 0.52)` — nicks are must-read body text): `['#695c72','#755d67','#5d6073','#68715a','#596a6b','#7b6478','#776070','#617163']`.
 
 ---
 
@@ -112,14 +122,14 @@ Far-left vertical switch between connected server identities. Background `side2`
 ### 2. Sidebar (unified nav)
 Vertical flex on `side`. Top→bottom: ServerHead · Search · NavScroll (sections) · MeBar.
 
-**ServerHead** — padding 14px, bottom border. Left: 9px `ok` dot (glow), server name (14px/700) + mono sub-line (`irc.emberchat.chat · connected`, 10.5px `faint`). Right: gear (`faint`).
+**ServerHead** — padding 14px, bottom border. Left: 9px `ok` dot (glow), server name (14px/700) + mono sub-line (`irc.emberchat.chat · connected`, 10.5px `meta`). Right: gear (`faint`).
 
-**Search** — 30px pill, `bg` fill, `border`, `⌕` + "Jump to…" placeholder (`faint`).
+**Search** — 30px pill, `bg` fill, `border`, `⌕` + "Jump to…" placeholder (`meta`).
 
 **MeBar** — bottom, on `side2`, top border. 30px accent avatar (self initial, `bg` text) · nick (13px/600) + status row with dot · gear.
 
 ### 3. SectionHeader
-Sidebar group label. Padding `12px 16px 4px`, 10.5px/700 uppercase, `.09em` tracking, `faint`. Optional right-aligned count (10px `faint`). Sections in order: **Pinned · Channels · Direct Messages · Friends · Bookmarks**.
+Sidebar group label. Padding `12px 16px 4px`, 10.5px/700 uppercase, `.09em` tracking, `meta`. Optional right-aligned count (10px `meta`). Sections in order: **Pinned · Channels · Direct Messages · Friends · Bookmarks**.
 
 > Pinning is cross-type: a pinned channel *or* pinned DM both surface under **Pinned** and auto-rejoin/reopen on connect. The same item still logically belongs to its type.
 
@@ -137,15 +147,15 @@ One row component, variants by `glyph` + presence. Padding `5px 10px`, margin `1
 On `head`, bottom border, padding `12px 20px`.
 - **Row 1:** `#` (20px mono `faint`) · channel name (18px/700) · "⚲ pinned" chip (mono 10.5px, pill border) · spacer · header buttons `☆` (favorite) `⌕` (search) `☰ {count}` (toggle members). Buttons `dim`, mono.
 - **Row 2 — Topic:** `TOPIC` tag (mono 9.5px/700, `accent` on `accentSoft`, 4px radius) + topic text (13px `dim`, single-line ellipsis). The short, editable IRC topic.
-- **Row 3 — Description:** longer server-provided blurb (12px `faint`), collapsed by default with a trailing **Show more / Show less** toggle (`accent`, 600). Expands to full text inline.
+- **Row 3 — Description:** longer server-provided blurb (12px `meta`), collapsed by default with a trailing **Show more / Show less** toggle (`accentText`, 600). Expands to full text inline.
 - **Data:** `{ channel, memberCount, pinned, topic, descShort, descFull, descExpanded }`.
 
 ### 6. MessageLog (IRC-compact)
 Scroll region, `padding: 12px 0`. Four row types, all `display:flex; gap:9px; align-items:baseline`:
 
-- **DateDivider** — centered mono 11px `faint` between two `border` hairlines.
+- **DateDivider** — centered mono 11px `meta` between two `border` hairlines.
 - **SystemLine** (join/part/topic/etc.) — `[time]` · glyph · italic text (12.5px `dim`). Join `→` `ok`; topic `⚑` `accent`.
-- **MessageLine** — `[time]` (mono 11.5px `faint`, `tabular-nums`) · `<nick>` (mono 12.5px/600, per-nick color, nowrap) · body (13px/1.5 `text`). Padding `2px 16px`.
+- **MessageLine** — `[time]` (mono 11.5px `meta`, `tabular-nums`) · `<nick>` (mono 12.5px/600, per-nick color, nowrap) · body (13px/1.5 `text`). Padding `2px 16px`.
   - **Mention/highlight** (matches a highlight rule or your nick): `background: accentSoft` + `inset 3px 0 0 accent`, padding `4px 16px`.
 - **CodeBlock** (fenced) — its own line, `margin: 3px 16px 5px 76px` (the 76px left indent aligns it under the message body), `codebg` fill, `border`, mono 12px, `white-space: pre`, horizontal scroll.
 - Toggle "Show join/part/quit" (Preferences) hides SystemLines of that kind.
@@ -166,15 +176,15 @@ Order matters — match longest/most-specific first (`**` before `*`). Fenced ``
 ### 8. Composer
 Below the log, `padding: 0 20px 16px`.
 - **Input bar:** 46px, `side` fill, `border`, `radius`. Leading `+` (attach, 20px `faint`), text input (13.5px, mono or sans per body setting), trailing format hints `**B**` `` `code` `` `☺` (mono 11px `faint`).
-- **Live Markdown preview panel** (toggle): appears *above* the input. `side` card, `border`, header strip ("PREVIEW · markdown", mono 9.5px/700 `faint` on `side2`), body renders the composed text through the component-7 tokenizer at 13px.
-- **Footer row:** `Ⓜ Markdown` toggle (`accent`) on the left, hint "Enter to send · Shift+Enter for newline" on the right (11px `faint`).
+- **Live Markdown preview panel** (toggle): appears *above* the input. `side` card, `border`, header strip ("PREVIEW · markdown", mono 9.5px/700 `meta` on `side2`), body renders the composed text through the component-7 tokenizer at 13px.
+- **Footer row:** `Ⓜ Markdown` toggle (`accent`) on the left, hint "Enter to send · Shift+Enter for newline" on the right (11px `meta`).
 - **Behavior:** typing updates the preview live; toggle shows/hides the preview panel.
 
 ### 9. MemberList
 Right column on `side2`, `border-left`.
-- **Header:** "Members {count}" (13px/700, count mono `faint`), bottom border.
-- **Grouped** by presence/role: **Owner · Admins · Online · Idle · Offline**. Group head 10px/700 uppercase `faint`.
-- **MemberRow:** padding `4px 12px`, `radius`. 22px avatar (per-nick color, mono initial) with presence dot (8px, `2px solid side2` ring); role glyph (see role system); nick (13px, weight per role, ellipsis); optional italic status text (`faint`, right-aligned). Offline rows at `opacity:.5`.
+- **Header:** "Members {count}" (13px/700, count mono `meta`), bottom border.
+- **Grouped** by presence/role: **Owner · Admins · Online · Idle · Offline**. Group head 10px/700 uppercase `meta`.
+- **MemberRow:** padding `4px 12px`, `radius`. 22px avatar (per-nick color, mono initial) with presence dot (8px, `2px solid side2` ring); role glyph (see role system); nick (13px, weight per role, ellipsis); optional italic status text (`meta`, right-aligned). Offline rows read as secondary: name on `dim` full opacity, avatar `.55`, dot `faint` — no blanket row opacity.
 - **Behavior:** left-click = open profile (server website, new tab); right-click = MemberContextMenu.
 - **Data:** `{ nick, role, presence, status? }` grouped.
 
@@ -206,15 +216,15 @@ Right-click popover on a member. `side` fill, `border`, `radius+2`, popover shad
 - **Rail** (204px, `side2`): title "Preferences", nav items (General · Appearance · Highlights · Away & logs · Notifications · Network). Active item = `accentSoft` + `inset 2px 0 0 accent`, glyph in `accent`. Foot note: "Account & profile live on the server website ↗" (there are **no** account/profile settings in-app — read-only from server site).
 - **Pane:** head (16px/700 + bottom border), scroll body.
 - Panes to implement:
-  - **Appearance:** **Accent color** swatch row (the 5 accents; selected shows a `2px bg` + `2px color` ring — all variants stay available), base theme segmented, message density (Compact/Cozy), timestamp format (`[12:04]`/`[12:04:33]`/off), 24-hour toggle, group-consecutive toggle, **show join/part/quit** toggle, message font size (S/M/L).
+  - **Appearance:** **Accent color** swatch row (the 5 accents; selected shows a `2px bg` + `2px color` ring — all variants stay available), base theme segmented, message density (Compact/Cozy), timestamp format (`[12:04]`/`[12:04:33]`/off), 24-hour toggle, group-consecutive toggle, **show join/part/quit** toggle, message font size (S/M/L; default **M**). Ramp (#188): body 13/14/15px with a proportional secondary ramp — timestamp/mono meta 11.5/12/13px, `<nick>` 12.5/13/14px. S preserves the pre-#188 density.
   - **Highlights:** highlight-on-nick toggle; a list of **rules** (word / nick / `/regex/`) each a mono chip with a type tag + remove `✕`; an add-rule input; "when highlighted" → play sound / flash tray / bump-to-top toggles; highlight tint swatch.
   - **Away & logs:** auto-away toggle, idle threshold segmented (5/10/20/30 min), away message input, clear-on-return toggle; **chat logs** → log-to-disk toggle, storage location (mono path), **export** (.txt/.html/.json segmented + Export button), retention (30d/90d/1yr/Forever).
 
 **Preference control primitives** (reuse across panes):
 - **Toggle:** 38×22 pill; on = `accent` track + `bg` knob at right; off = `mix(text,bg,.82)` track + `dim` knob at left.
 - **Segmented:** inline-flex on `bg`+`border`, 3px pad; selected segment = `accent` fill, `bg` text; others `dim`.
-- **Field row:** label (13.5px/600) + optional help (11.5px `faint`) on the left, control on the right, `border-bottom` hairline.
-- **GroupLabel:** 10.5px/700 uppercase `faint`.
+- **Field row:** label (13.5px/600) + optional help (11.5px `meta`) on the left, control on the right, `border-bottom` hairline.
+- **GroupLabel:** 10.5px/700 uppercase `meta`.
 - **Text input:** 34px, `bg`, `border`, `radius`.
 - **Swatch:** 26px circle; selected = double ring.
 

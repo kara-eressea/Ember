@@ -19,7 +19,12 @@ export const NEUTRALS = {
   head: "#201e1c",
   text: "#ece7e0",
   dim: "#a89e92",
-  faint: "#726a5f",
+  // meta = mix(dim, faint, 0.30) — readable meta text (timestamps, helper
+  // copy, empty states, section labels); AA ≥4.62:1 on every surface.
+  meta: "#988e83",
+  // faint = mix(faint₀, text, 0.05) — decorative-only floor (glyphs, pins,
+  // disabled, presence dots); allowed to fail body contrast.
+  faint: "#787065",
   border: "#332f2b",
 } as const;
 
@@ -38,6 +43,8 @@ export const BASE_THEMES = {
     head: "#141312",
     text: "#e9e4dd",
     dim: "#a49a8e",
+    // meta = mix(dim, faint, 0.46) — AA ≥4.63:1 on every surface.
+    meta: "#8b8377",
     faint: "#6e675d",
     border: "#282520",
   },
@@ -53,7 +60,10 @@ export const BASE_THEMES = {
     head: "#f2ecdf",
     text: "#2e2a24",
     dim: "#675f52",
-    faint: "#94897a",
+    // meta = mix(dim, faint, 0.05) — AA ≥4.61:1 on every surface.
+    meta: "#696154",
+    // faint = mix(faint₀, text, 0.12) — decorative-only floor.
+    faint: "#887e70",
     border: "#ddd3c2",
   },
 } as const satisfies Record<BaseThemeId, Record<keyof typeof NEUTRALS, string>>;
@@ -124,15 +134,17 @@ export const NICK_PALETTE = [
   "#98bda8",
 ] as const;
 
+// Parchment nick palette = mix(c, text, 0.52) over the dark palette — the
+// pastel set is invisible on paper (1.8–2.5:1); darkened, min 4.55:1 on bg.
 export const NICK_PALETTE_LIGHT = [
-  "#6c4f96",
-  "#96517a",
-  "#4d5f9e",
-  "#5a7a42",
-  "#3d7680",
-  "#8e4f96",
-  "#93417f",
-  "#3e7a5c",
+  "#695c72",
+  "#755d67",
+  "#5d6073",
+  "#68715a",
+  "#596a6b",
+  "#7b6478",
+  "#776070",
+  "#617163",
 ] as const;
 
 export function nickIndex(nick: string): number {

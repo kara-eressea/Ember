@@ -20,6 +20,7 @@ import {
 import {
   filterDirectory,
   joinStateFor,
+  sortByMembers,
   stalenessLabel,
 } from "./browser-data.js";
 import styles from "./browser.module.css";
@@ -80,10 +81,17 @@ export function ChannelBrowser({
   const [query, setQuery] = useState("");
   const [data, setData] = useState<DirectoryData>();
   const [loadError, setLoadError] = useState(false);
-  const windowRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Autofocus the filter on open — mount-only on purpose. Tying this to a
+  // dependency (the old version keyed it on `onClose`, an inline prop that
+  // changes identity whenever the shell re-renders) makes the effect re-run
+  // mid-typing and yank focus away from the input.
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, []);
 
   useEffect(() => {
-    windowRef.current?.focus();
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -117,7 +125,9 @@ export function ChannelBrowser({
   const channels = data?.channels ?? [];
   const official = channels.filter((c) => c.kind === "official");
   const open = channels.filter((c) => c.kind === "open");
-  const rows = filterDirectory(tab === "official" ? official : open, query);
+  const rows = sortByMembers(
+    filterDirectory(tab === "official" ? official : open, query),
+  );
 
   return (
     <div
@@ -133,8 +143,6 @@ export function ChannelBrowser({
         role="dialog"
         aria-modal="true"
         aria-label="Browse channels"
-        tabIndex={-1}
-        ref={windowRef}
       >
         <header className={styles.head}>
           <div>
@@ -158,6 +166,7 @@ export function ChannelBrowser({
         <div className={styles.searchRow}>
           <input
             className={styles.search}
+            ref={searchRef}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

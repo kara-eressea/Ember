@@ -100,6 +100,33 @@ describe("characterDataSchema", () => {
     expect(parsed.settings?.guestbook).toBe(true);
   });
 
+  it("normalizes PHP empty-array serialization of record fields to {}", () => {
+    // A character with no kinks/customs/infotags/inlines: PHP serializes
+    // the empty associative arrays as [] (issue #179).
+    const parsed = characterDataSchema.parse({
+      id: 1234567,
+      name: "Amber Vale",
+      description: "",
+      views: 1,
+      kinks: [],
+      custom_kinks: [],
+      infotags: [],
+      inlines: [],
+      images: [],
+      error: "",
+    });
+    expect(parsed.kinks).toEqual({});
+    expect(parsed.custom_kinks).toEqual({});
+    expect(parsed.infotags).toEqual({});
+    expect(parsed.inlines).toEqual({});
+  });
+
+  it("still rejects non-empty arrays for record fields", () => {
+    expect(
+      characterDataSchema.safeParse({ error: "", kinks: ["6"] }).success,
+    ).toBe(false);
+  });
+
   it("parses a failure payload (error only, HTTP 200)", () => {
     const parsed = characterDataSchema.parse({
       error: "Character not found.",

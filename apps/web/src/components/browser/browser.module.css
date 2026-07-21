@@ -44,7 +44,7 @@
 .sub {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .subCount {
@@ -134,6 +134,10 @@
 .list {
   position: relative;
   flex: 1;
+
+  /* Flex children default to min-height auto — without this the list grows
+     to its content instead of scrolling inside the fixed-height window. */
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -240,7 +244,7 @@
 
 .statePinned {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   border: 1px solid var(--eb-border);
 }
 
@@ -301,7 +305,7 @@
 .footerError {
   margin: 7px 0 0;
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .footerError {

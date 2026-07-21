@@ -135,7 +135,7 @@
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .railMenuItem {
@@ -173,7 +173,7 @@
 
 .centerNote {
   margin: auto;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   text-align: center;
 }
 
@@ -237,7 +237,7 @@
 .serverSub {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -258,7 +258,7 @@
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 /* Small trailing action in a section header (channel browser opener). */
@@ -360,7 +360,7 @@
 .socialEmpty {
   margin: 1px 6px;
   padding: 3px 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   font-size: 12px;
   font-style: italic;
 }
@@ -427,8 +427,15 @@
   box-shadow: none;
 }
 
+/* Offline reads as secondary, not faded out (#186): the name stays on
+   --eb-dim at full opacity; only decorative pieces drop (avatar to .55,
+   presence dot already --eb-faint). No blanket row opacity. */
 .offlineRow {
-  opacity: 0.5;
+  color: var(--eb-dim);
+}
+
+.offlineRow img {
+  opacity: 0.55;
 }
 
 /* Join-channel / new-DM inline forms */
@@ -452,7 +459,7 @@
 }
 
 .miniInput::placeholder {
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .miniButton {
@@ -644,7 +651,7 @@
 .switcherEmpty {
   padding: 12px;
   font-size: 12.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .switcherRow {
@@ -683,7 +690,7 @@
 .switcherHint {
   margin-left: auto;
   font-size: 10.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 /* Status-message recents (M9 step 7): one-click chips in the editor. */

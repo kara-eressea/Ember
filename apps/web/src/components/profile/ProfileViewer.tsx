@@ -109,6 +109,14 @@ export function ProfileViewer({
         tabIndex={-1}
         ref={windowRef}
       >
+        <button
+          type="button"
+          className={styles.windowClose}
+          aria-label="Close profile"
+          onClick={onClose}
+        >
+          ✕
+        </button>
         <HistoryRail identityId={identityId} viewing={viewing} />
         <div className={styles.main}>
           <ViewerBody
@@ -293,6 +301,7 @@ function TabContent({
     case "compare":
       return (
         <CompareTab
+          identityId={identityId}
           profile={profile}
           ownProfile={ownProfile}
           ownCharacter={ownCharacter}
