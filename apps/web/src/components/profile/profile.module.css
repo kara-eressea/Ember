@@ -33,6 +33,27 @@
   min-width: 0;
 }
 
+/* Close ✕ in the window's upper-right — same treatment as the other
+   closable surfaces (prefs, channel browser). */
+.windowClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  padding: 2px 8px;
+  font-size: 14px;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.windowClose:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
 /* ── §2 HistoryRail ───────────────────────────────────────────────────── */
 
 .rail {

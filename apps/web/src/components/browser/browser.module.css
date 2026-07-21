@@ -134,6 +134,10 @@
 .list {
   position: relative;
   flex: 1;
+
+  /* Flex children default to min-height auto — without this the list grows
+     to its content instead of scrolling inside the fixed-height window. */
+  min-height: 0;
   overflow-y: auto;
 }
 

@@ -8,20 +8,24 @@ import { useMemo, useState } from "react";
 import { INFOTAG_IDS, match, type MatchReport } from "@emberchat/matcher";
 import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
+import { loadOwnProfile, useProfileStore } from "../../stores/profile.js";
 import { choiceOf } from "./choices.js";
 import { compareSummary } from "./match-utils.js";
 import { MatchPill, TierPie, TIER_COLOR } from "./MatchTier.js";
 import styles from "./profile.module.css";
 
 export function CompareTab({
+  identityId,
   profile,
   ownProfile,
   ownCharacter,
 }: {
+  identityId: string;
   profile: ProfileDto;
   ownProfile: ProfileDto | undefined;
   ownCharacter: string | undefined;
 }) {
+  const ownProfileError = useProfileStore((s) => s.ownProfileError);
   const self =
     ownCharacter !== undefined &&
     profile.name.toLowerCase() === ownCharacter.toLowerCase();
@@ -44,16 +48,31 @@ export function CompareTab({
     );
   }
   if (!report || !ownProfile || ownCharacter === undefined) {
+    const failed = ownProfileError !== undefined && !ownProfile;
     return (
       <div className={styles.emptyState}>
         <span className={styles.emptyTile} aria-hidden>
           ⇄
         </span>
-        <span className={styles.emptyTitle}>No match data</span>
-        <span className={styles.emptyBody}>
-          Your own character's profile hasn't loaded yet, so there is nothing to
-          compare against. It loads automatically — try again in a moment.
+        <span className={styles.emptyTitle}>
+          {failed ? "Couldn't load your profile" : "No match data"}
         </span>
+        <span className={styles.emptyBody}>
+          {failed
+            ? `Your own character's profile couldn't be loaded: ${ownProfileError}`
+            : "Your own character's profile hasn't loaded yet, so there is nothing to compare against. It loads automatically — try again in a moment."}
+        </span>
+        {failed && ownCharacter !== undefined && (
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => {
+              void loadOwnProfile(identityId, ownCharacter, true);
+            }}
+          >
+            Retry
+          </button>
+        )}
       </div>
     );
   }
