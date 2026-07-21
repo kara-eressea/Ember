@@ -911,6 +911,16 @@
   margin-top: 9px;
 }
 
+.cardStatus {
+  padding: 8px 14px 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--eb-faint);
+  overflow-wrap: anywhere;
+}
+
 .cardChip {
   padding: 2.5px 8px;
   font-size: 11px;

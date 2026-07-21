@@ -29,6 +29,7 @@ import ratingsStyles from "../ratings/ratings.module.css";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { DimChip, MatchPill, TierPie } from "./MatchTier.js";
 import { notableDimensions } from "./match-utils.js";
+import { findStatusMessage } from "./mini-status.js";
 import { placePopover } from "./popover.js";
 import { ago } from "./time.js";
 import styles from "./profile.module.css";
@@ -99,6 +100,12 @@ export function MiniProfileCard({
   const loaded = useProfileStore((s) => s.profiles[name.toLowerCase()]);
   const ownProfile = useProfileStore((s) => s.ownProfile?.profile);
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
+  // Live STA status message from whichever session source knows it (member
+  // rosters, DM partner, friends/bookmarks) — the same data the member list
+  // renders. Plain text, matching how status is shown elsewhere.
+  const statusMessage = useSessionsStore((s) =>
+    findStatusMessage(s.sessions[identityId], name),
+  );
   const self = name.toLowerCase() === ownCharacter.toLowerCase();
   const cardRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{
@@ -196,6 +203,7 @@ export function MiniProfileCard({
           name={name}
           loaded={loaded}
           social={social}
+          statusMessage={statusMessage}
           ownProfile={self ? undefined : ownProfile}
           self={self}
           onRetry={() => {
@@ -216,6 +224,7 @@ function CardContent({
   name,
   loaded,
   social,
+  statusMessage,
   ownProfile,
   self,
   onRetry,
@@ -225,6 +234,7 @@ function CardContent({
   name: string;
   loaded: LoadedProfile | undefined;
   social: SocialDto | undefined;
+  statusMessage: string | undefined;
   ownProfile: ProfileDto | undefined;
   self: boolean;
   onRetry: () => void;
@@ -332,6 +342,11 @@ function CardContent({
           </div>
         </div>
       </div>
+      {statusMessage && (
+        <div className={styles.cardStatus} title={statusMessage}>
+          {statusMessage}
+        </div>
+      )}
       {!self &&
         response &&
         (report ? (
