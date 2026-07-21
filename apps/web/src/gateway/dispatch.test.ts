@@ -78,6 +78,7 @@ function snapshot(): ServerFrame {
         prefs: PREFS_DEFAULTS,
         outbox: [],
         campaign: null,
+        social: null,
       },
       channels: [
         {
@@ -306,6 +307,95 @@ describe("presence", () => {
       lfrpMax: 50000,
       lfrpFlood: 600,
     });
+  });
+
+  it("social rows track live presence, case-insensitively (#218)", () => {
+    dispatchFrame(snapshot());
+    useSessionsStore.getState().applySocial(IDENTITY, {
+      bookmarks: [
+        {
+          name: "Nyx Firemane",
+          online: false,
+          status: "offline",
+          statusmsg: "",
+        },
+      ],
+      friends: [
+        { name: "Tally Marsh", online: true, status: "online", statusmsg: "" },
+      ],
+      incoming: [],
+      outgoing: [],
+      fetchedAt: Date.now(),
+    });
+    // NLN/STA with different casing than the JSON API returned.
+    dispatchFrame(
+      event("presence", {
+        character: "NYX FIREMANE",
+        online: true,
+        status: "looking",
+        statusmsg: "Open!",
+      }),
+    );
+    dispatchFrame(
+      event("presence", { character: "tally marsh", online: false }),
+    );
+    const social = session().social;
+    expect(social?.bookmarks[0]).toEqual({
+      name: "Nyx Firemane",
+      online: true,
+      status: "looking",
+      statusmsg: "Open!",
+    });
+    expect(social?.friends[0]).toMatchObject({
+      online: false,
+      status: "offline",
+    });
+    // LIS batches bring rows online too (absence proves nothing).
+    dispatchFrame(
+      event("presence.bulk", {
+        characters: [["TALLY MARSH", "None", "busy", "brb"]],
+      }),
+    );
+    expect(session().social?.friends[0]).toMatchObject({
+      online: true,
+      status: "busy",
+      statusmsg: "brb",
+    });
+  });
+
+  it("social.updated overwrites the lists; the snapshot seeds them (#194/#199)", () => {
+    const seeded = snapshot();
+    if (seeded.t === "snapshot") {
+      seeded.d.self.social = {
+        bookmarks: [
+          {
+            name: "Old Greywhisker",
+            online: true,
+            status: "busy",
+            statusmsg: "",
+          },
+        ],
+        friends: [],
+        incoming: [],
+        outgoing: [],
+      };
+    }
+    dispatchFrame(seeded);
+    expect(session().social?.bookmarks[0]?.name).toBe("Old Greywhisker");
+    dispatchFrame(
+      event("social.updated", {
+        social: {
+          bookmarks: [],
+          friends: [],
+          incoming: [{ id: 7, name: "Tally Marsh" }],
+          outgoing: [],
+        },
+      }),
+    );
+    expect(session().social?.bookmarks).toEqual([]);
+    expect(session().social?.incoming).toEqual([
+      { id: 7, name: "Tally Marsh" },
+    ]);
   });
 
   it("ignore.updated overwrites the ignore list", () => {

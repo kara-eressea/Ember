@@ -4,6 +4,7 @@ import {
   BB_COLORS,
   BB_NAME_TAGS,
   BB_WRAPPER_TAGS,
+  bbcodeToText,
   parseBBCode,
   sanitizeBBCode,
   serializeBBCode,
@@ -286,5 +287,41 @@ describe("profile dialect (M8)", () => {
     const input =
       "[collapse=Deep Story][center][b]hi[/b][/center][hr][/collapse]";
     expect(serializeBBCode(parseBBCode(input, "profile"))).toBe(input);
+  });
+});
+
+describe("bbcodeToText", () => {
+  it("strips wrappers and colour to their visible text", () => {
+    expect(bbcodeToText("[b]Looking[/b] for [color=red]fun[/color]")).toBe(
+      "Looking for fun",
+    );
+  });
+
+  it("keeps the link text, never the raw tag or href", () => {
+    expect(bbcodeToText("see [url=https://x.example]my ad[/url] now")).toBe(
+      "see my ad now",
+    );
+    expect(bbcodeToText("[url]https://x.example[/url]")).toBe(
+      "https://x.example",
+    );
+  });
+
+  it("keeps user references but drops decorative icons", () => {
+    expect(bbcodeToText("poke [user]Nyx Vale[/user] hi")).toBe(
+      "poke Nyx Vale hi",
+    );
+    expect(bbcodeToText("mood [eicon]sparkle[/eicon] today")).toBe(
+      "mood today",
+    );
+  });
+
+  it("collapses whitespace to a single trimmed line", () => {
+    expect(bbcodeToText("  busy\n\n  now  ")).toBe("busy now");
+  });
+
+  it("leaves malformed tags as the literal text the parser produced", () => {
+    expect(bbcodeToText("[b]unclosed and [fancy]x[/fancy]")).toBe(
+      "[b]unclosed and [fancy]x[/fancy]",
+    );
   });
 });

@@ -23,6 +23,7 @@ import {
   type ChannelDirectoryOptions,
 } from "./modules/directory/directory.js";
 import { directoryRoutes } from "./modules/directory/routes.js";
+import { enrichSocial, SocialCache } from "./modules/social/cache.js";
 import { socialRoutes } from "./modules/social/routes.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { CharacterDataBudget } from "./modules/flist-api/character-data-budget.js";
@@ -117,6 +118,9 @@ export async function buildApp({
   let campaignScheduler: CampaignScheduler | undefined;
   const history = new HistorySink(db, app.log, { highlights });
   const hub = new GatewayHub({ history, logger: app.log });
+  // Per-identity social lists (#194) — in memory alongside the sessions;
+  // a restart just means the first GET refetches.
+  const socialCache = new SocialCache();
   const directory = new ChannelDirectory(
     db,
     app.log,
@@ -140,6 +144,41 @@ export async function buildApp({
       // Every session's manual ads must stamp the campaign scheduler's
       // app-wide spacing clock, campaign or not (M11 audit).
       campaignScheduler?.observeSession(identityId, session);
+      // Website-side social changes arrive as RTB over the chat socket:
+      // fold bookmark events into the cache and fan them out (#199);
+      // friend events change upstream rows we cannot patch — drop the
+      // cache so the next fetch (the client refreshes on friendrequest)
+      // serves and broadcasts fresh lists.
+      session.events.on("command", (command) => {
+        if (command.cmd !== "RTB") {
+          return;
+        }
+        const { type } = command.payload;
+        if (type === "bookmarkadd" || type === "bookmarkremove") {
+          const name = command.payload.name ?? command.payload.character ?? "";
+          if (name === "") {
+            socialCache.invalidate(identityId);
+            return;
+          }
+          const patched = socialCache.patchBookmark(
+            identityId,
+            type === "bookmarkadd" ? "add" : "remove",
+            name,
+          );
+          if (patched) {
+            hub.broadcast(identityId, {
+              kind: "social.updated",
+              d: { social: enrichSocial(patched, session.state.characters) },
+            });
+          }
+        } else if (
+          type === "friendadd" ||
+          type === "friendremove" ||
+          type === "friendrequest"
+        ) {
+          socialCache.invalidate(identityId);
+        }
+      });
     },
   });
   app.decorate("sessions", sessions);
@@ -276,6 +315,8 @@ export async function buildApp({
     sessions,
     tickets,
     flistApi,
+    cache: socialCache,
+    hub,
   });
   const profiles = new ProfileService({
     db,
@@ -331,6 +372,7 @@ export async function buildApp({
     outbox,
     highlights,
     campaigns: campaignScheduler,
+    social: socialCache,
     // Browsers may open the gateway from the app's own origin or any
     // configured CORS origin; anything else is a hostile page. The two
     // loopback spellings are treated as one so a local `docker compose up`

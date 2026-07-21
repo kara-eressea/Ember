@@ -363,6 +363,46 @@ export function parseBBCode(
   return root.children;
 }
 
+/**
+ * Flattens BBCode to its visible text content — every tag stripped to the
+ * text it wraps. For one-line/dense contexts (member-row status messages)
+ * where the full renderer has no room and raw tags must never show (#210).
+ * `user` references keep their name; `icon`/`eicon` are pure decoration and
+ * drop out; `url` keeps its link text, not the href. Runs of whitespace
+ * collapse so a multi-line status reads as a single trimmed line.
+ */
+export function bbcodeToText(
+  input: string,
+  dialect: BBDialect = "chat",
+): string {
+  const walk = (nodes: readonly BBNode[]): string => {
+    let out = "";
+    for (const node of nodes) {
+      switch (node.type) {
+        case "text":
+        case "noparse":
+          out += node.text;
+          break;
+        case "name":
+          out += node.tag === "user" ? node.name : "";
+          break;
+        case "url":
+        case "wrapper":
+        case "color":
+        case "block":
+        case "collapse":
+          out += walk(node.children);
+          break;
+        case "hr":
+          out += " ";
+          break;
+      }
+    }
+    return out;
+  };
+  return walk(parseBBCode(input, dialect)).replace(/\s+/g, " ").trim();
+}
+
 function buildNode(frame: Frame): BBNode {
   const { open, children } = frame;
   if (open.tag === "color") {

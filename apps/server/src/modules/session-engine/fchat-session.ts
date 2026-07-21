@@ -274,12 +274,32 @@ export class FchatSession {
   joinChannel(channel: string): void {
     this.#desiredChannels.add(channel);
     if (this.#status === "online") {
-      this.#unconfirmedJoins.set(
-        channel,
-        (this.#unconfirmedJoins.get(channel) ?? 0) + 1,
-      );
-      this.#send({ cmd: "JCH", payload: { channel } });
+      this.#sendJoin(channel);
     }
+  }
+
+  /**
+   * Puts one JCH through the flood gate. The gate staggers the reconnect
+   * rejoin burst at the msg_flood pace; a JCH the gate drops (cleared on
+   * disconnect, or backlog full) is not counted as a refused attempt — the
+   * desired set still holds the channel and the next reconnect retries.
+   */
+  #sendJoin(channel: string): void {
+    this.#unconfirmedJoins.set(
+      channel,
+      (this.#unconfirmedJoins.get(channel) ?? 0) + 1,
+    );
+    this.#rateGate
+      .schedule("JCH", () => {
+        this.#send({ cmd: "JCH", payload: { channel } });
+      })
+      .catch((error: unknown) => {
+        const attempts = this.#unconfirmedJoins.get(channel);
+        if (attempts !== undefined) {
+          this.#unconfirmedJoins.set(channel, Math.max(0, attempts - 1));
+        }
+        this.#log.info({ err: error, channel }, "join send skipped");
+      });
   }
 
   leaveChannel(channel: string): void {
@@ -843,8 +863,7 @@ export class FchatSession {
             this.#unconfirmedJoins.delete(channel);
             continue;
           }
-          this.#unconfirmedJoins.set(channel, attempts + 1);
-          this.#send({ cmd: "JCH", payload: { channel } });
+          this.#sendJoin(channel);
         }
         this.events.emit("command", command);
         // A fresh connection is plain "online" — restore the chosen status

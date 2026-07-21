@@ -49,6 +49,7 @@ import type {
 } from "../session-engine/fchat-session.js";
 import type { Outbox } from "../outbox/outbox.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
+import { enrichSocial, type SocialCache } from "../social/cache.js";
 import type { GatewayHub } from "./gateway.js";
 import {
   buildSnapshot,
@@ -81,6 +82,8 @@ export interface GatewayConnectionContext {
   readonly outbox: Outbox;
   readonly highlights: Pick<HighlightMatcher, "invalidate">;
   readonly campaigns: CampaignScheduler;
+  /** Cached social lists — served in the snapshot when present (#194). */
+  readonly social: SocialCache;
   readonly verifyToken: (
     token: string,
   ) => Promise<{ userId: string; sid: string } | undefined>;
@@ -440,6 +443,10 @@ export class GatewayConnection {
       ? [...session.state.ignores.values()].sort((a, b) => a.localeCompare(b))
       : await this.#ctx.history.listIgnores(identityId);
     const { sendDelaySeconds, prefs } = await this.#userPrefs();
+    // Cached social lists served on attach — a second device gets them
+    // instantly, no F-List API calls (#194). Enriched with live presence
+    // at serve time (case-insensitive, #218).
+    const socialLists = this.#ctx.social.get(identityId);
     this.#send({
       t: "snapshot",
       d: {
@@ -462,6 +469,9 @@ export class GatewayConnection {
           prefs,
           outbox: await this.#ctx.outbox.list(identityId),
           campaign: this.#ctx.campaigns.dtoFor(identityId),
+          social: socialLists
+            ? enrichSocial(socialLists, session?.state.characters)
+            : null,
         },
         channels: snapshot.channels,
         dms: snapshot.dms,
@@ -581,6 +591,10 @@ export class GatewayConnection {
         const session = this.#requireSession(identity.id, id);
         if (session) {
           session.leaveChannel(cmd.d.key);
+          // Explicit leave unpins (#169): otherwise the pin's auto-rejoin
+          // would drag the channel back on the next reconnect. The updated
+          // row fans out via the sink's conversation event.
+          await this.#ctx.history.unpinChannelForLeave(identity.id, cmd.d.key);
           this.#ack(id, { ok: true });
         }
         return;
