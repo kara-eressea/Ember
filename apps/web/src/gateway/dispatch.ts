@@ -253,6 +253,14 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       // Reply to our own search (M10) — results or the server's refusal.
       useSearchStore.getState().applyOutcome(identityId, event.d);
       return;
+    case "social.updated":
+      // Server-side bookmark/friend change (this device, another device,
+      // or the website via RTB) — full-list overwrite (#199).
+      sessions.applySocial(identityId, {
+        ...event.d.social,
+        fetchedAt: Date.now(),
+      });
+      return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);
       return;

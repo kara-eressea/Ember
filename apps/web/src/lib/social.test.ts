@@ -69,6 +69,8 @@ describe("loadSocial", () => {
     await initial;
     await forced;
     expect(spy).toHaveBeenCalledTimes(2);
+    // The forced refresh bypasses the server-side cache too (#194).
+    expect(spy).toHaveBeenLastCalledWith(ID, true);
     // The forced refresh's (fresh) result is what sticks.
     expect(
       useSessionsStore.getState().sessions[ID]?.social?.bookmarks[0]?.name,
