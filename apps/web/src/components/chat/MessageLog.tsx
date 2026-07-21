@@ -294,88 +294,88 @@ export function MessageLog({
 
   return (
     <div className={styles.logWrap}>
-    <div
-      className={logClass}
-      style={styleVars}
-      ref={scrollRef}
-      onScroll={onScroll}
-      data-testid="message-log"
-    >
-      {detachedTail && (
-        <div className={styles.historyBanner} role="status">
-          Viewing older history — new messages are hidden.
-          <button
-            type="button"
-            className={styles.historyBannerButton}
-            onClick={() => {
-              void useMessagesStore
-                .getState()
-                .backToPresent(identityId, convId);
-            }}
-          >
-            Back to present
-          </button>
-        </div>
-      )}
-      {buffer?.loadingOlder && (
-        <div className={styles.logNote}>Loading older messages…</div>
-      )}
-      {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
-      {buffer?.backfilled && rows.length === 0 && (
-        <div className={styles.logNote}>No messages yet.</div>
-      )}
       <div
-        className={styles.logInner}
-        style={{ height: virtualizer.getTotalSize() }}
+        className={logClass}
+        style={styleVars}
+        ref={scrollRef}
+        onScroll={onScroll}
+        data-testid="message-log"
       >
-        {virtualizer.getVirtualItems().map((item) => {
-          const row = rows[item.index]!;
-          return (
-            <div
-              key={row.key}
-              ref={virtualizer.measureElement}
-              data-index={item.index}
-              className={`${styles.logRow} ${
-                row.type === "message" &&
-                row.message.id === jumpTarget?.messageId
-                  ? (styles.jumpFlash ?? "")
-                  : ""
-              }`}
-              style={{ transform: `translateY(${String(item.start)}px)` }}
+        {detachedTail && (
+          <div className={styles.historyBanner} role="status">
+            Viewing older history — new messages are hidden.
+            <button
+              type="button"
+              className={styles.historyBannerButton}
+              onClick={() => {
+                void useMessagesStore
+                  .getState()
+                  .backToPresent(identityId, convId);
+              }}
             >
-              {row.type === "divider" ? (
-                <div className={styles.dateDivider}>{row.label}</div>
-              ) : row.type === "new" ? (
-                <div className={styles.newDivider} data-testid="new-divider">
-                  new
-                </div>
-              ) : row.type === "presence" ? (
-                <PresenceLineRow line={row.line} prefs={prefs} />
-              ) : row.message.kind === "sys" ? (
-                <SystemLine message={row.message} prefs={prefs} />
-              ) : row.message.kind === "rll" ? (
-                <RollLine message={row.message} prefs={prefs} />
-              ) : row.message.kind === "lrp" ? (
-                <AdLine message={row.message} prefs={prefs} />
-              ) : (
-                <MessageLine
-                  message={row.message}
-                  prefs={prefs}
-                  grouped={row.grouped === true}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {pending.length > 0 && (
-        <div className={styles.pendingBlock}>
-          {pending.map((item) => (
-            <PendingLine key={item.id} item={item} />
-          ))}
+              Back to present
+            </button>
+          </div>
+        )}
+        {buffer?.loadingOlder && (
+          <div className={styles.logNote}>Loading older messages…</div>
+        )}
+        {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
+        {buffer?.backfilled && rows.length === 0 && (
+          <div className={styles.logNote}>No messages yet.</div>
+        )}
+        <div
+          className={styles.logInner}
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          {virtualizer.getVirtualItems().map((item) => {
+            const row = rows[item.index]!;
+            return (
+              <div
+                key={row.key}
+                ref={virtualizer.measureElement}
+                data-index={item.index}
+                className={`${styles.logRow} ${
+                  row.type === "message" &&
+                  row.message.id === jumpTarget?.messageId
+                    ? (styles.jumpFlash ?? "")
+                    : ""
+                }`}
+                style={{ transform: `translateY(${String(item.start)}px)` }}
+              >
+                {row.type === "divider" ? (
+                  <div className={styles.dateDivider}>{row.label}</div>
+                ) : row.type === "new" ? (
+                  <div className={styles.newDivider} data-testid="new-divider">
+                    new
+                  </div>
+                ) : row.type === "presence" ? (
+                  <PresenceLineRow line={row.line} prefs={prefs} />
+                ) : row.message.kind === "sys" ? (
+                  <SystemLine message={row.message} prefs={prefs} />
+                ) : row.message.kind === "rll" ? (
+                  <RollLine message={row.message} prefs={prefs} />
+                ) : row.message.kind === "lrp" ? (
+                  <AdLine message={row.message} prefs={prefs} />
+                ) : (
+                  <MessageLine
+                    message={row.message}
+                    prefs={prefs}
+                    grouped={row.grouped === true}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
-    </div>
+        {pending.length > 0 && (
+          <div className={styles.pendingBlock}>
+            {pending.map((item) => (
+              <PendingLine key={item.id} item={item} />
+            ))}
+          </div>
+        )}
+      </div>
       {canJumpToRecent && (
         <button
           type="button"
