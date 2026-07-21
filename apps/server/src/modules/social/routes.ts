@@ -151,10 +151,11 @@ export async function socialRoutes(
       };
       return {
         bookmarks: (bookmarks.characters ?? []).map(enrich),
-        // Account-wide pairs scoped to this identity: dest is our character.
+        // Account-wide pairs scoped to this identity: source is our
+        // character, dest the friend (same orientation as friend-remove).
         friends: (friends.friends ?? [])
-          .filter((pair) => pair.dest === identity.character)
-          .map((pair) => enrich(pair.source)),
+          .filter((pair) => pair.source === identity.character)
+          .map((pair) => enrich(pair.dest)),
         incoming: (incoming.requests ?? [])
           .filter((entry) => entry.dest === identity.character)
           .map((entry) => ({ id: entry.id, name: entry.source })),

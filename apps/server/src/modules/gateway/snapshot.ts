@@ -166,6 +166,11 @@ export async function buildSnapshot(
         lastReadMessageId: row.lastReadMessageId,
       });
     } else {
+      // For PMs the joined flag means "window open" (pm.close clears it):
+      // closed conversations keep their history but leave the sidebar.
+      if (!row.joined) {
+        continue;
+      }
       const partner = row.partnerCharacter ?? "";
       const presence = presenceByLower.get(partner.toLowerCase());
       dms.push({

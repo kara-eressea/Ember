@@ -67,7 +67,8 @@ export const bookmarkListSchema = z.object({
 });
 export type BookmarkList = z.infer<typeof bookmarkListSchema>;
 
-/** friend-list: account-wide pairs — dest is OUR character, source theirs. */
+/** friend-list: account-wide pairs — source is OUR character, dest the
+ * friend (same orientation as friend-remove's source_name/dest_name). */
 export const friendListSchema = z.object({
   error: z.string(),
   friends: z

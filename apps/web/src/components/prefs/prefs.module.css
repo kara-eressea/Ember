@@ -88,12 +88,26 @@
   color: var(--eb-meta);
 }
 
+.railFootLink {
+  color: var(--eb-dim);
+  text-decoration: none;
+}
+
+.railFootLink:hover {
+  color: var(--eb-accent);
+  text-decoration: underline;
+}
+
 /* ── Pane ─────────────────────────────────────────────────────────────── */
 
 .pane {
   display: flex;
   flex-direction: column;
   min-width: 0;
+
+  /* Grid items default to min-height auto: without this the pane grows to
+     its content, the window clips it, and .paneBody never scrolls. */
+  min-height: 0;
 }
 
 .paneHead {

@@ -38,9 +38,12 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   const dialog = page.getByRole("dialog", { name: "Preferences" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "General" })).toBeVisible();
-  await expect(
-    dialog.getByText("Account & profile live on the server website"),
-  ).toBeVisible();
+  const accountLink = dialog.getByRole("link", { name: /F-List account/ });
+  await expect(accountLink).toBeVisible();
+  await expect(accountLink).toHaveAttribute(
+    "href",
+    "https://www.f-list.net/account_settings.php",
+  );
   // The About surface shows the running version (M7 step 5).
   await expect(dialog.getByText(/EmberChat v0\.0\.0/)).toBeVisible();
 

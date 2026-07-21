@@ -578,7 +578,9 @@ describe("message.new and unread", () => {
           partnerCharacter: "Birch Rowan",
           title: "Birch Rowan",
           pinned: false,
-          joined: false,
+          // PMs are born open — for pm rows joined is the "window open"
+          // flag (pm.close clears it).
+          joined: true,
           lastReadMessageId: null,
         },
       }),
@@ -592,6 +594,29 @@ describe("message.new and unread", () => {
     const dm = session().dms[convId];
     expect(dm?.partner).toBe("Birch Rowan");
     expect(dm?.unread).toBe(1);
+  });
+
+  it("a pm conversation with joined dropped (pm.close) leaves the store", () => {
+    dispatchFrame(snapshot());
+    const convId = "44444444-4444-7444-8444-444444444444";
+    const row = {
+      id: convId,
+      kind: "pm" as const,
+      channelKey: null,
+      partnerCharacter: "Birch Rowan",
+      title: "Birch Rowan",
+      pinned: false,
+      joined: true,
+      lastReadMessageId: null,
+    };
+    dispatchFrame(event("conversation.updated", { conversation: row }));
+    expect(session().dms[convId]).toBeDefined();
+    dispatchFrame(
+      event("conversation.updated", {
+        conversation: { ...row, joined: false },
+      }),
+    );
+    expect(session().dms[convId]).toBeUndefined();
   });
 });
 

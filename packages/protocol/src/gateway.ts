@@ -325,6 +325,11 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
+    action: z.literal("pm.close"),
+    d: z.object({ convId: z.uuid() }),
+  }),
+  z.object({
+    identityId: z.uuid(),
     action: z.literal("conv.pin"),
     d: z.object({ convId: z.uuid(), pinned: z.boolean() }),
   }),

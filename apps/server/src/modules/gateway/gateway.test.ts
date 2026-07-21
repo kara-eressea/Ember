@@ -2023,6 +2023,86 @@ describe("gateway commands", () => {
     expect(converged.lastReadMessageId).toBe(message.id);
   });
 
+  interface ConvRow {
+    id: string;
+    kind: string;
+    joined: boolean;
+    lastReadMessageId: number | null;
+  }
+
+  it("closes a PM conversation and reopens it on the next inbound message", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+
+    const client = await connectClient();
+    const other = await connectClient();
+    await client.hello(token);
+    await other.hello(token);
+    await client.subscribe(identityId);
+    await other.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "pm.open", d: { character: "Nyx Firemane" } },
+    });
+    const opened = (await client.nextOfType("ack")).d.conversation!;
+    expect(opened.joined).toBe(true);
+
+    // pm.close drops the "window open" flag: the ack carries the row and
+    // the other tab converges through conversation.updated.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "pm.close", d: { convId: opened.id } },
+    });
+    const closeAck = await client.nextOfType("ack");
+    expect(closeAck.d.ok).toBe(true);
+    expect(closeAck.d.conversation).toMatchObject({
+      id: opened.id,
+      joined: false,
+    });
+    const closed = await nextConversationUpdate<ConvRow>(
+      other,
+      (c) => c.id === opened.id && !c.joined,
+    );
+    expect(closed.kind).toBe("pm");
+
+    // Closed DMs leave the snapshot; the row and its history survive.
+    const resub = await connectClient();
+    await resub.hello(token);
+    const snapshot = await resub.subscribe(identityId);
+    expect(
+      snapshot.d.dms.some((dm: { convId: string }) => dm.convId === opened.id),
+    ).toBe(false);
+
+    // An inbound PRI reopens the window before the message lands.
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "still there?" },
+    });
+    const reopened = await nextConversationUpdate<ConvRow>(
+      other,
+      (c) => c.id === opened.id && c.joined,
+    );
+    expect(reopened.kind).toBe("pm");
+
+    // A pm.close for a channel conversation (or unknown id) refuses.
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "pm.close",
+        d: { convId: "00000000-0000-7000-8000-000000000000" },
+      },
+    });
+    expect(await client.nextOfType("ack")).toMatchObject({
+      id: 3,
+      d: { ok: false, error: "Conversation not found" },
+    });
+  });
+
   it("cuts a live connection when its auth session is revoked", async () => {
     const { identityId, token } = await createIdentity();
     await startSession(identityId);
