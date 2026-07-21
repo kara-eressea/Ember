@@ -4,7 +4,13 @@
 // the eiconSearchEnabled pref (server-enforced — the disabled explainer
 // links to Preferences). Anchoring/clamping reuses the §13 primitive.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { UserPrefs } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
 import { eiconUrl } from "../../lib/avatar.js";
@@ -115,8 +121,7 @@ export function EiconPicker({
           {TABS.map((entry) => {
             // Gallery and Search both drive the xariah-backed index, so both
             // wear the "off" treatment when the pref is disabled.
-            const needsIndex =
-              entry.id === "search" || entry.id === "gallery";
+            const needsIndex = entry.id === "search" || entry.id === "gallery";
             const off = needsIndex && !prefs.eiconSearchEnabled;
             return (
               <button
@@ -348,12 +353,14 @@ function GalleryTab({
   const sentinelRef = useRef<HTMLDivElement>(null);
   // Guard against overlapping fetches while a page is in flight.
   const loading = useRef(false);
-  // Keep the latest gallery cursor available to the observer callback.
+  // Keep the latest gallery cursor available to the (stable) loader without
+  // re-subscribing the observer; updated in an effect, never during render.
   const galleryRef = useRef(gallery);
-  galleryRef.current = gallery;
+  useEffect(() => {
+    galleryRef.current = gallery;
+  }, [gallery]);
 
-  const loadMore = useRef<() => void>(() => {});
-  loadMore.current = () => {
+  const loadMore = useCallback(() => {
     if (loading.current) {
       return;
     }
@@ -376,12 +383,12 @@ function GalleryTab({
       .finally(() => {
         loading.current = false;
       });
-  };
+  }, []);
 
   // First page on mount.
   useEffect(() => {
-    loadMore.current();
-  }, []);
+    loadMore();
+  }, [loadMore]);
 
   // Fetch the next page as the sentinel scrolls into view.
   useEffect(() => {
@@ -392,7 +399,7 @@ function GalleryTab({
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          loadMore.current();
+          loadMore();
         }
       },
       { rootMargin: "200px" },
@@ -401,7 +408,7 @@ function GalleryTab({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [loadMore, gallery.names.length]);
 
   if (state === "error" && gallery.names.length === 0) {
     return (
@@ -411,7 +418,7 @@ function GalleryTab({
           type="button"
           className={styles.pickerLink}
           onClick={() => {
-            loadMore.current();
+            loadMore();
           }}
         >
           Retry
@@ -455,7 +462,7 @@ function GalleryTab({
               type="button"
               className={styles.pickerLink}
               onClick={() => {
-                loadMore.current();
+                loadMore();
               }}
             >
               Load more
