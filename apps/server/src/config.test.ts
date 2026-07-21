@@ -36,9 +36,9 @@ describe("loadConfig", () => {
     // 64 hex chars are all valid base64url, so a hex "32-byte" key decodes
     // to 48 bytes — the realistic trap the message must call out.
     const hexKey = "ab".repeat(32);
-    expect(() =>
-      loadConfig({ ...BASE_ENV, CREDENTIALS_KEY: hexKey }),
-    ).toThrow(/64-character value decoding to 48 bytes/);
+    expect(() => loadConfig({ ...BASE_ENV, CREDENTIALS_KEY: hexKey })).toThrow(
+      /64-character value decoding to 48 bytes/,
+    );
   });
 
   it("refuses a non-websocket FCHAT_URL", () => {
