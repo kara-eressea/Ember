@@ -107,11 +107,11 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   await filter.fill("");
 
   // Section headings collapse and expand.
-  await sidebar.getByRole("button", { name: "Bookmarks" }).click();
+  await sidebar.getByRole("button", { name: "Bookmarks", exact: true }).click();
   await expect(
     sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),
   ).not.toBeVisible();
-  await sidebar.getByRole("button", { name: "Bookmarks" }).click();
+  await sidebar.getByRole("button", { name: "Bookmarks", exact: true }).click();
   await expect(
     sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),
   ).toBeVisible();

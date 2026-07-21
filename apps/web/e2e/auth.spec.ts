@@ -35,7 +35,7 @@ async function login(page: Page, creds: { email: string; password: string }) {
 test("registration is disabled: no route, no endpoint, no signup links", async ({
   page,
 }) => {
-  // The old /register route falls through the catch-all back to the landing.
+  // The old /register route falls through the catch-all to the root login.
   await page.goto("/register");
   await expect(page).toHaveURL(/\/$/);
   // No signup affordances anywhere on the public surfaces.
@@ -64,12 +64,10 @@ test("provision, log in, connect an F-List account, and pick a character with av
   await interceptAvatars(page);
   const creds = await provisionUser();
 
-  // Landing → log in with the CLI-provisioned account.
+  // The root opens straight to the login screen (no marketing landing) —
+  // log in with the CLI-provisioned account.
   await page.goto("/");
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Log in" })
-    .click();
+  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
   await login(page, creds);
 
   // Straight into the identity picker.

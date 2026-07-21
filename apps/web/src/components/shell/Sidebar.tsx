@@ -148,12 +148,16 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     (d) => d.highlightedAt,
     bump,
   );
-  // Pinning is cross-type (COMPONENTS.md §3): pinned channels and DMs
-  // surface together under Pinned; the rest stay in their type sections.
-  const pinnedChannels = allChannels.filter((c) => c.pinned);
-  const pinnedDms = allDms.filter((d) => d.pinned);
-  const channels = allChannels.filter((c) => !c.pinned);
-  const dms = allDms.filter((d) => !d.pinned);
+  // Pinned rows stay in their own type section, locked to the top (#169):
+  // pinned group first, unpinned after, each keeping orderRows's ordering.
+  const channels = [
+    ...allChannels.filter((c) => c.pinned),
+    ...allChannels.filter((c) => !c.pinned),
+  ];
+  const dms = [
+    ...allDms.filter((d) => d.pinned),
+    ...allDms.filter((d) => !d.pinned),
+  ];
 
   // Friends/Bookmarks: online first (#164), offline hidden behind the
   // synced pref (#165), then the toolbar filter like everything else.
@@ -254,17 +258,6 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       </div>
 
       <div className={styles.navScroll}>
-        {pinnedChannels.length + pinnedDms.length > 0 && (
-          <>
-            <div className={styles.sectionHeader}>
-              <span>Pinned</span>
-              <span>{pinnedChannels.length + pinnedDms.length}</span>
-            </div>
-            {pinnedChannels.map((channel) => channelRow(channel, true))}
-            {pinnedDms.map((dm) => dmRow(dm, true))}
-          </>
-        )}
-
         <SectionHeader
           label="Channels"
           count={channels.length}
@@ -274,7 +267,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           }}
         />
         {openSection("channels") &&
-          channels.map((channel) => channelRow(channel, false))}
+          channels.map((channel) => channelRow(channel, channel.pinned))}
         {session.invites.map((invite) => (
           <InviteRow key={invite.key} session={session} invite={invite} />
         ))}
@@ -287,7 +280,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             toggleSection("dms");
           }}
         />
-        {openSection("dms") && dms.map((dm) => dmRow(dm, false))}
+        {openSection("dms") && dms.map((dm) => dmRow(dm, dm.pinned))}
 
         <SocialSections
           session={session}

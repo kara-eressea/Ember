@@ -40,6 +40,8 @@ test("profile history + notes: both survive reload, notes survive prune", async 
   await expect(rail.getByText("Tally Marsh")).toBeVisible();
 
   // ── Private note: autosave (debounced PUT) confirms with Saved ✓ ──────
+  // The note lives in the Insights tab now (#211), not the header corner.
+  await viewer.getByRole("tab", { name: "Insights" }).click();
   await viewer.getByRole("button", { name: "+ Add private note" }).click();
   await viewer
     .getByPlaceholder("Anything you want to remember about Tally Marsh…")
@@ -79,6 +81,7 @@ test("profile history + notes: both survive reload, notes survive prune", async 
   // The rail row navigates the viewer; the note rides the profile response.
   await reloadedRail.getByText("Tally Marsh").click();
   await expect(viewer).toBeVisible();
+  await viewer.getByRole("tab", { name: "Insights" }).click();
   await expect(viewer.getByText(NOTE_TEXT)).toBeVisible();
 
   // ── Prune history; the note lives in its own table and survives ───────
@@ -109,5 +112,6 @@ test("profile history + notes: both survive reload, notes survive prune", async 
     .getByRole("menuitem", { name: "View profile" })
     .click();
   await expect(viewer).toBeVisible();
+  await viewer.getByRole("tab", { name: "Insights" }).click();
   await expect(viewer.getByText(NOTE_TEXT)).toBeVisible();
 });
