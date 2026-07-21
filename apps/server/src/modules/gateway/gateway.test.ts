@@ -548,6 +548,54 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     expect(fresh!.state.channels.has("Frontpage")).toBe(false);
   });
 
+  it("leaving a pinned channel over the gateway unpins it (#169)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+    await app.history.flush();
+
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const frontpage = snapshot.d.channels.find((c) => c.key === "Frontpage");
+    expect(frontpage).toBeDefined();
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "conv.pin",
+        d: { convId: frontpage!.convId, pinned: true },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    // Pinned means auto-rejoin: the restart-recovery seed includes it.
+    expect(await app.history.channelsForResume(identityId)).toEqual([
+      "Frontpage",
+    ]);
+
+    // Explicit leave unpins — the pin must not fight the leave by dragging
+    // the channel back on the next reconnect.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "channel.leave", d: { key: "Frontpage" } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    await nextConversationUpdate<{
+      id: string;
+      lastReadMessageId: number | null;
+      pinned: boolean;
+    }>(client, (c) => c.id === frontpage!.convId && !c.pinned);
+    // Once the LCH echo drains through the sink, no seed resurrects it.
+    await vi.waitFor(async () => {
+      await app.history.flush();
+      expect(await app.history.channelsForResume(identityId)).toEqual([]);
+    });
+    expect(await app.history.pinnedChannelKeys(identityId)).toEqual([]);
+  });
+
   it("recovers an F-Chat drop with no user interaction: re-tickets from the vault, rejoins channels (M2 verification)", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
@@ -620,10 +668,11 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     ).toBe(false);
   });
 
-  it("a connect while autoConnect is set is a recovery: exact channels, no reconcile", async () => {
+  it("a connect while autoConnect is set is a recovery: joined plus pinned channels, no reconcile", async () => {
     const { identityId, token } = await createIdentity();
     // Persisted state from "before the outage": flagged for auto-connect,
-    // one casually joined channel, one pinned-but-left channel.
+    // one casually joined channel, one pinned channel whose joined flag was
+    // lost mid-outage (an explicit leave would have unpinned it, #169).
     await db
       .update(identities)
       .set({ autoConnect: true })
@@ -662,8 +711,11 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     await vi.waitFor(() => {
       expect(session!.state.channels.has("Frontpage")).toBe(true);
     });
-    // Recovery restores the joined set, not the pinned set.
-    expect(session!.state.channels.has("Development")).toBe(false);
+    // Pinned means auto-rejoin (#169): the pin comes back alongside the
+    // joined set.
+    await vi.waitFor(() => {
+      expect(session!.state.channels.has("Development")).toBe(true);
+    });
 
     // And it never reconciles: the casual row keeps its joined flag.
     await app.history.flush();

@@ -79,12 +79,16 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     (d) => d.highlightedAt,
     bump,
   );
-  // Pinning is cross-type (COMPONENTS.md §3): pinned channels and DMs
-  // surface together under Pinned; the rest stay in their type sections.
-  const pinnedChannels = allChannels.filter((c) => c.pinned);
-  const pinnedDms = allDms.filter((d) => d.pinned);
-  const channels = allChannels.filter((c) => !c.pinned);
-  const dms = allDms.filter((d) => !d.pinned);
+  // Pinned rows stay in their own type section, locked to the top (#169):
+  // pinned group first, unpinned after, each keeping orderRows's ordering.
+  const channels = [
+    ...allChannels.filter((c) => c.pinned),
+    ...allChannels.filter((c) => !c.pinned),
+  ];
+  const dms = [
+    ...allDms.filter((d) => d.pinned),
+    ...allDms.filter((d) => !d.pinned),
+  ];
 
   const channelRow = (channel: ChannelView, pinned: boolean) => (
     <NavRow
@@ -124,17 +128,6 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       </div>
 
       <div className={styles.navScroll}>
-        {pinnedChannels.length + pinnedDms.length > 0 && (
-          <>
-            <div className={styles.sectionHeader}>
-              <span>Pinned</span>
-              <span>{pinnedChannels.length + pinnedDms.length}</span>
-            </div>
-            {pinnedChannels.map((channel) => channelRow(channel, true))}
-            {pinnedDms.map((dm) => dmRow(dm, true))}
-          </>
-        )}
-
         <div className={styles.sectionHeader}>
           <span>Channels</span>
           <span className={styles.sectionActions}>
@@ -162,7 +155,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             </button>
           </span>
         </div>
-        {channels.map((channel) => channelRow(channel, false))}
+        {channels.map((channel) => channelRow(channel, channel.pinned))}
         {session.invites.map((invite) => (
           <InviteRow key={invite.key} session={session} invite={invite} />
         ))}
@@ -172,7 +165,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           <span>Direct messages</span>
           <span>{dms.length || ""}</span>
         </div>
-        {dms.map((dm) => dmRow(dm, false))}
+        {dms.map((dm) => dmRow(dm, dm.pinned))}
         <NewDmForm session={session} />
 
         <SocialSections session={session} />

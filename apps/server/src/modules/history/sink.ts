@@ -10,7 +10,7 @@
 // `message.new` events must carry the persisted messages.id, so live fan-out
 // happens after (and in the same order as) persistence, never before.
 
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
 import { conversations, ignores, messages } from "../../db/schema.js";
@@ -392,11 +392,45 @@ export class HistorySink {
 
   /**
    * Channel seed for recovery (decisions.md §9 scenario 2 — restart, outage:
-   * the user never chose to leave): exactly the channels the identity was
-   * in, per the joined flags the sink itself maintains.
+   * the user never chose to leave): the channels the identity was in, per
+   * the joined flags the sink itself maintains, plus every pinned channel —
+   * pinned means auto-rejoin (#169), so a pin survives even a recovery
+   * where the joined flag was lost mid-outage. Explicitly leaving a channel
+   * unpins it (see unpinChannelForLeave), so this union never resurrects a
+   * channel the user chose to leave.
    */
   channelsForResume(identityId: string): Promise<string[]> {
-    return this.#channelKeys(identityId, eq(conversations.joined, true));
+    return this.#channelKeys(
+      identityId,
+      or(eq(conversations.joined, true), eq(conversations.pinned, true)),
+    );
+  }
+
+  /**
+   * Explicit leave unpins (#169): pinned means auto-rejoin, and a channel
+   * the user deliberately left must not be dragged back on the next
+   * reconnect — the pin and the leave would fight forever. Scoped to
+   * channel rows; no-op (and no event) when the row wasn't pinned.
+   */
+  async unpinChannelForLeave(
+    identityId: string,
+    channelKey: string,
+  ): Promise<void> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({ pinned: false })
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+          eq(conversations.channelKey, channelKey),
+          eq(conversations.pinned, true),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
+    }
   }
 
   /**
@@ -430,7 +464,7 @@ export class HistorySink {
 
   async #channelKeys(
     identityId: string,
-    extraFilter: ReturnType<typeof eq>,
+    extraFilter: ReturnType<typeof eq> | ReturnType<typeof or>,
   ): Promise<string[]> {
     const rows = await this.#db
       .select({ channelKey: conversations.channelKey })

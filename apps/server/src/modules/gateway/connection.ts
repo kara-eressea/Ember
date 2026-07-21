@@ -581,6 +581,10 @@ export class GatewayConnection {
         const session = this.#requireSession(identity.id, id);
         if (session) {
           session.leaveChannel(cmd.d.key);
+          // Explicit leave unpins (#169): otherwise the pin's auto-rejoin
+          // would drag the channel back on the next reconnect. The updated
+          // row fans out via the sink's conversation event.
+          await this.#ctx.history.unpinChannelForLeave(identity.id, cmd.d.key);
           this.#ack(id, { ok: true });
         }
         return;
