@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hydrateTheme, themeVariables } from "./theme.js";
-import { BASE_THEMES, mix, nickColor, NICK_PALETTE } from "./tokens.js";
+import {
+  BASE_THEMES,
+  genderColorVar,
+  GENDER_PALETTE,
+  GENDER_PALETTE_LIGHT,
+  mix,
+  nickColor,
+  NICK_PALETTE,
+} from "./tokens.js";
 
 describe("mix", () => {
   // The exact derived values documented for Dusk Purple in COMPONENTS.md.
@@ -75,6 +83,44 @@ describe("themeVariables", () => {
     );
   });
 
+  it("writes the dark gender palette on dark grounds (#177)", () => {
+    const vars = themeVariables("dusk", "slate");
+    expect(vars["--eb-gender-male"]).toBe("#6ea8ff");
+    expect(vars["--eb-gender-female"]).toBe("#f28fb8");
+    expect(vars["--eb-gender-male-herm"]).toBe("#69c0e0");
+    expect(vars["--eb-gender-cunt-boy"]).toBe("#8fc873");
+  });
+
+  it("flips to the light gender palette on parchment (#177)", () => {
+    const vars = themeVariables("dusk", "parchment");
+    expect(vars["--eb-gender-male"]).toBe("#2f5fb0");
+    expect(vars["--eb-gender-female"]).toBe("#a63368");
+    expect(vars["--eb-gender-transgender"]).toBe("#276b5b");
+  });
+
+  it("every gender colour clears AA (4.5:1) on its member-list ground", () => {
+    const lum = (hex: string) => {
+      const ch = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const lin = ch.map((v) =>
+        v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
+      );
+      return 0.2126 * lin[0]! + 0.7152 * lin[1]! + 0.0722 * lin[2]!;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    };
+    // Dark palette checked against the lighter of the two dark side2 grounds.
+    const darkGround = BASE_THEMES.slate.side2;
+    for (const hex of Object.values(GENDER_PALETTE)) {
+      expect(ratio(hex, darkGround)).toBeGreaterThanOrEqual(4.5);
+    }
+    const lightGround = BASE_THEMES.parchment.side2;
+    for (const hex of Object.values(GENDER_PALETTE_LIGHT)) {
+      expect(ratio(hex, lightGround)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it("colorblind mode swaps status hues per ground (M9)", () => {
     expect(themeVariables("dusk", "slate", true)["--eb-ok"]).toBe("#56b4e9");
     expect(themeVariables("dusk", "parchment", true)["--eb-ok"]).toBe(
@@ -91,6 +137,20 @@ describe("nickColor", () => {
     expect(nickColor("Nyx Firemane")).toMatch(/^var\(--eb-nick-[0-7]\)$/);
     // Every slot the vars can reference exists in both palettes.
     expect(NICK_PALETTE).toHaveLength(8);
+  });
+});
+
+describe("genderColorVar", () => {
+  it("maps wire genders to their token, case-insensitively", () => {
+    expect(genderColorVar("Male")).toBe("var(--eb-gender-male)");
+    expect(genderColorVar("male-herm")).toBe("var(--eb-gender-male-herm)");
+    expect(genderColorVar("Cunt-boy")).toBe("var(--eb-gender-cunt-boy)");
+  });
+
+  it("returns undefined for None, unknown, and missing genders", () => {
+    expect(genderColorVar("None")).toBeUndefined();
+    expect(genderColorVar("Wizard")).toBeUndefined();
+    expect(genderColorVar(undefined)).toBeUndefined();
   });
 });
 

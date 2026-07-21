@@ -6,13 +6,17 @@
 // right-click opens the MemberContextMenu — the f-list.net website link
 // lives there.
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { MemberDto } from "@emberchat/protocol";
+import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import { presenceDot } from "../../lib/presence.js";
+import { loadSocial } from "../../lib/social.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
+import { genderColorVar } from "../../theme/tokens.js";
 import { Avatar } from "../common/Avatar.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
+import { groupMembers, nameSet } from "./member-sort.js";
 import { roleFor, type ChannelRole } from "./member-roles.js";
 import styles from "./chat.module.css";
 
@@ -25,40 +29,6 @@ const DOT_COLOR = {
 /** Rough pre-clamp so the menu doesn't flash off-screen for a frame; the
  * menu itself re-clamps against its measured size once rendered. */
 const MENU_WIDTH = 216;
-
-interface Group {
-  label: string;
-  members: MemberDto[];
-  role: ChannelRole;
-}
-
-function groupMembers(channel: ChannelView): Group[] {
-  const byName = (a: MemberDto, b: MemberDto) =>
-    a.character.localeCompare(b.character);
-
-  const groups: Group[] = [
-    { label: "Owner", role: "owner", members: [] },
-    { label: "Admins", role: "op", members: [] },
-    { label: "Online", role: null, members: [] },
-    { label: "Idle", role: null, members: [] },
-  ];
-  for (const member of channel.members) {
-    const role = roleFor(member.character, channel.oplist);
-    if (role === "owner") {
-      groups[0]!.members.push(member);
-    } else if (role === "op") {
-      groups[1]!.members.push(member);
-    } else if (presenceDot(true, member.status) === "ok") {
-      groups[2]!.members.push(member);
-    } else {
-      groups[3]!.members.push(member);
-    }
-  }
-  for (const group of groups) {
-    group.members.sort(byName);
-  }
-  return groups.filter((group) => group.members.length > 0);
-}
 
 interface MenuState {
   member: MemberDto;
@@ -79,7 +49,20 @@ export function MemberList({
   const viewerChatop = useSessionsStore(
     (s) => s.sessions[identityId]?.chatop ?? false,
   );
+  const social = useSessionsStore((s) => s.sessions[identityId]?.social);
   const viewerRole = roleFor(ownCharacter, channel.oplist);
+
+  // Friends/bookmarks drive the sort tiers (#178); lazily loaded, so ask once.
+  useEffect(() => {
+    void loadSocial(identityId);
+  }, [identityId]);
+
+  const groups = groupMembers({
+    members: channel.members,
+    oplist: channel.oplist,
+    friends: nameSet(social?.friends),
+    bookmarks: nameSet(social?.bookmarks),
+  });
 
   function openMenu(
     event: ReactMouseEvent,
@@ -104,8 +87,8 @@ export function MemberList({
         <span className={styles.membersCount}>{channel.members.length}</span>
       </div>
       <div className={styles.membersScroll} role="list">
-        {groupMembers(channel).map((group) => (
-          <div key={group.label}>
+        {groups.map((group) => (
+          <div key={group.key}>
             <div className={styles.memberGroup}>{group.label}</div>
             {group.members.map((member) => (
               <MemberRow
@@ -150,6 +133,12 @@ function MemberRow({
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
   const dot = presenceDot(true, member.status);
+  // Status shows on a second line under the name (#217). BBCode is stripped to
+  // its text content — one-line/dense context, raw tags must never show (#210).
+  const status = member.statusmsg ? bbcodeToText(member.statusmsg) : "";
+  // Gender tint is supplementary (#177): the name keeps AA contrast regardless,
+  // so it stays fully readable without the colour.
+  const genderColor = genderColorVar(member.gender);
   return (
     // Left-click = mini profile card anchored to the row (§13);
     // right-click = menu.
@@ -163,33 +152,38 @@ function MemberRow({
       onContextMenu={onContextMenu}
     >
       <span className={styles.memberAvatar}>
-        <Avatar name={member.character} size={22} />
+        <Avatar name={member.character} size={30} />
         <span
           className={styles.memberDot}
           style={{ background: DOT_COLOR[dot] }}
           data-dot={dot}
         />
       </span>
-      {role === "owner" && (
-        <span className={`${styles.roleGlyph} ${styles.roleOwner ?? ""}`}>
-          ~
+      <span className={styles.memberBody}>
+        <span className={styles.memberNickLine}>
+          {role === "owner" && (
+            <span className={`${styles.roleGlyph} ${styles.roleOwner ?? ""}`}>
+              ~
+            </span>
+          )}
+          {role === "op" && (
+            <span className={`${styles.roleGlyph} ${styles.roleAdmin ?? ""}`}>
+              @
+            </span>
+          )}
+          <span
+            className={`${styles.memberNick} ${role === null ? "" : (styles.op ?? "")}`}
+            style={genderColor ? { color: genderColor } : undefined}
+          >
+            {member.character}
+          </span>
         </span>
-      )}
-      {role === "op" && (
-        <span className={`${styles.roleGlyph} ${styles.roleAdmin ?? ""}`}>
-          @
-        </span>
-      )}
-      <span
-        className={`${styles.memberNick} ${role === null ? "" : (styles.op ?? "")}`}
-      >
-        {member.character}
+        {status && (
+          <span className={styles.memberStatus} title={status}>
+            {status}
+          </span>
+        )}
       </span>
-      {member.statusmsg && (
-        <span className={styles.memberStatus} title={member.statusmsg}>
-          {member.statusmsg}
-        </span>
-      )}
     </button>
   );
 }
