@@ -90,6 +90,9 @@ export function MessageLog({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  // Mirrors atBottomRef for rendering — the "Jump to recent" pill shows
+  // while the user is scrolled away from the newest messages.
+  const [atBottom, setAtBottom] = useState(true);
   const loadingRef = useRef(false);
   /** Message id to keep in place after a history page prepends. */
   const anchorRef = useRef<number>(undefined);
@@ -188,12 +191,58 @@ export function MessageLog({
     if (!el) {
       return;
     }
-    atBottomRef.current =
+    const bottom =
       el.scrollTop + el.clientHeight >= el.scrollHeight - AT_BOTTOM_SLACK_PX;
+    atBottomRef.current = bottom;
+    setAtBottom(bottom);
     if (el.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
       void loadOlder();
     }
   }
+
+  // Snap to the newest messages. When parked in the detached history view
+  // that means "take me back to now" (drop the frozen tail); otherwise it is
+  // a plain scroll to the bottom of the loaded buffer.
+  function jumpToRecent() {
+    if (detachedTail) {
+      void useMessagesStore.getState().backToPresent(identityId, convId);
+      return;
+    }
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+    atBottomRef.current = true;
+    setAtBottom(true);
+  }
+
+  // Whether there is a newer position to jump to. Detached tail always
+  // qualifies; otherwise it is the "scrolled up past the slack" state.
+  const canJumpToRecent = detachedTail || !atBottom;
+
+  // Escape returns to the newest messages (Discord parity). This listens in
+  // the bubble phase with no stopPropagation, so any open popover/menu —
+  // which consume Escape in the capture phase — closes first and only an
+  // otherwise-unhandled Escape reaches here. Focus in the composer is fine:
+  // the composer does not swallow a bare Escape.
+  useEffect(() => {
+    if (!canJumpToRecent) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        jumpToRecent();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+    // jumpToRecent closes over identityId/convId/detachedTail, all stable
+    // for the effect's lifetime aside from detachedTail (in the deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canJumpToRecent, detachedTail, identityId, convId]);
 
   async function loadOlder() {
     const current = useMessagesStore.getState().buffers[convId];
@@ -244,6 +293,7 @@ export function MessageLog({
   }
 
   return (
+    <div className={styles.logWrap}>
     <div
       className={logClass}
       style={styleVars}
@@ -324,6 +374,17 @@ export function MessageLog({
             <PendingLine key={item.id} item={item} />
           ))}
         </div>
+      )}
+    </div>
+      {canJumpToRecent && (
+        <button
+          type="button"
+          className={styles.jumpToRecent}
+          onClick={jumpToRecent}
+          data-testid="jump-to-recent"
+        >
+          Jump to newest ↓
+        </button>
       )}
     </div>
   );
