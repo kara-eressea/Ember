@@ -26,9 +26,16 @@ import { ComposerToolbar } from "./ComposerToolbar.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
 import { HelpPanel } from "./HelpPanel.js";
+import { roleFor } from "./member-roles.js";
 import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
-import { parseSlash, SlashUsageError } from "./slash.js";
+import {
+  parseSlash,
+  suggestCommands,
+  SlashUsageError,
+  type SlashHint,
+} from "./slash.js";
+import { SlashAutocomplete } from "./SlashAutocomplete.js";
 import styles from "./chat.module.css";
 
 /** The textarea grows with its content up to this, then scrolls. */
@@ -51,6 +58,9 @@ export interface ComposerProps {
   convId: string;
   /** Channel key when the conversation is a channel (icon_blacklist check). */
   channelKey?: string;
+  /** Owner-first oplist of the active channel — gates moderator commands in
+   * the slash autocomplete (#235). Empty/omitted in DMs. */
+  oplist?: readonly string[];
   /** The channel's room mode (chat/ads/both) — gates the ad toggle. */
   channelMode?: string;
   /** The channel's Chat/Ads/Both view (M10, "both"-mode channels only).
@@ -70,6 +80,7 @@ export function Composer({
   session,
   convId,
   channelKey,
+  oplist,
   channelMode,
   adView,
   partner,
@@ -84,6 +95,10 @@ export function Composer({
   const [eiconAnchor, setEiconAnchor] = useState<CardAnchor>();
   const [helpOpen, setHelpOpen] = useState(false);
   const [adChosen, setAdChosen] = useState(false);
+  // Slash autocomplete (#235): the highlighted row, and an Escape flag that
+  // keeps the popover shut until the leading token changes again.
+  const [slashActive, setSlashActive] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
@@ -150,6 +165,39 @@ export function Composer({
       (key) => key.toLowerCase() === channelKey.toLowerCase(),
     );
 
+  // Slash autocomplete list for the current text. Moderator entries are gated
+  // on the identity's role in this channel — the same primitive the header's
+  // room controls use (roleFor + chatop). DMs have no channel, so channel-only
+  // commands drop out entirely.
+  const canModerate =
+    channelKey !== undefined &&
+    (roleFor(session.character, oplist ?? []) !== null || session.chatop);
+  const slashSuggestions = useMemo(
+    () =>
+      suggestCommands(text, {
+        inChannel: channelKey !== undefined,
+        canModerate,
+      }),
+    [text, channelKey, canModerate],
+  );
+  const showSlash = !slashDismissed && slashSuggestions.length > 0;
+  // Only the first token still being typed drives keyboard selection; once
+  // args follow, the popover is a passive signature hint (Enter still sends).
+  const slashListMode = showSlash && !/^\/\S*\s/.test(text);
+  const slashIndex = Math.min(slashActive, slashSuggestions.length - 1);
+
+  function completeSlash(hint: SlashHint) {
+    const next = `/${hint.name} `;
+    setText(next);
+    setSlashActive(0);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      el?.focus();
+      el?.setSelectionRange(next.length, next.length);
+      autogrow();
+    });
+  }
+
   function autogrow() {
     const el = inputRef.current;
     if (el) {
@@ -178,6 +226,10 @@ export function Composer({
   function onTextChange(value: string) {
     setText(value);
     autogrow();
+    // Typing reopens the autocomplete (Escape only shuts it for the text as
+    // it stood) and re-anchors the selection to the top of the list.
+    setSlashDismissed(false);
+    setSlashActive(0);
     if (partner === undefined) {
       return;
     }
@@ -399,6 +451,35 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Slash autocomplete keyboard (#235). Escape closes it from any state;
+    // arrow/Tab/Enter selection only applies while the command word is being
+    // chosen (list mode) — in signature-hint mode Enter still sends.
+    if (showSlash && event.key === "Escape") {
+      event.preventDefault();
+      setSlashDismissed(true);
+      return;
+    }
+    if (slashListMode) {
+      const count = slashSuggestions.length;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashActive((i) => (Math.min(i, count - 1) + 1) % count);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashActive((i) => (Math.min(i, count - 1) + count - 1) % count);
+        return;
+      }
+      if (event.key === "Tab" || event.key === "Enter") {
+        event.preventDefault();
+        const hint = slashSuggestions[slashIndex];
+        if (hint) {
+          completeSlash(hint);
+        }
+        return;
+      }
+    }
     // Toolbar shortcuts (spec §3): mirrored in the button tooltips.
     if (event.ctrlKey || event.metaKey) {
       const key = event.key.toLowerCase();
@@ -550,42 +631,55 @@ export function Composer({
           }}
         />
       )}
-      <div className={styles.messageBox}>
-        <ComposerToolbar
-          markdown={markdown}
-          disabled={!online}
-          text={text}
-          inputRef={inputRef}
-          sendDelaySeconds={session.sendDelaySeconds}
-          onSetDelay={setDelay}
-          onWrapFormat={wrapFormat}
-          onWrapSelection={wrapSelection}
-          onReplaceSelection={insertAtCaret}
-          onRemoveColor={removeColor}
-          onToggleEicon={(anchor) => {
-            setEiconAnchor(eiconAnchor ? undefined : anchor);
-          }}
-          onOpenHelp={() => {
-            setHelpOpen(true);
-          }}
-        />
-        <div className={styles.inputBar}>
-          <span className={styles.inputGlyph} title="Attachments arrive later">
-            +
-          </span>
-          <textarea
-            ref={inputRef}
-            className={styles.composerInput}
-            rows={1}
-            value={text}
-            onChange={(e) => {
-              onTextChange(e.target.value);
-            }}
-            onKeyDown={onKeyDown}
-            placeholder={online ? placeholder : "Session is not connected"}
-            disabled={!online}
-            aria-label="Message"
+      <div className={styles.composerField}>
+        {showSlash && (
+          <SlashAutocomplete
+            suggestions={slashSuggestions}
+            activeIndex={slashIndex}
+            onHover={setSlashActive}
+            onSelect={completeSlash}
           />
+        )}
+        <div className={styles.messageBox}>
+          <ComposerToolbar
+            markdown={markdown}
+            disabled={!online}
+            text={text}
+            inputRef={inputRef}
+            sendDelaySeconds={session.sendDelaySeconds}
+            onSetDelay={setDelay}
+            onWrapFormat={wrapFormat}
+            onWrapSelection={wrapSelection}
+            onReplaceSelection={insertAtCaret}
+            onRemoveColor={removeColor}
+            onToggleEicon={(anchor) => {
+              setEiconAnchor(eiconAnchor ? undefined : anchor);
+            }}
+            onOpenHelp={() => {
+              setHelpOpen(true);
+            }}
+          />
+          <div className={styles.inputBar}>
+            <span
+              className={styles.inputGlyph}
+              title="Attachments arrive later"
+            >
+              +
+            </span>
+            <textarea
+              ref={inputRef}
+              className={styles.composerInput}
+              rows={1}
+              value={text}
+              onChange={(e) => {
+                onTextChange(e.target.value);
+              }}
+              onKeyDown={onKeyDown}
+              placeholder={online ? placeholder : "Session is not connected"}
+              disabled={!online}
+              aria-label="Message"
+            />
+          </div>
         </div>
       </div>
       <div className={styles.composerFooter}>
