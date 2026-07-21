@@ -203,12 +203,16 @@
   align-items: baseline;
   padding: 2px 16px;
   color: var(--eb-dim);
-  font-size: 12.5px;
+  font-size: var(--eb-msg-font, 12.5px);
   font-style: italic;
 }
 
-/* Live-only join/part/quit lines (M5, "show join/part/quit" pref). */
+/* Live-only join/part/quit lines (M5, "show join/part/quit" pref). Carries
+   the standard timestamp column (#208), so it lays out like a system line. */
 .presenceLine {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
   padding: 1px 16px;
   color: var(--eb-meta);
   font-size: var(--eb-msg-meta-font, 11.5px);
@@ -240,7 +244,7 @@
 }
 
 .adBlockBody {
-  font-size: 12.5px;
+  font-size: var(--eb-msg-font, 12.5px);
   line-height: 1.5;
 }
 
@@ -263,7 +267,7 @@
   align-items: baseline;
   padding: 2px 16px;
   color: var(--eb-dim);
-  font-size: 12.5px;
+  font-size: var(--eb-msg-font, 12.5px);
 }
 
 /* Name-only eicon display: chip + hover preview (M5, decisions.md §8). */
@@ -643,6 +647,25 @@
   color: var(--eb-admin);
 }
 
+/* Row body: name line, plus an optional status line beneath it (#217).
+   Centred in the column so a status-less row sits vertically centred against
+   the larger avatar. */
+.memberBody {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.memberNickLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .memberNick {
   min-width: 0;
   overflow: hidden;
@@ -654,16 +677,17 @@
   font-weight: 600;
 }
 
+/* Status message on its own line, clamped to two lines with an ellipsis. */
 .memberStatus {
-  margin-left: auto;
-  flex: none;
-  max-width: 70px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
   color: var(--eb-meta);
   font-size: 11px;
   font-style: italic;
+  line-height: 1.3;
 }
 
 /* "New since last visit" divider — the date-divider shape in accent. */
@@ -805,6 +829,11 @@
 .emoteBody {
   font-style: italic;
   color: var(--eb-dim);
+}
+
+/* The name italicizes with the action so a /me reads as one emote (#186). */
+.emoteNick {
+  font-style: italic;
 }
 
 /* "/me's teacup" → "Name's teacup": pull back across the row gap. */
@@ -1370,6 +1399,39 @@
   height: 180px;
   background: var(--eb-hover);
   animation: pickerShimmer 1.15s linear infinite alternate;
+}
+
+/* Failed-load state (#193): the frame stays; a quiet not-found message with
+   the raw URL still reachable. Token-styled — meta text, no broken-image
+   chrome. */
+.previewError {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  padding: 22px 18px;
+  text-align: center;
+}
+
+.previewErrorGlyph {
+  font-size: 20px;
+  color: var(--eb-faint);
+}
+
+.previewErrorText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--eb-meta);
+}
+
+.previewErrorLink {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--eb-accent-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .previewFoot {

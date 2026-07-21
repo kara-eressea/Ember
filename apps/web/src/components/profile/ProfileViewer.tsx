@@ -60,6 +60,7 @@ export function ProfileViewer({
     (s) => s.identities?.find((entry) => entry.id === identityId)?.name,
   );
   const windowRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     windowRef.current?.focus();
@@ -102,21 +103,34 @@ export function ProfileViewer({
       }}
     >
       <div
-        className={styles.window}
+        className={`${styles.window} ${fullscreen ? styles.windowFull : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Profile: ${viewing}`}
         tabIndex={-1}
         ref={windowRef}
       >
-        <button
-          type="button"
-          className={styles.windowClose}
-          aria-label="Close profile"
-          onClick={onClose}
-        >
-          ✕
-        </button>
+        <div className={styles.windowControls}>
+          <button
+            type="button"
+            className={styles.windowControl}
+            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            aria-pressed={fullscreen}
+            onClick={() => {
+              setFullscreen((value) => !value);
+            }}
+          >
+            {fullscreen ? "⤡" : "⛶"}
+          </button>
+          <button
+            type="button"
+            className={styles.windowControl}
+            aria-label="Close profile"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
         <HistoryRail identityId={identityId} viewing={viewing} />
         <div className={styles.main}>
           <ViewerBody
@@ -394,11 +408,41 @@ function Header({
   const isFriend = social?.friends.some(
     (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
   );
-  const isBookmarked = social?.bookmarks.some(
-    (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
-  );
+  const isBookmarked =
+    social?.bookmarks.some(
+      (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
+    ) ?? false;
   const [tooltip, setTooltip] = useState(false);
+  // Optimistic bookmark state (#185): show the intended state instantly while
+  // the request is in flight; clear the override afterwards so the refreshed
+  // social lists (the same pathway the member menu uses) become the source of
+  // truth — on failure the server list is unchanged, so clearing reverts.
+  const [optimisticBookmark, setOptimisticBookmark] = useState<boolean>();
+  const [bookmarkPending, setBookmarkPending] = useState(false);
+  const bookmarked = optimisticBookmark ?? isBookmarked;
   const accent = nickColor(profile.name);
+
+  function toggleBookmark() {
+    const next = !bookmarked;
+    setOptimisticBookmark(next);
+    setBookmarkPending(true);
+    void api
+      .postBookmark(identityId, next ? "add" : "remove", profile.name)
+      .then(() => loadSocial(identityId, true))
+      .catch((error: unknown) => {
+        useSessionsStore
+          .getState()
+          .applyNotice(
+            identityId,
+            "error",
+            error instanceof Error ? error.message : "Couldn't update bookmark",
+          );
+      })
+      .finally(() => {
+        setOptimisticBookmark(undefined);
+        setBookmarkPending(false);
+      });
+  }
 
   return (
     <header
@@ -417,14 +461,18 @@ function Header({
               ★
             </span>
           )}
-          <span
-            className={`${styles.badge} ${
-              isBookmarked ? styles.badgeBookmarkOn : styles.badgeBookmark
+          <button
+            type="button"
+            className={`${styles.badge} ${styles.bookmarkBtn} ${
+              bookmarked ? styles.badgeBookmarkOn : styles.badgeBookmark
             }`}
-            title={isBookmarked ? "Bookmarked" : "Not bookmarked"}
+            aria-pressed={bookmarked}
+            disabled={bookmarkPending}
+            title={bookmarked ? "Remove bookmark" : "Bookmark this character"}
+            onClick={toggleBookmark}
           >
             ⚑
-          </span>
+          </button>
         </div>
         <div className={styles.metaRow}>
           fetched {ago(response.fetchedAt)}
@@ -454,13 +502,6 @@ function Header({
             </button>
           </span>
         </div>
-      </div>
-      <div className={styles.noteZone}>
-        <PrivateNote
-          identityId={identityId}
-          name={profile.name}
-          initial={response.note}
-        />
       </div>
     </header>
   );
@@ -736,30 +777,50 @@ function InsightsTab({
   ownCharacter: string | undefined;
 }) {
   const insights = useProfileStore((s) => s.insights[name.toLowerCase()]);
+  // The private note lives here now (#211) — the header corner is reserved for
+  // window controls (close + fullscreen). The saved note rides the cached
+  // profile response.
+  const note = useProfileStore(
+    (s) => s.profiles[name.toLowerCase()]?.response?.note ?? null,
+  );
   useEffect(() => {
     void loadInsights(identityId, name);
   }, [identityId, name]);
 
+  const noteBlock = (
+    <div className={styles.insightsNote}>
+      <PrivateNote identityId={identityId} name={name} initial={note} />
+    </div>
+  );
+
   if (!insights) {
-    return <div className={styles.shimmer} style={{ height: 120 }} />;
+    return (
+      <>
+        {noteBlock}
+        <div className={styles.shimmer} style={{ height: 120 }} />
+      </>
+    );
   }
   if (insights === "error") {
     return (
-      <EmptyState glyph="?" title="Couldn't load insights">
-        Reading your local history with {name} failed.
-        <span className={styles.emptyActions}>
-          <button
-            type="button"
-            className={styles.button}
-            onClick={() => {
-              resetInsights(name);
-              void loadInsights(identityId, name);
-            }}
-          >
-            Retry
-          </button>
-        </span>
-      </EmptyState>
+      <>
+        {noteBlock}
+        <EmptyState glyph="?" title="Couldn't load insights">
+          Reading your local history with {name} failed.
+          <span className={styles.emptyActions}>
+            <button
+              type="button"
+              className={styles.button}
+              onClick={() => {
+                resetInsights(name);
+                void loadInsights(identityId, name);
+              }}
+            >
+              Retry
+            </button>
+          </span>
+        </EmptyState>
+      </>
     );
   }
   const crossed =
@@ -768,14 +829,18 @@ function InsightsTab({
     insights.sharedChannels.length > 0;
   if (!crossed) {
     return (
-      <EmptyState glyph="⇄" title="You haven't crossed paths yet">
-        Once you share a channel or exchange messages with {name}, your history
-        together will show up here.
-      </EmptyState>
+      <>
+        {noteBlock}
+        <EmptyState glyph="⇄" title="You haven't crossed paths yet">
+          Once you share a channel or exchange messages with {name}, your
+          history together will show up here.
+        </EmptyState>
+      </>
     );
   }
   return (
     <>
+      {noteBlock}
       <div className={styles.insightsEyebrow}>
         <span className={styles.noteDot} aria-hidden />
         YOU × {name}

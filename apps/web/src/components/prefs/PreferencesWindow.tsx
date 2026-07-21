@@ -88,7 +88,14 @@ export function PreferencesWindow({
             </button>
           ))}
           <div className={styles.railFoot}>
-            Account &amp; profile live on the server website ↗
+            <a
+              className={styles.railFootLink}
+              href="https://www.f-list.net/account_settings.php"
+              target="_blank"
+              rel="noopener"
+            >
+              F-List account ↗
+            </a>
           </div>
         </nav>
         <section className={styles.pane}>

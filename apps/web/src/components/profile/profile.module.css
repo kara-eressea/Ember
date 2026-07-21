@@ -15,7 +15,10 @@
   position: relative; /* the Images lightbox overlays the modal, not the page */
   display: flex;
   width: 900px;
-  height: 640px;
+  /* Fill the viewport height with pleasant padding (#183) rather than the
+     old fixed 640px, so tall profiles use the space they have before the
+     content region scrolls. */
+  height: calc(100vh - 56px);
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
   overflow: hidden;
@@ -26,6 +29,13 @@
   outline: none;
 }
 
+/* Fullscreen toggle (#213): widen to fill the viewport, keeping padding so
+   the app stays partly visible behind the dimmed overlay. */
+.windowFull {
+  width: calc(100vw - 56px);
+  height: calc(100vh - 56px);
+}
+
 .main {
   display: flex;
   flex: 1;
@@ -33,13 +43,18 @@
   min-width: 0;
 }
 
-/* Close ✕ in the window's upper-right — same treatment as the other
-   closable surfaces (prefs, channel browser). */
-.windowClose {
+/* Window controls (close + fullscreen) in the upper-right — same treatment
+   as the other closable surfaces (prefs, channel browser). */
+.windowControls {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 5;
+  display: flex;
+  gap: 2px;
+}
+
+.windowControl {
   padding: 2px 8px;
   font-size: 14px;
   color: var(--eb-dim);
@@ -49,7 +64,7 @@
   border-radius: var(--eb-radius);
 }
 
-.windowClose:hover {
+.windowControl:hover {
   background: var(--eb-hover);
   color: var(--eb-text);
 }
@@ -246,6 +261,32 @@
   color: var(--eb-accent);
 }
 
+/* Interactive bookmark toggle in the header (#185) — the badge look, made
+   actionable with hover/active/pressed feedback. */
+.bookmarkBtn {
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.bookmarkBtn:hover:not(:disabled) {
+  color: var(--eb-accent);
+  background: var(--eb-hover);
+  border-color: color-mix(in srgb, var(--eb-accent) 45%, var(--eb-border));
+}
+
+.bookmarkBtn:active:not(:disabled) {
+  background: var(--eb-accent-soft);
+  transform: translateY(1px);
+}
+
+.bookmarkBtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .metaRow {
   display: flex;
   gap: 8px;
@@ -314,9 +355,9 @@
 
 /* ── §4 PrivateNote ───────────────────────────────────────────────────── */
 
-.noteZone {
-  flex-shrink: 0;
-  align-self: flex-start;
+/* The note now composes at the top of the Insights tab (#211). */
+.insightsNote {
+  margin-bottom: 14px;
 }
 
 .noteAdd {
@@ -862,6 +903,9 @@
   display: flex;
   flex-direction: column;
   width: 300px;
+  /* Reserve a stable height so the card doesn't jump as content loads in
+     (#182): the skeleton and the loaded card settle at a similar size. */
+  min-height: 232px;
   overflow: auto;
   color: var(--eb-text);
   background: var(--eb-side);
@@ -943,9 +987,18 @@
 }
 
 .cardActions {
+  /* Pin the actions to the card's bottom edge and let them sit above any
+     scrolling content, so the "Open profile" action stays reachable even
+     when a tall card has to scroll (#182). margin-top:auto keeps them at
+     the bottom when the card is taller than its content. */
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   gap: 8px;
+  margin-top: auto;
   padding: 12px 14px 14px;
+  background: var(--eb-side);
 }
 
 .cardPrimary {
@@ -1302,8 +1355,17 @@
   max-width: 70%;
   max-height: 380px;
   object-fit: contain;
+  cursor: zoom-in;
   border: 1px solid var(--eb-border);
   border-radius: var(--eb-radius);
+}
+
+/* Zoomed (§11 issue #180): fill the available lightbox area, keeping a small
+   margin so the nav bar stays visible; click again to return to fit size. */
+.lightboxImgZoomed {
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 60px);
+  cursor: zoom-out;
 }
 
 .lightboxDesc {

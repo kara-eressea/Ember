@@ -18,7 +18,9 @@ import {
   upstreamStatus,
   withTicket as withTicketFor,
 } from "../flist-api/with-ticket.js";
+import type { GatewayHub } from "../gateway/gateway.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
+import { enrichSocial, type SocialCache, type SocialLists } from "./cache.js";
 
 const characterRow = z.object({
   name: z.string(),
@@ -42,6 +44,12 @@ export interface SocialRoutesOptions {
   sessions: SessionRegistry;
   tickets: TicketManagerRegistry;
   flistApi: FlistApiClient;
+  /** Per-identity in-memory cache (#194) — also read by the gateway
+   * snapshot, so a second device attaches without new F-List calls. */
+  cache: SocialCache;
+  /** Fan-out for social.updated (#199) — every attached device sees
+   * bookmark changes instantly. */
+  hub: GatewayHub;
 }
 
 interface IdentityRow {
@@ -57,7 +65,19 @@ export async function socialRoutes(
   options: SocialRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, sessions, tickets, flistApi } = options;
+  const { db, sessions, tickets, flistApi, cache, hub } = options;
+
+  /** Enriched lists from the live roster (case-insensitive — #218). */
+  function enriched(identityId: string, lists: SocialLists) {
+    return enrichSocial(lists, sessions.get(identityId)?.state.characters);
+  }
+
+  function broadcastSocial(identityId: string, lists: SocialLists): void {
+    hub.broadcast(identityId, {
+      kind: "social.updated",
+      d: { social: enriched(identityId, lists) },
+    });
+  }
 
   app.addHook("preHandler", app.authenticate);
 
@@ -95,6 +115,9 @@ export async function socialRoutes(
     {
       schema: {
         params: z.object({ identityId: z.uuid() }),
+        // refresh=1 (the manual ↻ button) bypasses the cache; a plain GET
+        // is served from cache while fresh — attach is instant (#194).
+        querystring: z.object({ refresh: z.literal("1").optional() }),
         response: {
           200: socialResponse,
           404: errorResponse,
@@ -103,7 +126,7 @@ export async function socialRoutes(
           503: errorResponse,
         },
       },
-      // Each hit is four upstream calls on the shared 1 req/s budget. The
+      // A cache-missing hit is four upstream calls on the shared 1 req/s budget. The
       // limiter runs pre-auth, so the key MUST NOT come from the request
       // (a path-param key would mint fresh buckets per rotated UUID and
       // bypass every ceiling — M6 audit). Per-IP with a generous ceiling:
@@ -118,6 +141,11 @@ export async function socialRoutes(
       );
       if (!identity) {
         return reply.code(404).send({ error: "Identity not found" });
+      }
+      if (request.query.refresh !== "1" && cache.fresh(identity.id)) {
+        // Cache hit inside the TTL: no upstream calls, presence re-read
+        // from the live roster at serve time.
+        return enriched(identity.id, cache.get(identity.id)!);
       }
       let bookmarks, friends, incoming, outgoing;
       try {
@@ -137,24 +165,15 @@ export async function socialRoutes(
       if (failed) {
         return reply.code(502).send({ error: failed.error });
       }
-      // Presence enrichment from the live roster (empty when detached —
-      // the names still render, just without status).
-      const roster = sessions.get(identity.id)?.state.characters;
-      const enrich = (name: string) => {
-        const presence = roster?.get(name);
-        return {
-          name,
-          online: presence !== undefined,
-          status: presence?.status ?? "offline",
-          statusmsg: presence?.statusmsg ?? "",
-        };
-      };
-      return {
-        bookmarks: (bookmarks.characters ?? []).map(enrich),
-        // Account-wide pairs scoped to this identity: dest is our character.
+      // Cache the raw identity-scoped lists; enrichment happens at serve
+      // time against the live roster so presence stays current (#218).
+      // Account-wide pairs scoped to this identity: source is our
+      // character, dest the friend (same orientation as friend-remove).
+      const lists: SocialLists = {
+        bookmarks: bookmarks.characters ?? [],
         friends: (friends.friends ?? [])
-          .filter((pair) => pair.dest === identity.character)
-          .map((pair) => enrich(pair.source)),
+          .filter((pair) => pair.source === identity.character)
+          .map((pair) => pair.dest),
         incoming: (incoming.requests ?? [])
           .filter((entry) => entry.dest === identity.character)
           .map((entry) => ({ id: entry.id, name: entry.source })),
@@ -162,6 +181,11 @@ export async function socialRoutes(
           .filter((entry) => entry.source === identity.character)
           .map((entry) => ({ id: entry.id, name: entry.dest })),
       };
+      cache.set(identity.id, lists);
+      // Every upstream fetch fans out, so a forced refresh on one device
+      // syncs every other attached device too (#199).
+      broadcastSocial(identity.id, lists);
+      return enriched(identity.id, lists);
     },
   );
 
@@ -206,6 +230,13 @@ export async function socialRoutes(
       }
       if (result.error !== "") {
         return reply.code(502).send({ error: result.error });
+      }
+      // Fold the change into the cache and fan it out — every attached
+      // device's bookmark rows update instantly (#199). A cache miss
+      // means nothing was loaded yet; the first GET fetches the truth.
+      const patched = cache.patchBookmark(identity.id, action, name);
+      if (patched) {
+        broadcastSocial(identity.id, patched);
       }
       return { ok: true as const };
     },
@@ -285,6 +316,10 @@ export async function socialRoutes(
       if (result.error !== "") {
         return reply.code(502).send({ error: result.error });
       }
+      // Friend/request effects (pair rows, request ids) cannot be patched
+      // locally — drop the cache so the client's follow-up refresh (and
+      // everyone else's next GET) refetches and fans out fresh lists.
+      cache.invalidate(identity.id);
       return { ok: true as const };
     },
   );

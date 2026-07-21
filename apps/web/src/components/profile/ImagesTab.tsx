@@ -101,10 +101,14 @@ function Lightbox({
   onClose: () => void;
 }) {
   const image = images[index];
+  const [zoomed, setZoomed] = useState(false);
+  // Each image opens fit-to-box, so reset zoom on every navigation.
   const previous = () => {
+    setZoomed(false);
     onNavigate((index - 1 + images.length) % images.length);
   };
   const next = () => {
+    setZoomed(false);
     onNavigate((index + 1) % images.length);
   };
 
@@ -142,9 +146,17 @@ function Lightbox({
       }}
     >
       <img
-        className={styles.lightboxImg}
+        className={`${styles.lightboxImg} ${
+          zoomed ? styles.lightboxImgZoomed : ""
+        }`}
         src={image.url}
         alt={image.description || `Image ${String(index + 1)}`}
+        aria-label={zoomed ? "Zoom out" : "Zoom in"}
+        onClick={(event) => {
+          // Toggle zoom without bubbling to the backdrop (which closes).
+          event.stopPropagation();
+          setZoomed((value) => !value);
+        }}
       />
       {image.description !== "" && (
         <span className={styles.lightboxDesc}>{image.description}</span>

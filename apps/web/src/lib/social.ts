@@ -1,7 +1,9 @@
-// Lazy loader for the per-identity social lists (M6 step 7). One GET is
-// four upstream F-List calls on a 1 req/s budget, so loads are
-// single-flighted per identity and reused until a mutation forces a
-// refresh (no TTL — presence on the rows is a nicety, not live state).
+// Lazy loader for the per-identity social lists (M6 step 7). The server
+// caches the lists (#194) — a plain GET is served from cache, the snapshot
+// seeds them on attach, and social.updated fan-out keeps them live (#199).
+// Loads stay single-flighted per identity; force (the manual refresh, and
+// mutations whose upstream effects the server cannot patch) refetches from
+// F-List — four upstream calls on a 1 req/s budget.
 
 import { useSessionsStore } from "../stores/sessions.js";
 import { api } from "./api.js";
@@ -22,7 +24,7 @@ export function loadSocial(identityId: string, force = false): Promise<void> {
   // overlaps the initial load — joining it would render pre-mutation lists
   // (M6 audit). Chain a fresh fetch behind whatever is running instead.
   const fetchNow = () =>
-    api.getSocial(identityId).then((data) => {
+    api.getSocial(identityId, force).then((data) => {
       useSessionsStore
         .getState()
         .applySocial(identityId, { ...data, fetchedAt: Date.now() });

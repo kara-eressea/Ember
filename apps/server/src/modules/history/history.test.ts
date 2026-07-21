@@ -448,10 +448,12 @@ describe("history sink", () => {
       }
     });
 
-    // Restart recovery: exactly the channels the identity was in.
+    // Restart recovery: the channels the identity was in, plus every pin —
+    // pinned means auto-rejoin (#169) even when the joined flag was lost.
     expect((await app.history.channelsForResume(identityId)).sort()).toEqual([
       "Casual",
       "Pinned Joined",
+      "Pinned Left",
     ]);
 
     // Explicit return from a log-off: the pinned seed is a pure read…
@@ -477,9 +479,26 @@ describe("history sink", () => {
     expect(events.some((c) => c.id === casual.id && !c.joined)).toBe(true);
 
     // A later restart recovery no longer resurrects the reconciled channel.
+    expect((await app.history.channelsForResume(identityId)).sort()).toEqual([
+      "Pinned Joined",
+      "Pinned Left",
+    ]);
+
+    // Explicit leave unpins (#169) — and the auto-rejoin union drops it.
+    await app.history.unpinChannelForLeave(identityId, "Pinned Left");
+    expect(
+      events.some((c) => c.channelKey === "Pinned Left" && !c.pinned),
+    ).toBe(true);
     expect(await app.history.channelsForResume(identityId)).toEqual([
       "Pinned Joined",
     ]);
+    expect((await app.history.pinnedChannelKeys(identityId)).sort()).toEqual([
+      "Pinned Joined",
+    ]);
+    // Unpinning an already-unpinned channel is a silent no-op.
+    const before = events.length;
+    await app.history.unpinChannelForLeave(identityId, "Pinned Left");
+    expect(events.length).toBe(before);
 
     // Pin round trip: persists, emits, scoped to the owning identity.
     const unpinned = await app.history.setPinned(

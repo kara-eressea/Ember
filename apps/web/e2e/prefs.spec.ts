@@ -38,9 +38,12 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   const dialog = page.getByRole("dialog", { name: "Preferences" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "General" })).toBeVisible();
-  await expect(
-    dialog.getByText("Account & profile live on the server website"),
-  ).toBeVisible();
+  const accountLink = dialog.getByRole("link", { name: /F-List account/ });
+  await expect(accountLink).toBeVisible();
+  await expect(accountLink).toHaveAttribute(
+    "href",
+    "https://www.f-list.net/account_settings.php",
+  );
   // The About surface shows the running version (M7 step 5).
   await expect(dialog.getByText(/EmberChat v0\.0\.0/)).toBeVisible();
 
@@ -86,14 +89,16 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     sprout.send("JCH", { channel: "Terrarium" });
     await expect(
       page.getByTestId("presence-line").filter({ hasText: "Fenwick Sprout" }),
-    ).toHaveText("Fenwick Sprout joined", { timeout: 10_000 });
+      // The line now leads with a timestamp column (#208), so match the
+      // message text rather than the full line.
+    ).toContainText("Fenwick Sprout joined", { timeout: 10_000 });
   } finally {
     sprout.close();
   }
   // The socket drop is an FLN — the quit line follows the join line.
   await expect(
     page.getByTestId("presence-line").filter({ hasText: "went offline" }),
-  ).toHaveText("Fenwick Sprout went offline", { timeout: 10_000 });
+  ).toContainText("Fenwick Sprout went offline", { timeout: 10_000 });
 
   // Toggling the pref off hides the lines — they are render-gated.
   await page.getByRole("button", { name: "Preferences" }).click();

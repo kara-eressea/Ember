@@ -10,7 +10,7 @@
 // `message.new` events must carry the persisted messages.id, so live fan-out
 // happens after (and in the same order as) persistence, never before.
 
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
 import { conversations, ignores, messages } from "../../db/schema.js";
@@ -282,13 +282,43 @@ export class HistorySink {
       }
     }
     const id = await this.#conversationId(identityId, target);
+    // Opening always (re)flags the DM as open: for PMs the joined flag is
+    // the "window is open" bit (pm.close clears it, snapshots skip closed
+    // rows). Emitted so every attached tab re-adds the conversation.
     const [row] = await this.#db
-      .select()
-      .from(conversations)
+      .update(conversations)
+      .set({ joined: true })
       .where(eq(conversations.id, id))
-      .limit(1);
+      .returning();
     if (!row) {
       throw new Error("conversation vanished after find-or-create");
+    }
+    this.events.emit("conversation", { identityId, conversation: row });
+    return row;
+  }
+
+  /**
+   * Close a PM conversation (gateway `pm.close`): the row and its history
+   * stay, only the joined ("window open") flag drops, so snapshots stop
+   * listing it. A later pm.open or inbound message reopens it.
+   */
+  async closePmConversation(
+    identityId: string,
+    conversationId: string,
+  ): Promise<ConversationRow | undefined> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({ joined: false })
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "pm"),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
     }
     return row;
   }
@@ -362,11 +392,45 @@ export class HistorySink {
 
   /**
    * Channel seed for recovery (decisions.md §9 scenario 2 — restart, outage:
-   * the user never chose to leave): exactly the channels the identity was
-   * in, per the joined flags the sink itself maintains.
+   * the user never chose to leave): the channels the identity was in, per
+   * the joined flags the sink itself maintains, plus every pinned channel —
+   * pinned means auto-rejoin (#169), so a pin survives even a recovery
+   * where the joined flag was lost mid-outage. Explicitly leaving a channel
+   * unpins it (see unpinChannelForLeave), so this union never resurrects a
+   * channel the user chose to leave.
    */
   channelsForResume(identityId: string): Promise<string[]> {
-    return this.#channelKeys(identityId, eq(conversations.joined, true));
+    return this.#channelKeys(
+      identityId,
+      or(eq(conversations.joined, true), eq(conversations.pinned, true)),
+    );
+  }
+
+  /**
+   * Explicit leave unpins (#169): pinned means auto-rejoin, and a channel
+   * the user deliberately left must not be dragged back on the next
+   * reconnect — the pin and the leave would fight forever. Scoped to
+   * channel rows; no-op (and no event) when the row wasn't pinned.
+   */
+  async unpinChannelForLeave(
+    identityId: string,
+    channelKey: string,
+  ): Promise<void> {
+    const [row] = await this.#db
+      .update(conversations)
+      .set({ pinned: false })
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+          eq(conversations.channelKey, channelKey),
+          eq(conversations.pinned, true),
+        ),
+      )
+      .returning();
+    if (row) {
+      this.events.emit("conversation", { identityId, conversation: row });
+    }
   }
 
   /**
@@ -400,7 +464,7 @@ export class HistorySink {
 
   async #channelKeys(
     identityId: string,
-    extraFilter: ReturnType<typeof eq>,
+    extraFilter: ReturnType<typeof eq> | ReturnType<typeof or>,
   ): Promise<string[]> {
     const rows = await this.#db
       .select({ channelKey: conversations.channelKey })
@@ -442,6 +506,28 @@ export class HistorySink {
         identityId,
         entry.target,
       );
+      // A PM message into a closed conversation reopens its window: flip
+      // the joined flag back and fan the row out so every tab re-adds the
+      // DM before the message.new lands. Conditional, so the common case
+      // (already open) costs nothing beyond the WHERE.
+      if (entry.target.kind === "pm") {
+        const [reopened] = await this.#db
+          .update(conversations)
+          .set({ joined: true })
+          .where(
+            and(
+              eq(conversations.id, conversationId),
+              eq(conversations.joined, false),
+            ),
+          )
+          .returning();
+        if (reopened) {
+          this.events.emit("conversation", {
+            identityId,
+            conversation: reopened,
+          });
+        }
+      }
       // Matched inside the serial task, before the insert: the flag is part
       // of the row (immutable, decisions.md §10), never a later update.
       const mention =
@@ -593,6 +679,9 @@ export class HistorySink {
           channelKey: target.kind === "channel" ? target.key : null,
           partnerCharacter: target.kind === "pm" ? target.key : null,
           title: target.title,
+          // PMs are born open (joined doubles as the "window open" flag);
+          // channels start unjoined until the JCH echo flips them.
+          joined: target.kind === "pm",
         })
         .returning();
       if (!created) {

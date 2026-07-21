@@ -88,6 +88,19 @@ Assign each nick a stable color: `palette[ sum(charCodes(nick)) % palette.length
 Dark-theme palette: `['#a892c6','#c294b0','#8f9bc9','#a6bd94','#88b0b8','#cfa2d4','#c69ac2','#98bda8']` (rotate hues with accent).
 Parchment palette (same hues, `mix(c, text, 0.52)` — nicks are must-read body text): `['#695c72','#755d67','#5d6073','#68715a','#596a6b','#7b6478','#776070','#617163']`.
 
+### Gender colors (member list)
+Colour member-list character names by their F-Chat gender — supplementary info only: the name stays full-contrast readable without the hue, and gender is never encoded in colour alone (colorblind-safe). Written as `--eb-gender-<slug>`; unknown / `None` genders take the default text colour. Every value clears WCAG AA (4.5:1) on the member-list ground `side2` for all three bases (dark values checked against the lighter slate `side2` `#2a2725`; light values against parchment `side2` `#e7dfd0`).
+
+| Gender | slug | Dark | Parchment |
+|---|---|---|---|
+| Male | `male` | `#6ea8ff` | `#2f5fb0` |
+| Female | `female` | `#f28fb8` | `#a63368` |
+| Transgender | `transgender` | `#7cc7b5` | `#276b5b` |
+| Herm | `herm` | `#c39be6` | `#7b46b0` |
+| Shemale | `shemale` | `#e79cd6` | `#963982` |
+| Male-Herm | `male-herm` | `#69c0e0` | `#1c6187` |
+| Cunt-boy | `cunt-boy` | `#8fc873` | `#41692a` |
+
 ---
 
 ## Layout — AppShell
@@ -191,7 +204,7 @@ Below the log, `padding: 0 20px 16px`. Toolbar + input read as **one bordered Me
 Right column on `side2`, `border-left`.
 - **Header:** "Members {count}" (13px/700, count mono `meta`), bottom border.
 - **Grouped** by presence/role: **Owner · Admins · Online · Idle · Offline**. Group head 10px/700 uppercase `meta`.
-- **MemberRow:** padding `4px 12px`, `radius`. 22px avatar (per-nick color, mono initial) with presence dot (8px, `2px solid side2` ring); role glyph (see role system); nick (13px, weight per role, ellipsis); optional italic status text (`meta`, right-aligned). Offline rows read as secondary: name on `dim` full opacity, avatar `.55`, dot `faint` — no blanket row opacity.
+- **MemberRow:** padding `4px 8px`, `radius`. 30px avatar (real F-List image, initial fallback) with presence dot (8px, `2px solid side2` ring); to its right a body column, vertically centred against the avatar: nick line (role glyph + nick 13px, weight per role, gender colour, ellipsis) and, when present, an italic status line beneath (`meta`, 11px, BBCode stripped to text, clamped to two lines with ellipsis). A status-less row centres the name against the avatar. Offline rows read as secondary: name on `dim` full opacity, avatar `.55`, dot `faint` — no blanket row opacity.
 - **Behavior:** left-click = open profile (server website, new tab); right-click = MemberContextMenu.
 - **Data:** `{ nick, role, presence, status? }` grouped.
 

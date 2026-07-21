@@ -363,10 +363,12 @@ export const api = {
   },
 
   /** Bookmarks, friends and friend requests (M6 step 7), scoped to the
-   * identity's character and presence-enriched by the server. Four F-List
-   * API calls upstream on a 1 req/s budget — call sparingly. */
-  getSocial(identityId: string) {
-    return apiRequest<SocialDto>(`/identities/${identityId}/social`, {
+   * identity's character and presence-enriched by the server. Served from
+   * the server-side cache while fresh (#194); refresh forces the four
+   * upstream F-List calls (1 req/s budget) — use it sparingly. */
+  getSocial(identityId: string, refresh = false) {
+    const suffix = refresh ? "?refresh=1" : "";
+    return apiRequest<SocialDto>(`/identities/${identityId}/social${suffix}`, {
       auth: true,
     });
   },
