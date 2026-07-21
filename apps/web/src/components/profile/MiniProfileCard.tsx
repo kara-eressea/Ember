@@ -147,12 +147,22 @@ export function MiniProfileCard({
     // (#182: the card constrained itself and hid the "Open profile" action,
     // varying by anchor origin). scrollHeight reflects the full content, so
     // the card expands to fit and only scrolls when it truly can't.
-    setPos(
-      placePopover(
-        anchor,
-        { width: CARD_WIDTH, height: element.scrollHeight },
-        { width: window.innerWidth, height: window.innerHeight },
-      ),
+    const next = placePopover(
+      anchor,
+      { width: CARD_WIDTH, height: element.scrollHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    // Only commit when the placement actually changed. The effect never
+    // depends on `pos`, so applying maxHeight can't re-trigger measurement —
+    // but this guard makes that invariant explicit and avoids redundant
+    // re-renders if the measured height lands on the same placement.
+    setPos((prev) =>
+      prev &&
+      prev.top === next.top &&
+      prev.left === next.left &&
+      prev.maxHeight === next.maxHeight
+        ? prev
+        : next,
     );
   }, [anchor, contentState]);
 
