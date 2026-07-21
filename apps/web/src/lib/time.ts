@@ -32,6 +32,16 @@ export function formatTime(
   return `${hh}:${mm}`;
 }
 
+/** Full local date + time for a timestamp's hover tooltip (e.g.
+ * "July 12, 2026, 12:04:33"). Locale-formatted so it follows the user's
+ * regional conventions; independent of the compact `timestampFormat` pref. */
+export function formatFullDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "long",
+    timeStyle: "medium",
+  });
+}
+
 /** Local-date bucket key — a DateDivider goes between two different keys. */
 export function dayKey(iso: string): string {
   const date = new Date(iso);

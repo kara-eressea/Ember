@@ -8,7 +8,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
-import { formatTime, type TimeFormat } from "../../lib/time.js";
+import {
+  formatFullDateTime,
+  formatTime,
+  type TimeFormat,
+} from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
@@ -476,7 +480,14 @@ function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
         >
           {message.senderCharacter}
         </button>
-        {time !== "" && <span className={styles.time}>{time}</span>}
+        {time !== "" && (
+          <span
+            className={styles.time}
+            title={formatFullDateTime(message.createdAt)}
+          >
+            {time}
+          </span>
+        )}
         <span className={styles.adBlockSpacer} />
         <CachedMatchChip name={message.senderCharacter} />
         {rateAffordance}
@@ -513,7 +524,14 @@ function MessageLine({
       }`}
       data-mention={message.mention || undefined}
     >
-      {time !== "" && <span className={styles.time}>{time}</span>}
+      {time !== "" && (
+        <span
+          className={styles.time}
+          title={formatFullDateTime(message.createdAt)}
+        >
+          {time}
+        </span>
+      )}
       {/* Grouped rows keep an invisible nick so aligned columns stay put;
           visible nicks open the mini profile card (M8). */}
       {grouped ? (
@@ -566,7 +584,14 @@ function RollLine({
   const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
     <div className={styles.rollLine} data-testid="roll-line">
-      {time !== "" && <span className={styles.time}>{time}</span>}
+      {time !== "" && (
+        <span
+          className={styles.time}
+          title={formatFullDateTime(message.createdAt)}
+        >
+          {time}
+        </span>
+      )}
       <span aria-hidden>🎲</span>
       <span>
         <RichText bbcode={message.bbcode} />
@@ -585,7 +610,14 @@ function SystemLine({
   const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
     <div className={styles.systemLine}>
-      {time !== "" && <span className={styles.time}>{time}</span>}
+      {time !== "" && (
+        <span
+          className={styles.time}
+          title={formatFullDateTime(message.createdAt)}
+        >
+          {time}
+        </span>
+      )}
       <span>
         <RichText bbcode={message.bbcode} />
       </span>

@@ -160,6 +160,8 @@
 }
 
 .rowName {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 14px;
@@ -212,6 +214,7 @@
 .stateJoined,
 .statePinned {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   width: 86px;
