@@ -8,7 +8,12 @@
 // channels.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  SimClient,
+  interceptAvatars,
+  joinChannel,
+  provisionAndConnect,
+} from "./helpers.js";
 
 test("identity rail: full context swap, background badges, @me alias", async ({
   page,
@@ -18,11 +23,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
 
   // ── Rowan Redleaf: register → connect → join Gardening ────────────────
   await provisionAndConnect(page, "rowan@example.test", "Rowan Redleaf");
-  await page.getByLabel("Join a channel").fill("Gardening");
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Gardening" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await joinChannel(page, "Gardening", "Gardening");
   await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf\/c\/Gardening$/);
 
   // ── Add + connect the second identity from the picker ─────────────────
@@ -42,11 +43,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
   const petalItem = rail.getByRole("link", { name: "Petal Thorn" });
 
   // ── Petal joins a different channel — the two contexts diverge ────────
-  await page.getByLabel("Join a channel").fill("Development");
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Development" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await joinChannel(page, "Development", "Development");
 
   // ── Rail switch: the ENTIRE context swaps, back at Rowan's last spot ──
   await rowanItem.click();

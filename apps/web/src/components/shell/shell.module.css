@@ -243,6 +243,48 @@
   text-overflow: ellipsis;
 }
 
+/* Channel-list toolbar (#196): filter field + browser entry points. */
+.toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px 4px;
+}
+
+.toolbarSearch {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: 14px;
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font-size: 12.5px;
+}
+
+.toolbarSearch::placeholder {
+  color: var(--eb-meta);
+}
+
+.toolbarBtn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--eb-dim);
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.toolbarBtn:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
 .navScroll {
   flex: 1;
   min-height: 0;
@@ -259,6 +301,32 @@
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--eb-meta);
+}
+
+/* Collapsible heading (#168): the label + chevron are one toggle button,
+   inheriting the header's uppercase micro type. */
+.sectionToggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.sectionToggle:hover {
+  color: var(--eb-text);
+}
+
+.sectionChevron {
+  width: 10px;
+  font-size: 9px;
+  color: var(--eb-faint);
 }
 
 /* Small trailing action in a section header (channel browser opener). */

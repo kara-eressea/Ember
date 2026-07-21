@@ -6,7 +6,12 @@
 // is shared but never member-counted (only chat.spec counts, on Frontpage).
 
 import { expect, test } from "@playwright/test";
-import { delay, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  delay,
+  interceptAvatars,
+  joinChannel,
+  provisionAndConnect,
+} from "./helpers.js";
 
 test("markdown compose: preview = render, eicons, delayed send + recall", async ({
   page,
@@ -15,11 +20,7 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await interceptAvatars(page);
 
   await provisionAndConnect(page, "sage@example.test", "Sage Willowmere");
-  await page.getByLabel("Join a channel").fill("Development");
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Development" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await joinChannel(page, "Development", "Development");
 
   // exact: the sidebar's "Message a character" DM form would substring-match.
   const input = page.getByLabel("Message", { exact: true });

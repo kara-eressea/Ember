@@ -76,4 +76,43 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
       .getByRole("menuitem", { name: "Remove friend" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
+
+  // ── Sidebar ergonomics (#167/#196/#168) ───────────────────────────────
+  // Right-clicking a friend row opens the same identity menu.
+  await sidebar
+    .getByRole("button", { name: "Nyx Firemane", exact: true })
+    .click({ button: "right" });
+  await expect(
+    page
+      .getByRole("menu", { name: "Nyx Firemane menu" })
+      .getByRole("menuitem", { name: "View profile" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // The toolbar filter narrows every section as you type.
+  const filter = page.getByLabel("Filter the channel list");
+  await filter.fill("nyx");
+  await expect(
+    sidebar.getByRole("button", { name: "Nyx Firemane", exact: true }),
+  ).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),
+  ).not.toBeVisible();
+  // A miss offers the channel browser instead of dead air.
+  await filter.fill("zzzz-no-such-thing");
+  await expect(sidebar.getByText("Nothing here matches.")).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", { name: "Browse all channels…" }),
+  ).toBeVisible();
+  await filter.fill("");
+
+  // Section headings collapse and expand.
+  await sidebar.getByRole("button", { name: "Bookmarks" }).click();
+  await expect(
+    sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),
+  ).not.toBeVisible();
+  await sidebar.getByRole("button", { name: "Bookmarks" }).click();
+  await expect(
+    sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),
+  ).toBeVisible();
 });

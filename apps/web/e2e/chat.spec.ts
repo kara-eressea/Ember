@@ -8,6 +8,7 @@ import {
   SimClient,
   delay,
   interceptAvatars,
+  joinChannel,
   provisionAndConnect,
 } from "./helpers.js";
 
@@ -27,11 +28,7 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
   await provisionAndConnect(page, "amber@example.test", "Cindral");
 
   // ── Join a channel ────────────────────────────────────────────────────
-  await page.getByLabel("Join a channel").fill("Frontpage");
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Frontpage" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await joinChannel(page, "Frontpage", "Frontpage");
   // Human-readable URL scheme (M3): identity by character name, channel by key.
   await expect(page).toHaveURL(/\/app\/Cindral\/c\/Frontpage$/);
   await expect(page.getByText("The sim's default hangout")).toBeVisible();

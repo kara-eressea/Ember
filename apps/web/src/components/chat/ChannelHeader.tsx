@@ -17,6 +17,7 @@ import {
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { adViewFor, setChannelAdView, type AdView } from "./ads.js";
+import { MemberContextMenu } from "./MemberContextMenu.js";
 import { RichText } from "./RichText.js";
 import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
@@ -712,6 +713,9 @@ export function DmHeader({
     (s) => s.sessions[identityId]?.character ?? "",
   );
   const [closing, setClosing] = useState(false);
+  // The partner's identity menu (#167) — the same menu a member-list row
+  // opens, anchored under the ⋮ button.
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number }>();
 
   // Close the DM window (gateway pm.close): history is kept and the
   // conversation reopens on the next pm.open or inbound message; only the
@@ -787,6 +791,18 @@ export function DmHeader({
         </button>
         <button
           className={styles.headerButton}
+          title={`Actions for ${dm.partner}`}
+          aria-label={`Actions for ${dm.partner}`}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setMenuAt({ x: rect.left, y: rect.bottom + 4 });
+          }}
+        >
+          ⋮
+        </button>
+        <button
+          className={styles.headerButton}
           title="Close this conversation — history is kept"
           aria-label={`Close conversation with ${dm.partner}`}
           disabled={closing}
@@ -797,6 +813,23 @@ export function DmHeader({
           ✕
         </button>
       </div>
+      {menuAt && (
+        <MemberContextMenu
+          identityId={identityId}
+          ownCharacter={ownCharacter}
+          channelTitle={`Conversation with ${dm.partner}`}
+          member={{
+            character: dm.partner,
+            gender: "",
+            status: dm.status,
+            statusmsg: dm.statusmsg,
+          }}
+          position={menuAt}
+          onClose={() => {
+            setMenuAt(undefined);
+          }}
+        />
+      )}
       {(dm.statusmsg || dm.status) && (
         <div className={styles.description}>
           {dm.online ? (
