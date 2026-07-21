@@ -25,35 +25,44 @@ const COLORBLIND_STORAGE_KEY = "eb.colorblind";
 const DEFAULT_BASE_THEME: BaseThemeId = "slate";
 
 /** F-Chat [color=…] names (the wiki's fixed 12). Wire colors, not theme
- * colors — but tokens, so each ground retunes them for contrast. On paper,
- * "white" maps to a legible warm gray rather than lying invisibly. */
+ * colors — but tokens, so each ground retunes them for contrast. Retuned
+ * for the composer toolbar's swatch popover (#205): each name keeps its hue
+ * identity but is normalized into the palette's readable band (≥4.5:1 on
+ * the active ground), exactly like the per-nick palette — never the raw web
+ * colors. black/white/gray map to readable warm neutrals instead of
+ * vanishing into the ground. Dark themes share this one set; Parchment
+ * derives from it below via mix(name, text, .52) — the same rule as nicks —
+ * with white → text and black → the darkest readable warm (heading). */
 const BBC_DARK = {
-  red: "#f44",
-  blue: "#1e90ff",
-  white: "#ffffff",
-  yellow: "#e5d45a",
-  pink: "#ffcbdb",
-  gray: "#d3d3d3",
-  green: "#4f4",
-  orange: "#ffa500",
-  purple: "#e2afff",
-  brown: "#a9825d",
-  cyan: "#00ffff",
+  red: "#e08a6a",
+  orange: "#e6a75a",
+  yellow: "#d8c06a",
+  pink: "#c294b0",
+  green: "#8bb173",
+  cyan: "#79b6b6",
+  blue: "#8f9bc9",
+  purple: "#a892c6",
+  brown: "#c0906a",
+  black: "#8a8078",
+  gray: "#a89e92",
+  white: "#ece7e0",
 } as const;
 
-const BBC_LIGHT = {
-  red: "#c22626",
-  blue: "#1c62c9",
-  white: "#8d8577",
-  yellow: "#8f7500",
-  pink: "#bb4f7a",
-  gray: "#7a7268",
-  green: "#2e7d32",
-  orange: "#b26a00",
-  purple: "#7a45ad",
-  brown: "#7d5f3f",
-  cyan: "#00727e",
-} as const;
+type BbcName = keyof typeof BBC_DARK;
+
+/** The Parchment set: the dark hues darkened onto paper (see BBC_DARK). */
+function bbcLight(text: string, heading: string): Record<BbcName, string> {
+  return Object.fromEntries(
+    (Object.keys(BBC_DARK) as BbcName[]).map((name) => [
+      name,
+      name === "white"
+        ? text
+        : name === "black"
+          ? heading
+          : mix(BBC_DARK[name], text, 0.52),
+    ]),
+  ) as Record<BbcName, string>;
+}
 
 /** The complete set of custom properties for one accent + base choice. */
 export function themeVariables(
@@ -72,7 +81,7 @@ export function themeVariables(
     : light
       ? STATUS_COLORS.light
       : STATUS_COLORS.dark;
-  const bbc = light ? BBC_LIGHT : BBC_DARK;
+  const bbc = light ? bbcLight(text, heading) : BBC_DARK;
   const nicks = light ? NICK_PALETTE_LIGHT : NICK_PALETTE;
   const genders = light ? GENDER_PALETTE_LIGHT : GENDER_PALETTE;
   return {
@@ -120,7 +129,7 @@ export function themeVariables(
     "--eb-bbc-green": bbc.green,
     "--eb-bbc-orange": bbc.orange,
     "--eb-bbc-purple": bbc.purple,
-    "--eb-bbc-black": mix(text, bg, 0.55),
+    "--eb-bbc-black": bbc.black,
     "--eb-bbc-brown": bbc.brown,
     "--eb-bbc-cyan": bbc.cyan,
   };

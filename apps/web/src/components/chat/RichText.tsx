@@ -19,7 +19,7 @@ import { channelPath } from "../../lib/routes.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore, useUserPrefs } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
-import { textTokens } from "./rich-text.js";
+import { spoilerSegments, textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
 
 export function RichText({ bbcode }: { bbcode: string }) {
@@ -119,6 +119,49 @@ function renderNode(
 }
 
 function renderText(text: string, keyBase: string): ReactNode[] {
+  // `||…||` spoiler pass first (#205): covered segments reveal on click.
+  // Wire-plain pipes, so this is purely a viewer-side treatment.
+  const segments = spoilerSegments(text);
+  if (segments.some((segment) => segment.spoiler)) {
+    return segments.map((segment, index) => {
+      const key = `${keyBase}.sp${String(index)}`;
+      return segment.spoiler ? (
+        <Spoiler key={key}>{renderTokens(segment.text, key)}</Spoiler>
+      ) : (
+        <span key={key}>{renderTokens(segment.text, key)}</span>
+      );
+    });
+  }
+  return renderTokens(text, keyBase);
+}
+
+/** A covered bar (background = text color, content transparent) until
+ * clicked — Discord-style; click again re-covers. */
+function Spoiler({ children }: { children: ReactNode }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-pressed={revealed}
+      title={revealed ? "Hide spoiler" : "Show spoiler"}
+      className={`${styles.spoiler} ${revealed ? (styles.spoilerRevealed ?? "") : ""}`}
+      onClick={() => {
+        setRevealed((on) => !on);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setRevealed((on) => !on);
+        }
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function renderTokens(text: string, keyBase: string): ReactNode[] {
   return textTokens(text).map((token, index) => {
     const key = `${keyBase}.${String(index)}`;
     switch (token.kind) {

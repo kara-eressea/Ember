@@ -7,11 +7,16 @@
 //   **bold**        → [b]bold[/b]
 //   *italic*        → [i]italic[/i]
 //   ~~strike~~      → [s]strike[/s]
+//   ||spoiler||     → ||spoiler||           (client-only construct: the
+//                     pipes ride the wire as plain characters — EmberChat
+//                     renders a covered bar, every other client shows the
+//                     literal ||text||; never a [spoiler] tag, which is
+//                     outside the subset)
 //   `code`          → [noparse]code[/noparse]   (F-Chat has no code tag;
 //                     noparse keeps the span literal, the client renders it
 //                     as code — official clients just show the text)
 //   [text](http://…)→ [url=http://…]text[/url]
-//   \* \` \~ \[ \\  → the literal character
+//   \* \` \~ \[ \| \\ → the literal character
 //
 // Code spans bind tightest: emphasis closers and BBCode closers inside a
 // backtick span never match (the lookahead searches run over a masked copy
@@ -29,7 +34,7 @@ import {
 } from "./bbcode.js";
 import type { MdLossReporter } from "./lossiness.js";
 
-const ESCAPABLE = new Set(["*", "`", "~", "[", "]", "\\", "("]);
+const ESCAPABLE = new Set(["*", "`", "~", "[", "]", "\\", "(", "|"]);
 
 const WRAPPER_TAGS = new Set(["b", "i", "u", "s", "sup", "sub"]);
 /** Elements whose body is copied verbatim, never Markdown-processed. */
@@ -257,6 +262,22 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
       }
       out += ch;
       at += 1;
+      continue;
+    }
+
+    // Spoiler: `||…||` is the supported spelling (Discord-style). The
+    // contents translate like any run; the pipes themselves pass through —
+    // on the wire they are plain text, so non-parsing clients degrade to
+    // literal ||text|| instead of a foreign tag.
+    if (input.startsWith("||", at)) {
+      const close = findDelimiter(masked, at + 2, "||");
+      if (close !== undefined) {
+        out += `||${translate(input.slice(at + 2, close), report, base + at + 2)}||`;
+        at = close + 2;
+        continue;
+      }
+      out += "||";
+      at += 2;
       continue;
     }
 

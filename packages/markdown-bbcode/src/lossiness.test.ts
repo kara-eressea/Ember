@@ -128,3 +128,16 @@ describe("analyzeMarkdown — invariants", () => {
     }
   });
 });
+
+describe("analyzeMarkdown — spoiler spelling", () => {
+  it("||…|| is the supported spelling — no diagnostics", () => {
+    expect(analyzeMarkdown("a ||secret|| b")).toEqual([]);
+    expect(analyzeMarkdown("||**bold** secret||")).toEqual([]);
+  });
+
+  it("[spoiler] the tag still warns as foreign", () => {
+    const diags = analyzeMarkdown("[spoiler]x[/spoiler]");
+    expect(diags).toHaveLength(1);
+    expect(diags[0]!.kind).toBe("unsupported-bbcode");
+  });
+});

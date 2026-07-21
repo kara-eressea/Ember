@@ -41,19 +41,20 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(log.getByText("a code span")).toBeVisible();
   await expect(log).not.toContainText("**bold words**");
 
-  // ── Toolbar + /help (M9 step 4) ────────────────────────────────────────
-  // Bold is Markdown-aware; Underline (BBCode-only) lives behind the Aa
-  // toggle and works with Markdown on because the dialect passes wrapper
-  // tags through.
+  // ── Formatting toolbar + /help (#205) ─────────────────────────────────
+  // Every promoted action sits on the MessageBox toolbar now. Bold is
+  // Markdown-aware; Underline (BBCode-only) works with Markdown on because
+  // the dialect passes wrapper tags through.
   await input.fill("glow");
   await input.selectText();
   await page.getByRole("button", { name: "Bold", exact: true }).click();
   await expect(input).toHaveValue("**glow**");
-  await page.getByRole("button", { name: "More formatting" }).click();
+  // The wrap restores the inner selection on the next frame — let it land
+  // before re-selecting everything, or it would override selectText().
+  await delay(150);
   await input.selectText();
   await page.getByRole("button", { name: "Underline" }).click();
   await expect(input).toHaveValue("[u]**glow**[/u]");
-  await page.getByRole("button", { name: "More formatting" }).click();
   await input.fill("/help");
   await input.press("Enter");
   const help = page.getByRole("dialog", { name: "Help" });
@@ -74,7 +75,7 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   // ── EiconPicker (M8 step 11): ☺ popover, Recents → star → Favorites ───
   // The typed eicon above was recorded as "used", so Recents bootstraps
   // without search (which ships disabled until step 12).
-  await page.getByRole("button", { name: "Insert eicon" }).click();
+  await page.getByRole("button", { name: "Eicon", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Eicon picker" });
   await expect(picker).toBeVisible();
   await expect(picker.getByText("No favorites yet")).toBeVisible();
@@ -99,7 +100,7 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await page.keyboard.press("Escape");
   await expect(prefsWindow).not.toBeVisible();
   // Live search against the sim-served xariah-format index.
-  await page.getByRole("button", { name: "Insert eicon" }).click();
+  await page.getByRole("button", { name: "Eicon", exact: true }).click();
   await picker.getByRole("tab", { name: "Search" }).click();
   await picker.getByRole("textbox", { name: "Search eicons" }).fill("lantern");
   await expect(
@@ -154,8 +155,14 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await delay(300);
   await expect(panel).not.toBeVisible();
 
-  // ── Delayed send: pending affordance + ArrowUp recall ─────────────────
-  await page.getByLabel("Send delay").selectOption("10");
+  // ── Delayed send: Timer popover + pending affordance + recall ─────────
+  // The Timer button (toolbar, #205) owns the send delay now: arming it
+  // flips the button to the accent-filled treatment with the delay label.
+  const timer = page.getByRole("button", { name: "Send timer" });
+  await timer.click();
+  await page.getByRole("radio", { name: "15 seconds" }).click();
+  await expect(timer).toHaveAttribute("aria-pressed", "true");
+  await expect(timer).toContainText("15s");
   await input.fill("**recalled** never arrives");
   await input.press("Enter");
   const pending = page.getByTestId("pending-send");
@@ -176,7 +183,7 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(page.getByRole("heading", { name: "Development" })).toBeVisible({
     timeout: 15_000,
   });
-  // The message releases ~10s after the send and lands as a real row.
+  // The message releases ~15s after the send and lands as a real row.
   await expect(log.getByText("survives the reload")).toBeVisible({
     timeout: 20_000,
   });

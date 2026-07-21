@@ -18,6 +18,34 @@ export type TextToken =
 const TOKEN_RE =
   /(https?:\/\/[^\s<>"']+)|(?<=^|\s)@([A-Za-z0-9][A-Za-z0-9_-]{0,63})|(?<=^|\s)#([A-Za-z0-9][A-Za-z0-9_-]{0,63})/g;
 
+/** One run of a plain-text slice: covered (`||…||` spoiler) or not. */
+export interface SpoilerSegment {
+  spoiler: boolean;
+  text: string;
+}
+
+// `||…||` — the client-side spoiler spelling (#205). The pipes are plain
+// characters on the wire, so this last-mile pass over text runs is the only
+// place they gain meaning: a non-empty span between two `||` pairs becomes
+// a covered segment. Anything unpaired stays literal.
+const SPOILER_RE = /\|\|(?!\|)([\s\S]+?)\|\|/g;
+
+export function spoilerSegments(text: string): SpoilerSegment[] {
+  const segments: SpoilerSegment[] = [];
+  let at = 0;
+  for (const match of text.matchAll(SPOILER_RE)) {
+    if (match.index > at) {
+      segments.push({ spoiler: false, text: text.slice(at, match.index) });
+    }
+    segments.push({ spoiler: true, text: match[1]! });
+    at = match.index + match[0].length;
+  }
+  if (at < text.length || segments.length === 0) {
+    segments.push({ spoiler: false, text: text.slice(at) });
+  }
+  return segments;
+}
+
 export function textTokens(text: string): TextToken[] {
   const tokens: TextToken[] = [];
   let at = 0;
