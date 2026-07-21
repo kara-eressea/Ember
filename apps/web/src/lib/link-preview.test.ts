@@ -37,6 +37,54 @@ describe("resolvePreview", () => {
     });
     expect(resolvePreview("https://x.test/page?img=pic.png")).toBeUndefined();
   });
+
+  it("recognizes pbs.twimg.com images via the format= query param", () => {
+    // Twitter/X carries the type in the query, not the path; the full URL
+    // (including name=large) must survive onto the src.
+    const href = "https://pbs.twimg.com/media/AbC123?format=jpg&name=large";
+    expect(resolvePreview(href)).toMatchObject({
+      kind: "image",
+      src: href,
+      host: "pbs.twimg.com",
+    });
+    expect(
+      resolvePreview("https://pbs.twimg.com/media/AbC123?format=png"),
+    ).toMatchObject({ kind: "image" });
+    // No/other format = not an image we can classify.
+    expect(
+      resolvePreview("https://pbs.twimg.com/media/AbC123"),
+    ).toBeUndefined();
+    expect(
+      resolvePreview("https://pbs.twimg.com/media/AbC123?format=json"),
+    ).toBeUndefined();
+  });
+
+  it("rewrites gyazo share pages to the direct i.gyazo.com image", () => {
+    expect(
+      resolvePreview("https://gyazo.com/0123456789abcdef0123456789abcdef"),
+    ).toMatchObject({
+      src: "https://i.gyazo.com/0123456789abcdef0123456789abcdef.png",
+      kind: "image",
+      host: "gyazo.com",
+    });
+    // Non-id sub-paths have no single derivable image.
+    expect(resolvePreview("https://gyazo.com/captures")).toBeUndefined();
+    expect(
+      resolvePreview("https://gyazo.com/0123456789abcdef/thumb"),
+    ).toBeUndefined();
+  });
+
+  it("previews cdn.discordapp.com images with signed query params intact", () => {
+    // The path already ends in .png; the signed ex/is/hm query must survive
+    // verbatim onto the src or the CDN 403s.
+    const href =
+      "https://cdn.discordapp.com/attachments/1/2/pic.png?ex=abc&is=def&hm=deadbeef";
+    expect(resolvePreview(href)).toMatchObject({
+      kind: "image",
+      src: href,
+      host: "cdn.discordapp.com",
+    });
+  });
 });
 
 describe("chip label + host", () => {
