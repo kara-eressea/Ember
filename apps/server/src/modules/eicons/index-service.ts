@@ -71,6 +71,21 @@ export class EiconIndexService {
     return results;
   }
 
+  /** A page of the full index, in index order, for the gallery browser.
+   * Same freshness guarantee as {@link search}. Returns the slice plus the
+   * total so the client knows when it has reached the end. */
+  async browse(
+    offset = 0,
+    limit = 60,
+  ): Promise<{ names: string[]; total: number }> {
+    await this.#ensureFresh();
+    const start = Math.max(0, offset);
+    return {
+      names: this.#names.slice(start, start + limit),
+      total: this.#names.length,
+    };
+  }
+
   /** Index size + cursor, for logging/tests. */
   get state(): { count: number; asOf: number } {
     return { count: this.#names.length, asOf: this.#asOf };
