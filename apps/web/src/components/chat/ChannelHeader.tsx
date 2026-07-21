@@ -17,6 +17,7 @@ import {
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
+import { SearchGlyph } from "../icons/Glyphs.js";
 import { RichText } from "./RichText.js";
 import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
@@ -559,7 +560,7 @@ export function ChannelHeader({
             useUiStore.getState().setSearchOpen(true);
           }}
         >
-          ⌕
+          <SearchGlyph />
         </button>
         <button
           className={styles.headerButton}
@@ -687,7 +688,7 @@ export function DmHeader({
             useUiStore.getState().setSearchOpen(true);
           }}
         >
-          ⌕
+          <SearchGlyph />
         </button>
         <button
           className={styles.headerButton}

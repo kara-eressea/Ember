@@ -28,6 +28,7 @@ import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
 import {
   useSessionsStore,
   type ChannelInvite,
@@ -289,7 +290,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             useUiStore.getState().setCharacterSearchOpen(true);
           }}
         >
-          ⌕
+          <SearchGlyph />
         </button>
       </div>
 
@@ -385,7 +386,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             useUiStore.getState().setPrefsOpen(true);
           }}
         >
-          ⚙
+          <GearGlyph />
         </button>
       </div>
     </nav>
@@ -653,7 +654,7 @@ function PowerButton({ session }: { session: IdentitySession }) {
       title={connected ? "Log off F-Chat" : "Connect to F-Chat"}
       aria-label={connected ? "Log off F-Chat" : "Connect to F-Chat"}
     >
-      ⏻
+      <PowerGlyph />
     </button>
   );
 }
