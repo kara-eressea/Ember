@@ -12,6 +12,12 @@ import { placePopover } from "../profile/popover.js";
 import { patchPrefs } from "../prefs/patch.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
+import {
+  appendPage,
+  emptyGallery,
+  hasMore,
+  type GalleryState,
+} from "./eicon-gallery.js";
 import styles from "./chat.module.css";
 
 const PICKER_WIDTH = 336;
@@ -19,8 +25,11 @@ const PICKER_WIDTH = 336;
 const TABS = [
   { id: "favorites", label: "Favorites" },
   { id: "recents", label: "Recents" },
+  { id: "gallery", label: "Gallery" },
   { id: "search", label: "Search" },
 ] as const;
+
+const GALLERY_PAGE = 60;
 
 type TabId = (typeof TABS)[number]["id"];
 
@@ -103,29 +112,30 @@ export function EiconPicker({
         }
       >
         <div className={styles.pickerTabs} role="tablist">
-          {TABS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              role="tab"
-              aria-selected={entry.id === tab}
-              className={`${styles.pickerTab} ${
-                entry.id === tab ? (styles.pickerTabActive ?? "") : ""
-              } ${
-                entry.id === "search" && !prefs.eiconSearchEnabled
-                  ? (styles.pickerTabOff ?? "")
-                  : ""
-              }`}
-              onClick={() => {
-                setTab(entry.id);
-              }}
-            >
-              {entry.label}
-              {entry.id === "search" && !prefs.eiconSearchEnabled && (
-                <span aria-hidden> ⊘</span>
-              )}
-            </button>
-          ))}
+          {TABS.map((entry) => {
+            // Gallery and Search both drive the xariah-backed index, so both
+            // wear the "off" treatment when the pref is disabled.
+            const needsIndex =
+              entry.id === "search" || entry.id === "gallery";
+            const off = needsIndex && !prefs.eiconSearchEnabled;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={entry.id === tab}
+                className={`${styles.pickerTab} ${
+                  entry.id === tab ? (styles.pickerTabActive ?? "") : ""
+                } ${off ? (styles.pickerTabOff ?? "") : ""}`}
+                onClick={() => {
+                  setTab(entry.id);
+                }}
+              >
+                {entry.label}
+                {off && <span aria-hidden> ⊘</span>}
+              </button>
+            );
+          })}
         </div>
         <div className={styles.pickerBody}>
           {tab === "search" ? (
@@ -136,20 +146,17 @@ export function EiconPicker({
                 onToggleFavorite={toggleFavorite}
               />
             ) : (
-              <PickerNote glyph="⊘" title="Eicon search is off">
-                Searching uses an eicon index the server downloads from
-                xariah.net, a third-party service.{" "}
-                <button
-                  type="button"
-                  className={styles.pickerLink}
-                  onClick={() => {
-                    onClose();
-                    useUiStore.getState().setPrefsOpen(true);
-                  }}
-                >
-                  Enable in Preferences →
-                </button>
-              </PickerNote>
+              <IndexOffNote onClose={onClose} verb="Searching" />
+            )
+          ) : tab === "gallery" ? (
+            prefs.eiconSearchEnabled ? (
+              <GalleryTab
+                favorites={prefs.eiconFavorites}
+                onInsert={onInsert}
+                onToggleFavorite={toggleFavorite}
+              />
+            ) : (
+              <IndexOffNote onClose={onClose} verb="Browsing" />
             )
           ) : (
             <TileGrid
@@ -318,6 +325,174 @@ function SearchTab({
           </>
         ))}
     </>
+  );
+}
+
+// ── Gallery tab (#239) ──────────────────────────────────────────────────────
+
+// Browse the whole index as an infinite-scroll grid. Images lazy-load
+// (loading="lazy" on each tile) and pages fetch only as the sentinel nears
+// the viewport, so opening the tab never pulls thousands of images at once.
+function GalleryTab({
+  favorites,
+  onInsert,
+  onToggleFavorite,
+}: {
+  favorites: readonly string[];
+  onInsert: (name: string) => void;
+  onToggleFavorite: (name: string) => void;
+}) {
+  const [gallery, setGallery] = useState<GalleryState>(emptyGallery);
+  const [state, setState] = useState<SearchState>("loading");
+  const [error, setError] = useState<string>();
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Guard against overlapping fetches while a page is in flight.
+  const loading = useRef(false);
+  // Keep the latest gallery cursor available to the observer callback.
+  const galleryRef = useRef(gallery);
+  galleryRef.current = gallery;
+
+  const loadMore = useRef<() => void>(() => {});
+  loadMore.current = () => {
+    if (loading.current) {
+      return;
+    }
+    const current = galleryRef.current;
+    if (current.names.length > 0 && !hasMore(current)) {
+      return;
+    }
+    loading.current = true;
+    setState((prev) => (prev === "error" ? "loading" : prev));
+    api
+      .browseEicons(current.offset, GALLERY_PAGE)
+      .then((page) => {
+        setGallery(appendPage(current, page));
+        setState("ok");
+      })
+      .catch((caught: unknown) => {
+        setError(caught instanceof ApiError ? caught.message : "Browse failed");
+        setState("error");
+      })
+      .finally(() => {
+        loading.current = false;
+      });
+  };
+
+  // First page on mount.
+  useEffect(() => {
+    loadMore.current();
+  }, []);
+
+  // Fetch the next page as the sentinel scrolls into view.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMore.current();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(sentinel);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  if (state === "error" && gallery.names.length === 0) {
+    return (
+      <PickerNote glyph="⚠" title="Gallery is unavailable">
+        {error ?? "The index didn't respond."} Favorites & recents still work.{" "}
+        <button
+          type="button"
+          className={styles.pickerLink}
+          onClick={() => {
+            loadMore.current();
+          }}
+        >
+          Retry
+        </button>
+      </PickerNote>
+    );
+  }
+
+  if (state === "loading" && gallery.names.length === 0) {
+    return (
+      <div className={styles.pickerGrid} aria-hidden>
+        {Array.from({ length: 15 }, (_, index) => (
+          <span
+            key={index}
+            className={styles.shimmerTile}
+            style={{ width: 60, height: 60 }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className={styles.pickerResultsCaption}>
+        {gallery.total > 0
+          ? `${gallery.total} eicons · hover for name`
+          : "hover for name"}
+      </div>
+      <TileGrid
+        names={gallery.names}
+        favorites={favorites}
+        empty={null}
+        onInsert={onInsert}
+        onToggleFavorite={onToggleFavorite}
+      />
+      {hasMore(gallery) && (
+        <div ref={sentinelRef} className={styles.pickerSentinel} aria-hidden>
+          {state === "error" ? (
+            <button
+              type="button"
+              className={styles.pickerLink}
+              onClick={() => {
+                loadMore.current();
+              }}
+            >
+              Load more
+            </button>
+          ) : (
+            "Loading more…"
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Shared "the index-backed features need the pref on" explainer for the
+ * Gallery and Search tabs. */
+function IndexOffNote({
+  onClose,
+  verb,
+}: {
+  onClose: () => void;
+  verb: string;
+}) {
+  return (
+    <PickerNote glyph="⊘" title="Eicon index is off">
+      {verb} uses an eicon index the server downloads from xariah.net, a
+      third-party service.{" "}
+      <button
+        type="button"
+        className={styles.pickerLink}
+        onClick={() => {
+          onClose();
+          useUiStore.getState().setPrefsOpen(true);
+        }}
+      >
+        Enable in Preferences →
+      </button>
+    </PickerNote>
   );
 }
 
