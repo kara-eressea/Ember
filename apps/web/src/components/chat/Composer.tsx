@@ -12,11 +12,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import {
-  analyzeMarkdown,
-  BB_COLORS,
-  mdToBBCode,
-} from "@emberchat/markdown-bbcode";
+import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
   useSessionsStore,
@@ -25,6 +21,8 @@ import {
 import type { CardAnchor } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { countdownLabel } from "./composer-toolbar.js";
+import { ComposerToolbar } from "./ComposerToolbar.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
 import { HelpPanel } from "./HelpPanel.js";
@@ -85,8 +83,6 @@ export function Composer({
   const [markdown, setMarkdown] = useState(savedMarkdownMode);
   const [eiconAnchor, setEiconAnchor] = useState<CardAnchor>();
   const [helpOpen, setHelpOpen] = useState(false);
-  /** The extended formatting toolbar (M9 step 4), collapsed by default. */
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [adChosen, setAdChosen] = useState(false);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -124,6 +120,21 @@ export function Composer({
   const bytes = utf8.encode(wire).length;
   const limitBytes = sendAsAd ? session.limits.lfrpMax : maxBytes;
   const pending = session.outbox.filter((item) => item.convId === convId);
+  // Queued-send countdown chips (footer-left, #205): re-render once a
+  // second only while something is actually parked for this conversation;
+  // the labels read the clock directly at render time.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (pending.length === 0) {
+      return;
+    }
+    const timer = setInterval(() => {
+      tick((t) => t + 1);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [pending.length]);
   const previewEmote = parseEmote(wire);
   // Advisory lossiness check (M10): Markdown that reaches the wire as
   // literal text gets a heads-up next to the preview — never a block.
@@ -259,6 +270,26 @@ export function Composer({
     wrapPair(`[${tag}${param !== undefined ? `=${param}` : ""}]`, `[/${tag}]`);
   }
 
+  /** "✕ Remove colour" (toolbar popover): strip any [color] tags from the
+   * selected run — the inverse of the swatch wrap, kept deliberately
+   * simple (tag surgery, contents untouched). */
+  function removeColor() {
+    const el = inputRef.current;
+    if (!el) {
+      return;
+    }
+    const from = el.selectionStart;
+    const to = el.selectionEnd;
+    const stripped = text
+      .slice(from, to)
+      .replace(/\[color=[a-z]+\]|\[\/color\]/gi, "");
+    setText(text.slice(0, from) + stripped + text.slice(to));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(from, from + stripped.length);
+    });
+  }
+
   async function send() {
     const body = wire.trim();
     if (!body || busy) {
@@ -368,6 +399,21 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Toolbar shortcuts (spec §3): mirrored in the button tooltips.
+    if (event.ctrlKey || event.metaKey) {
+      const key = event.key.toLowerCase();
+      if (key === "b" || key === "i" || key === "u") {
+        event.preventDefault();
+        if (key === "b") {
+          wrapFormat("**", "b");
+        } else if (key === "i") {
+          wrapFormat("*", "i");
+        } else {
+          wrapFormat(undefined, "u");
+        }
+        return;
+      }
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send();
@@ -401,6 +447,16 @@ export function Composer({
       }
       requestAnimationFrame(autogrow);
     }
+  }
+
+  /** Cancel (countdown chip): recall the parked send and drop the text —
+   * unlike Edit, nothing comes back into the input. */
+  function cancelPending(outboxId: string) {
+    void gateway.cmd({
+      identityId: session.identityId,
+      action: "outbox.recall",
+      d: { outboxId },
+    });
   }
 
   function setDelay(sendDelaySeconds: number) {
@@ -494,229 +550,131 @@ export function Composer({
           }}
         />
       )}
-      <div className={styles.inputBar}>
-        <span className={styles.inputGlyph} title="Attachments arrive later">
-          +
-        </span>
-        <textarea
-          ref={inputRef}
-          className={styles.composerInput}
-          rows={1}
-          value={text}
-          onChange={(e) => {
-            onTextChange(e.target.value);
-          }}
-          onKeyDown={onKeyDown}
-          placeholder={online ? placeholder : "Session is not connected"}
+      <div className={styles.messageBox}>
+        <ComposerToolbar
+          markdown={markdown}
           disabled={!online}
-          aria-label="Message"
+          text={text}
+          inputRef={inputRef}
+          sendDelaySeconds={session.sendDelaySeconds}
+          onSetDelay={setDelay}
+          onWrapFormat={wrapFormat}
+          onWrapSelection={wrapSelection}
+          onReplaceSelection={insertAtCaret}
+          onRemoveColor={removeColor}
+          onToggleEicon={(anchor) => {
+            setEiconAnchor(eiconAnchor ? undefined : anchor);
+          }}
+          onOpenHelp={() => {
+            setHelpOpen(true);
+          }}
         />
-        <span className={styles.formatHints}>
+        <div className={styles.inputBar}>
+          <span className={styles.inputGlyph} title="Attachments arrive later">
+            +
+          </span>
+          <textarea
+            ref={inputRef}
+            className={styles.composerInput}
+            rows={1}
+            value={text}
+            onChange={(e) => {
+              onTextChange(e.target.value);
+            }}
+            onKeyDown={onKeyDown}
+            placeholder={online ? placeholder : "Session is not connected"}
+            disabled={!online}
+            aria-label="Message"
+          />
+        </div>
+      </div>
+      <div className={styles.composerFooter}>
+        <span className={styles.footerGroup}>
           <button
             type="button"
-            className={styles.formatHint}
-            title={markdown ? "Bold (wrap in **)" : "Bold (wrap in [b])"}
-            aria-label="Bold"
-            onClick={() => {
-              wrapFormat("**", "b");
-            }}
+            className={`${styles.mdToggle} ${markdown ? (styles.mdToggleOn ?? "") : ""}`}
+            onClick={toggleMarkdown}
+            title={
+              markdown
+                ? "Markdown on — sends BBCode"
+                : "Markdown off — raw BBCode"
+            }
           >
-            **B**
+            Ⓜ Markdown
           </button>
-          <button
-            type="button"
-            className={styles.formatHint}
-            title="Code (wrap in `)"
-            aria-label="Code"
-            disabled={!markdown}
-            onClick={() => {
-              wrapSelection("`");
-            }}
-          >
-            `code`
-          </button>
-          <button
-            type="button"
-            className={`${styles.formatHint} ${toolsOpen ? (styles.formatHintOn ?? "") : ""}`}
-            title="More formatting"
-            aria-label="More formatting"
-            aria-pressed={toolsOpen}
-            onClick={() => {
-              setToolsOpen((open) => !open);
-            }}
-          >
-            Aa
-          </button>
-          {toolsOpen && (
-            <>
-              <button
-                type="button"
-                className={styles.formatHint}
-                title={markdown ? "Italic (wrap in *)" : "Italic ([i])"}
-                aria-label="Italic"
-                onClick={() => {
-                  wrapFormat("*", "i");
-                }}
-              >
-                <i>i</i>
-              </button>
-              <button
-                type="button"
-                className={styles.formatHint}
-                title="Underline ([u] — BBCode works in both modes)"
-                aria-label="Underline"
-                onClick={() => {
-                  wrapFormat(undefined, "u");
-                }}
-              >
-                <u>u</u>
-              </button>
-              <button
-                type="button"
-                className={styles.formatHint}
-                title={
-                  markdown
-                    ? "Strikethrough (wrap in ~~)"
-                    : "Strikethrough ([s])"
-                }
-                aria-label="Strikethrough"
-                onClick={() => {
-                  wrapFormat("~~", "s");
-                }}
-              >
-                <s>s</s>
-              </button>
-              <select
-                className={styles.formatSelect}
-                title="Wrap in a color"
-                aria-label="Color"
-                value=""
-                onChange={(event) => {
-                  if (event.target.value !== "") {
-                    wrapFormat(undefined, "color", event.target.value);
-                  }
-                }}
-              >
-                <option value="">color…</option>
-                {BB_COLORS.map((color) => (
-                  <option key={color} value={color}>
-                    {color}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={styles.formatHint}
-                title="Show markup literally ([noparse])"
-                aria-label="Noparse"
-                onClick={() => {
-                  wrapFormat(undefined, "noparse");
-                }}
-              >
-                [np]
-              </button>
-            </>
+          {adsPossible && (
+            <button
+              type="button"
+              className={`${styles.mdToggle} ${sendAsAd ? (styles.mdToggleOn ?? "") : ""}`}
+              onClick={() => {
+                setAdChosen(!adChosen);
+              }}
+              disabled={adForced}
+              title={
+                adForced
+                  ? channelMode === "ads"
+                    ? "This room only accepts roleplay ads"
+                    : "The Ads view composes ads — set Show to Chat or Both for chat"
+                  : sendAsAd
+                    ? "Sending as a roleplay ad — each channel takes one ad per window"
+                    : "Send as a roleplay ad"
+              }
+              aria-pressed={sendAsAd}
+            >
+              ♥ Ad
+            </button>
           )}
           <button
             type="button"
-            className={styles.formatHint}
-            title="Commands & formatting reference (/help)"
-            aria-label="Help"
-            onClick={() => {
-              setHelpOpen(true);
-            }}
-          >
-            ?
-          </button>
-          <button
-            type="button"
-            className={styles.formatHint}
-            title="Insert an eicon"
-            aria-label="Insert eicon"
-            onClick={(event) => {
-              if (eiconAnchor) {
-                setEiconAnchor(undefined);
-                return;
-              }
-              const rect = event.currentTarget.getBoundingClientRect();
-              setEiconAnchor({
-                top: rect.top,
-                left: rect.left,
-                bottom: rect.bottom,
-                right: rect.right,
-              });
-            }}
-          >
-            ☺
-          </button>
-          <span className={styles.hintDivider} aria-hidden />
-          <button
-            type="button"
-            className={`${styles.formatHint} ${adCenterOpen ? (styles.formatHintOn ?? "") : ""}`}
+            className={`${styles.mdToggle} ${adCenterOpen ? (styles.mdToggleOn ?? "") : ""}`}
             title="Your ad library — write once, post anywhere"
             aria-label="Open the Ad Center"
             onClick={() => {
               useUiStore.getState().setAdCenterOpen(true);
             }}
           >
-            ▤ Ad
+            ▤ Ad Center
           </button>
+          {pending.map((item) => (
+            <span key={item.id} className={styles.countdownChip}>
+              <span className={styles.countdownTime}>
+                ⏱{" "}
+                {countdownLabel(
+                  Math.ceil(
+                    (new Date(item.releaseAt).getTime() - Date.now()) / 1000,
+                  ),
+                )}
+              </span>
+              <button
+                type="button"
+                className={styles.chipAction}
+                title="Pull it back into the input to edit"
+                onClick={() => {
+                  void recall(item.id);
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className={styles.chipAction}
+                title="Cancel this send"
+                onClick={() => {
+                  cancelPending(item.id);
+                }}
+              >
+                Cancel
+              </button>
+            </span>
+          ))}
         </span>
-      </div>
-      <div className={styles.composerFooter}>
-        <button
-          type="button"
-          className={`${styles.mdToggle} ${markdown ? (styles.mdToggleOn ?? "") : ""}`}
-          onClick={toggleMarkdown}
-          title={
-            markdown
-              ? "Markdown on — sends BBCode"
-              : "Markdown off — raw BBCode"
-          }
-        >
-          Ⓜ Markdown
-        </button>
-        {adsPossible && (
-          <button
-            type="button"
-            className={`${styles.mdToggle} ${sendAsAd ? (styles.mdToggleOn ?? "") : ""}`}
-            onClick={() => {
-              setAdChosen(!adChosen);
-            }}
-            disabled={adForced}
-            title={
-              adForced
-                ? channelMode === "ads"
-                  ? "This room only accepts roleplay ads"
-                  : "The Ads view composes ads — set Show to Chat or Both for chat"
-                : sendAsAd
-                  ? "Sending as a roleplay ad — each channel takes one ad per window"
-                  : "Send as a roleplay ad"
-            }
-            aria-pressed={sendAsAd}
+        <span className={styles.footerGroup}>
+          <span>Enter to send · ⇧⏎ newline</span>
+          <span
+            className={`${styles.charCounter} ${bytes > limitBytes ? (styles.charCounterOver ?? "") : ""}`}
           >
-            ♥ Ad
-          </button>
-        )}
-        <select
-          className={styles.delaySelect}
-          value={session.sendDelaySeconds}
-          aria-label="Send delay"
-          title="Hold sends in the server outbox — ArrowUp recalls"
-          onChange={(e) => {
-            setDelay(Number(e.target.value));
-          }}
-        >
-          <option value={0}>instant</option>
-          <option value={10}>10s delay</option>
-          <option value={30}>30s delay</option>
-          <option value={60}>60s delay</option>
-        </select>
-        <span>Enter to send · Shift+Enter for newline</span>
-        <span
-          className={`${styles.charCounter} ${bytes > limitBytes ? (styles.charCounterOver ?? "") : ""}`}
-        >
-          {bytes}/{limitBytes}
+            {bytes}/{limitBytes}
+          </span>
         </span>
       </div>
     </div>

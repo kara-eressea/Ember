@@ -70,6 +70,8 @@ const FOREIGN_TAGS = new Set<string>([
   "img",
   "session",
   "channel",
+  // [spoiler] the tag stays foreign — `||…||` is the supported spelling
+  // (markdown.ts translates it; the pipes ride the wire as plain text).
   "spoiler",
   "code",
 ]);
