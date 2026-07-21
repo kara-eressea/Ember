@@ -395,6 +395,15 @@ export interface ConversationDto {
   pinned: boolean;
   joined: boolean;
   lastReadMessageId: number | null;
+  /** PM only: the partner's live presence from the global roster at serve
+   * time, so a freshly opened DM row shows the right dot immediately (#229)
+   * instead of defaulting to offline until the next NLN/STA. Absent for
+   * channels and when no session holds the roster. */
+  presence?: {
+    online: boolean;
+    status: string;
+    statusmsg: string;
+  };
 }
 
 export interface MessageDto {
