@@ -1389,6 +1389,33 @@ describe("gateway fan-out", () => {
     ]);
   });
 
+  it("seeds pm.open ack with the partner's live presence (#229)", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // Nyx Firemane is an online NPC in the sim roster; opening a DM with a
+    // lowercase spelling must still resolve her presence case-insensitively.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "pm.open",
+        d: { character: "nyx firemane" },
+      },
+    });
+    const ack = await client.nextOfType("ack");
+    expect(ack.d.ok).toBe(true);
+    expect(ack.d.conversation).toMatchObject({
+      kind: "pm",
+      presence: { online: true, status: "online" },
+    });
+  });
+
   it("replays missed messages via catchup, then streams live without duplicates", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);

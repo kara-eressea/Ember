@@ -90,6 +90,9 @@ export function MessageLog({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  // Mirrors atBottomRef for rendering — the "Jump to recent" pill shows
+  // while the user is scrolled away from the newest messages.
+  const [atBottom, setAtBottom] = useState(true);
   const loadingRef = useRef(false);
   /** Message id to keep in place after a history page prepends. */
   const anchorRef = useRef<number>(undefined);
@@ -188,12 +191,58 @@ export function MessageLog({
     if (!el) {
       return;
     }
-    atBottomRef.current =
+    const bottom =
       el.scrollTop + el.clientHeight >= el.scrollHeight - AT_BOTTOM_SLACK_PX;
+    atBottomRef.current = bottom;
+    setAtBottom(bottom);
     if (el.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
       void loadOlder();
     }
   }
+
+  // Snap to the newest messages. When parked in the detached history view
+  // that means "take me back to now" (drop the frozen tail); otherwise it is
+  // a plain scroll to the bottom of the loaded buffer.
+  function jumpToRecent() {
+    if (detachedTail) {
+      void useMessagesStore.getState().backToPresent(identityId, convId);
+      return;
+    }
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+    atBottomRef.current = true;
+    setAtBottom(true);
+  }
+
+  // Whether there is a newer position to jump to. Detached tail always
+  // qualifies; otherwise it is the "scrolled up past the slack" state.
+  const canJumpToRecent = detachedTail || !atBottom;
+
+  // Escape returns to the newest messages (Discord parity). This listens in
+  // the bubble phase with no stopPropagation, so any open popover/menu —
+  // which consume Escape in the capture phase — closes first and only an
+  // otherwise-unhandled Escape reaches here. Focus in the composer is fine:
+  // the composer does not swallow a bare Escape.
+  useEffect(() => {
+    if (!canJumpToRecent) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        jumpToRecent();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+    // jumpToRecent closes over identityId/convId/detachedTail, all stable
+    // for the effect's lifetime aside from detachedTail (in the deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canJumpToRecent, detachedTail, identityId, convId]);
 
   async function loadOlder() {
     const current = useMessagesStore.getState().buffers[convId];
@@ -244,86 +293,98 @@ export function MessageLog({
   }
 
   return (
-    <div
-      className={logClass}
-      style={styleVars}
-      ref={scrollRef}
-      onScroll={onScroll}
-      data-testid="message-log"
-    >
-      {detachedTail && (
-        <div className={styles.historyBanner} role="status">
-          Viewing older history — new messages are hidden.
-          <button
-            type="button"
-            className={styles.historyBannerButton}
-            onClick={() => {
-              void useMessagesStore
-                .getState()
-                .backToPresent(identityId, convId);
-            }}
-          >
-            Back to present
-          </button>
-        </div>
-      )}
-      {buffer?.loadingOlder && (
-        <div className={styles.logNote}>Loading older messages…</div>
-      )}
-      {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
-      {buffer?.backfilled && rows.length === 0 && (
-        <div className={styles.logNote}>No messages yet.</div>
-      )}
+    <div className={styles.logWrap}>
       <div
-        className={styles.logInner}
-        style={{ height: virtualizer.getTotalSize() }}
+        className={logClass}
+        style={styleVars}
+        ref={scrollRef}
+        onScroll={onScroll}
+        data-testid="message-log"
       >
-        {virtualizer.getVirtualItems().map((item) => {
-          const row = rows[item.index]!;
-          return (
-            <div
-              key={row.key}
-              ref={virtualizer.measureElement}
-              data-index={item.index}
-              className={`${styles.logRow} ${
-                row.type === "message" &&
-                row.message.id === jumpTarget?.messageId
-                  ? (styles.jumpFlash ?? "")
-                  : ""
-              }`}
-              style={{ transform: `translateY(${String(item.start)}px)` }}
+        {detachedTail && (
+          <div className={styles.historyBanner} role="status">
+            Viewing older history — new messages are hidden.
+            <button
+              type="button"
+              className={styles.historyBannerButton}
+              onClick={() => {
+                void useMessagesStore
+                  .getState()
+                  .backToPresent(identityId, convId);
+              }}
             >
-              {row.type === "divider" ? (
-                <div className={styles.dateDivider}>{row.label}</div>
-              ) : row.type === "new" ? (
-                <div className={styles.newDivider} data-testid="new-divider">
-                  new
-                </div>
-              ) : row.type === "presence" ? (
-                <PresenceLineRow line={row.line} prefs={prefs} />
-              ) : row.message.kind === "sys" ? (
-                <SystemLine message={row.message} prefs={prefs} />
-              ) : row.message.kind === "rll" ? (
-                <RollLine message={row.message} prefs={prefs} />
-              ) : row.message.kind === "lrp" ? (
-                <AdLine message={row.message} prefs={prefs} />
-              ) : (
-                <MessageLine
-                  message={row.message}
-                  prefs={prefs}
-                  grouped={row.grouped === true}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {pending.length > 0 && (
-        <div className={styles.pendingBlock}>
-          {pending.map((item) => (
-            <PendingLine key={item.id} item={item} />
-          ))}
+              Back to present
+            </button>
+          </div>
+        )}
+        {buffer?.loadingOlder && (
+          <div className={styles.logNote}>Loading older messages…</div>
+        )}
+        {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
+        {buffer?.backfilled && rows.length === 0 && (
+          <div className={styles.logNote}>No messages yet.</div>
+        )}
+        <div
+          className={styles.logInner}
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          {virtualizer.getVirtualItems().map((item) => {
+            const row = rows[item.index]!;
+            return (
+              <div
+                key={row.key}
+                ref={virtualizer.measureElement}
+                data-index={item.index}
+                className={`${styles.logRow} ${
+                  row.type === "message" &&
+                  row.message.id === jumpTarget?.messageId
+                    ? (styles.jumpFlash ?? "")
+                    : ""
+                }`}
+                style={{ transform: `translateY(${String(item.start)}px)` }}
+              >
+                {row.type === "divider" ? (
+                  <div className={styles.dateDivider}>{row.label}</div>
+                ) : row.type === "new" ? (
+                  <div className={styles.newDivider} data-testid="new-divider">
+                    new
+                  </div>
+                ) : row.type === "presence" ? (
+                  <PresenceLineRow line={row.line} prefs={prefs} />
+                ) : row.message.kind === "sys" ? (
+                  <SystemLine message={row.message} prefs={prefs} />
+                ) : row.message.kind === "rll" ? (
+                  <RollLine message={row.message} prefs={prefs} />
+                ) : row.message.kind === "lrp" ? (
+                  <AdLine message={row.message} prefs={prefs} />
+                ) : (
+                  <MessageLine
+                    message={row.message}
+                    prefs={prefs}
+                    grouped={row.grouped === true}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
+        {pending.length > 0 && (
+          <div className={styles.pendingBlock}>
+            {pending.map((item) => (
+              <PendingLine key={item.id} item={item} />
+            ))}
+          </div>
+        )}
+      </div>
+      {canJumpToRecent && (
+        <button
+          type="button"
+          className={styles.jumpToRecent}
+          onClick={jumpToRecent}
+          data-testid="jump-to-recent"
+        >
+          Jump to newest ↓
+        </button>
       )}
     </div>
   );

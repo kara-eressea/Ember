@@ -269,9 +269,11 @@
 
 .toolbarBtn {
   flex: none;
-  width: 28px;
-  height: 28px;
-  font-size: 13px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
   line-height: 1;
   color: var(--eb-dim);
   cursor: pointer;
@@ -632,10 +634,14 @@
 
 .meGear {
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
   border: none;
+  border-radius: 7px;
   background: none;
   color: var(--eb-faint);
-  font-size: 15px;
   text-decoration: none;
   cursor: pointer;
 }

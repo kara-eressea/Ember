@@ -29,6 +29,17 @@ export async function eiconsRoutes(
 
   app.addHook("preHandler", app.authenticate);
 
+  /** The index only ever downloads from xariah.net after a user with the
+   * pref enabled hits it — so both search and browse enforce the same gate. */
+  async function eiconSearchEnabled(userId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ prefs: userPreferences.prefs })
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .limit(1);
+    return resolvePrefs(row?.prefs ?? undefined).eiconSearchEnabled;
+  }
+
   app.get(
     "/search",
     {
@@ -43,12 +54,7 @@ export async function eiconsRoutes(
       config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      const [row] = await db
-        .select({ prefs: userPreferences.prefs })
-        .from(userPreferences)
-        .where(eq(userPreferences.userId, request.user.sub))
-        .limit(1);
-      if (!resolvePrefs(row?.prefs ?? undefined).eiconSearchEnabled) {
+      if (!(await eiconSearchEnabled(request.user.sub))) {
         return reply
           .code(403)
           .send({ error: "Eicon search is disabled in your preferences" });
@@ -57,6 +63,43 @@ export async function eiconsRoutes(
         return { results: await eicons.search(request.query.q) };
       } catch (error) {
         request.log.warn({ err: error }, "eicon search failed");
+        return reply
+          .code(502)
+          .send({ error: "The eicon index is unavailable right now" });
+      }
+    },
+  );
+
+  app.get(
+    "/browse",
+    {
+      schema: {
+        querystring: z.object({
+          offset: z.coerce.number().int().min(0).default(0),
+          limit: z.coerce.number().int().min(1).max(120).default(60),
+        }),
+        response: {
+          200: z.object({
+            names: z.array(z.string()),
+            total: z.number(),
+          }),
+          403: errorResponse,
+          502: errorResponse,
+        },
+      },
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      if (!(await eiconSearchEnabled(request.user.sub))) {
+        return reply
+          .code(403)
+          .send({ error: "Eicon browsing is disabled in your preferences" });
+      }
+      try {
+        const { offset, limit } = request.query;
+        return await eicons.browse(offset, limit);
+      } catch (error) {
+        request.log.warn({ err: error }, "eicon browse failed");
         return reply
           .code(502)
           .send({ error: "The eicon index is unavailable right now" });

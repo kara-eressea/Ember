@@ -28,6 +28,7 @@ import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
 import {
   useSessionsStore,
   type ChannelInvite,
@@ -41,7 +42,7 @@ import { Avatar } from "../common/Avatar.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
 import { matchScore } from "./quick-switch.js";
-import { orderRows, orderSocial } from "./sidebar-order.js";
+import { openDmPartnerSet, orderRows, orderSocial } from "./sidebar-order.js";
 import {
   loadCollapsedSections,
   toggleCollapsedSection,
@@ -174,13 +175,24 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     ...allDms.filter((d) => !d.pinned),
   ];
 
+  // One row per character (#227): a friend/bookmark with an open DM shows
+  // only as its DM row — which already carries presence (#229), unread, and
+  // the active anchor — so suppress the duplicate social row while the DM is
+  // open. F-Chat resolves names case-insensitively, so compare lowercased.
+  const openDmPartners = openDmPartnerSet(
+    Object.values(session.dms).map((dm) => dm.partner),
+  );
+
   // Friends/Bookmarks: online first (#164), offline hidden behind the
   // synced pref (#165), then the toolbar filter like everything else.
   const hideOffline = session.prefs.hideOfflineCharacters;
   const socialRows = (rows: readonly SocialCharacter[] | undefined) =>
     orderSocial(
       (rows ?? []).filter(
-        (row) => (row.online || !hideOffline) && matches(row.name),
+        (row) =>
+          (row.online || !hideOffline) &&
+          matches(row.name) &&
+          !openDmPartners.has(row.name.toLowerCase()),
       ),
       (row) => row.name,
       (row) => row.online,
@@ -278,7 +290,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             useUiStore.getState().setCharacterSearchOpen(true);
           }}
         >
-          ⌕
+          <SearchGlyph />
         </button>
       </div>
 
@@ -374,7 +386,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
             useUiStore.getState().setPrefsOpen(true);
           }}
         >
-          ⚙
+          <GearGlyph />
         </button>
       </div>
     </nav>
@@ -642,7 +654,7 @@ function PowerButton({ session }: { session: IdentitySession }) {
       title={connected ? "Log off F-Chat" : "Connect to F-Chat"}
       aria-label={connected ? "Log off F-Chat" : "Connect to F-Chat"}
     >
-      ⏻
+      <PowerGlyph />
     </button>
   );
 }
