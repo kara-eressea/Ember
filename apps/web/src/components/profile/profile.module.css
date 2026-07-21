@@ -498,6 +498,14 @@
 .content {
   flex: 1;
   min-height: 0;
+  /* Centered reading column (#238): the scroll container fills the main
+     region, but its content is capped to a comfortable width and centered
+     with auto margins so wide (fullscreen) windows don't strand the text on
+     the left. In the normal 900px window the region is already narrower than
+     the cap, so the auto margins collapse and nothing shifts. */
+  width: 100%;
+  max-width: 792px;
+  margin-inline: auto;
   padding: 18px 22px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -1337,34 +1345,40 @@
   border-radius: 4px;
 }
 
-/* Dimmed overlay *within* the modal window (§11), not a new layer over
-   the page — the profile modal stays visibly underneath. */
+/* Dimmed image overlay (§11). Fixed to the viewport, not confined to the
+   900px modal (#236): zoom can then reach true full-screen size instead of
+   stopping short at the modal edge. Sits above the profile overlay (z 45).
+   overflow:auto lets a zoomed image that overflows one axis be panned. */
 .lightbox {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 6;
+  z-index: 60;
   display: flex;
   flex-direction: column;
   gap: 10px;
   align-items: center;
   justify-content: center;
-  background: rgb(10 9 8 / 86%);
+  overflow: auto;
+  background: rgb(10 9 8 / 88%);
 }
 
 .lightboxImg {
-  max-width: 70%;
-  max-height: 380px;
+  max-width: 72vw;
+  max-height: 62vh;
   object-fit: contain;
   cursor: zoom-in;
   border: 1px solid var(--eb-border);
   border-radius: var(--eb-radius);
 }
 
-/* Zoomed (§11 issue #180): fill the available lightbox area, keeping a small
-   margin so the nav bar stays visible; click again to return to fit size. */
+/* Zoomed (#236): fill the viewport — width or height, whichever binds —
+   reserving a strip for the nav bar. max-* are upper bounds only, so a
+   small image is never upscaled past its natural size; a large one scales
+   down to fit and pans via the container's overflow. Click again to
+   return to fit size. */
 .lightboxImgZoomed {
-  max-width: calc(100% - 24px);
-  max-height: calc(100% - 60px);
+  max-width: 100vw;
+  max-height: calc(100vh - 56px);
   cursor: zoom-out;
 }
 

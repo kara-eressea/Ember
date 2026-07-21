@@ -272,7 +272,7 @@ function ViewerBody({
           </button>
         ))}
       </div>
-      <div className={styles.content}>
+      <div className={styles.content} data-testid="profile-content">
         <TabContent
           identityId={identityId}
           profile={profile}
