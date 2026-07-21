@@ -56,6 +56,9 @@ interface ProfileState {
   insights: Record<string, ProfileInsights | "error">;
   /** The viewing identity's own profile, for kink tints + the matcher. */
   ownProfile: ProfileResponse | undefined;
+  /** Why the last own-profile load failed — the Compare tab surfaces this
+   * instead of claiming forever that the profile "hasn't loaded yet". */
+  ownProfileError: string | undefined;
 
   open: (name: string) => void;
   close: () => void;
@@ -72,6 +75,7 @@ export const useProfileStore = create<ProfileState>()((set) => ({
   history: [],
   insights: {},
   ownProfile: undefined,
+  ownProfileError: undefined,
 
   open(name) {
     // Opening the full viewer dismisses the popover (§13 hand-off).
@@ -241,29 +245,52 @@ export function resetInsights(name: string): void {
 
 const ownInflight = new Map<string, Promise<void>>();
 
-/** The identity's own profile, once per identity per session. */
+/** The identity's own profile, once per identity per session. `retry`
+ * forces a new attempt after a failure (Compare tab's Retry). */
 export function loadOwnProfile(
   identityId: string,
   character: string,
+  retry = false,
 ): Promise<void> {
   const existing = useProfileStore.getState().ownProfile;
-  if (existing && existing.profile.name === character) {
+  if (
+    existing &&
+    existing.profile.name.toLowerCase() === character.toLowerCase()
+  ) {
     return Promise.resolve();
   }
   const running = ownInflight.get(identityId);
-  if (running) {
+  if (running && !retry) {
     return running;
   }
   const load = api
     .getProfile(identityId, character)
     .then((response) => {
-      useProfileStore.setState({ ownProfile: response });
+      if (ownInflight.get(identityId) !== load) {
+        return;
+      }
+      useProfileStore.setState({
+        ownProfile: response,
+        ownProfileError: undefined,
+      });
     })
-    .catch(() => {
-      // Absent own profile only means no kink tints / no compare — fine.
+    .catch((error: unknown) => {
+      if (ownInflight.get(identityId) !== load) {
+        return;
+      }
+      // No own profile only means no kink tints and no compare — record
+      // why so the Compare tab can say so instead of "loading" forever.
+      useProfileStore.setState({
+        ownProfileError:
+          error instanceof Error
+            ? error.message
+            : "Your own profile could not be loaded",
+      });
     })
     .finally(() => {
-      ownInflight.delete(identityId);
+      if (ownInflight.get(identityId) === load) {
+        ownInflight.delete(identityId);
+      }
     });
   ownInflight.set(identityId, load);
   return load;

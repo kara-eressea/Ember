@@ -28,8 +28,14 @@ import { parseEmote } from "./rich-text.js";
 import { RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
-/** Message body font size (Appearance pref) — the .body rule reads the var. */
-const FONT_SIZE_PX = { s: 12, m: 13, l: 14.5 } as const;
+/** Message-log type ramp (Appearance pref, issue #188): body plus the
+ * proportional secondary sizes — timestamp/mono meta and the nick column.
+ * S preserves the pre-#188 density; the default is M (prefs schema). */
+const FONT_RAMP_PX = {
+  s: { body: 13, meta: 11.5, nick: 12.5 },
+  m: { body: 14, meta: 12, nick: 13 },
+  l: { body: 15, meta: 13, nick: 14 },
+} as const;
 
 const EMPTY: MessageDto[] = [];
 const EMPTY_IGNORES: string[] = [];
@@ -221,8 +227,11 @@ export function MessageLog({
   // Mention-row hue (highlightTint pref): "accent" leaves the theme vars
   // alone; a fixed accent overrides --eb-hl* for this log only, with the
   // soft wash derived the same way applyTheme derives --eb-accent-soft.
+  const ramp = FONT_RAMP_PX[prefs.fontSize];
   const styleVars: Record<string, string> = {
-    "--eb-msg-font": `${String(FONT_SIZE_PX[prefs.fontSize])}px`,
+    "--eb-msg-font": `${String(ramp.body)}px`,
+    "--eb-msg-meta-font": `${String(ramp.meta)}px`,
+    "--eb-msg-nick-font": `${String(ramp.nick)}px`,
   };
   if (prefs.highlightTint !== "accent") {
     styleVars["--eb-hl"] = ACCENTS[prefs.highlightTint].hex;

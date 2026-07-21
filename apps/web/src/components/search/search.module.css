@@ -40,7 +40,7 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 9.5px;
   font-weight: 700;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -56,7 +56,7 @@
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .savedRow {
@@ -126,7 +126,7 @@
 .savedMeta {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .savedRemove {
@@ -217,7 +217,7 @@
   margin-top: 3px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .close {
@@ -258,7 +258,7 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 9.5px;
   font-weight: 700;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -275,7 +275,7 @@
 
 .kinkCount {
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .kinkChips {
@@ -327,7 +327,7 @@
   align-items: center;
   font-size: 12px;
   font-weight: 600;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   cursor: pointer;
   background: none;
   border: none;
@@ -378,7 +378,7 @@
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .pickerList {
@@ -447,7 +447,7 @@
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 9.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .pickerFoot {
@@ -457,7 +457,7 @@
   padding: 8px 11px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   background: var(--eb-head);
   border-top: 1px solid var(--eb-border);
 }
@@ -466,7 +466,7 @@
   font-family: inherit;
   font-size: inherit;
   font-weight: 600;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   cursor: pointer;
   background: none;
   border: none;
@@ -506,7 +506,7 @@
   padding-top: 4px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .filterChips {
@@ -563,7 +563,7 @@
 }
 
 .nameFilter::placeholder {
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .resultsCount {
@@ -654,7 +654,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.55;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────── */
@@ -670,7 +670,7 @@
 
 .footStatus {
   font-size: 11.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .footButtons {

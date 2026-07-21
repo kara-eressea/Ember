@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProfileResponse } from "@emberchat/protocol";
 import { api, ApiError } from "../lib/api.js";
-import { loadProfile, useProfileStore } from "./profile.js";
+import { loadOwnProfile, loadProfile, useProfileStore } from "./profile.js";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
@@ -49,6 +49,7 @@ beforeEach(() => {
     history: [],
     insights: {},
     ownProfile: undefined,
+    ownProfileError: undefined,
   });
   vi.restoreAllMocks();
 });
@@ -108,6 +109,33 @@ describe("loadProfile", () => {
     await loadProfile(ID, "Nyx Firemane", true);
     expect(spy).toHaveBeenCalledTimes(2);
     expect(spy).toHaveBeenLastCalledWith(ID, "Nyx Firemane", true);
+  });
+
+  it("records the failure so the Compare tab can surface it, and Retry clears it", async () => {
+    vi.spyOn(api, "getProfile").mockRejectedValue(
+      new ApiError(502, "expected record, received array at kinks"),
+    );
+    await loadOwnProfile(ID, "Amber Vale");
+    let state = useProfileStore.getState();
+    expect(state.ownProfile).toBeUndefined();
+    expect(state.ownProfileError).toBe(
+      "expected record, received array at kinks",
+    );
+
+    vi.spyOn(api, "getProfile").mockResolvedValue(response("Amber Vale"));
+    await loadOwnProfile(ID, "Amber Vale", true);
+    state = useProfileStore.getState();
+    expect(state.ownProfile?.profile.name).toBe("Amber Vale");
+    expect(state.ownProfileError).toBeUndefined();
+  });
+
+  it("memoizes the own profile case-insensitively", async () => {
+    const spy = vi
+      .spyOn(api, "getProfile")
+      .mockResolvedValue(response("Amber Vale"));
+    await loadOwnProfile(ID, "Amber Vale");
+    await loadOwnProfile(ID, "amber vale");
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("maps 404 to notfound and 429 to budget (keeping any cached copy)", async () => {
