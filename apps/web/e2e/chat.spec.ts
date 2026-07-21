@@ -257,6 +257,30 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
       });
     }).toPass({ timeout: 20_000 });
 
+    // ── Jump to recent (#231): scrolled up, the floating pill appears;
+    // both Esc and the pill snap back to the newest messages ──────────────
+    const jumpPill = page.getByTestId("jump-to-recent");
+    await expect(jumpPill).toBeVisible();
+    // Esc returns to the bottom (Discord parity) — no popover is open, so the
+    // otherwise-unhandled key reaches the log.
+    await page.keyboard.press("Escape");
+    await expect(
+      log.getByText(`seed #${String(SEED_COUNT)}`, { exact: true }),
+    ).toBeVisible({ timeout: 5_000 });
+    await expect(jumpPill).not.toBeVisible();
+    // Scroll back up and use the pill button itself.
+    await expect(async () => {
+      await log.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await expect(jumpPill).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
+    await jumpPill.click();
+    await expect(
+      log.getByText(`seed #${String(SEED_COUNT)}`, { exact: true }),
+    ).toBeVisible({ timeout: 5_000 });
+    await expect(jumpPill).not.toBeVisible();
+
     // ── In-log search + jump-to-context (M9 step 3) ───────────────────────
     await page.getByRole("button", { name: "Search log" }).click();
     const searchPanel = page.getByRole("dialog", { name: "Search log" });
