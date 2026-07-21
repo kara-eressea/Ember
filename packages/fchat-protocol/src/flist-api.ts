@@ -141,6 +141,16 @@ export const customKinkSchema = z.object({
 });
 export type CustomKink = z.infer<typeof customKinkSchema>;
 
+/** PHP serializes an empty associative array as `[]` — the JSON API sends
+ * record-shaped fields as an empty array when they hold nothing. Accept
+ * that and normalize to an empty record. */
+function phpRecord<V extends z.ZodType>(value: V) {
+  return z.preprocess(
+    (input) => (Array.isArray(input) && input.length === 0 ? {} : input),
+    z.record(z.string(), value),
+  );
+}
+
 export const characterDataSchema = z.object({
   error: z.string(),
   id: z.coerce.number().optional(),
@@ -165,12 +175,12 @@ export const characterDataSchema = z.object({
   created_at: z.coerce.number().optional(),
   updated_at: z.coerce.number().optional(),
   /** kink id (string key) → "fave" | "yes" | "maybe" | "no". */
-  kinks: z.record(z.string(), z.string()).optional(),
-  custom_kinks: z.record(z.string(), customKinkSchema).optional(),
+  kinks: phpRecord(z.string()).optional(),
+  custom_kinks: phpRecord(customKinkSchema).optional(),
   /** infotag id (string key) → listitem id for list-type tags, free text
    * otherwise; resolve via mapping-list. */
-  infotags: z.record(z.string(), z.string()).optional(),
-  inlines: z.record(z.string(), z.unknown()).optional(),
+  infotags: phpRecord(z.string()).optional(),
+  inlines: phpRecord(z.unknown()).optional(),
   images: z.array(characterImageSchema).optional(),
   timezone: z.coerce.number().nullable().optional(),
 });
@@ -224,43 +234,37 @@ export type MappingList = z.infer<typeof mappingListSchema>;
 /** kink-list: kinks grouped by group id; HTML entities in group names. */
 export const kinkListSchema = z.object({
   error: z.string(),
-  kinks: z
-    .record(
-      z.string(),
-      z.object({
-        group: z.string(),
-        items: z.array(
-          z.object({
-            kink_id: z.coerce.number(),
-            name: z.string(),
-            description: z.string().optional(),
-          }),
-        ),
-      }),
-    )
-    .optional(),
+  kinks: phpRecord(
+    z.object({
+      group: z.string(),
+      items: z.array(
+        z.object({
+          kink_id: z.coerce.number(),
+          name: z.string(),
+          description: z.string().optional(),
+        }),
+      ),
+    }),
+  ).optional(),
 });
 export type KinkList = z.infer<typeof kinkListSchema>;
 
 /** info-list: infotags grouped by group id; dropdown items carry options. */
 export const infoListSchema = z.object({
   error: z.string(),
-  info: z
-    .record(
-      z.string(),
-      z.object({
-        group: z.string(),
-        items: z.array(
-          z.object({
-            id: z.coerce.number(),
-            name: z.string(),
-            type: z.string(),
-            list: z.array(z.string()).optional(),
-          }),
-        ),
-      }),
-    )
-    .optional(),
+  info: phpRecord(
+    z.object({
+      group: z.string(),
+      items: z.array(
+        z.object({
+          id: z.coerce.number(),
+          name: z.string(),
+          type: z.string(),
+          list: z.array(z.string()).optional(),
+        }),
+      ),
+    }),
+  ).optional(),
 });
 export type InfoList = z.infer<typeof infoListSchema>;
 
