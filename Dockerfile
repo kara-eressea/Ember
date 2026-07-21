@@ -46,6 +46,7 @@ COPY --from=proddeps /repo/apps/server/node_modules ./apps/server/node_modules
 COPY --from=proddeps /repo/packages ./packages
 COPY --from=build /repo/packages/protocol/dist ./packages/protocol/dist
 COPY --from=build /repo/packages/fchat-protocol/dist ./packages/fchat-protocol/dist
+COPY --from=build /repo/packages/markdown-bbcode/dist ./packages/markdown-bbcode/dist
 COPY --from=build /repo/apps/server/package.json ./apps/server/package.json
 COPY --from=build /repo/apps/server/drizzle ./apps/server/drizzle
 COPY --from=build /repo/apps/server/dist ./apps/server/dist
