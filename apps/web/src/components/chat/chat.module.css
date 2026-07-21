@@ -320,20 +320,25 @@
   font-size: 11.5px;
 }
 
+/* The MessageBox (#205): toolbar + input read as one bordered container. */
+.messageBox {
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-side);
+  overflow: visible; /* popovers are fixed-positioned, but keep it explicit */
+}
+
+.messageBox:focus-within {
+  border-color: var(--eb-accent);
+  box-shadow: 0 0 0 3px var(--eb-accent-soft);
+}
+
 .inputBar {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 46px;
   padding: 8px 14px;
-  border: 1px solid var(--eb-border);
-  border-radius: var(--eb-radius);
-  background: var(--eb-side);
-}
-
-.inputBar:focus-within {
-  border-color: var(--eb-accent);
-  box-shadow: 0 0 0 3px var(--eb-accent-soft);
 }
 
 .composerInput {
@@ -776,6 +781,26 @@
   padding: 1px 4px;
 }
 
+/* ||spoiler|| (#205): a covered bar — text-colored fill, transparent
+ * content — until clicked; click again re-covers. Viewer-local only. */
+.spoiler {
+  border-radius: 3px;
+  background: var(--eb-text);
+  color: transparent;
+  cursor: pointer;
+}
+
+.spoiler:not(.spoilerRevealed) * {
+  color: transparent !important;
+  visibility: hidden;
+}
+
+.spoilerRevealed {
+  background: var(--eb-codebg);
+  color: inherit;
+  cursor: pointer;
+}
+
 /* Emote lines: italic, the name runs into the action, no nick separator. */
 .emoteBody {
   font-style: italic;
@@ -842,32 +867,6 @@
   font-size: 20px;
   color: var(--eb-faint);
   padding: 0 2px 0 10px;
-  cursor: default;
-}
-
-.formatHints {
-  flex: none;
-  align-self: center;
-  display: flex;
-  gap: 8px;
-  padding-right: 10px;
-}
-
-.formatHint {
-  border: 0;
-  background: none;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
-  color: var(--eb-faint);
-  cursor: pointer;
-}
-
-.formatHint:hover:not(:disabled) {
-  color: var(--eb-dim);
-}
-
-.formatHint:disabled {
-  opacity: 0.4;
   cursor: default;
 }
 
@@ -961,12 +960,43 @@
   gap: 12px;
 }
 
-.delaySelect {
+/* One footer run (left toggles+chips / right hints+counter), all meta. */
+.footerGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Queued-send countdown chip: `⏱ 0:29 · Edit · Cancel` (#205 §5). */
+.countdownChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 1px 8px;
+  border: 1px solid var(--eb-accent-med);
+  border-radius: var(--eb-radius);
+  background: var(--eb-accent-soft);
+}
+
+.countdownTime {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eb-accent-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.chipAction {
   border: 0;
+  padding: 0;
   background: none;
-  color: var(--eb-meta);
   font-size: 11px;
+  color: var(--eb-meta);
   cursor: pointer;
+}
+
+.chipAction:hover {
+  color: var(--eb-text);
 }
 
 /* Alert Staff report form (M7): inline in the member menu. */
@@ -1559,19 +1589,286 @@
   animation: jump-flash 2.4s ease-out 1;
 }
 
-/* ── Composer toolbar extension + /help (M9 step 4) ────────────────────── */
+/* ── Composer formatting toolbar (#205, toolbar spec) ──────────────────── */
 
-.formatHintOn {
-  color: var(--eb-accent);
-  background: var(--eb-accent-soft);
+/* Toolbar row: 36px, bottom hairline, ? / ⋯ pinned right via the spacer. */
+.toolbarRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--eb-border);
 }
 
-/* Hairline between the format cluster and the Ad Center entry (M10). */
-.hintDivider {
-  align-self: center;
+.toolbarCluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tbSpacer {
+  margin-left: auto;
+}
+
+.tbDivider {
   width: 1px;
-  height: 16px;
+  height: 18px;
+  margin: 0 6px;
   background: var(--eb-border);
+}
+
+/* IconBtn state table (spec §3): dim rest / hoverMain hover / accentSoft
+ * toggled (with the bottom accent bar) / accent-filled armed timer. */
+.iconBtn {
+  display: grid;
+  place-items: center;
+  grid-auto-flow: column;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--eb-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--eb-hover-main);
+  color: var(--eb-text);
+}
+
+.iconBtnOn,
+.iconBtnOn:hover:not(:disabled) {
+  background: var(--eb-accent-soft);
+  color: var(--eb-accent-text);
+  box-shadow: inset 0 -2px 0 var(--eb-accent);
+}
+
+.iconBtnArmed,
+.iconBtnArmed:hover:not(:disabled) {
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+}
+
+.iconBtn:disabled {
+  color: var(--eb-faint);
+  cursor: default;
+}
+
+/* Armed timer widens with the mono delay label (spec §5). */
+.timerLabel {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* UI-font glyph letters — shared weight, never system emoji (spec §2). */
+.glyphB {
+  font-weight: 700;
+}
+
+.glyphI {
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+
+.glyphU {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.glyphS {
+  text-decoration: line-through;
+}
+
+.glyphScript {
+  font-size: 11.5px;
+}
+
+.glyphAt {
+  font-weight: 600;
+}
+
+/* Colour = A over a 3px last-used-colour bar (spec §4). */
+.glyphColor {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.glyphColorBar {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentcolor;
+}
+
+/* Toolbar popovers: the profile popover primitive (spec §4/§9). */
+.tbOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.tbPopover {
+  position: fixed;
+  z-index: 41;
+  min-width: 180px;
+  padding: 8px;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%);
+}
+
+.tbPopHead {
+  padding: 2px 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--eb-meta);
+}
+
+.swatchGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 22px);
+  gap: 8px;
+  padding: 0 4px 8px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.swatchOn {
+  box-shadow:
+    0 0 0 2px var(--eb-side),
+    0 0 0 4px var(--eb-accent);
+}
+
+.tbPopRow {
+  display: block;
+  width: 100%;
+  padding: 7px 4px 2px;
+  border: 0;
+  border-top: 1px solid var(--eb-border);
+  background: none;
+  text-align: left;
+  font-size: 11.5px;
+  color: var(--eb-meta);
+  cursor: pointer;
+}
+
+.tbPopRow:hover {
+  color: var(--eb-text);
+}
+
+/* Menu popover (overflow, timer radios) — MemberContext item styling. */
+.tbMenu {
+  display: flex;
+  flex-direction: column;
+}
+
+.tbMenuItem {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: calc(var(--eb-radius) - 2px);
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--eb-text);
+  cursor: pointer;
+}
+
+.tbMenuItem:hover {
+  background: var(--eb-hover);
+}
+
+.tbMenuItemOn {
+  background: var(--eb-accent-soft);
+  color: var(--eb-accent-text);
+}
+
+.tbNote {
+  padding: 6px 4px 2px;
+  max-width: 210px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--eb-meta);
+}
+
+/* Input popovers (link / character actions, spec §5c). */
+.tbForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 224px;
+}
+
+.tbCustomRow {
+  display: flex;
+  gap: 6px;
+  padding: 4px 4px 0;
+}
+
+.tbInput {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: 8px;
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font-size: 12.5px;
+}
+
+.tbInput::placeholder {
+  color: var(--eb-meta);
+}
+
+.tbActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.tbBtn {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: none;
+  font-size: 11.5px;
+  color: var(--eb-dim);
+  cursor: pointer;
+}
+
+.tbBtnAccent {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--eb-radius);
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tbBtnAccent:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Chat/Ads/Both view selector in the channel header (M10, spec §4). */
@@ -1620,18 +1917,6 @@
   color: var(--eb-warn);
   background: color-mix(in srgb, var(--eb-warn) 10%, var(--eb-side));
   border-top: 1px solid color-mix(in srgb, var(--eb-warn) 30%, var(--eb-side));
-}
-
-.formatSelect {
-  max-width: 76px;
-  padding: 2px 4px;
-  font-family: var(--eb-mono, monospace);
-  font-size: 10.5px;
-  color: var(--eb-dim);
-  cursor: pointer;
-  background: var(--eb-bg);
-  border: 1px solid var(--eb-border);
-  border-radius: var(--eb-radius);
 }
 
 .helpOverlay {

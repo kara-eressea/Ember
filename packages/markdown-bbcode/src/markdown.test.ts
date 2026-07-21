@@ -194,3 +194,34 @@ describe("subset invariant", () => {
     );
   });
 });
+
+describe("spoiler ||…||", () => {
+  it("passes the pipes through — plain text on the wire, never a tag", () => {
+    expect(mdToBBCode("||secret||")).toBe("||secret||");
+    expect(mdToBBCode("a ||secret|| b")).toBe("a ||secret|| b");
+  });
+
+  it("translates the covered contents like any run", () => {
+    expect(mdToBBCode("||**loud** secret||")).toBe("||[b]loud[/b] secret||");
+    expect(mdToBBCode("**||nested||**")).toBe("[b]||nested||[/b]");
+  });
+
+  it("round-trips: the wire form re-translates to itself", () => {
+    const wire = mdToBBCode("||[b]x[/b] *y*||");
+    expect(wire).toBe("||[b]x[/b] [i]y[/i]||");
+    expect(mdToBBCode(wire)).toBe(wire);
+  });
+
+  it("unterminated or empty pipes stay literal", () => {
+    expect(mdToBBCode("||half")).toBe("||half");
+    expect(mdToBBCode("a || b || c")).toBe("a || b || c");
+  });
+
+  it("escaped pipes stay literal", () => {
+    expect(mdToBBCode("\\||not a spoiler\\||")).toBe("||not a spoiler||");
+  });
+
+  it("pipes inside a code span never open a spoiler", () => {
+    expect(mdToBBCode("`||raw||`")).toBe("[noparse]||raw||[/noparse]");
+  });
+});

@@ -46,8 +46,8 @@ describe("themeVariables", () => {
     expect(vars["--eb-bg"]).toBe(BASE_THEMES.parchment.bg);
     // Light-ground status colors, dark-enough for AA as text.
     expect(vars["--eb-ok"]).toBe("#54803a");
-    // [color=white] must stay legible on paper — a warm gray, not a lie.
-    expect(vars["--eb-bbc-white"]).toBe("#8d8577");
+    // [color=white] must stay legible on paper — it maps to the ink text.
+    expect(vars["--eb-bbc-white"]).toBe(BASE_THEMES.parchment.text);
     // The light nick palette rides the same var slots (#186: the darkened
     // mix(c, text, 0.52) set — legible on paper).
     expect(vars["--eb-nick-0"]).toBe("#695c72");
@@ -82,6 +82,35 @@ describe("themeVariables", () => {
     );
     // Moss's warn shift folds into whichever set is active.
     expect(themeVariables("moss", "slate", true)["--eb-warn"]).toBe("#e6b625");
+  });
+});
+
+describe("themeVariables — retuned --eb-bbc-* (#205)", () => {
+  it("dark themes share the normalized hue set from the toolbar spec", () => {
+    const vars = themeVariables("dusk");
+    expect(vars["--eb-bbc-red"]).toBe("#e08a6a");
+    expect(vars["--eb-bbc-orange"]).toBe("#e6a75a");
+    expect(vars["--eb-bbc-yellow"]).toBe("#d8c06a");
+    expect(vars["--eb-bbc-pink"]).toBe("#c294b0");
+    expect(vars["--eb-bbc-green"]).toBe("#8bb173");
+    expect(vars["--eb-bbc-cyan"]).toBe("#79b6b6");
+    expect(vars["--eb-bbc-blue"]).toBe("#8f9bc9");
+    expect(vars["--eb-bbc-purple"]).toBe("#a892c6");
+    expect(vars["--eb-bbc-brown"]).toBe("#c0906a");
+    expect(vars["--eb-bbc-black"]).toBe("#8a8078");
+    expect(vars["--eb-bbc-gray"]).toBe("#a89e92");
+    expect(vars["--eb-bbc-white"]).toBe("#ece7e0");
+    // Charcoal shares the same set — one dark set, per the spec.
+    expect(themeVariables("dusk", "charcoal")["--eb-bbc-red"]).toBe("#e08a6a");
+  });
+
+  it("parchment darkens via mix(name, text, .52), white→text, black→heading", () => {
+    const vars = themeVariables("dusk", "parchment");
+    const { text, heading } = BASE_THEMES.parchment;
+    expect(vars["--eb-bbc-red"]).toBe(mix("#e08a6a", text, 0.52));
+    expect(vars["--eb-bbc-gray"]).toBe(mix("#a89e92", text, 0.52));
+    expect(vars["--eb-bbc-white"]).toBe(text);
+    expect(vars["--eb-bbc-black"]).toBe(heading);
   });
 });
 
