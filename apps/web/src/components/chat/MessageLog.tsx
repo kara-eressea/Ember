@@ -14,6 +14,7 @@ import {
   type TimeFormat,
 } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
+import type { PresenceLine } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { CachedMatchChip } from "../profile/CachedMatchChip.js";
@@ -299,17 +300,7 @@ export function MessageLog({
                   new
                 </div>
               ) : row.type === "presence" ? (
-                <div
-                  className={styles.presenceLine}
-                  data-testid="presence-line"
-                >
-                  {row.line.character}{" "}
-                  {row.line.kind === "join"
-                    ? "joined"
-                    : row.line.kind === "part"
-                      ? "left the channel"
-                      : "went offline"}
-                </div>
+                <PresenceLineRow line={row.line} prefs={prefs} />
               ) : row.message.kind === "sys" ? (
                 <SystemLine message={row.message} prefs={prefs} />
               ) : row.message.kind === "rll" ? (
@@ -545,7 +536,9 @@ function MessageLine({
           visible nicks open the mini profile card (M8). */}
       {grouped ? (
         <span
-          className={`${styles.nick} ${styles.nickGrouped ?? ""}`}
+          className={`${styles.nick} ${styles.nickGrouped ?? ""} ${
+            emote ? (styles.emoteNick ?? "") : ""
+          }`}
           style={{ color: nickColor(message.senderCharacter) }}
           aria-hidden
         >
@@ -554,7 +547,9 @@ function MessageLine({
       ) : (
         <button
           type="button"
-          className={`${styles.nick} ${styles.nameButton ?? ""}`}
+          className={`${styles.nick} ${styles.nameButton ?? ""} ${
+            emote ? (styles.emoteNick ?? "") : ""
+          }`}
           style={{ color: nickColor(message.senderCharacter) }}
           onClick={(event) => {
             openCardFrom(event.currentTarget, message.senderCharacter);
@@ -604,6 +599,38 @@ function RollLine({
       <span aria-hidden>🎲</span>
       <span>
         <RichText bbcode={message.bbcode} />
+      </span>
+    </div>
+  );
+}
+
+/** A live join/leave/went-offline notice (M5, "show join/part/quit" pref).
+ * Carries the same timestamp treatment as every other log line (#208). */
+function PresenceLineRow({
+  line,
+  prefs,
+}: {
+  line: PresenceLine;
+  prefs: UserPrefs;
+}) {
+  const time = formatTime(line.createdAt, timeFormat(prefs));
+  return (
+    <div className={styles.presenceLine} data-testid="presence-line">
+      {time !== "" && (
+        <span
+          className={styles.time}
+          title={formatFullDateTime(line.createdAt)}
+        >
+          {time}
+        </span>
+      )}
+      <span>
+        {line.character}{" "}
+        {line.kind === "join"
+          ? "joined"
+          : line.kind === "part"
+            ? "left the channel"
+            : "went offline"}
       </span>
     </div>
   );

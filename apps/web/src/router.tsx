@@ -8,7 +8,6 @@ import {
 } from "react-router";
 import { IdentityPicker } from "./components/auth/IdentityPicker.js";
 import { Login } from "./components/auth/Login.js";
-import { Landing } from "./components/landing/Landing.js";
 import { AppShell } from "./components/shell/AppShell.js";
 import { useAuthStore } from "./stores/auth.js";
 
@@ -35,7 +34,11 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Landing />} />
+        {/* Self-hosted, admin-only instances have no audience to market to
+            (decisions.md §2) — the app opens straight to login. Both "/" and
+            "/login" render it so RequireAuth's deep-link redirect (which
+            carries state.from to /login) still resumes. */}
+        <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route
           path="/identities"
