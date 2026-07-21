@@ -180,10 +180,9 @@ export function Composer({
       }),
     [text, channelKey, canModerate],
   );
+  // Popover visibility is render-derived; keyboard selection reads the live
+  // input value in onKeyDown (below) to stay correct under fast input.
   const showSlash = !slashDismissed && slashSuggestions.length > 0;
-  // Only the first token still being typed drives keyboard selection; once
-  // args follow, the popover is a passive signature hint (Enter still sends).
-  const slashListMode = showSlash && !/^\/\S*\s/.test(text);
   const slashIndex = Math.min(slashActive, slashSuggestions.length - 1);
 
   function completeSlash(hint: SlashHint) {
@@ -343,14 +342,19 @@ export function Composer({
   }
 
   async function send() {
-    const body = wire.trim();
+    // Read the live input value rather than the closured `text` state: a fast
+    // Enter (or programmatic input) can fire before React re-renders, and
+    // sending stale text would fire the wrong message or mis-route a command
+    // (#235 audit). Everything below derives from this one source of truth.
+    const source = inputRef.current?.value ?? text;
+    const body = (markdown ? mdToBBCode(source) : source).trim();
     if (!body || busy) {
       return;
     }
     // Slash commands act on the raw typed text, before any translation.
     let slash;
     try {
-      slash = parseSlash(text.trim());
+      slash = parseSlash(source.trim());
     } catch (usage) {
       if (usage instanceof SlashUsageError) {
         setError(usage.message);
@@ -432,7 +436,7 @@ export function Composer({
       d: {
         convId,
         bbcode: body,
-        ...(markdown ? { markdown: text.trim() } : {}),
+        ...(markdown ? { markdown: source.trim() } : {}),
         ...(sendAsAd ? { kind: "lrp" as const } : {}),
       },
     });
@@ -451,16 +455,27 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    // Slash autocomplete keyboard (#235). Escape closes it from any state;
-    // arrow/Tab/Enter selection only applies while the command word is being
-    // chosen (list mode) — in signature-hint mode Enter still sends.
-    if (showSlash && event.key === "Escape") {
+    // Slash autocomplete keyboard (#235). The decision reads the *live*
+    // textarea value, not the closured `text` state — fast programmatic input
+    // (and quick typists) can fire keydown before React has re-rendered with
+    // the new value, and a stale read would misfire Enter (completing instead
+    // of running a command, or swallowing a send). Escape closes the popover
+    // from any state; arrow/Tab/Enter selection applies only while the command
+    // word is being chosen (list mode) — in signature-hint mode Enter sends.
+    const liveText = event.currentTarget.value;
+    const liveSuggestions = suggestCommands(liveText, {
+      inChannel: channelKey !== undefined,
+      canModerate,
+    });
+    const liveShow = !slashDismissed && liveSuggestions.length > 0;
+    if (liveShow && event.key === "Escape") {
       event.preventDefault();
       setSlashDismissed(true);
       return;
     }
-    if (slashListMode) {
-      const count = slashSuggestions.length;
+    const liveListMode = liveShow && !/^\/\S*\s/.test(liveText);
+    if (liveListMode) {
+      const count = liveSuggestions.length;
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setSlashActive((i) => (Math.min(i, count - 1) + 1) % count);
@@ -471,13 +486,13 @@ export function Composer({
         setSlashActive((i) => (Math.min(i, count - 1) + count - 1) % count);
         return;
       }
-      const hint = slashSuggestions[slashIndex];
+      const hint = liveSuggestions[Math.min(slashActive, count - 1)];
       // Tab always completes the highlighted command (adding a trailing space
       // to type args into). Enter completes too — unless the highlighted
       // command is already exactly what's typed, in which case Enter runs it
       // (so a bare "/help" or "/bottle" still fires on the first Enter).
       const alreadyTyped =
-        hint !== undefined && text.slice(1).toLowerCase() === hint.name;
+        hint !== undefined && liveText.slice(1).toLowerCase() === hint.name;
       if (event.key === "Tab" || (event.key === "Enter" && !alreadyTyped)) {
         event.preventDefault();
         if (hint) {
