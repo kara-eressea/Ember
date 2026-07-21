@@ -112,16 +112,23 @@ const configSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z
       .string()
-      .refine(
-        (key) => {
-          try {
-            return Buffer.from(key, "base64url").length === 32;
-          } catch {
-            return false;
-          }
-        },
-        { message: "CREDENTIALS_KEY must be 32 bytes of base64url" },
-      )
+      .superRefine((key, ctx) => {
+        // Node's base64url decoding skips invalid characters rather than
+        // erroring, so the only realistic failure is a wrong-length key
+        // (hex output, truncated/doubled paste). Say what we decoded —
+        // byte counts, never the key itself.
+        const bytes = Buffer.from(key, "base64url").length;
+        if (bytes !== 32) {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              `CREDENTIALS_KEY must decode to exactly 32 bytes of base64url; ` +
+              `got a ${key.length}-character value decoding to ${bytes} bytes ` +
+              `(expected 43 characters — hex keys decode to 48 bytes and won't work). ` +
+              `Generate one: node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`,
+          });
+        }
+      })
       .optional(),
   ),
   /**

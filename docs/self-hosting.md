@@ -119,7 +119,7 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `TRUST_PROXY` | unset | **Required behind a proxy** — hop count or CIDRs |
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
 | `APP_NAME` / `CLIENT_NAME` | `EmberChat` | Branding / IDN `cname` (keep it honest) |
-| `CREDENTIALS_KEY` | unset | Enables "Remember on this server" (see below); 32 bytes base64url, generated like `AUTH_SECRET` |
+| `CREDENTIALS_KEY` | unset | Enables "Remember on this server" (see below); must be exactly 32 bytes of base64url (43 characters) — use the node one-liner from `.env.example`, not a hex generator |
 | `RETENTION_POLICY` | `forever` | `forever` \| `30d` \| `90d` \| `1y` message retention |
 | `DETACHED_DISCONNECT_HOURS` | `72` | Log a character out of F-Chat after this long with no device attached (`0` = never); reopening the app reconnects automatically |
 | `UPDATE_CHECK_ENABLED` | `true` | Daily GitHub Releases check; `false` = no phone-home |
