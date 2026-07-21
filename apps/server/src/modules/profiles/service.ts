@@ -267,7 +267,11 @@ export class ProfileService {
   /** True when the requested character is the session's own connected
    * identity — matched on either the requested spelling or the canonical
    * name F-List returned. */
-  #isSelf(identity: ProfileIdentity, lower: string, canonical: string): boolean {
+  #isSelf(
+    identity: ProfileIdentity,
+    lower: string,
+    canonical: string,
+  ): boolean {
     const self = identity.character.toLowerCase();
     return lower === self || canonical.toLowerCase() === self;
   }
@@ -285,7 +289,9 @@ export class ProfileService {
     // Belt-and-braces for rows recorded before the self-exclusion fix (#209):
     // filter the own character out at serve time so no DB purge is needed.
     if (selfCharacter) {
-      conditions.push(ne(profileViews.characterLower, selfCharacter.toLowerCase()));
+      conditions.push(
+        ne(profileViews.characterLower, selfCharacter.toLowerCase()),
+      );
     }
     const rows = await this.#db
       .select()
