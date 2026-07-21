@@ -109,7 +109,7 @@
 .trustLine {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .features {

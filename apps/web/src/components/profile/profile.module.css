@@ -72,7 +72,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   border-bottom: 1px solid var(--eb-border);
 }
 
@@ -139,7 +139,7 @@
 .histAgo {
   font-family: var(--eb-mono, monospace);
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .histRemove {
@@ -166,7 +166,7 @@
   padding: 28px 16px;
   font-size: 11.5px;
   text-align: center;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .railEmptyTile {
@@ -252,7 +252,7 @@
   align-items: center;
   font-family: var(--eb-mono, monospace);
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .iconBtn {
@@ -323,7 +323,7 @@
   padding: 6px 12px;
   font-size: 11.5px;
   font-weight: 500;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   cursor: pointer;
   background: none;
   border: 1px dashed var(--eb-border);
@@ -414,14 +414,14 @@
 .noteFoot {
   font-family: var(--eb-mono, monospace);
   font-size: 9.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .noteImport {
   padding: 0;
   font-family: var(--eb-mono, monospace);
   font-size: 9.5px;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   cursor: pointer;
   background: none;
   border: none;
@@ -480,7 +480,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .detailRow {
@@ -498,7 +498,7 @@
 
 .detailLabel {
   font-size: 12px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .detailValue {
@@ -529,7 +529,7 @@
   margin-bottom: 16px;
   font-family: var(--eb-mono, monospace);
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .emptyState {
@@ -594,7 +594,7 @@
   margin-bottom: 12px;
   font-family: var(--eb-mono, monospace);
   font-size: 10.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .kinkGrid {
@@ -633,7 +633,7 @@
   margin-left: auto;
   font-family: var(--eb-mono, monospace);
   font-weight: 400;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .kinkList {
@@ -782,7 +782,7 @@
   margin-left: auto;
   font-family: var(--eb-mono, monospace);
   font-size: 9px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .bbCollapseBody {
@@ -929,7 +929,7 @@
   padding: 0 14px 12px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .cardActions {
@@ -1033,7 +1033,7 @@
   font: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   cursor: pointer;
   background: none;
   border: 0;
@@ -1071,7 +1071,7 @@
   align-items: center;
   padding: 11px 14px;
   font-size: 11.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   border-top: 1px solid color-mix(in srgb, var(--eb-border) 65%, var(--eb-side));
 }
 
@@ -1118,7 +1118,7 @@
 .dimCellLabel {
   font-size: 12px;
   font-weight: 400;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .dimCellMatch {
@@ -1142,7 +1142,7 @@
   flex: 1;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .conflictChip {
@@ -1175,7 +1175,7 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   text-transform: uppercase;
 }
 
@@ -1221,7 +1221,7 @@
 .cmpKinksEmpty {
   padding: 14px 12px;
   font-size: 12px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   border: 1px dashed var(--eb-border);
   border-radius: var(--eb-radius);
 }
@@ -1352,7 +1352,7 @@
 .gbDate {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .gbMessage {
@@ -1376,7 +1376,7 @@
   margin-bottom: 3px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 9.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1390,7 +1390,7 @@
 
 .gbSign {
   font-size: 11.5px;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   text-decoration: none;
 }
 
