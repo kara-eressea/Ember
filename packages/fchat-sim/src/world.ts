@@ -37,6 +37,15 @@ export interface SimNpc {
   readonly gender: string;
   readonly status: string;
   readonly statusmsg: string;
+  /** Optional profile-image seeds surfaced through character-data (the
+   * Images tab / lightbox). Omitted for NPCs whose profile has no gallery. */
+  readonly images?: readonly {
+    readonly id: number;
+    readonly extension: string;
+    readonly height?: number;
+    readonly width?: number;
+    readonly description?: string;
+  }[];
 }
 
 export interface SimWorld {
@@ -286,6 +295,26 @@ export const DEFAULT_WORLD: SimWorld = {
       gender: "Male",
       status: "looking",
       statusmsg: "Open for scenes!",
+      // A small gallery so the profile E2E can exercise the Images tab and
+      // the full-screen lightbox zoom (#236): one large portrait (zoom binds
+      // on height and fills the viewport) and one tiny image (must never be
+      // upscaled past its natural size).
+      images: [
+        {
+          id: 90_001,
+          extension: "png",
+          width: 1200,
+          height: 1600,
+          description: "Reading by the window",
+        },
+        {
+          id: 90_002,
+          extension: "png",
+          width: 300,
+          height: 200,
+          description: "By the river",
+        },
+      ],
     },
     {
       name: "Old Greywhisker",

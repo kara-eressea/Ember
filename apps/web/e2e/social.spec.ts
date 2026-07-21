@@ -45,6 +45,16 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
     .click();
   await expect(page).toHaveURL(/\/dm\/Nyx%20Firemane/);
 
+  // One row per character (#227): opening the DM absorbs the friend row —
+  // Nyx now shows only as a DM row (a link), never both. The former friend
+  // button is gone.
+  await expect(
+    sidebar.getByRole("link", { name: "Nyx Firemane", exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(
+    sidebar.getByRole("button", { name: "Nyx Firemane", exact: true }),
+  ).toHaveCount(0);
+
   // Member menu: the bookmark item is relationship-aware. Old Greywhisker
   // is seeded as a bookmark → "Remove bookmark"; after removing, the
   // sidebar section empties and the menu flips to "Add bookmark".
@@ -78,9 +88,9 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   await page.keyboard.press("Escape");
 
   // ── Sidebar ergonomics (#167/#196/#168) ───────────────────────────────
-  // Right-clicking a friend row opens the same identity menu.
+  // Right-clicking the unified DM row opens the same identity menu.
   await sidebar
-    .getByRole("button", { name: "Nyx Firemane", exact: true })
+    .getByRole("link", { name: "Nyx Firemane", exact: true })
     .click({ button: "right" });
   await expect(
     page
@@ -93,7 +103,7 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   const filter = page.getByLabel("Filter the channel list");
   await filter.fill("nyx");
   await expect(
-    sidebar.getByRole("button", { name: "Nyx Firemane", exact: true }),
+    sidebar.getByRole("link", { name: "Nyx Firemane", exact: true }),
   ).toBeVisible();
   await expect(
     sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),

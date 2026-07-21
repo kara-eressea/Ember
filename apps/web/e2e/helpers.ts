@@ -3,6 +3,7 @@
 // to fchat-sim for the "other side" of relays.
 
 import { execFile } from "node:child_process";
+import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, type Page } from "@playwright/test";
@@ -30,6 +31,53 @@ export async function interceptAvatars(page: Page): Promise<void> {
     .route("https://static.f-list.net/**", (route) =>
       route.fulfill({ contentType: "image/png", body: TINY_PNG }),
     );
+}
+
+/** A valid, solid-colour PNG of exact dimensions — the tiny 1×1 avatar stub
+ * has no natural size worth measuring, so lightbox-zoom assertions (#236)
+ * need a real image whose intrinsic width/height the browser can report. */
+export function solidPng(width: number, height: number): Buffer {
+  const crc32 = (data: Buffer): number => {
+    let crc = ~0;
+    for (const byte of data) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) {
+        crc = (crc >>> 1) ^ (0xed_b8_83_20 & -(crc & 1));
+      }
+    }
+    return ~crc >>> 0;
+  };
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const typeBuf = Buffer.from(type, "latin1");
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])));
+    return Buffer.concat([len, typeBuf, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour RGB
+  const stride = width * 3;
+  const raw = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (stride + 1);
+    raw[rowStart] = 0; // filter: none
+    for (let x = 0; x < width; x++) {
+      const p = rowStart + 1 + x * 3;
+      raw[p] = 90;
+      raw[p + 1] = 110;
+      raw[p + 2] = 140;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 export function credentials() {

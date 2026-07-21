@@ -113,10 +113,13 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(
     picker.getByRole("button", { name: "Remove teacup from favorites" }),
   ).toBeVisible();
-  // Search is pref-gated (server-enforced): the disabled explainer links to
-  // Preferences, where the toggle carries the third-party disclosure.
+  // Search and Gallery are pref-gated (server-enforced): the disabled
+  // explainer links to Preferences, where the toggle carries the third-party
+  // disclosure. Both index-backed tabs share the "off" note.
+  await picker.getByRole("tab", { name: /Gallery/ }).click();
+  await expect(picker.getByText("Eicon index is off")).toBeVisible();
   await picker.getByRole("tab", { name: /Search/ }).click();
-  await expect(picker.getByText("Eicon search is off")).toBeVisible();
+  await expect(picker.getByText("Eicon index is off")).toBeVisible();
   await picker.getByRole("button", { name: /Enable in Preferences/ }).click();
   const prefsWindow = page.getByRole("dialog", { name: "Preferences" });
   await expect(prefsWindow).toBeVisible();
@@ -130,6 +133,12 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await picker.getByRole("textbox", { name: "Search eicons" }).fill("lantern");
   await expect(
     picker.getByRole("button", { name: "Insert lanternlight" }),
+  ).toBeVisible();
+  // Gallery (#239) browses the whole index without a query, and each tile
+  // carries the eicon name on hover (title attribute).
+  await picker.getByRole("tab", { name: "Gallery" }).click();
+  await expect(
+    picker.getByRole("button", { name: "Insert campfire" }),
   ).toBeVisible();
   // Tile click inserts at the caret; Escape dismisses the popover.
   await picker.getByRole("tab", { name: "Favorites" }).click();
