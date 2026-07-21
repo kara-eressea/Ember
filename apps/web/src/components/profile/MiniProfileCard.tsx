@@ -141,10 +141,16 @@ export function MiniProfileCard({
     if (!element) {
       return;
     }
+    // Measure the natural content height (scrollHeight), not offsetHeight —
+    // once a prior render caps the card via maxHeight, offsetHeight reports
+    // the clamped value and the card can never re-grow as content loads
+    // (#182: the card constrained itself and hid the "Open profile" action,
+    // varying by anchor origin). scrollHeight reflects the full content, so
+    // the card expands to fit and only scrolls when it truly can't.
     setPos(
       placePopover(
         anchor,
-        { width: CARD_WIDTH, height: element.offsetHeight },
+        { width: CARD_WIDTH, height: element.scrollHeight },
         { width: window.innerWidth, height: window.innerHeight },
       ),
     );
