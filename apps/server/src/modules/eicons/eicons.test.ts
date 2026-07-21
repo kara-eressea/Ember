@@ -89,6 +89,14 @@ function search(query: string) {
   });
 }
 
+function browse(query = "") {
+  return app.inject({
+    method: "GET",
+    url: `/api/eicons/browse${query}`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
 describe("eicon search route", () => {
   it("is a real server-side gate: 403 while the pref is off", async () => {
     const response = await search("tea");
@@ -113,6 +121,37 @@ describe("eicon search route", () => {
 
   it("rejects an empty query at the schema", async () => {
     const response = await search("");
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("eicon browse route", () => {
+  // The search describe above enabled the pref for this user, so browsing is
+  // gated open here (the 403 path shares the exact helper search uses).
+  it("returns the full index page with a total", async () => {
+    const response = await browse();
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ names: string[]; total: number }>();
+    expect(body.total).toBe(5);
+    expect(body.names).toEqual([
+      "campfire",
+      "Ember Logo",
+      "teacup",
+      "tea.time",
+      "lanternlight",
+    ]);
+  });
+
+  it("honors offset and limit for paging", async () => {
+    const response = await browse("?offset=2&limit=2");
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ names: string[]; total: number }>();
+    expect(body.total).toBe(5);
+    expect(body.names).toEqual(["teacup", "tea.time"]);
+  });
+
+  it("rejects a negative offset at the schema", async () => {
+    const response = await browse("?offset=-1");
     expect(response.statusCode).toBe(400);
   });
 });

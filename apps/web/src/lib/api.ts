@@ -469,6 +469,15 @@ export const api = {
     );
   },
 
+  /** A page of the full eicon index for the gallery browser (#239) —
+   * same pref gate as search (403 when off). */
+  browseEicons(offset: number, limit: number) {
+    return apiRequest<{ names: string[]; total: number }>(
+      `/eicons/browse?offset=${String(offset)}&limit=${String(limit)}`,
+      { auth: true },
+    );
+  },
+
   /** The identity's ad library, in display order (M10). */
   getAds(identityId: string) {
     return apiRequest<{ ads: AdDto[] }>(`/identities/${identityId}/ads`, {
