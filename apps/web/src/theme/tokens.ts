@@ -147,6 +147,66 @@ export const NICK_PALETTE_LIGHT = [
   "#617163",
 ] as const;
 
+/** Gender colours for member-list names (#177). Supplementary, never the
+ * only signal — the name stays full-contrast text regardless. Hues follow
+ * the F-Chat client conventions (blue male, pink female, purple herms, …)
+ * pulled into the app's warm palette. Two grounds, like the nick palette:
+ * GENDER_PALETTE for the dark bases, GENDER_PALETTE_LIGHT pulled down for
+ * paper. Every value clears WCAG AA (4.5:1) on the member-list ground
+ * (--eb-side2) for all three bases — the dark values are checked against the
+ * lighter slate side2 (#2a2725), the light ones against parchment (#e7dfd0).
+ * "None" and unknown genders take no colour (the default text token).
+ *
+ * The keys are the slugs written as --eb-gender-<slug>; genderColorVar maps a
+ * wire gender string onto one. */
+export const GENDER_SLUGS = {
+  Male: "male",
+  Female: "female",
+  Transgender: "transgender",
+  Herm: "herm",
+  Shemale: "shemale",
+  "Male-Herm": "male-herm",
+  "Cunt-boy": "cunt-boy",
+} as const;
+
+export const GENDER_PALETTE = {
+  male: "#6ea8ff",
+  female: "#f28fb8",
+  transgender: "#7cc7b5",
+  herm: "#c39be6",
+  shemale: "#e79cd6",
+  "male-herm": "#69c0e0",
+  "cunt-boy": "#8fc873",
+} as const satisfies Record<
+  (typeof GENDER_SLUGS)[keyof typeof GENDER_SLUGS],
+  string
+>;
+
+export const GENDER_PALETTE_LIGHT = {
+  male: "#2f5fb0",
+  female: "#a63368",
+  transgender: "#276b5b",
+  herm: "#7b46b0",
+  shemale: "#963982",
+  "male-herm": "#1c6187",
+  "cunt-boy": "#41692a",
+} as const satisfies Record<
+  (typeof GENDER_SLUGS)[keyof typeof GENDER_SLUGS],
+  string
+>;
+
+/** Wire gender string → `var(--eb-gender-…)`, or undefined for None/unknown
+ * (name renders in the default text colour). Case-insensitive match. */
+export function genderColorVar(gender: string | undefined): string | undefined {
+  if (gender === undefined) {
+    return undefined;
+  }
+  const key = Object.keys(GENDER_SLUGS).find(
+    (g) => g.toLowerCase() === gender.toLowerCase(),
+  ) as keyof typeof GENDER_SLUGS | undefined;
+  return key ? `var(--eb-gender-${GENDER_SLUGS[key]})` : undefined;
+}
+
 export function nickIndex(nick: string): number {
   let sum = 0;
   for (const char of nick) {

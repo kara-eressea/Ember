@@ -548,6 +548,54 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     expect(fresh!.state.channels.has("Frontpage")).toBe(false);
   });
 
+  it("leaving a pinned channel over the gateway unpins it (#169)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+    await app.history.flush();
+
+    const client = await connectClient();
+    await client.hello(token);
+    const snapshot = await client.subscribe(identityId);
+    const frontpage = snapshot.d.channels.find((c) => c.key === "Frontpage");
+    expect(frontpage).toBeDefined();
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "conv.pin",
+        d: { convId: frontpage!.convId, pinned: true },
+      },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    // Pinned means auto-rejoin: the restart-recovery seed includes it.
+    expect(await app.history.channelsForResume(identityId)).toEqual([
+      "Frontpage",
+    ]);
+
+    // Explicit leave unpins — the pin must not fight the leave by dragging
+    // the channel back on the next reconnect.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "channel.leave", d: { key: "Frontpage" } },
+    });
+    expect((await client.nextOfType("ack")).d.ok).toBe(true);
+    await nextConversationUpdate<{
+      id: string;
+      lastReadMessageId: number | null;
+      pinned: boolean;
+    }>(client, (c) => c.id === frontpage!.convId && !c.pinned);
+    // Once the LCH echo drains through the sink, no seed resurrects it.
+    await vi.waitFor(async () => {
+      await app.history.flush();
+      expect(await app.history.channelsForResume(identityId)).toEqual([]);
+    });
+    expect(await app.history.pinnedChannelKeys(identityId)).toEqual([]);
+  });
+
   it("recovers an F-Chat drop with no user interaction: re-tickets from the vault, rejoins channels (M2 verification)", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
@@ -620,10 +668,11 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     ).toBe(false);
   });
 
-  it("a connect while autoConnect is set is a recovery: exact channels, no reconcile", async () => {
+  it("a connect while autoConnect is set is a recovery: joined plus pinned channels, no reconcile", async () => {
     const { identityId, token } = await createIdentity();
     // Persisted state from "before the outage": flagged for auto-connect,
-    // one casually joined channel, one pinned-but-left channel.
+    // one casually joined channel, one pinned channel whose joined flag was
+    // lost mid-outage (an explicit leave would have unpinned it, #169).
     await db
       .update(identities)
       .set({ autoConnect: true })
@@ -662,8 +711,11 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     await vi.waitFor(() => {
       expect(session!.state.channels.has("Frontpage")).toBe(true);
     });
-    // Recovery restores the joined set, not the pinned set.
-    expect(session!.state.channels.has("Development")).toBe(false);
+    // Pinned means auto-rejoin (#169): the pin comes back alongside the
+    // joined set.
+    await vi.waitFor(() => {
+      expect(session!.state.channels.has("Development")).toBe(true);
+    });
 
     // And it never reconciles: the casual row keeps its joined flag.
     await app.history.flush();
@@ -727,6 +779,72 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
         ),
       );
     expect(row?.joined).toBe(true);
+  });
+});
+
+describe("social lists over the gateway (#194/#199)", () => {
+  it("snapshots cached social and fans out bookmark changes live", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const authorization = { authorization: `Bearer ${token}` };
+
+    const a = await connectClient();
+    await a.hello(token);
+    const before = await a.subscribe(identityId);
+    // Nothing cached yet this server run: the snapshot carries null and
+    // the client falls back to the REST load.
+    expect(before.d.self.social).toBeNull();
+
+    // First REST load fills the server cache — and itself fans out.
+    const loaded = await app.inject({
+      method: "GET",
+      url: `/api/identities/${identityId}/social`,
+      headers: authorization,
+    });
+    expect(loaded.statusCode).toBe(200);
+    const seeded = await a.nextEvent("social.updated");
+
+    // A second device now attaches with the lists already in its snapshot
+    // — no new F-List API calls (#194).
+    const b = await connectClient();
+    await b.hello(token);
+    const snapshot = await b.subscribe(identityId);
+    expect(snapshot.d.self.social).toEqual(
+      eventPayload<{ social: object }>(seeded).social,
+    );
+
+    // A bookmark add reaches every attached device instantly (#199),
+    // presence-enriched from the live roster (Nyx is an online NPC).
+    const added = await app.inject({
+      method: "POST",
+      url: `/api/identities/${identityId}/social/bookmark`,
+      headers: authorization,
+      payload: { action: "add", name: "Nyx Firemane" },
+    });
+    expect(added.statusCode).toBe(200);
+    const [eventA, eventB] = await Promise.all([
+      a.nextEvent("social.updated"),
+      b.nextEvent("social.updated"),
+    ]);
+    expect(eventA).toEqual(eventB);
+    const { social } = eventPayload<{
+      social: { bookmarks: { name: string; online: boolean }[] };
+    }>(eventA);
+    expect(social.bookmarks.map((row) => row.name)).toContain("Nyx Firemane");
+    expect(
+      social.bookmarks.find((row) => row.name === "Nyx Firemane")?.online,
+    ).toBe(true);
+
+    // Clean up the shared sim account for later scenarios.
+    const removed = await app.inject({
+      method: "POST",
+      url: `/api/identities/${identityId}/social/bookmark`,
+      headers: authorization,
+      payload: { action: "remove", name: "Nyx Firemane" },
+    });
+    expect(removed.statusCode).toBe(200);
+    await a.nextEvent("social.updated");
+    await b.nextEvent("social.updated");
   });
 });
 
@@ -951,6 +1069,7 @@ describe("gateway fan-out", () => {
       prefs: PREFS_DEFAULTS,
       outbox: [],
       campaign: null,
+      social: null,
       // The sim serves the documented default VARs.
       limits: { chatMax: 4096, privMax: 50000, lfrpMax: 50000, lfrpFlood: 0 },
     });

@@ -4,6 +4,7 @@ export {
   BB_COLORS,
   BB_NAME_TAGS,
   BB_WRAPPER_TAGS,
+  bbcodeToText,
   parseBBCode,
   sanitizeBBCode,
   serializeBBCode,

@@ -1,8 +1,10 @@
 // LinkPreview panel (M8 step 13, COMPONENTS-link-preview-eicon.md §2,
 // frames L·A–L·C): a floating media preview beside the log — the message
 // stays visible, never a modal. Loading = shimmer box + "fetching…";
-// failure renders NOTHING (absence is the design — no broken-image
-// chrome). Dismiss: Esc / click-away; one preview at a time (store).
+// failure (404 / dead link / transient network error) keeps the frame and
+// shows a quiet "content not found" state with the raw URL still clickable,
+// so it never flashes away (#193). Dismiss: Esc / click-away; one preview
+// at a time (store).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { placeBeside } from "../profile/popover.js";
@@ -16,11 +18,13 @@ export function LinkPreview() {
   const close = useLinkPreviewStore((s) => s.close);
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>();
-  // Which src has finished loading — a new target is implicitly "loading"
-  // until its own onLoad fires, no reset effect needed.
+  // Which src has finished loading / failed — a new target is implicitly
+  // "loading" until its own onLoad or onError fires, no reset effect needed.
   const [loadedSrc, setLoadedSrc] = useState<string>();
+  const [failedSrc, setFailedSrc] = useState<string>();
   const src = preview?.source.src;
-  const state: "loading" | "ok" = loadedSrc === src ? "ok" : "loading";
+  const state: "loading" | "ok" | "error" =
+    failedSrc === src ? "error" : loadedSrc === src ? "ok" : "loading";
 
   useEffect(() => {
     if (!preview) {
@@ -89,7 +93,28 @@ export function LinkPreview() {
           {state === "loading" && (
             <div className={styles.previewSkeleton} aria-hidden />
           )}
-          {source.kind === "image" ? (
+          {/* A dead link (404) or a transient network error keeps the frame
+              — we render a quiet "not found" state with the raw URL still
+              reachable, rather than flashing the panel away (#193). */}
+          {state === "error" ? (
+            <div className={styles.previewError} role="alert">
+              <span className={styles.previewErrorGlyph} aria-hidden>
+                ⚠
+              </span>
+              <p className={styles.previewErrorText}>
+                This content could not be loaded — it may have been moved or
+                removed.
+              </p>
+              <a
+                className={styles.previewErrorLink}
+                href={preview.href}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Open link in a new tab ↗
+              </a>
+            </div>
+          ) : source.kind === "image" ? (
             <img
               className={styles.previewImg}
               style={state === "loading" ? { display: "none" } : undefined}
@@ -99,7 +124,9 @@ export function LinkPreview() {
               onLoad={() => {
                 setLoadedSrc(source.src);
               }}
-              onError={close}
+              onError={() => {
+                setFailedSrc(source.src);
+              }}
             />
           ) : (
             <video
@@ -113,7 +140,9 @@ export function LinkPreview() {
               onLoadedData={() => {
                 setLoadedSrc(source.src);
               }}
-              onError={close}
+              onError={() => {
+                setFailedSrc(source.src);
+              }}
             />
           )}
         </div>
