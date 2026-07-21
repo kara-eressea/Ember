@@ -33,6 +33,12 @@
 }
 
 .headerButton {
+  display: inline-grid;
+  grid-auto-flow: column;
+  place-items: center;
+  gap: 4px;
+  min-width: 30px;
+  min-height: 30px;
   border: none;
   background: none;
   color: var(--eb-dim);
