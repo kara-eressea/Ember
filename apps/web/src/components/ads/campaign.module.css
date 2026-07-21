@@ -46,7 +46,7 @@
   margin-top: 3px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .close {
@@ -169,7 +169,7 @@
 
 .stepHint {
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .tagRow {
@@ -213,7 +213,7 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
   font-weight: 700;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   background: var(--eb-side2);
   border-radius: 10px;
 }
@@ -251,7 +251,7 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
   letter-spacing: 0.04em;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .resolveList {
@@ -287,7 +287,7 @@
   margin-left: auto;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .chanList {
@@ -391,7 +391,7 @@
 
 .chanInterval {
   font-size: 11px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .chanIntervalHonored {
@@ -544,13 +544,13 @@
   margin: 0;
   font-size: 11.5px;
   line-height: 1.55;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .edgeCta {
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   cursor: pointer;
   background: none;
   border: none;
@@ -789,14 +789,14 @@
 .rowSub {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .dropButton {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   cursor: pointer;
   background: none;
   border: none;
@@ -834,7 +834,7 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 12px;
   font-weight: 600;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .summaryPostsSome {
@@ -856,7 +856,7 @@
 .manualLink {
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
   cursor: pointer;
   background: none;
   border: none;

@@ -85,7 +85,7 @@
   padding: 10px;
   font-size: 11px;
   line-height: 1.4;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 /* ── Pane ─────────────────────────────────────────────────────────────── */
@@ -136,11 +136,11 @@
   margin: 0 0 10px;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .stub a {
-  color: var(--eb-accent);
+  color: var(--eb-accent-text);
 }
 
 /* ── Control primitives (§12) ─────────────────────────────────────────── */
@@ -230,7 +230,7 @@
 .fieldHelp {
   margin-top: 2px;
   font-size: 11.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .fieldControl {
@@ -241,7 +241,7 @@
   margin: 18px 0 4px;
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -367,13 +367,13 @@
 .rulesEmpty {
   margin: 0 0 10px;
   font-size: 12.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .rulesHint {
   margin: 8px 0 0;
   font-size: 11.5px;
-  color: var(--eb-faint);
+  color: var(--eb-meta);
 }
 
 .paneError {

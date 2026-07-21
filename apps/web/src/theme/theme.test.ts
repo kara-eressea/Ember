@@ -48,11 +48,30 @@ describe("themeVariables", () => {
     expect(vars["--eb-ok"]).toBe("#54803a");
     // [color=white] must stay legible on paper — a warm gray, not a lie.
     expect(vars["--eb-bbc-white"]).toBe("#8d8577");
-    // The light nick palette rides the same var slots.
-    expect(vars["--eb-nick-0"]).toBe("#6c4f96");
+    // The light nick palette rides the same var slots (#186: the darkened
+    // mix(c, text, 0.52) set — legible on paper).
+    expect(vars["--eb-nick-0"]).toBe("#695c72");
     // The derivation structure is untouched — soft still leans to bg.
     expect(vars["--eb-accent-soft"]).toBe(
       mix("#a892c6", BASE_THEMES.parchment.bg, 0.84),
+    );
+  });
+
+  it("writes the readable-meta neutral per theme (#186)", () => {
+    expect(themeVariables("dusk")["--eb-meta"]).toBe("#988e83");
+    expect(themeVariables("dusk", "charcoal")["--eb-meta"]).toBe("#8b8377");
+    expect(themeVariables("dusk", "parchment")["--eb-meta"]).toBe("#696154");
+  });
+
+  it("derives accentText: near-raw on dark, darkened on parchment (#186)", () => {
+    // accentText = mix(accent, text, 0.04 dark / 0.62 parchment).
+    expect(themeVariables("dusk")["--eb-accent-text"]).toBe("#ab95c7");
+    expect(themeVariables("clay")["--eb-accent-text"]).toBe("#c9816f");
+    expect(themeVariables("dusk", "parchment")["--eb-accent-text"]).toBe(
+      "#5c5262",
+    );
+    expect(themeVariables("moss", "parchment")["--eb-accent-text"]).toBe(
+      "#505b42",
     );
   });
 

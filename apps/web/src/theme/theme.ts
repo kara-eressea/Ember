@@ -60,7 +60,7 @@ export function themeVariables(
   colorblind = false,
 ): Record<string, string> {
   const accentHex = ACCENTS[accent].hex;
-  const { heading, bg, side, side2, head, text, dim, faint, border } =
+  const { heading, bg, side, side2, head, text, dim, meta, faint, border } =
     BASE_THEMES[baseTheme];
   const light = LIGHT_THEMES.has(baseTheme);
   const status = colorblind
@@ -83,9 +83,14 @@ export function themeVariables(
     "--eb-head": head,
     "--eb-text": text,
     "--eb-dim": dim,
+    "--eb-meta": meta,
     "--eb-faint": faint,
     "--eb-border": border,
     "--eb-accent": accentHex,
+    // accentText = mix(accent, text, 0.04 dark / 0.62 parchment) — accent
+    // used as readable text (links, @mentions, #channel); fills keep the
+    // raw accent. AA ≥4.55:1 dark, ≥4.86:1 parchment, for all five accents.
+    "--eb-accent-text": mix(accentHex, text, light ? 0.62 : 0.04),
     "--eb-accent-soft": mix(accentHex, bg, 0.84),
     "--eb-accent-med": mix(accentHex, bg, 0.5),
     // Role system (COMPONENTS.md): the admin `@` glyph color.
