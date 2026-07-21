@@ -29,7 +29,11 @@ export type RateGateClass =
    * (ERR 50); a protocol constant, no VAR carries it. */
   | "FKS"
   /** Room management (CCR/CIU/RST) shares one timeline — rare, user-clicked. */
-  | "ROOM";
+  | "ROOM"
+  /** Channel joins — one class for user joins and the reconnect rejoin
+   * burst, so a long pinned/desired set staggers onto the wire at the
+   * msg_flood pace instead of landing as one JCH volley. */
+  | "JCH";
 
 /**
  * Padding on top of the server's flood window. The server measures the
