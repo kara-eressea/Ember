@@ -626,12 +626,22 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           return { ...session, dms };
         }
         const existing = session.dms[conversation.id];
+        // Serve-time presence (pm.open) seeds a fresh row's dot immediately
+        // (#229); live NLN/STA keep folding through applyPresence afterwards.
+        const presence = conversation.presence;
         const dm: DmView = existing
           ? {
               ...existing,
               title: conversation.title,
               pinned: conversation.pinned,
               lastReadMessageId: conversation.lastReadMessageId,
+              ...(presence
+                ? {
+                    online: presence.online,
+                    status: presence.status,
+                    statusmsg: presence.statusmsg,
+                  }
+                : {}),
               ...((conversation.lastReadMessageId ?? 0) >
               (existing.lastReadMessageId ?? 0)
                 ? { unread: 0, highlightedAt: 0 }
@@ -641,9 +651,9 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               convId: conversation.id,
               partner: conversation.partnerCharacter ?? "",
               title: conversation.title,
-              online: false,
-              status: "",
-              statusmsg: "",
+              online: presence?.online ?? false,
+              status: presence?.status ?? "",
+              statusmsg: presence?.statusmsg ?? "",
               pinned: conversation.pinned,
               typing: "clear",
               unread: 0,

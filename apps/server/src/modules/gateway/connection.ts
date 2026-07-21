@@ -57,6 +57,7 @@ import {
   fetchMessagesAfter,
   identityBadgeTotals,
   messageDto,
+  pmPresence,
 } from "./snapshot.js";
 
 /** Close the socket if no hello arrived within this window. */
@@ -668,7 +669,14 @@ export class GatewayConnection {
             identity.id,
             cmd.d.character,
           );
-          this.#ack(id, { ok: true, conversation: conversationDto(row) });
+          // Seed the new DM row with the partner's live presence (#229) so it
+          // shows the right dot at once instead of defaulting to offline.
+          const state = this.#ctx.sessions.get(identity.id)?.state;
+          const presence = pmPresence(state, row.partnerCharacter ?? "");
+          this.#ack(id, {
+            ok: true,
+            conversation: { ...conversationDto(row), presence },
+          });
         } catch (error) {
           if (error instanceof ConversationLimitError) {
             this.#ack(id, { ok: false, error: error.message });
