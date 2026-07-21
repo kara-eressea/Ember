@@ -95,6 +95,26 @@ export async function provisionAndConnect(
   return creds;
 }
 
+/**
+ * Join a channel by exact key through the channel browser's by-name footer
+ * (the inline "Join a channel…" form left the sidebar with the #196
+ * toolbar). Resolves once the channel's heading renders.
+ */
+export async function joinChannel(
+  page: Page,
+  key: string,
+  title = key,
+): Promise<void> {
+  await page.getByRole("button", { name: "Browse channels" }).click();
+  const dialog = page.getByRole("dialog", { name: "Browse channels" });
+  await dialog.getByLabel("Join a hidden channel by name").fill(key);
+  await dialog.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: title })).toBeVisible({
+    timeout: 10_000,
+  });
+}
+
 /** A bare F-Chat client speaking straight to fchat-sim. */
 export class SimClient {
   #ws!: WebSocket;

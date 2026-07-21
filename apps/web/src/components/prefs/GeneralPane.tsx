@@ -33,6 +33,19 @@ export function GeneralPane({
 
   return (
     <>
+      <GroupLabel>Channel list</GroupLabel>
+      <FieldRow
+        label="Hide offline characters"
+        help="Friends and bookmarks who are offline stay out of the channel list. Turn this off to always show everyone."
+      >
+        <Toggle
+          label="Hide offline characters"
+          checked={prefs.hideOfflineCharacters}
+          onChange={(hide) => {
+            void patchPrefs(identityId, { hideOfflineCharacters: hide });
+          }}
+        />
+      </FieldRow>
       <GroupLabel>Roleplay ads</GroupLabel>
       <FieldRow
         label="Hide ads everywhere"

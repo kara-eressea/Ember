@@ -6,7 +6,11 @@
 // against channels other specs count members in.
 
 import { expect, test } from "@playwright/test";
-import { interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  interceptAvatars,
+  joinChannel,
+  provisionAndConnect,
+} from "./helpers.js";
 
 const ROOM_ID = "ADH-22bb33cc44dd55ee66ff";
 const NOTE_TEXT = "Collects rare seeds. Owes me a book.";
@@ -18,11 +22,7 @@ test("profile history + notes: both survive reload, notes survive prune", async 
   await interceptAvatars(page);
 
   await provisionAndConnect(page, "juniper@example.test", "Juniper Wren");
-  await page.getByLabel("Join a channel").fill(ROOM_ID);
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Reading Nook" })).toBeVisible(
-    { timeout: 10_000 },
-  );
+  await joinChannel(page, ROOM_ID, "Reading Nook");
 
   const members = page.getByRole("complementary", { name: "Members" });
 

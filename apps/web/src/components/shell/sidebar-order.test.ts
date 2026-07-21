@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderRows } from "./sidebar-order.js";
+import { orderRows, orderSocial } from "./sidebar-order.js";
 
 interface Row {
   name: string;
@@ -37,6 +37,32 @@ describe("orderRows", () => {
   it("does not mutate the input", () => {
     const rows = [row("B"), row("A")];
     order(rows, true);
+    expect(rows.map((r) => r.name)).toEqual(["B", "A"]);
+  });
+});
+
+describe("orderSocial", () => {
+  const social = (name: string, online: boolean) => ({ name, online });
+  const order = (rows: { name: string; online: boolean }[]) =>
+    orderSocial(
+      rows,
+      (r) => r.name,
+      (r) => r.online,
+    ).map((r) => r.name);
+
+  it("puts online rows first, alphabetical within each group", () => {
+    const rows = [
+      social("Dell", false),
+      social("Cider", true),
+      social("Alder", false),
+      social("Birch", true),
+    ];
+    expect(order(rows)).toEqual(["Birch", "Cider", "Alder", "Dell"]);
+  });
+
+  it("does not mutate the input", () => {
+    const rows = [social("B", false), social("A", true)];
+    order(rows);
     expect(rows.map((r) => r.name)).toEqual(["B", "A"]);
   });
 });

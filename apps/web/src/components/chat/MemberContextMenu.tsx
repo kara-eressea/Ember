@@ -36,23 +36,26 @@ export function MemberContextMenu({
   channelKey,
   channelTitle,
   member,
-  role,
-  viewerRole,
-  viewerChatop,
+  role = null,
+  viewerRole = null,
+  viewerChatop = false,
   position,
   onClose,
 }: {
   identityId: string;
   /** The viewing identity's character (self rows lose Message/Ignore). */
   ownCharacter: string;
-  channelKey: string;
+  /** Absent outside a channel (sidebar rows, DM header) — the admin
+   * section needs a channel to act on and stays hidden without one. */
+  channelKey?: string;
   /** Display title — SFC reports carry this, not the key: private rooms'
-   * keys are opaque ADH- ids moderators can't recognize (M7 audit). */
+   * keys are opaque ADH- ids moderators can't recognize (M7 audit).
+   * Outside a channel it names the surface ("Conversation with X"). */
   channelTitle: string;
   member: MemberDto;
-  role: ChannelRole;
-  viewerRole: ChannelRole;
-  viewerChatop: boolean;
+  role?: ChannelRole;
+  viewerRole?: ChannelRole;
+  viewerChatop?: boolean;
   position: { x: number; y: number };
   onClose: () => void;
 }) {
@@ -85,7 +88,8 @@ export function MemberContextMenu({
     self,
   });
   const anyPower =
-    powers.remove || powers.promote || powers.demote || powers.setOwner;
+    channelKey !== undefined &&
+    (powers.remove || powers.promote || powers.demote || powers.setOwner);
   const ignored = useSessionsStore((s) =>
     (s.sessions[identityId]?.ignores ?? []).some(
       (name) => name.toLowerCase() === member.character.toLowerCase(),
@@ -199,6 +203,9 @@ export function MemberContextMenu({
       | "channel.promote"
       | "channel.timeout",
   ) {
+    if (channelKey === undefined) {
+      return;
+    }
     onClose();
     const d =
       action === "channel.timeout"
@@ -309,7 +316,9 @@ export function MemberContextMenu({
         <div className={styles.memberMenuHead}>
           <Avatar name={member.character} size={26} />
           <span className={styles.memberMenuNick}>{member.character}</span>
-          <span className={styles.memberMenuRole}>{roleTag(role)}</span>
+          {channelKey !== undefined && (
+            <span className={styles.memberMenuRole}>{roleTag(role)}</span>
+          )}
         </div>
         {!self && (
           <button

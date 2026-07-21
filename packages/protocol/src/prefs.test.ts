@@ -69,6 +69,13 @@ describe("resolvePrefs", () => {
     expect(resolvePrefs(42)).toEqual(PREFS_DEFAULTS);
   });
 
+  it("defaults hideOfflineCharacters to on and honors a stored false", () => {
+    expect(resolvePrefs({}).hideOfflineCharacters).toBe(true);
+    expect(
+      resolvePrefs({ hideOfflineCharacters: false }).hideOfflineCharacters,
+    ).toBe(false);
+  });
+
   it("keeps stored values that are valid", () => {
     expect(resolvePrefs({ accent: "clay" })).toEqual({
       ...PREFS_DEFAULTS,

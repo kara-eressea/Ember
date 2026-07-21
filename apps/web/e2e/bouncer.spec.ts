@@ -6,7 +6,12 @@
 // share characters.
 
 import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  SimClient,
+  interceptAvatars,
+  joinChannel,
+  provisionAndConnect,
+} from "./helpers.js";
 
 test("two devices: unread badges converge; catch-up shows the new divider", async ({
   page,
@@ -21,11 +26,7 @@ test("two devices: unread badges converge; catch-up shows the new divider", asyn
     "willow@example.test",
     "Willow Reed",
   );
-  await page.getByLabel("Join a channel").fill("Development");
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Development" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await joinChannel(page, "Development", "Development");
 
   const fern = await SimClient.connect(
     "willow@example.test",

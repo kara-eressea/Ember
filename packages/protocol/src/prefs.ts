@@ -123,6 +123,10 @@ const prefsShape = {
    * chips in the status editor. Written on every successful non-empty STA;
    * patches replace the whole array (the recents convention). */
   statusMessageRecents: z.array(z.string().min(1).max(255)).max(20),
+  /** Hide offline friends/bookmarks in the channel list (default on).
+   * Older clients simply ignore the stored key (resolvePrefs drops
+   * unknowns) and keep showing offline rows. */
+  hideOfflineCharacters: z.boolean(),
   /** Server-side: away after N minutes with zero gateway subscribers,
    * cleared on the next attach. Opt-in (decisions.md §10). */
   detachedAwayEnabled: z.boolean(),
@@ -226,6 +230,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   autoAwayMessage: "",
   autoAwayClearOnReturn: true,
   statusMessageRecents: [],
+  hideOfflineCharacters: true,
   detachedAwayEnabled: false,
   detachedAwayMinutes: 30,
   desktopNotifyMentions: false,

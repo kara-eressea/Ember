@@ -7,7 +7,12 @@
 
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  SimClient,
+  interceptAvatars,
+  joinChannel,
+  provisionAndConnect,
+} from "./helpers.js";
 
 /** The applied accent, straight from the theme's CSS custom property. */
 function appliedAccent(page: Page): Promise<string> {
@@ -68,11 +73,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await expect(dialog).not.toBeVisible();
 
   // ── Join/part/quit lines (M5 step 5): live-only, gated by the pref ────
-  await page.getByLabel("Join a channel").fill("Terrarium");
-  await page.getByRole("button", { name: "Join", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Terrarium" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await joinChannel(page, "Terrarium");
 
   await page.getByRole("button", { name: "Preferences" }).click();
   await dialog.getByRole("button", { name: "Appearance" }).click();
