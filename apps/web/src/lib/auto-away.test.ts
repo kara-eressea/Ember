@@ -40,6 +40,7 @@ function seedSession(
       prefs: options.prefs ?? PREFS_ON,
       outbox: [],
       campaign: null,
+      social: null,
     },
     channels: [],
     dms: [],

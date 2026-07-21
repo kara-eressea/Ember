@@ -668,6 +668,52 @@ describe("FchatSession against fchat-sim", () => {
     expect(retryAt!.at - backoffAt!.at).toBeGreaterThanOrEqual(195);
   });
 
+  it("staggers rejoin JCHs at the msg_flood pace after a reconnect (#169)", async () => {
+    const sim = await startSim({ serverVars: { msg_flood: 0.3 } });
+    const session = makeSession(sim, {
+      backoffFloorMs: 200,
+      backoffCapMs: 400,
+    });
+    session.start();
+    await waitForStatus(session, "online");
+
+    for (const channel of ["Frontpage", "Development"]) {
+      const joined = waitForCommand(
+        session,
+        (c) => c.cmd === "CDS" && c.payload.channel === channel,
+      );
+      session.joinChannel(channel);
+      await joined;
+    }
+
+    // The rejoin burst must not be a single JCH volley: our own join echoes
+    // arrive spaced by at least the runtime msg_flood window.
+    const echoTimes: number[] = [];
+    session.events.on("command", (command) => {
+      if (
+        command.cmd === "JCH" &&
+        command.payload.character.identity === CHARACTER
+      ) {
+        echoTimes.push(Date.now());
+      }
+    });
+    const rejoined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+    );
+    sim.disconnect(CHARACTER);
+    await waitForStatus(session, "online", { next: true });
+    await rejoined;
+    await vi.waitFor(() => {
+      expect(echoTimes.length).toBe(2);
+    });
+    // Generous tolerance for event-loop jitter; the point is "staggered,
+    // not simultaneous".
+    expect(echoTimes[1]! - echoTimes[0]!).toBeGreaterThanOrEqual(250);
+    expect(session.state.channels.has("Frontpage")).toBe(true);
+    expect(session.state.channels.has("Development")).toBe(true);
+  });
+
   it("gives up on a connection whose handshake never completes", async () => {
     // A TCP server that accepts the socket and then says nothing: no ws
     // event ever fires without a handshake timeout, so the session would

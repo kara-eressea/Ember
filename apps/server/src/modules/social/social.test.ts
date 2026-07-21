@@ -31,6 +31,7 @@ let sim: FchatSim;
 let app: FastifyInstance;
 let token: string;
 let identityId: string;
+let apiClient: FlistApiClient;
 
 beforeAll(async () => {
   sim = new FchatSim();
@@ -49,10 +50,10 @@ beforeAll(async () => {
     }),
     db,
     logger: false,
-    flistApiClient: new FlistApiClient({
+    flistApiClient: (apiClient = new FlistApiClient({
       baseUrl: sim.httpUrl,
       minRequestIntervalMs: 0,
-    }),
+    })),
   });
 
   const registered = await app.inject({
@@ -237,6 +238,58 @@ describe("social routes", () => {
       await get(`/api/identities/${identityId}/social`)
     ).json<SocialBody>();
     expect(body.friends.map((row) => row.name)).toEqual(["Nyx Firemane"]);
+  });
+
+  it("serves repeat GETs from the server-side cache (#194)", async () => {
+    // The previous test's final GET populated the cache, so plain GETs
+    // make zero upstream calls.
+    const spy = vi.spyOn(apiClient, "bookmarkList");
+    const cached = await get(`/api/identities/${identityId}/social`);
+    expect(cached.statusCode).toBe(200);
+    expect(spy).not.toHaveBeenCalled();
+    expect(cached.json<SocialBody>().bookmarks.map((row) => row.name)).toEqual([
+      "Old Greywhisker",
+    ]);
+    // The manual refresh button bypasses the cache…
+    expect(
+      (await get(`/api/identities/${identityId}/social?refresh=1`)).statusCode,
+    ).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(1);
+    // …and repopulates it for the next plain GET.
+    expect((await get(`/api/identities/${identityId}/social`)).statusCode).toBe(
+      200,
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("folds bookmark changes into the cache without refetching (#199)", async () => {
+    const spy = vi.spyOn(apiClient, "bookmarkList");
+    expect(
+      (
+        await post(`/api/identities/${identityId}/social/bookmark`, {
+          action: "add",
+          name: "Nyx Firemane",
+        })
+      ).statusCode,
+    ).toBe(200);
+    const body = (
+      await get(`/api/identities/${identityId}/social`)
+    ).json<SocialBody>();
+    expect(body.bookmarks.map((row) => row.name)).toEqual([
+      "Old Greywhisker",
+      "Nyx Firemane",
+    ]);
+    expect(spy).not.toHaveBeenCalled();
+    expect(
+      (
+        await post(`/api/identities/${identityId}/social/bookmark`, {
+          action: "remove",
+          name: "Nyx Firemane",
+        })
+      ).statusCode,
+    ).toBe(200);
+    spy.mockRestore();
   });
 
   it("hides other users' identities", async () => {

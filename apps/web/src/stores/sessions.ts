@@ -177,6 +177,12 @@ interface SessionsState {
       prefs: UserPrefs;
       outbox: OutboxItemDto[];
       campaign: CampaignDto | null;
+      social: {
+        bookmarks: SocialCharacter[];
+        friends: SocialCharacter[];
+        incoming: { id: number; name: string }[];
+        outgoing: { id: number; name: string }[];
+      } | null;
     };
     channels: SnapshotChannel[];
     dms: SnapshotDm[];
@@ -295,6 +301,49 @@ function emptySession(identityId: string): IdentitySession {
 }
 
 /** F-Chat resolves character names case-insensitively (PM merge semantics). */
+/** Applies one presence delta to social rows, case-insensitively (#218). */
+function patchSocialPresence(
+  social: SocialData,
+  d: {
+    character: string;
+    online: boolean;
+    status?: string;
+    statusmsg?: string;
+  },
+): SocialData {
+  const apply = (row: SocialCharacter): SocialCharacter =>
+    sameCharacter(row.name, d.character)
+      ? {
+          ...row,
+          online: d.online,
+          status: d.online ? (d.status ?? row.status) : "offline",
+          statusmsg: d.online ? (d.statusmsg ?? row.statusmsg) : "",
+        }
+      : row;
+  return {
+    ...social,
+    bookmarks: social.bookmarks.map(apply),
+    friends: social.friends.map(apply),
+  };
+}
+
+/** LIS batches are partial: presence in the batch marks a row online;
+ * absence proves nothing. */
+function bulkRow(
+  row: SocialCharacter,
+  byLower: Map<string, { status: string; statusmsg: string }>,
+): SocialCharacter {
+  const presence = byLower.get(row.name.toLowerCase());
+  return presence
+    ? {
+        ...row,
+        online: true,
+        status: presence.status,
+        statusmsg: presence.statusmsg,
+      }
+    : row;
+}
+
 function sameCharacter(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
@@ -446,6 +495,12 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         dms,
         channelByConvId,
         synced: true,
+        // Server-cached social lists ride the snapshot (#194) — a fresh
+        // device renders bookmarks/friends without any REST fetch. No
+        // cache yet server-side keeps whatever this tab already had.
+        ...(d.self.social
+          ? { social: { ...d.self.social, fetchedAt: Date.now() } }
+          : {}),
       }));
     },
 
@@ -698,7 +753,18 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 ownStatusmsg: d.statusmsg ?? session.ownStatusmsg,
               }
             : {};
-        return { ...session, channels, dms, ...own };
+        // Bookmark/friend rows track the same global NLN/FLN/STA stream —
+        // presence there must never freeze at fetch time (#218).
+        const social = session.social
+          ? patchSocialPresence(session.social, d)
+          : undefined;
+        return {
+          ...session,
+          channels,
+          dms,
+          ...own,
+          ...(social ? { social } : {}),
+        };
       });
     },
 
@@ -726,7 +792,18 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             ];
           }),
         );
-        return { ...session, dms };
+        const social = session.social
+          ? {
+              ...session.social,
+              bookmarks: session.social.bookmarks.map((row) =>
+                bulkRow(row, byLower),
+              ),
+              friends: session.social.friends.map((row) =>
+                bulkRow(row, byLower),
+              ),
+            }
+          : undefined;
+        return { ...session, dms, ...(social ? { social } : {}) };
       });
     },
 
