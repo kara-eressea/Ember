@@ -14,6 +14,7 @@
 import { Buffer } from "node:buffer";
 import WebSocket from "ws";
 import {
+  canonicalChannelKey,
   FchatErrorCode,
   isKnownServerCommand,
   parseServerCommand,
@@ -111,6 +112,29 @@ function rawDataToString(data: WebSocket.RawData): string {
     return Buffer.from(data).toString("utf8");
   }
   return data.toString("utf8");
+}
+
+/**
+ * Fold a private-room id to its canonical case in place, before the frame
+ * fans out to session state, the gateway, and the history sink. F-Chat echoes
+ * the id with an inconsistent "adh-"/"ADH-" prefix across commands (the RST
+ * make-open SYS is the known offender); without this, one room grows a second
+ * entry keyed and titled by the raw id (issue #311). The hex body is left
+ * untouched so the id still round-trips verbatim to the server.
+ */
+function canonicalizeCommandChannel(command: ServerCommand): void {
+  // Payload-less commands (PIN) have no channel to fold.
+  const payload = command.payload as Record<string, unknown> | undefined;
+  if (payload === undefined) {
+    return;
+  }
+  if (typeof payload.channel === "string") {
+    payload.channel = canonicalChannelKey(payload.channel);
+  }
+  // CIU addresses the room by `name` rather than `channel`.
+  if (command.cmd === "CIU" && typeof payload.name === "string") {
+    payload.name = canonicalChannelKey(payload.name);
+  }
 }
 
 const NOOP_LOGGER: SessionLogger = {
@@ -839,6 +863,7 @@ export class FchatSession {
       this.#log.warn({ cmd: command.cmd, raw }, "unknown server command");
       return;
     }
+    canonicalizeCommandChannel(command);
     switch (command.cmd) {
       case "PIN":
         this.#replyPin();

@@ -388,6 +388,16 @@ function cursorClearsBadges(
   return newest === null || next >= newest;
 }
 
+/**
+ * Canonicalize a private-room id's prefix (mirrors the server's
+ * canonicalChannelKey). The server now normalizes keys at ingest, so live
+ * events already agree; this lets a reattach snapshot collapse a stray
+ * "adh-"-prefixed row left behind by a pre-fix session (issue #311).
+ */
+function canonicalChannelKey(key: string): string {
+  return /^adh-/i.test(key) ? `ADH-${key.slice(4)}` : key;
+}
+
 /** The seen roster without one nick (case-insensitive; unchanged input when
  * absent, so untouched channels keep their array identity). */
 function withoutSeen(
@@ -543,15 +553,24 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       const channels: Record<string, ChannelView> = {};
       const channelByConvId: Record<string, string> = {};
       for (const ch of d.channels) {
-        channels[ch.key] = {
+        const key = canonicalChannelKey(ch.key);
+        // A pre-fix session may carry both the real room and a stray
+        // raw-keyed duplicate that canonicalize to one key; the joined
+        // entry is the real room, so let it win the collision.
+        const existing = channels[key];
+        if (existing && existing.joined && !ch.joined) {
+          continue;
+        }
+        channels[key] = {
           ...ch,
+          key,
           oplist: [...ch.oplist],
           members: [...ch.members],
           seen: [...ch.seen],
           highlightedAt: 0,
           newestMessageId: null,
         };
-        channelByConvId[ch.convId] = ch.key;
+        channelByConvId[ch.convId] = key;
       }
       const dms: Record<string, DmView> = {};
       for (const dm of d.dms) {

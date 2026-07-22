@@ -8,7 +8,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -257,6 +257,48 @@ describe("history sink", () => {
       senderCharacter: "Nyx Firemane",
       bbcode: "psst, over here",
       sentByUs: false,
+    });
+  });
+
+  it("keeps one conversation when make-open SYS echoes a raw-cased room id (#311)", async () => {
+    const { identityId, session } = await startIdentity();
+    const roomId = "ADH-abc123def456";
+
+    // Our own JCH echo for a freshly created private room ("ADH-" prefix).
+    await inject(session, {
+      cmd: "JCH",
+      payload: {
+        channel: roomId,
+        character: { identity: CHARACTER },
+        title: "Ember Attic",
+      },
+    });
+    // The RST make-open confirmation, which the live server echoes with a
+    // lowercased "adh-" prefix. Left un-canonicalized this spawns a second
+    // conversation titled by the raw id.
+    await inject(session, {
+      cmd: "SYS",
+      payload: {
+        message: "Ember Attic is now open.",
+        channel: roomId.replace(/^ADH-/, "adh-"),
+      },
+    });
+    await app.history.flush();
+
+    const convs = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+        ),
+      );
+    expect(convs).toHaveLength(1);
+    expect(convs[0]).toMatchObject({
+      channelKey: roomId,
+      title: "Ember Attic",
+      joined: true,
     });
   });
 
