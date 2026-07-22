@@ -78,6 +78,35 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
     timeout: 15_000,
   });
 
+  // Room settings popover: labeled groups and segmented controls, not a wall
+  // of identical buttons (#312). The ADH room shows the invite + visibility
+  // groups; every room shows message mode, description, and a quiet banlist
+  // action. Changing the message mode marks the picked segment as current.
+  await page.getByRole("button", { name: "⚙ room" }).click();
+  const roomDialog = page.getByRole("dialog", { name: "Room settings" });
+  await expect(roomDialog.getByText("Invite someone")).toBeVisible();
+  await expect(
+    roomDialog.getByRole("radiogroup", { name: "Who can join" }),
+  ).toBeVisible();
+  const messages = roomDialog.getByRole("radiogroup", {
+    name: "Allowed messages",
+  });
+  await expect(messages).toBeVisible();
+  // Plain-language segments instead of bare "chat/ads/both", each an
+  // aria-checked radio that reflects the live mode.
+  for (const name of ["Chat", "Ads", "Both"]) {
+    await expect(messages.getByRole("radio", { name })).toHaveAttribute(
+      "aria-checked",
+      /true|false/,
+    );
+  }
+  await expect(roomDialog.getByLabel("Channel description")).toBeVisible();
+  await expect(
+    roomDialog.getByRole("button", { name: "View banlist" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(roomDialog).not.toBeVisible();
+
   // Menu kick: Sorrel leaves the member list and the SystemLine lands.
   await members.getByText("Sorrel Vane").click({ button: "right" });
   await expect(menu.getByText("Kick")).toBeVisible();
