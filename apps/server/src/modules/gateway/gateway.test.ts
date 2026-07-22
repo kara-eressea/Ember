@@ -575,10 +575,10 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
       "Frontpage",
     ]);
 
-    // Explicit leave removes the conversation row outright (#327): the
-    // sidebar loses it everywhere, and — having deleted the row — nothing
-    // in the resume set can drag the channel back on the next reconnect,
-    // subsuming the old unpin-on-leave.
+    // Explicit leave takes the conversation row out of the sidebar
+    // everywhere (#327) and drops it from the resume set, so nothing drags
+    // the channel back on the next reconnect — subsuming the old
+    // unpin-on-leave. The row is hidden, not deleted: its kept history stays.
     client.send({
       t: "cmd",
       id: 2,
@@ -589,12 +589,18 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
     expect(eventPayload<{ convId: string }>(removed).convId).toBe(
       frontpage!.convId,
     );
-    // Once the delete drains through the sink, no seed resurrects it.
+    // Once the hide drains through the sink, no seed resurrects it…
     await vi.waitFor(async () => {
       await app.history.flush();
       expect(await app.history.channelsForResume(identityId)).toEqual([]);
     });
     expect(await app.history.pinnedChannelKeys(identityId)).toEqual([]);
+    // …yet the row itself survives, marked hidden — history is never deleted.
+    const [left] = await db
+      .select({ hidden: conversations.hidden, joined: conversations.joined })
+      .from(conversations)
+      .where(eq(conversations.id, frontpage!.convId));
+    expect(left).toEqual({ hidden: true, joined: false });
   });
 
   it("recovers an F-Chat drop with no user interaction: re-tickets from the vault, rejoins channels (M2 verification)", async () => {

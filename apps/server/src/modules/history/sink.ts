@@ -327,19 +327,22 @@ export class HistorySink {
 
   /**
    * Close a channel conversation (gateway `channel.leave` / sidebar ✕): the
-   * row and its history are dropped so the sidebar loses it everywhere,
-   * unlike a kick (which only flips `joined` and keeps the row as a rejoin
-   * affordance). Deliberately removes rather than hides — an explicit leave
-   * is stronger than a PM's reversible "close". Enqueued on the identity's
-   * write queue so it serializes behind any joined-flag write still draining
-   * from the LCH echo, and the cache entry is dropped so a later rejoin mints
-   * a fresh row. Fans out `conversationRemoved` so every attached tab (and
-   * the one that clicked) drops the row (#327).
+   * row leaves the sidebar everywhere, unlike a kick (which only flips
+   * `joined` and keeps the row as a rejoin affordance). Marks it `hidden`
+   * rather than deleting — kept logs are a headline feature, so the messages
+   * stay in the DB and remain reachable through log export; a later rejoin
+   * (or the room recreated under the same key) clears `hidden` and history
+   * continues in place. The `joined` flag also drops: a hidden row must never
+   * seed the resume set. Enqueued on the identity's write queue so it
+   * serializes behind any joined-flag write still draining from the LCH echo.
+   * Fans out `conversationRemoved` so every attached tab (and the one that
+   * clicked) drops the row (#327).
    */
   closeChannelConversation(identityId: string, channelKey: string): void {
     this.#enqueue(identityId, async () => {
       const [row] = await this.#db
-        .delete(conversations)
+        .update(conversations)
+        .set({ hidden: true, joined: false })
         .where(
           and(
             eq(conversations.identityId, identityId),
@@ -348,7 +351,6 @@ export class HistorySink {
           ),
         )
         .returning();
-      this.#conversationIds.delete(`${identityId}:channel:${channelKey}`);
       if (row) {
         this.events.emit("conversationRemoved", {
           identityId,
@@ -508,6 +510,9 @@ export class HistorySink {
         and(
           eq(conversations.identityId, identityId),
           eq(conversations.kind, "channel"),
+          // A hidden (explicitly-left) channel never seeds resume or pin —
+          // reconnecting must not drag a left room back (#327).
+          eq(conversations.hidden, false),
           extraFilter,
         ),
       );
@@ -600,10 +605,19 @@ export class HistorySink {
       const conversationId = await this.#conversationId(identityId, target);
       const [row] = await this.#db
         .update(conversations)
-        .set({ joined, ...(joined ? { title: target.title } : {}) })
+        // Rejoining a channel we had left un-hides it (#327): the row returns
+        // to the sidebar and its kept history continues in place.
+        .set({
+          joined,
+          ...(joined ? { title: target.title, hidden: false } : {}),
+        })
         .where(eq(conversations.id, conversationId))
         .returning();
-      if (row) {
+      // A hidden row stays out of the sidebar: the LCH echo's joined=false
+      // write races just behind closeChannelConversation, and fanning it out
+      // would resurrect the row the client just dropped (#327). The row is
+      // still updated in the DB; it simply isn't announced.
+      if (row && !row.hidden) {
         this.events.emit("conversation", { identityId, conversation: row });
       }
     });
