@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
+import { gateway } from "../../gateway/socket.js";
 import {
   formatFullDateTime,
   formatTime,
@@ -186,6 +187,25 @@ export function MessageLog({
     }
   }, [rows, virtualizer]);
 
+  // A short buffer never scrolls, so scroll-to-top could never trigger
+  // paging and the backlog would be unreachable (#254). Keep pulling older
+  // pages until the log overflows its viewport or history is exhausted —
+  // the store's hasMoreBefore/loadingOlder guards bound the loop.
+  const hasMoreBefore = buffer?.hasMoreBefore === true;
+  const backfilled = buffer?.backfilled === true;
+  const loadingOlder = buffer?.loadingOlder === true;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !backfilled || !hasMoreBefore || loadingOlder) {
+      return;
+    }
+    if (el.scrollHeight <= el.clientHeight + LOAD_OLDER_THRESHOLD_PX) {
+      void loadOlder();
+    }
+    // loadOlder is re-created per render but reads only fresh store state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length, backfilled, hasMoreBefore, loadingOlder]);
+
   function onScroll() {
     const el = scrollRef.current;
     if (!el) {
@@ -202,11 +222,20 @@ export function MessageLog({
 
   // Snap to the newest messages. When parked in the detached history view
   // that means "take me back to now" (drop the frozen tail); otherwise it is
-  // a plain scroll to the bottom of the loaded buffer.
+  // a plain scroll to the bottom of the loaded buffer. Either way the jump
+  // also marks the conversation read (#254): catching up is over, so the
+  // read cursor advances to the newest message.
   function jumpToRecent() {
+    useSessionsStore.getState().clearUnread(identityId, convId);
     if (detachedTail) {
+      // The newest *buffered* id here is an old message — never ack it.
+      // Back at the live tail, the shell's auto-ack advances the cursor.
       void useMessagesStore.getState().backToPresent(identityId, convId);
       return;
+    }
+    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
+    if (newest) {
+      gateway.readAck(identityId, convId, newest.id);
     }
     const el = scrollRef.current;
     if (el) {
@@ -347,7 +376,7 @@ export function MessageLog({
                   <div className={styles.dateDivider}>{row.label}</div>
                 ) : row.type === "new" ? (
                   <div className={styles.newDivider} data-testid="new-divider">
-                    new
+                    new since you left
                   </div>
                 ) : row.type === "presence" ? (
                   <PresenceLineRow line={row.line} prefs={prefs} />
