@@ -66,6 +66,14 @@ export type BBNode =
     }
   | { readonly type: "name"; readonly tag: BBNameTag; readonly name: string }
   | { readonly type: "noparse"; readonly text: string }
+  // [spoiler] is not in the outgoing chat subset (our composer never emits it
+  // — `||…||` is the supported spelling), but other clients send it, so we
+  // parse it in every dialect and render it click-to-reveal (#204). Its body
+  // is ordinary markup, so it nests like a wrapper.
+  | {
+      readonly type: "spoiler";
+      readonly children: readonly BBNode[];
+    }
   // Profile-dialect nodes — never produced under dialect "chat".
   | {
       readonly type: "block";
@@ -77,6 +85,11 @@ export type BBNode =
       readonly title: string;
       readonly children: readonly BBNode[];
     }
+  // Profile inline image: [img]id[/img] references an inline by id; the
+  // renderer resolves it against the character-data `inlines` map. A direct
+  // http(s) URL in `src` is rendered as-is. `alt` carries the [img=src]alt
+  // form's description (empty for the bare-body form).
+  | { readonly type: "img"; readonly src: string; readonly alt: string }
   | { readonly type: "hr" };
 
 /** F-List character names; eicon names additionally allow dots. */
@@ -295,6 +308,13 @@ export function parseBBCode(
       at += token.length;
       continue;
     }
+    // [spoiler] — foreign to the chat subset but common in the wild (#204).
+    // Rendered click-to-reveal; the body parses like any other markup.
+    if (token.tag === "spoiler" && token.param === undefined) {
+      stack.push({ open: token, children: [] });
+      at += token.length;
+      continue;
+    }
     if (token.tag === "color" && token.param !== undefined) {
       const color = token.param.trim().toLowerCase();
       if (isColor(color)) {
@@ -325,6 +345,31 @@ export function parseBBCode(
 
     // Profile-dialect blocks.
     if (dialect === "profile") {
+      // [img]id-or-url[/img] and [img=id]alt[/img] — a raw-body tag: the body
+      // is an inline id or a direct URL, never nested markup.
+      if (token.tag === "img") {
+        const bodyStart = at + token.length;
+        const close = findClose("img", bodyStart);
+        if (close === -1) {
+          pushText(top().children, token.raw);
+          at = bodyStart;
+          continue;
+        }
+        const body = input.slice(bodyStart, close);
+        const src = (token.param ?? body).trim();
+        if (src === "") {
+          pushText(top().children, token.raw);
+          at = bodyStart;
+          continue;
+        }
+        top().children.push({
+          type: "img",
+          src,
+          alt: token.param === undefined ? "" : body,
+        });
+        at = close + "[/img]".length;
+        continue;
+      }
       if (token.tag === "hr" && token.param === undefined) {
         top().children.push({ type: "hr" });
         at += token.length;
@@ -391,7 +436,12 @@ export function bbcodeToText(
         case "color":
         case "block":
         case "collapse":
+        case "spoiler":
           out += walk(node.children);
+          break;
+        case "img":
+          // Decorative in a one-line context; carry the alt text if any.
+          out += node.alt;
           break;
         case "hr":
           out += " ";
@@ -410,6 +460,9 @@ function buildNode(frame: Frame): BBNode {
   }
   if (open.tag === "url") {
     return { type: "url", href: open.param!, children };
+  }
+  if (open.tag === "spoiler") {
+    return { type: "spoiler", children };
   }
   if (open.tag === "collapse") {
     return { type: "collapse", title: open.param?.trim() ?? "", children };
@@ -448,6 +501,11 @@ export function serializeBBCode(nodes: readonly BBNode[]): string {
       case "noparse":
         out += `[noparse]${node.text}[/noparse]`;
         break;
+      // Render-only: the composer never routes through here to the wire, so
+      // round-tripping [spoiler] can't leak a foreign tag onto the chat wire.
+      case "spoiler":
+        out += `[spoiler]${serializeBBCode(node.children)}[/spoiler]`;
+        break;
       // Profile-dialect nodes serialize losslessly too (render-only in
       // practice — nothing ever sends the profile dialect to the wire).
       case "block":
@@ -458,6 +516,12 @@ export function serializeBBCode(nodes: readonly BBNode[]): string {
           node.title === ""
             ? `[collapse]${serializeBBCode(node.children)}[/collapse]`
             : `[collapse=${node.title}]${serializeBBCode(node.children)}[/collapse]`;
+        break;
+      case "img":
+        out +=
+          node.alt === ""
+            ? `[img]${node.src}[/img]`
+            : `[img=${node.src}]${node.alt}[/img]`;
         break;
       case "hr":
         out += "[hr]";

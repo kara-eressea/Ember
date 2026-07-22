@@ -3,7 +3,7 @@
 // the bulk mapping lists into ProfileDto, per-identity view history, private
 // notes, and insights computed from data the bouncer already holds.
 
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, lt, ne, sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   characterDataSchema,
@@ -90,6 +90,7 @@ export type GuestbookResult =
   | { status: "upstream-error"; error: string };
 
 const IMAGE_BASE = "https://static.f-list.net/images/charimage";
+const INLINE_BASE = "https://static.f-list.net/images/charinline";
 const KINK_CHOICES = new Set(["fave", "yes", "maybe", "no"]);
 
 export class ProfileService {
@@ -134,9 +135,16 @@ export class ProfileService {
     if (result.status !== "ok") {
       return result;
     }
+    // The session's own character is fetched in the background to power the
+    // Compare/kink-match block (loadOwnProfile) — that internal fetch must not
+    // land in the recent-views history (#209). Self views are skipped; the
+    // note is still fetched so nothing else regresses.
+    const isSelf = this.#isSelf(identity, lower, result.canonical);
     const [profile, note] = await Promise.all([
       this.#resolve(result.payload),
-      this.#recordViewAndGetNote(identity.id, lower, result.canonical),
+      isSelf
+        ? this.getNote(identity.id, lower)
+        : this.#recordViewAndGetNote(identity.id, lower, result.canonical),
     ]);
     return {
       status: "ok",
@@ -257,14 +265,34 @@ export class ProfileService {
     };
   }
 
+  /** True when the requested character is the session's own connected
+   * identity — matched on either the requested spelling or the canonical
+   * name F-List returned. */
+  #isSelf(
+    identity: ProfileIdentity,
+    lower: string,
+    canonical: string,
+  ): boolean {
+    const self = identity.character.toLowerCase();
+    return lower === self || canonical.toLowerCase() === self;
+  }
+
   async history(
     identityId: string,
     limit: number,
     before?: number,
+    selfCharacter?: string,
   ): Promise<ProfileHistoryEntry[]> {
     const conditions = [eq(profileViews.identityId, identityId)];
     if (before !== undefined) {
       conditions.push(lt(profileViews.lastViewedAt, new Date(before)));
+    }
+    // Belt-and-braces for rows recorded before the self-exclusion fix (#209):
+    // filter the own character out at serve time so no DB purge is needed.
+    if (selfCharacter) {
+      conditions.push(
+        ne(profileViews.characterLower, selfCharacter.toLowerCase()),
+      );
     }
     const rows = await this.#db
       .select()
@@ -755,6 +783,21 @@ export class ProfileService {
         height: image.height ?? null,
         description: image.description ?? "",
       })),
+      inlines: Object.fromEntries(
+        Object.entries(payload.inlines ?? {}).flatMap(([id, inline]) => {
+          // The hash is the sharded path; keep it hex so a hostile value
+          // can't escape the fixed static.f-list.net host (audit L: defense
+          // in depth). The extension stays a plain file suffix.
+          if (!/^[a-f0-9]{4,}$/i.test(inline.hash)) {
+            return [];
+          }
+          const ext = /^[a-zA-Z0-9]{1,5}$/.test(inline.extension)
+            ? inline.extension
+            : "jpg";
+          const url = `${INLINE_BASE}/${inline.hash.slice(0, 2)}/${inline.hash.slice(2, 4)}/${inline.hash}.${ext}`;
+          return [[id, { url }]];
+        }),
+      ),
       timezone: payload.timezone ?? null,
     };
   }
