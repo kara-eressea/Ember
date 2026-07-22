@@ -204,16 +204,32 @@ export function MessageLog({
     }
     let raf = 0;
     let frames = 0;
+    // The last scrollTop we wrote (read back, so a browser clamp/round is
+    // accounted for). If the container's scrollTop no longer matches it at the
+    // top of a frame, something else moved it — an active scroll-to-top page,
+    // or the user dragging — and we must stop pinning rather than fight it.
+    let lastSet: number | undefined;
     const pin = () => {
       const el = scrollRef.current;
+      if (!el) {
+        return;
+      }
+      if (lastSet !== undefined && el.scrollTop !== lastSet) {
+        return; // external scroll wins — stop pinning.
+      }
       // Measured offset that aligns the anchor row to the top — reflects the
       // real heights of every row now rendered above it, not the estimate.
       const measured = virtualizer.getOffsetForIndex(index, "start")?.[0];
-      if (el && measured !== undefined) {
-        el.scrollTop = measured - anchor.gap;
+      const target = measured !== undefined ? measured - anchor.gap : undefined;
+      const settled = target !== undefined && lastSet === target;
+      if (target !== undefined) {
+        el.scrollTop = target;
+        lastSet = el.scrollTop;
       }
       frames += 1;
-      if (frames < SCROLL_SETTLE_FRAMES) {
+      // Stop once the anchor offset stops moving (rows measured) or the frame
+      // budget runs out — never keep looping under a slow CI render.
+      if (!settled && frames < SCROLL_SETTLE_FRAMES) {
         raf = requestAnimationFrame(pin);
       }
     };
