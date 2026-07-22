@@ -42,6 +42,32 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(log.getByText("a code span")).toBeVisible();
   await expect(log).not.toContainText("**bold words**");
 
+  // ── Double-Enter never double-sends (#267) ────────────────────────────
+  // Two Enter keydowns in one frame both saw the render-captured busy=false
+  // before the fix and dispatched twice. Fire two synchronous keydowns on the
+  // input (no await between them, so React never re-renders in the gap) and
+  // assert the text lands exactly once. The synchronous ref latch is the guard.
+  const doubleText = "double-enter-guard-42";
+  await input.fill(doubleText);
+  await input.evaluate((el) => {
+    const fire = () =>
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    fire();
+    fire();
+  });
+  await expect(log.getByText(doubleText, { exact: true })).toHaveCount(1, {
+    timeout: 10_000,
+  });
+  // Give any stray second send a chance to arrive before re-confirming.
+  await delay(500);
+  await expect(log.getByText(doubleText, { exact: true })).toHaveCount(1);
+
   // ── Enter sends, Shift+Enter breaks the line (spec §composer) ─────────
   // Shift+Enter must never send: it inserts a newline and the text stays put.
   await input.fill("line one");

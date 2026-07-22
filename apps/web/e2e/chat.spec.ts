@@ -280,6 +280,18 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
       log.getByText(`seed #${String(SEED_COUNT)}`, { exact: true }),
     ).toBeVisible({ timeout: 5_000 });
     await expect(jumpPill).not.toBeVisible();
+    // The jump must land fully at the bottom, not short (#266): setting
+    // scrollTop to the estimated height once could leave a gap that the
+    // pill kept showing. The re-stick across settle frames closes it.
+    await expect
+      .poll(
+        () =>
+          log.evaluate(
+            (el) => el.scrollHeight - el.scrollTop - el.clientHeight,
+          ),
+        { timeout: 5_000 },
+      )
+      .toBeLessThanOrEqual(2);
 
     // ── In-log search + jump-to-context (M9 step 3) ───────────────────────
     await page.getByRole("button", { name: "Search log" }).click();
