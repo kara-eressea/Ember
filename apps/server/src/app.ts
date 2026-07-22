@@ -12,6 +12,7 @@ import {
 } from "fastify-type-provider-zod";
 import { trustProxyValue, type AppConfig } from "./config.js";
 import { contentSecurityDirectives } from "./security/csp.js";
+import { ImagePreviewHostRegistry } from "./security/image-preview-hosts.js";
 import type { Db } from "./db/index.js";
 import { adsRoutes } from "./modules/ads/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
@@ -61,6 +62,7 @@ declare module "fastify" {
     outbox: Outbox;
     detachedAway: DetachedAway;
     directory: ChannelDirectory;
+    imagePreviewHosts: ImagePreviewHostRegistry;
   }
 }
 
@@ -113,6 +115,11 @@ export async function buildApp({
     });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const highlights = new HighlightMatcher(db, app.log);
+  // Live union of every user's image-preview allowlist, folded into the CSP so
+  // a host a user adds in Preferences is actually fetchable (#342). Loaded once
+  // here and refreshed whenever a user's imagePreviewHosts pref changes.
+  const imagePreviewHosts = ImagePreviewHostRegistry.fromDb(db, app.log);
+  await imagePreviewHosts.refresh();
   // Late-bound: the session registry's start callback needs it, but the
   // scheduler itself needs the hub/history built below.
   // Assigned once below; the session-start callback must close over it.
@@ -214,6 +221,7 @@ export async function buildApp({
   };
   detachedAway.start();
   app.decorate("detachedAway", detachedAway);
+  app.decorate("imagePreviewHosts", imagePreviewHosts);
   const sessionJanitor = new SessionJanitor({ db, logger: app.log });
   sessionJanitor.start();
   const updates = new UpdateChecker({
@@ -260,7 +268,14 @@ export async function buildApp({
   await app.register(fastifyHelmet, {
     contentSecurityPolicy:
       config.WEB_DIST !== undefined
-        ? { directives: contentSecurityDirectives() }
+        ? {
+            // The extra-hosts source is a function helmet evaluates per
+            // response, so a pref update (which calls registry.refresh())
+            // widens the policy without a restart or a per-request DB read.
+            directives: contentSecurityDirectives(() =>
+              imagePreviewHosts.mediaSourceString(),
+            ),
+          }
         : false,
     // F-List's static host serves images without CORP headers; embedder
     // policies would block them, so keep the helmet defaults that allow
@@ -364,6 +379,7 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
     // Browsers may open the gateway from the app's own origin or any

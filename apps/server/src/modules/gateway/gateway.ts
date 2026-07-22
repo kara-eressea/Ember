@@ -15,6 +15,7 @@ import type { CampaignScheduler } from "../campaigns/scheduler.js";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
+import type { ImagePreviewHostRegistry } from "../../security/image-preview-hosts.js";
 import type { HistorySink } from "../history/sink.js";
 import type {
   FchatSession,
@@ -386,6 +387,9 @@ export interface GatewayRoutesOptions {
   hub: GatewayHub;
   outbox: Outbox;
   highlights: HighlightMatcher;
+  /** Live union of user image-preview allowlists, refreshed on pref writes so
+   * the CSP keeps up with user-added hosts (#342). */
+  imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
   campaigns: CampaignScheduler;
   /** Cached social lists — served in the snapshot (#194). */
   social: SocialCache;
@@ -412,6 +416,7 @@ export async function gatewayRoutes(
     hub,
     outbox,
     highlights,
+    imagePreviewHosts,
     campaigns,
     social,
     allowedOrigins,
@@ -484,6 +489,7 @@ export async function gatewayRoutes(
       hub,
       outbox,
       highlights,
+      imagePreviewHosts,
       campaigns,
       social,
       verifyToken,
