@@ -169,7 +169,9 @@ export function MessageLog({
     return () => {
       cancelAnimationFrame(raf);
     };
-  }, [lastKey, detachedTail]);
+    // rows.length re-sticks after a prepend that grew the log while the
+    // user sat at the bottom (the #254 auto-fill).
+  }, [lastKey, rows.length, detachedTail]);
 
   // After older history prepends, restore the previous top row so the view
   // doesn't jump.
@@ -285,7 +287,13 @@ export function MessageLog({
     }
     loadingRef.current = true;
     try {
-      anchorRef.current = current.messages[0]?.id;
+      // Hold the previous top row in place after the prepend — except while
+      // stuck to the bottom (the auto-fill of a too-short log, #254), where
+      // anchoring an old top row would drag the view away from the newest
+      // messages; the bottom stick wins there.
+      anchorRef.current = atBottomRef.current
+        ? undefined
+        : current.messages[0]?.id;
       await useMessagesStore.getState().loadOlder(identityId, convId);
     } catch (error) {
       anchorRef.current = undefined;

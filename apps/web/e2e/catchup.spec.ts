@@ -16,8 +16,8 @@ import {
 
 /** More than one REST/gateway page (50), so catch-up needs real paging. */
 const WAVE_COUNT = 60;
-/** Small gap between sim sends so the relay never floods. */
-const WAVE_SPACING_MS = 25;
+/** Above the e2e sim's msg_flood (50ms) so no wave is throttled away. */
+const WAVE_SPACING_MS = 80;
 
 test("detach → backlog → reattach: divider and full scroll-back", async ({
   page,
