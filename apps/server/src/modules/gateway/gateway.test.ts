@@ -1570,7 +1570,9 @@ describe("gateway fan-out", () => {
     await second.subscribe(identityId);
 
     // Frontpage (cursor'd, nothing new): 1 empty done frame. PM tail: 1
-    // frame. Seeded tail: a full batch (200) then the empty done frame.
+    // frame. Seeded backlog: all 210 rows are unread and inside the eager
+    // day window (#254), so the whole backlog replays — a full batch (200)
+    // then the closing 10-row done frame.
     const frames = [];
     for (let i = 0; i < 4; i += 1) {
       frames.push(await second.nextOfType("catchup"));
@@ -1597,10 +1599,10 @@ describe("gateway fan-out", () => {
       "new thread",
     ]);
 
-    // The tail is capped at one batch: bulk 11..210, never bulk 1.
+    // The whole unread backlog replays — it fits the eager window (#254).
     const tail = byConv.get(seeded!.id) ?? [];
-    expect(tail).toHaveLength(200);
-    expect(tail[0]?.bbcode).toBe("bulk 11");
+    expect(tail).toHaveLength(210);
+    expect(tail[0]?.bbcode).toBe("bulk 1");
     expect(tail.at(-1)?.bbcode).toBe("bulk 210");
 
     // Live still flows and no further catchup frames are pending.
@@ -1615,6 +1617,147 @@ describe("gateway fan-out", () => {
     expect(second.bufferedFrames.filter((f) => f.t === "catchup")).toHaveLength(
       0,
     );
+  });
+
+  it("caps the eager no-cursor replay at the day window", async () => {
+    const { identityId, token } = await createIdentity();
+    // 300 stale rows (older than the eager day window) followed by 250
+    // unread recent rows — more than one batch, so the pre-#254 tail alone
+    // would cut into the recent backlog, and the stale prefix must not
+    // replay eagerly (it stays one history.page away).
+    const [conv] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Backlog",
+        title: "Backlog",
+      })
+      .returning();
+    const stale = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await db.insert(messages).values(
+      Array.from({ length: 300 }, (_, i) => ({
+        conversationId: conv!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `stale ${String(i + 1)}`,
+        createdAt: stale,
+      })),
+    );
+    await db.insert(messages).values(
+      Array.from({ length: 250 }, (_, i) => ({
+        conversationId: conv!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `recent ${String(i + 1)}`,
+      })),
+    );
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    // The full recent backlog replays (batch of 200, then the 50-row done
+    // frame); nothing stale is eagerly streamed.
+    const replayed = [];
+    for (;;) {
+      const frame = await client.nextOfType("catchup");
+      replayed.push(...frame.d.messages);
+      if (frame.d.done) {
+        break;
+      }
+    }
+    expect(replayed).toHaveLength(250);
+    expect(replayed[0]?.bbcode).toBe("recent 1");
+    expect(replayed.at(-1)?.bbcode).toBe("recent 250");
+    client.close();
+  });
+
+  it("pages older history over the gateway until exhaustion", async () => {
+    const { identityId, token } = await createIdentity();
+    const [conv] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Archive",
+        title: "Archive",
+      })
+      .returning();
+    const rows = await db
+      .insert(messages)
+      .values(
+        Array.from({ length: 120 }, (_, i) => ({
+          conversationId: conv!.id,
+          senderCharacter: "Nyx Firemane",
+          kind: "msg" as const,
+          bbcode: `old ${String(i + 1)}`,
+        })),
+      )
+      .returning();
+
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    while (!(await client.nextOfType("catchup")).d.done) {
+      // drain the eager replay; paging is what's under test
+    }
+
+    // Page down from row 101: 51..100 first, then 1..50 with hasMore=false.
+    client.send({
+      t: "cmd",
+      id: 41,
+      d: {
+        identityId,
+        action: "history.page",
+        d: { convId: conv!.id, beforeId: rows[100]!.id, limit: 50 },
+      },
+    });
+    const page1 = await client.nextOfType("ack");
+    expect(page1.d.ok).toBe(true);
+    expect(page1.d.hasMore).toBe(true);
+    expect(page1.d.messages?.map((m) => m.bbcode)).toEqual(
+      Array.from({ length: 50 }, (_, i) => `old ${String(i + 51)}`),
+    );
+
+    client.send({
+      t: "cmd",
+      id: 42,
+      d: {
+        identityId,
+        action: "history.page",
+        d: { convId: conv!.id, beforeId: rows[50]!.id, limit: 50 },
+      },
+    });
+    const page2 = await client.nextOfType("ack");
+    expect(page2.d.hasMore).toBe(false);
+    expect(page2.d.messages?.map((m) => m.bbcode)).toEqual(
+      Array.from({ length: 50 }, (_, i) => `old ${String(i + 1)}`),
+    );
+
+    // A conversation the identity does not own never pages.
+    const other = await createIdentity();
+    const [foreign] = await db
+      .insert(conversations)
+      .values({
+        identityId: other.identityId,
+        kind: "channel",
+        channelKey: "Foreign",
+        title: "Foreign",
+      })
+      .returning();
+    client.send({
+      t: "cmd",
+      id: 43,
+      d: {
+        identityId,
+        action: "history.page",
+        d: { convId: foreign!.id, beforeId: 10, limit: 50 },
+      },
+    });
+    const denied = await client.nextOfType("ack");
+    expect(denied.d.ok).toBe(false);
+    expect(denied.d.error).toBe("conversation not found");
+    client.close();
   });
 });
 

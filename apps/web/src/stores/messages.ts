@@ -1,11 +1,15 @@
 // Per-conversation message buffers (architecture.md §Client): windowed so
 // neither the store nor the DOM grows unbounded. Live messages append via
-// gateway events (exactly-once, deduped by messages.id); history loads via
-// REST cursor pagination and prepends. The highest buffered id per
-// conversation doubles as the gateway resume cursor.
+// gateway events (exactly-once, deduped by messages.id); the initial page
+// loads via REST, scroll-back pages ride the gateway (history.page, #254)
+// and prepend. The highest buffered id per conversation doubles as the
+// gateway resume cursor.
 
 import { create } from "zustand";
 import type { MessageDto } from "@emberchat/protocol";
+// Circular with socket.ts (it imports resumeCursorsFor) — safe: both sides
+// only touch the other's exports at call time, never at module eval.
+import { gateway } from "../gateway/socket.js";
 import { api } from "../lib/api.js";
 
 /** Keep at most this many rows per conversation; older rows re-load via REST. */
@@ -219,17 +223,24 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       patch(convId, (current) => ({ ...current, loadingOlder: true }));
       const epoch = epochOf(convId);
       try {
-        const page = await api.listMessages(identityId, convId, {
-          before: oldest.id,
-          limit: PAGE_SIZE,
+        // Scroll-back pages ride the gateway (#254) and walk the FULL
+        // stored history — there is no age cap; hasMore=false is the
+        // exhaustion signal that stops further requests.
+        const page = await gateway.cmd({
+          identityId,
+          action: "history.page",
+          d: { convId, beforeId: oldest.id, limit: PAGE_SIZE },
         });
+        if (!page.ok || page.messages === undefined) {
+          throw new Error(page.error ?? "history page failed");
+        }
         if (epochOf(convId) !== epoch) {
           return 0; // the window this page extends no longer exists
         }
         patch(convId, (current) => ({
           ...current,
-          messages: merge(current.messages, page.messages),
-          hasMoreBefore: page.hasMore,
+          messages: merge(current.messages, page.messages ?? []),
+          hasMoreBefore: page.hasMore ?? false,
         }));
         return page.messages.length;
       } finally {

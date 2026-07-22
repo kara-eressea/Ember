@@ -10,6 +10,7 @@ import {
   type ClientFrame,
   type ConversationDto,
   type GatewayCmd,
+  type MessageDto,
   type ResumeCursors,
   type ServerFrame,
 } from "@emberchat/protocol";
@@ -31,6 +32,10 @@ export interface AckResult {
   conversation?: ConversationDto;
   /** outbox.recall: the typed source, back to the composer. */
   markdown?: string;
+  /** history.page: one older page, ascending by id. */
+  messages?: MessageDto[];
+  /** history.page: older history still exists past this page. */
+  hasMore?: boolean;
 }
 
 interface PendingAck {

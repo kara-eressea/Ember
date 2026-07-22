@@ -333,6 +333,19 @@ const cmdSchema = z.discriminatedUnion("action", [
     action: z.literal("conv.pin"),
     d: z.object({ convId: z.uuid(), pinned: z.boolean() }),
   }),
+  z.object({
+    identityId: z.uuid(),
+    // Scroll-back history paging (#254): one older page of a conversation's
+    // stored history, strictly before `beforeId`. Paging walks the FULL
+    // stored history — there is no age cap; the ack's `hasMore` tells the
+    // client when it is exhausted.
+    action: z.literal("history.page"),
+    d: z.object({
+      convId: z.uuid(),
+      beforeId: z.number().int().positive(),
+      limit: z.number().int().min(1).max(200),
+    }),
+  }),
 ]);
 
 export const clientFrameSchema = z.discriminatedUnion("t", [
@@ -753,6 +766,10 @@ export type ServerFrame =
         conversation?: ConversationDto;
         /** outbox.recall result: what the user typed, back to the composer. */
         markdown?: string;
+        /** history.page result: one older page, ascending by id. */
+        messages?: MessageDto[];
+        /** history.page result: older history still exists past this page. */
+        hasMore?: boolean;
       };
     }
   | { t: "pong" }

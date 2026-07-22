@@ -151,6 +151,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Clover Hart", "Dell Marsh"],
     },
+    // Reserved for the history catch-up E2E (#254, same parallelism rule);
+    // Coal Whitby is its raw-SimClient "other side" (the DM partner whose
+    // messages pile up while the browser is detached).
+    "ember@example.test": {
+      password: "hunter2",
+      characters: ["Ember Hollis", "Coal Whitby"],
+    },
     // Reserved for the M8 profile E2E (same parallelism rule).
     "juniper@example.test": {
       password: "hunter2",

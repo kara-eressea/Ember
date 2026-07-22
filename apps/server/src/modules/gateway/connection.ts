@@ -20,6 +20,7 @@ import {
   type ConversationDto,
   type GatewayCmd,
   type GatewayEvent,
+  type MessageDto,
   type ResumeCursors,
   type ServerFrame,
   type UserPrefs,
@@ -55,6 +56,7 @@ import {
   buildSnapshot,
   catchupPlan,
   fetchMessagesAfter,
+  fetchMessagesBefore,
   identityBadgeTotals,
   messageDto,
   pmPresence,
@@ -752,6 +754,36 @@ export class GatewayConnection {
         }
         return;
       }
+      case "history.page": {
+        // Scroll-back paging (#254): one older page from the message store.
+        // Ownership check first — conversation ids are guessable UUIDs and
+        // the messages table itself has no identity column.
+        const [conv] = await this.#ctx.db
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.id, cmd.d.convId),
+              eq(conversations.identityId, identity.id),
+            ),
+          );
+        if (!conv) {
+          this.#ack(id, { ok: false, error: "conversation not found" });
+          return;
+        }
+        const page = await fetchMessagesBefore(
+          this.#ctx.db,
+          cmd.d.convId,
+          cmd.d.beforeId,
+          cmd.d.limit,
+        );
+        this.#ack(id, {
+          ok: true,
+          messages: page.rows.map(messageDto),
+          hasMore: page.hasMore,
+        });
+        return;
+      }
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
@@ -1182,6 +1214,8 @@ export class GatewayConnection {
       error?: string;
       conversation?: ConversationDto;
       markdown?: string;
+      messages?: MessageDto[];
+      hasMore?: boolean;
     },
   ): void {
     if (id !== undefined) {
