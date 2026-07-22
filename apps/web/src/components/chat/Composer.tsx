@@ -803,8 +803,8 @@ export function Composer({
             onClick={toggleMarkdown}
             title={
               markdown
-                ? "Markdown on — sends BBCode"
-                : "Markdown off — raw BBCode"
+                ? "Formatting on — your **bold**, *italic* and links are styled when you send"
+                : "Formatting off — sends exactly what you typed"
             }
           >
             Ⓜ Markdown

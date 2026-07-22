@@ -964,6 +964,20 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     bumpUnread(identityId, convId, messageId, mention = false) {
       patch(identityId, (session) => {
+        // KNOWN LIMITATION (pre-existing, #269 item 5): a message.new whose
+        // convId has no channelByConvId mapping and no dms[] row yet is
+        // dropped by the final `return session` below. The mapping is only
+        // registered by the conversation.upsert action, which rides a
+        // separate gateway event; if a message.new for a conversation is
+        // dispatched before its upsert lands, this bump has nowhere to go.
+        // In practice the server orders the upsert (channel JCH / pm.open)
+        // ahead of any message, so the window is not observed. A real fix is
+        // structural — it needs a per-session buffer of pending (convId →
+        // {unread, mentions, newestMessageId}) bumps, flushed into the
+        // channel/DM row inside conversation.upsert when the mapping first
+        // registers — not a guard we can add here, since the target row does
+        // not exist. Deferred deliberately; captured so it is not rediscovered
+        // as a new bug.
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
           const channel = session.channels[key];
