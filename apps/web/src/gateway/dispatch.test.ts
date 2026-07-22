@@ -89,6 +89,7 @@ function snapshot(): ServerFrame {
           mode: "chat",
           oplist: ["", "Nyx Firemane"],
           members: [member("Amber Vale"), member("Nyx Firemane")],
+          seen: [],
           joined: true,
           pinned: false,
           unread: 3,
