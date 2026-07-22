@@ -245,9 +245,9 @@ test("profile viewer: full-screen window size persists across reopen", async ({
 
   // The choice is persisted to localStorage, so it also survives a full reload.
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Reading Nook" }),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Reading Nook" })).toBeVisible(
+    { timeout: 15_000 },
+  );
   viewer = await openTallyProfile();
   await expect(
     viewer.getByRole("button", { name: "Exit fullscreen" }),
