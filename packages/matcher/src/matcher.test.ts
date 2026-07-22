@@ -269,8 +269,12 @@ describe("kink alignment", () => {
     // list under the parent custom's choice, so by the time the matcher sees
     // them they are ordinary entries and must participate in scoring.
     const report = match(
-      profile({ kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }] }),
-      profile({ kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }] }),
+      profile({
+        kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }],
+      }),
+      profile({
+        kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }],
+      }),
     );
     expect(report.kinks).toEqual([
       {
