@@ -108,6 +108,12 @@ function renderNode(
           {node.text}
         </span>
       );
+    case "spoiler":
+      // Incoming [spoiler] from other clients (#204): same covered bar as the
+      // `||…||` spelling, but wrapping full markup (text, eicons, …).
+      return (
+        <Spoiler key={key}>{renderNodes(node.children, key, extra)}</Spoiler>
+      );
     // Profile-dialect nodes never occur in chat parses; if one arrives
     // unclaimed (no `extra`), degrade to unstyled content — never crash.
     case "block":
