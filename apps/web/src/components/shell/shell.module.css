@@ -9,10 +9,9 @@
   /* Column widths are drag-resizable (#292): the left sidebar and the right
      column read a CSS variable set inline by AppShell, falling back to the
      design-system defaults (244 / 232px). */
-  grid-template-columns: var(--eb-rail-width, 60px) var(
-      --eb-left-width,
-      244px
-    ) 1fr var(--eb-right-width, 232px);
+  grid-template-columns:
+    var(--eb-rail-width, 60px) var(--eb-left-width, 244px)
+    1fr var(--eb-right-width, 232px);
   /* The implicit row would auto-size to content, un-constraining every
      internal scroll region — pin it to the viewport instead. */
   grid-template-rows: minmax(0, 1fr);
@@ -21,10 +20,9 @@
 }
 
 .shell.membersClosed {
-  grid-template-columns: var(--eb-rail-width, 60px) var(
-      --eb-left-width,
-      244px
-    ) 1fr;
+  grid-template-columns:
+    var(--eb-rail-width, 60px) var(--eb-left-width, 244px)
+    1fr;
 }
 
 /* Identity-rail hidden (#346): the avatar toggle collapses the rail track to
