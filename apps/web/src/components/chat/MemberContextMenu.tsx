@@ -39,6 +39,7 @@ export function MemberContextMenu({
   role = null,
   viewerRole = null,
   viewerChatop = false,
+  present = true,
   position,
   onClose,
 }: {
@@ -56,6 +57,10 @@ export function MemberContextMenu({
   role?: ChannelRole;
   viewerRole?: ChannelRole;
   viewerChatop?: boolean;
+  /** False for "Seen recently" targets (#200): the admin section acts on a
+   * live channel role an absent member doesn't hold, so it never renders —
+   * gated on presence, not just viewer role. Everything else is identical. */
+  present?: boolean;
   position: { x: number; y: number };
   onClose: () => void;
 }) {
@@ -88,6 +93,7 @@ export function MemberContextMenu({
     self,
   });
   const anyPower =
+    present &&
     channelKey !== undefined &&
     (powers.remove || powers.promote || powers.demote || powers.setOwner);
   const ignored = useSessionsStore((s) =>

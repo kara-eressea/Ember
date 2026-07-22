@@ -49,6 +49,7 @@ function channel(unread: number, mentions: number): ChannelView {
     mode: "both",
     oplist: [],
     members: [],
+    seen: [],
     joined: true,
     pinned: false,
     unread,
