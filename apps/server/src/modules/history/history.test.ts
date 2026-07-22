@@ -8,7 +8,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -257,6 +257,48 @@ describe("history sink", () => {
       senderCharacter: "Nyx Firemane",
       bbcode: "psst, over here",
       sentByUs: false,
+    });
+  });
+
+  it("keeps one conversation when make-open SYS echoes a raw-cased room id (#311)", async () => {
+    const { identityId, session } = await startIdentity();
+    const roomId = "ADH-abc123def456";
+
+    // Our own JCH echo for a freshly created private room ("ADH-" prefix).
+    await inject(session, {
+      cmd: "JCH",
+      payload: {
+        channel: roomId,
+        character: { identity: CHARACTER },
+        title: "Ember Attic",
+      },
+    });
+    // The RST make-open confirmation, which the live server echoes with a
+    // lowercased "adh-" prefix. Left un-canonicalized this spawns a second
+    // conversation titled by the raw id.
+    await inject(session, {
+      cmd: "SYS",
+      payload: {
+        message: "Ember Attic is now open.",
+        channel: roomId.replace(/^ADH-/, "adh-"),
+      },
+    });
+    await app.history.flush();
+
+    const convs = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+        ),
+      );
+    expect(convs).toHaveLength(1);
+    expect(convs[0]).toMatchObject({
+      channelKey: roomId,
+      title: "Ember Attic",
+      joined: true,
     });
   });
 
@@ -709,6 +751,35 @@ describe("history pagination", () => {
     const page3 = third.json<typeof page1>();
     expect(page3.messages.map((m) => m.bbcode)).toEqual(["message 1"]);
     expect(page3.hasMore).toBe(false);
+  });
+
+  it("rejects a malformed before-cursor and honors an out-of-range one (#268)", async () => {
+    const { identityId, conversationId, token } = await seedConversation(3);
+
+    // Non-numeric, zero, and negative cursors fail schema validation (400) —
+    // the keyset query never sees a garbage bound.
+    for (const bad of ["abc", "0", "-5", "1.5"]) {
+      const response = await getMessages(
+        identityId,
+        conversationId,
+        `?before=${bad}`,
+        token,
+      );
+      expect(response.statusCode, `before=${bad}`).toBe(400);
+    }
+
+    // A syntactically valid cursor far below every row is honored verbatim:
+    // an empty page, no more history — not an error.
+    const empty = await getMessages(
+      identityId,
+      conversationId,
+      "?before=1",
+      token,
+    );
+    expect(empty.statusCode).toBe(200);
+    const body = empty.json<{ messages: unknown[]; hasMore: boolean }>();
+    expect(body.messages).toEqual([]);
+    expect(body.hasMore).toBe(false);
   });
 
   it("searches the identity's log with filters, cursor-paged (M9)", async () => {

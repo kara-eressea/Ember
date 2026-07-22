@@ -1021,7 +1021,10 @@ export class FchatSim {
       cmd: "SYS",
       payload: {
         message: `${channel.title} is now ${open ? "open" : "invite-only"}.`,
-        channel: channel.name,
+        // Faithful to the live server (issue #311): the make-open SYS echoes
+        // the room id with a lowercased "adh-" prefix, unlike the "ADH-" of
+        // the JCH echo. Clients must canonicalize or they grow a stray row.
+        channel: channel.name.replace(/^ADH-/, "adh-"),
       },
     });
   }
