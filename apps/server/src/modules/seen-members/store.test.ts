@@ -73,9 +73,12 @@ function lch(channel: string, character: string): ServerCommand {
   return { cmd: "LCH", payload: { channel, character } };
 }
 
-/** A session already identified as Amber, with the default roster joined. */
-function onlineSession(): StubSession {
+/** A session already identified as Amber, with the default roster joined.
+ * The store attaches first (as in onSessionStarted) so it sees every
+ * command, ICH included — the mirror only tracks channels it observed. */
+function onlineSession(store?: SeenMembersStore): StubSession {
   const session = new StubSession();
+  store?.attach(identityId, session);
   session.push({
     cmd: "IDN",
     payload: { character: "Amber Vale" },
@@ -138,8 +141,7 @@ beforeEach(async () => {
 describe("SeenMembersStore", () => {
   it("upserts a departing member with their cached gender", async () => {
     const store = new SeenMembersStore({ db });
-    const session = onlineSession();
-    store.attach(identityId, session);
+    const session = onlineSession(store);
     session.push(lch(KEY, "Nyx Firemane"));
     await store.idle();
     const rows = await seenRows();
@@ -154,8 +156,7 @@ describe("SeenMembersStore", () => {
 
   it("deletes the row again on rejoin — never present and seen at once", async () => {
     const store = new SeenMembersStore({ db });
-    const session = onlineSession();
-    store.attach(identityId, session);
+    const session = onlineSession(store);
     session.push(lch(KEY, "Nyx Firemane"));
     session.push(jch(KEY, "Nyx Firemane"));
     await store.idle();
@@ -164,8 +165,7 @@ describe("SeenMembersStore", () => {
 
   it("clears present members' rows on a full roster (ICH) overwrite", async () => {
     const store = new SeenMembersStore({ db });
-    const session = onlineSession();
-    store.attach(identityId, session);
+    const session = onlineSession(store);
     // A row left over from a previous run whose part we never saw.
     await db.insert(seenMembers).values({
       identityId,
@@ -181,12 +181,8 @@ describe("SeenMembersStore", () => {
 
   it("treats FLN as a part in every observed channel", async () => {
     const store = new SeenMembersStore({ db });
-    const session = onlineSession();
+    const session = onlineSession(store);
     session.push(jch("Development", "Amber Vale"));
-    session.push(ich("Development", ["Amber Vale", "Tally Marsh"]));
-    store.attach(identityId, session);
-    // Re-seed the mirror post-attach (attach starts empty).
-    session.push(ich(KEY, ["Amber Vale", "Nyx Firemane", "Tally Marsh"]));
     session.push(ich("Development", ["Amber Vale", "Tally Marsh"]));
     session.push({
       cmd: "FLN",
@@ -203,8 +199,7 @@ describe("SeenMembersStore", () => {
 
   it("records nothing for our own leave, and stops watching the channel", async () => {
     const store = new SeenMembersStore({ db });
-    const session = onlineSession();
-    store.attach(identityId, session);
+    const session = onlineSession(store);
     session.push(lch(KEY, "Amber Vale"));
     // A stale LCH for the abandoned channel must be inert.
     session.push(lch(KEY, "Nyx Firemane"));
@@ -214,8 +209,7 @@ describe("SeenMembersStore", () => {
 
   it("never stamps lastSeen on our own disconnect", async () => {
     const store = new SeenMembersStore({ db });
-    const session = onlineSession();
-    store.attach(identityId, session);
+    const session = onlineSession(store);
     session.disconnect();
     await store.idle();
     expect(await seenRows()).toHaveLength(0);
@@ -228,9 +222,7 @@ describe("SeenMembersStore", () => {
       capPerChannel: 2,
       now: () => new Date(1_700_000_000_000 + ++tick * 1000),
     });
-    const session = onlineSession();
-    session.push(ich(KEY, ["Amber Vale", "One", "Two", "Three"]));
-    store.attach(identityId, session);
+    const session = onlineSession(store);
     session.push(ich(KEY, ["Amber Vale", "One", "Two", "Three"]));
     session.push(lch(KEY, "One"));
     session.push(lch(KEY, "Two"));
@@ -328,6 +320,7 @@ describe("serve path", () => {
         gender: "Female",
       },
     ]);
+    // No store attached: this exercises the serve-time filter alone.
     const session = onlineSession();
     const snapshot = await buildSnapshot(
       db,

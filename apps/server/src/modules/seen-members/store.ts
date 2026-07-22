@@ -224,9 +224,14 @@ export class SeenMembersStore {
           return;
         }
         const channel = mirror.get(key);
+        if (!channel) {
+          // A channel we no longer observe (e.g. after our own leave) —
+          // never record parts we can't vouch for.
+          return;
+        }
         const lower = character.toLowerCase();
-        const entry = channel?.get(lower);
-        channel?.delete(lower);
+        const entry = channel.get(lower);
+        channel.delete(lower);
         this.#upsert(identityId, key, {
           character: entry?.character ?? character,
           // LCH precedes any FLN, so the roster still knows the gender.
