@@ -82,13 +82,60 @@
 }
 
 .railHead {
-  padding: 12px 12px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px 8px 12px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--eb-meta);
   border-bottom: 1px solid var(--eb-border);
+}
+
+/* Collapse toggle (#279): avatars-only mode for the rail. */
+.railCollapseBtn {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  color: var(--eb-meta);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.railCollapseBtn:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
+/* Collapsed rail: just wide enough for the 28px avatar + gutters (#279). */
+.railCollapsed {
+  width: 52px;
+}
+
+.railCollapsed .railHead {
+  justify-content: center;
+  padding: 12px 8px 8px;
+}
+
+.railCollapsed .railList {
+  align-items: center;
+}
+
+.railCollapsed .histRow {
+  width: auto;
+  padding: 5px;
+}
+
+.railCollapsed .histOpen {
+  flex: none;
 }
 
 .railList {
@@ -514,6 +561,27 @@
   font-weight: 600;
   color: var(--eb-text);
   box-shadow: inset 0 -2px 0 var(--eb-accent);
+}
+
+/* "Open on F-List" action (#282): right-aligned in the tab strip but read as
+   a link, not a tab — no active underline, plain anchor so it escapes the
+   in-app /c/ interception and opens the real site in a new tab. */
+.flistLink {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+  padding: 11px 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--eb-meta);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.flistLink:hover {
+  color: var(--eb-accent);
+  text-decoration: underline;
 }
 
 /* ── Content region ───────────────────────────────────────────────────── */

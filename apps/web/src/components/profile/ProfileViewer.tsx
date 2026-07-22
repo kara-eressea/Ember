@@ -9,6 +9,7 @@ import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useRailCollapsed } from "../../lib/rail-collapse.js";
 import { api } from "../../lib/api.js";
 import {
   loadHistory,
@@ -33,17 +34,27 @@ import { ProfileBBCode } from "./ProfileBBCode.js";
 import { ago, dateLabel } from "./time.js";
 import styles from "./profile.module.css";
 
+// Insights sits last (#282); the guestbook slot is gated per-profile (#280).
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "details", label: "Details" },
   { id: "kinks", label: "Kinks" },
   { id: "compare", label: "Compare" },
-  { id: "insights", label: "Insights" },
   { id: "images", label: "Images" },
   { id: "guestbook", label: "Guestbook" },
+  { id: "insights", label: "Insights" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+/** Tabs actually shown for a profile: the Guestbook tab drops out entirely
+ * when the character has their guestbook turned off (#280). */
+function visibleTabs(profile: ProfileDto): readonly (typeof TABS)[number][] {
+  if (profile.settings.guestbook) {
+    return TABS;
+  }
+  return TABS.filter((tab) => tab.id !== "guestbook");
+}
 
 export function ProfileViewer({
   identityId,
@@ -152,16 +163,40 @@ function HistoryRail({
 }) {
   const history = useProfileStore((s) => s.history);
   const open = useProfileStore((s) => s.open);
+  // Collapsed = avatars only, no names (#279). Defaults on the narrow layout;
+  // the toggle records an explicit, persisted preference.
+  const [collapsed, toggleCollapsed] = useRailCollapsed();
   return (
-    <nav className={styles.rail} aria-label="Recently viewed profiles">
-      <div className={styles.railHead}>Recently viewed</div>
+    <nav
+      className={`${styles.rail} ${collapsed ? styles.railCollapsed : ""}`}
+      aria-label="Recently viewed profiles"
+    >
+      <div className={styles.railHead}>
+        {!collapsed && <span>Recently viewed</span>}
+        <button
+          type="button"
+          className={styles.railCollapseBtn}
+          aria-pressed={collapsed}
+          aria-label={
+            collapsed
+              ? "Expand recently viewed to show names"
+              : "Collapse recently viewed to avatars only"
+          }
+          title={collapsed ? "Show names" : "Avatars only"}
+          onClick={toggleCollapsed}
+        >
+          {collapsed ? "»" : "«"}
+        </button>
+      </div>
       {history.length === 0 ? (
-        <div className={styles.railEmpty}>
-          <span className={styles.railEmptyTile} aria-hidden>
-            ◌
-          </span>
-          Profiles you view will appear here.
-        </div>
+        collapsed ? null : (
+          <div className={styles.railEmpty}>
+            <span className={styles.railEmptyTile} aria-hidden>
+              ◌
+            </span>
+            Profiles you view will appear here.
+          </div>
+        )
       ) : (
         <div className={styles.railList}>
           {history.map((entry) => {
@@ -177,28 +212,34 @@ function HistoryRail({
                 <button
                   type="button"
                   className={styles.histOpen}
+                  // In collapsed mode the name only survives as the tooltip.
+                  title={collapsed ? entry.name : undefined}
                   onClick={() => {
                     open(entry.name);
                   }}
                 >
                   <Avatar name={entry.name} size={28} square />
-                  <span className={styles.histMeta}>
-                    <span className={styles.histName}>{entry.name}</span>
-                    <span className={styles.histAgo}>
-                      {ago(entry.lastViewedAt)}
+                  {!collapsed && (
+                    <span className={styles.histMeta}>
+                      <span className={styles.histName}>{entry.name}</span>
+                      <span className={styles.histAgo}>
+                        {ago(entry.lastViewedAt)}
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  className={styles.histRemove}
-                  aria-label={`Remove ${entry.name} from history`}
-                  onClick={() => {
-                    void removeHistoryEntry(identityId, entry.name);
-                  }}
-                >
-                  ×
-                </button>
+                {!collapsed && (
+                  <button
+                    type="button"
+                    className={styles.histRemove}
+                    aria-label={`Remove ${entry.name} from history`}
+                    onClick={() => {
+                      void removeHistoryEntry(identityId, entry.name);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           })}
@@ -225,15 +266,25 @@ function ViewerBody({
 }) {
   const setTab = useProfileStore((s) => s.setTab);
   const response = loaded?.response;
+  const profile = response?.profile;
+  const tabs = profile ? visibleTabs(profile) : TABS;
 
-  if (!response) {
+  // If the guestbook tab was active but this character has it turned off
+  // (#280), fall back to the first tab so the content region isn't blank.
+  useEffect(() => {
+    const fallback = tabs[0];
+    if (profile && fallback && !tabs.some((tab) => tab.id === activeTab)) {
+      setTab(fallback.id);
+    }
+  }, [profile, tabs, activeTab, setTab]);
+
+  if (!response || !profile) {
     if (loaded && loaded.state !== "loading") {
       return <ErrorState identityId={identityId} name={name} loaded={loaded} />;
     }
     return <LoadingState name={name} />;
   }
 
-  const profile = response.profile;
   return (
     <>
       <Header
@@ -251,7 +302,7 @@ function ViewerBody({
         </div>
       )}
       <div className={styles.tabs} role="tablist">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -265,6 +316,17 @@ function ViewerBody({
             {tab.label}
           </button>
         ))}
+        {/* Right-aligned action, NOT a tab (#282): a plain anchor so it opens
+            the real F-List site — deliberately exempt from the in-app
+            /c/ interception (#252), and middle/ctrl-click stay native. */}
+        <a
+          className={styles.flistLink}
+          href={`https://www.f-list.net/c/${encodeURIComponent(profile.name)}`}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          F-List <span aria-hidden>↗</span>
+        </a>
       </div>
       <div className={styles.content} data-testid="profile-content">
         <TabContent
