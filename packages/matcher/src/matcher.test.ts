@@ -263,6 +263,26 @@ describe("kink alignment", () => {
     expect(report.kinks[0]?.tier).toBe("mismatch");
     expect(report.kinkOverall).toBe("mismatch");
   });
+
+  it("scores a grouped kink like any other once flattened (#274)", () => {
+    // Grouped standard kinks are flattened server-side into the flat kink
+    // list under the parent custom's choice, so by the time the matcher sees
+    // them they are ordinary entries and must participate in scoring.
+    const report = match(
+      profile({ kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }] }),
+      profile({ kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }] }),
+    );
+    expect(report.kinks).toEqual([
+      {
+        id: 501,
+        name: "Campfire Stories",
+        yourChoice: "fave",
+        theirChoice: "fave",
+        tier: "match",
+      },
+    ]);
+    expect(report.kinkOverall).toBe("match");
+  });
 });
 
 describe("invariants", () => {

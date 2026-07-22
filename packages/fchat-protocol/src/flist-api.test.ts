@@ -98,6 +98,28 @@ describe("characterDataSchema", () => {
       sort_order: 0,
     });
     expect(parsed.settings?.guestbook).toBe(true);
+    // Grouped standard kinks ride along on the custom kink's `children` (#274).
+    expect(parsed.custom_kinks?.["29732429"]?.children).toEqual([620]);
+  });
+
+  it("tolerates a custom kink with no children (ungrouped custom)", () => {
+    const parsed = characterDataSchema.parse({
+      error: "",
+      custom_kinks: {
+        "1": { name: "Plain custom", description: "no folder", choice: "fave" },
+      },
+    });
+    expect(parsed.custom_kinks?.["1"]?.children).toBeUndefined();
+  });
+
+  it("coerces string-typed child ids on a custom kink", () => {
+    const parsed = characterDataSchema.parse({
+      error: "",
+      custom_kinks: {
+        "1": { name: "Folder", choice: "yes", children: ["620", "8"] },
+      },
+    });
+    expect(parsed.custom_kinks?.["1"]?.children).toEqual([620, 8]);
   });
 
   it("normalizes PHP empty-array serialization of record fields to {}", () => {

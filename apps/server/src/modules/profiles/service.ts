@@ -743,6 +743,37 @@ export class ProfileService {
       });
     }
 
+    // Grouped standard kinks: F-List lets a custom kink act as a folder for
+    // standard catalog kinks (`custom.children`). Those grouped kinks have no
+    // top-level entry in `payload.kinks`, so the matcher never sees them —
+    // flatten each into the matchable kink list under its parent custom's
+    // choice. The custom kink itself stays display-only (customKinks below).
+    // Precedence: an explicit top-level choice wins over a grouped one, so a
+    // kink already added above is left untouched (#274).
+    const flattened = new Set(kinks.map((kink) => kink.id));
+    for (const custom of Object.values(payload.custom_kinks ?? {})) {
+      const choice = custom.choice;
+      if (!choice || !KINK_CHOICES.has(choice)) {
+        continue;
+      }
+      for (const childId of custom.children ?? []) {
+        if (flattened.has(childId)) {
+          continue;
+        }
+        const kink = kinkById.get(childId);
+        if (!kink) {
+          continue;
+        }
+        flattened.add(childId);
+        kinks.push({
+          id: childId,
+          name: kink.name,
+          description: kink.description ?? "",
+          choice: choice as "fave" | "yes" | "maybe" | "no",
+        });
+      }
+    }
+
     return {
       id: payload.id ?? 0,
       name: payload.name ?? "",
