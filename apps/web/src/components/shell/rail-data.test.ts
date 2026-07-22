@@ -56,6 +56,7 @@ function channel(unread: number, mentions: number): ChannelView {
     mentions,
     highlightedAt: 0,
     lastReadMessageId: null,
+    newestMessageId: null,
   };
 }
 
@@ -72,6 +73,7 @@ function dm(unread: number): DmView {
     unread,
     highlightedAt: 0,
     lastReadMessageId: null,
+    newestMessageId: null,
   };
 }
 

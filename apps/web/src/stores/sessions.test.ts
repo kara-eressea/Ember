@@ -205,3 +205,121 @@ describe("Seen recently roster moves (#200)", () => {
     ]);
   });
 });
+
+function channelConversation(
+  lastReadMessageId: number | null,
+): ConversationDto {
+  return {
+    id: CONV,
+    kind: "channel",
+    channelKey: KEY,
+    partnerCharacter: null,
+    title: KEY,
+    pinned: false,
+    joined: true,
+    lastReadMessageId,
+  };
+}
+
+describe("read-ack echo vs. live unread (#264)", () => {
+  it("keeps unread when a slow ack echo lands below a newer live message", () => {
+    const store = useSessionsStore.getState();
+    // Register the channel + convId → key mapping.
+    store.applyConversation(IDENTITY, channelConversation(null));
+    // A live message id=101 bumps unread and records the newest id.
+    store.bumpUnread(IDENTITY, CONV, 101, true);
+    // A read-ack echo advances the cursor to 100 — below the live message,
+    // so the genuinely-unread id=101 must survive.
+    store.applyConversation(IDENTITY, channelConversation(100));
+    const channel = channelState();
+    expect(channel?.unread).toBe(1);
+    expect(channel?.mentions).toBe(1);
+  });
+
+  it("zeroes once the cursor catches up to the newest live message", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(null));
+    store.bumpUnread(IDENTITY, CONV, 101, true);
+    // The cursor reaches the newest message (e.g. another device read all).
+    store.applyConversation(IDENTITY, channelConversation(101));
+    const channel = channelState();
+    expect(channel?.unread).toBe(0);
+    expect(channel?.mentions).toBe(0);
+  });
+
+  it("still zeroes on an advance when nothing live was tracked", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(50));
+    // Seed a snapshot-style unread with no live message tracked yet.
+    useSessionsStore.setState((s) => ({
+      sessions: {
+        ...s.sessions,
+        [IDENTITY]: {
+          ...s.sessions[IDENTITY]!,
+          channels: {
+            ...s.sessions[IDENTITY]!.channels,
+            [KEY]: { ...s.sessions[IDENTITY]!.channels[KEY]!, unread: 3 },
+          },
+        },
+      },
+    }));
+    // Another device advances the read cursor — clears as before.
+    store.applyConversation(IDENTITY, channelConversation(80));
+    expect(channelState()?.unread).toBe(0);
+  });
+
+  it("keeps a DM unread when the ack echo trails a live message", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    store.bumpUnread(IDENTITY, CONV, 205);
+    store.applyConversation(IDENTITY, {
+      ...pmConversation("Nyx Firemane"),
+      lastReadMessageId: 200,
+    });
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV]?.unread,
+    ).toBe(1);
+  });
+});
+
+describe("case-insensitive member-set moves (#265)", () => {
+  beforeEach(() => {
+    useSessionsStore.getState().applyChannelMembers(IDENTITY, {
+      key: KEY,
+      mode: "chat",
+      members: [member("Amber Vale"), member("Nyx Firemane")],
+    });
+  });
+
+  it("moves a member to seen on an FLN whose casing differs from the roster", () => {
+    useSessionsStore
+      .getState()
+      .applyPresence(IDENTITY, { character: "NYX FIREMANE", online: false });
+    const channel = channelState();
+    // No ghost left behind in the live list.
+    expect(channel?.members.map((m) => m.character)).toEqual(["Amber Vale"]);
+    expect(channel?.seen[0]?.character).toBe("Nyx Firemane");
+  });
+
+  it("dedupes a rejoin whose casing differs — never two rows", () => {
+    useSessionsStore
+      .getState()
+      .applyMemberJoin(IDENTITY, KEY, member("NYX firemane"));
+    const names = channelState()?.members.map((m) => m.character) ?? [];
+    expect(
+      names.filter((n) => n.toLowerCase() === "nyx firemane"),
+    ).toHaveLength(1);
+  });
+
+  it("folds a live presence update onto the differently-cased member", () => {
+    useSessionsStore.getState().applyPresence(IDENTITY, {
+      character: "nyx firemane",
+      online: true,
+      status: "away",
+    });
+    const nyx = channelState()?.members.find(
+      (m) => m.character === "Nyx Firemane",
+    );
+    expect(nyx?.status).toBe("away");
+  });
+});
