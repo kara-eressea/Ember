@@ -17,6 +17,8 @@ import {
 } from "@emberchat/markdown-bbcode";
 import type { ProfileInline } from "@emberchat/protocol";
 import { useProfileStore } from "../../stores/profile.js";
+import { useUserPrefs } from "../../stores/sessions.js";
+import { hostAllowed } from "../../lib/link-preview.js";
 import chatStyles from "../chat/chat.module.css";
 import {
   ProfileLinkProvider,
@@ -43,16 +45,34 @@ const ALIGN_CLASS: Record<string, string> = {
 type OpenImage = (url: string, alt: string) => void;
 
 /** Resolve an [img] node's `src` (an inline id or a direct URL) to a URL, or
- * undefined when it references nothing we can show. */
-function resolveImgSrc(
+ * undefined when it references nothing we can show.
+ *
+ * The inline-id path (id → `inlines` map → static.f-list.net) is trusted: the
+ * server constructs that host, so it stays ungated. A direct URL, by contrast,
+ * would hotlink an arbitrary author-chosen host straight from the viewer's
+ * browser — a privacy leak (IP + referrer to a third party) — so it only
+ * resolves when its host is on the user's `imagePreviewHosts` allowlist,
+ * matching the [url] link-preview gate (#215, #263). A blocked or unresolvable
+ * ref returns undefined and degrades to the quiet placeholder. */
+export function resolveImgSrc(
   src: string,
   inlines: Readonly<Record<string, ProfileInline>>,
+  allowHosts: readonly string[],
 ): string | undefined {
   const inline = inlines[src];
   if (inline) {
     return inline.url;
   }
-  return validHref(src) ? src : undefined;
+  if (!validHref(src)) {
+    return undefined;
+  }
+  let host: string;
+  try {
+    host = new URL(src).host;
+  } catch {
+    return undefined;
+  }
+  return hostAllowed(host, allowHosts) ? src : undefined;
 }
 
 export function ProfileBBCode({
@@ -63,13 +83,15 @@ export function ProfileBBCode({
   inlines?: Readonly<Record<string, ProfileInline>>;
 }) {
   const nodes = useMemo(() => parseBBCode(bbcode, "profile"), [bbcode]);
+  const allowHosts = useUserPrefs().imagePreviewHosts;
   // A single-slide lightbox: inline images each open on their own, so there's
   // nothing to navigate between (unlike the gallery grid).
   const [lightbox, setLightbox] = useState<{ url: string; alt: string }>();
 
   const extra = useMemo<ExtraNodeRenderer>(
-    () => makeExtra(inlines, (url, alt) => setLightbox({ url, alt })),
-    [inlines],
+    () =>
+      makeExtra(inlines, allowHosts, (url, alt) => setLightbox({ url, alt })),
+    [inlines, allowHosts],
   );
 
   return (
@@ -95,6 +117,7 @@ export function ProfileBBCode({
  * the lightbox opener so [img] resolves and [user] navigates the viewer. */
 function makeExtra(
   inlines: Readonly<Record<string, ProfileInline>>,
+  allowHosts: readonly string[],
   onOpen: OpenImage,
 ): ExtraNodeRenderer {
   const extra: ExtraNodeRenderer = (node, key) => {
@@ -118,7 +141,7 @@ function makeExtra(
       return (
         <InlineImage
           key={key}
-          src={resolveImgSrc(node.src, inlines)}
+          src={resolveImgSrc(node.src, inlines, allowHosts)}
           alt={node.alt}
           onOpen={onOpen}
         />
@@ -216,6 +239,7 @@ function InlineImage({
         src={src}
         alt={alt}
         loading="lazy"
+        referrerPolicy="no-referrer"
         onError={() => {
           setBroken(true);
         }}

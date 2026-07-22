@@ -10,6 +10,7 @@ import { Avatar } from "../common/Avatar.js";
 import { StarPicker } from "./StarRating.js";
 import { placePopover } from "../profile/popover.js";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./ratings.module.css";
 
 const EDITOR_WIDTH = 260;
@@ -35,22 +36,17 @@ export function RateEditor({
    * race the delete and resurrect the rating. */
   const clearingRef = useRef(false);
 
+  // Escape dismissal rides the shared overlay stack so the editor (topmost
+  // when open above a mini-card) closes first and claims the event.
+  useEscapeToClose(onClose);
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
     function onPointer(event: PointerEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         onClose();
       }
     }
-    window.addEventListener("keydown", onKey, true);
     window.addEventListener("pointerdown", onPointer, true);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("pointerdown", onPointer, true);
     };
   }, [onClose]);

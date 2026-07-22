@@ -8,6 +8,7 @@ import { match } from "@emberchat/matcher";
 import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { api } from "../../lib/api.js";
 import {
   loadHistory,
@@ -64,16 +65,9 @@ export function ProfileViewer({
 
   useEffect(() => {
     windowRef.current?.focus();
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  }, []);
+
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     void loadHistory(identityId);

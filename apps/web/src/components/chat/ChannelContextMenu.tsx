@@ -17,6 +17,7 @@ import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { identityPath } from "../../lib/routes.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import { adViewFor, setChannelAdView, type AdView } from "./ads.js";
 import styles from "./chat.module.css";
@@ -71,17 +72,7 @@ export function ChannelContextMenu({
     el.style.top = `${String(Math.max(margin, top))}px`;
   }, [position, showOpen]);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useEscapeToClose(onClose);
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {
