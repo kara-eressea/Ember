@@ -7,7 +7,7 @@
 // says so (sessions themselves outlive every tab — the bouncer property),
 // and advance the read cursor for whatever conversation is on screen.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
 import { gateway } from "../../gateway/socket.js";
 import { startAutoAway } from "../../lib/auto-away.js";
@@ -47,7 +47,15 @@ import { MiniProfileCard } from "../profile/MiniProfileCard.js";
 import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { QuickSwitcher } from "./QuickSwitcher.js";
+import { ResizeHandle } from "./ResizeHandle.js";
 import { Sidebar } from "./Sidebar.js";
+import {
+  LEFT_DEFAULT_WIDTH,
+  RIGHT_DEFAULT_WIDTH,
+  persistColumnWidth,
+  savedColumnWidth,
+  WIDTH_VARS,
+} from "../../lib/sidebar-resize.js";
 import styles from "./shell.module.css";
 
 export function AppShell() {
@@ -71,6 +79,21 @@ export function AppShell() {
   const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
   const dmDrawerOpen = useUiStore((s) => s.dmDrawerOpen);
   const narrow = useIsNarrow();
+  // Resizable docked columns (#292): the committed widths live in state and
+  // are mirrored to localStorage; the grid reads them through CSS variables.
+  // During a drag the ResizeHandle writes the variable imperatively (rAF), so
+  // these only change on commit — no render per pixel.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [leftWidth, setLeftWidth] = useState(() => savedColumnWidth("left"));
+  const [rightWidth, setRightWidth] = useState(() => savedColumnWidth("right"));
+  const commitLeftWidth = (width: number) => {
+    setLeftWidth(width);
+    persistColumnWidth("left", width);
+  };
+  const commitRightWidth = (width: number) => {
+    setRightWidth(width);
+    persistColumnWidth("right", width);
+  };
   const prefsOpen = useUiStore((s) => s.prefsOpen);
   const profileViewing = useProfileStore((s) => s.viewing);
   const profileCard = useProfileStore((s) => s.card);
@@ -266,10 +289,33 @@ export function AppShell() {
 
   return (
     <div
+      ref={shellRef}
       className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")}`}
+      style={{
+        [WIDTH_VARS.left]: `${leftWidth}px`,
+        [WIDTH_VARS.right]: `${rightWidth}px`,
+      }}
     >
       <IdentityRail activeId={activeId} />
       <Sidebar session={session} activeConvId={convId} />
+      {/* Docked-only: below the narrow breakpoint the right column is an
+          overlay drawer and the columns don't resize (#292). */}
+      {!narrow && (
+        <ResizeHandle
+          column="left"
+          shellRef={shellRef}
+          defaultWidth={LEFT_DEFAULT_WIDTH}
+          onCommit={commitLeftWidth}
+        />
+      )}
+      {!narrow && rightColumnOpen && (
+        <ResizeHandle
+          column="right"
+          shellRef={shellRef}
+          defaultWidth={RIGHT_DEFAULT_WIDTH}
+          onCommit={commitRightWidth}
+        />
+      )}
       <main className={styles.main}>
         {session.notice && (
           <div
