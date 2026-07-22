@@ -149,24 +149,45 @@ test("profile viewer: fullscreen centers content, lightbox zoom fills the viewpo
   const viewer = page.getByRole("dialog", { name: "Profile: Tally Marsh" });
   await expect(viewer).toBeVisible();
 
-  // ── #238: the content column centers in the wide fullscreen window ────
-  await viewer.getByRole("button", { name: "Fullscreen" }).click();
+  // ── #238 / #331: the reading column centers in the wide fullscreen window,
+  // the scroll container spans the full width so its scrollbar sits at the
+  // viewport edge, and the column is wider than the windowed cap ────────────
   const rail = viewer.getByRole("navigation", {
     name: "Recently viewed profiles",
   });
   const content = viewer.getByTestId("profile-content");
+  const column = viewer.getByTestId("profile-column");
+
+  // Windowed column width, for the "fullscreen is wider" comparison below.
+  const windowedColumnBox = (await column.boundingBox())!;
+
+  await viewer.getByRole("button", { name: "Fullscreen" }).click();
   const dialogBox = (await viewer.boundingBox())!;
   const railBox = (await rail.boundingBox())!;
   const contentBox = (await content.boundingBox())!;
-  const leftSpace = contentBox.x - (railBox.x + railBox.width);
+  const columnBox = (await column.boundingBox())!;
+
+  // #331 (2): the scroll container spans the whole main region — its left edge
+  // meets the rail and its right edge lands at the dialog's right edge (within
+  // the 1px window border), so the scrollbar anchors to the screen edge rather
+  // than riding the centered column mid-screen.
+  expect(contentBox.x).toBeCloseTo(railBox.x + railBox.width, -1);
+  expect(contentBox.x + contentBox.width).toBeCloseTo(
+    dialogBox.x + dialogBox.width,
+    -1,
+  );
+
+  // The reading column is capped (not stretched across the whole main region)
+  // and centered — roughly equal gutters either side of the scroll container.
+  const leftSpace = columnBox.x - contentBox.x;
   const rightSpace =
-    dialogBox.x + dialogBox.width - (contentBox.x + contentBox.width);
-  // Column is capped (not stretched across the whole main region) and sits
-  // with roughly equal gutters either side — i.e. centered, not left-aligned.
-  expect(contentBox.width).toBeLessThanOrEqual(800);
+    contentBox.x + contentBox.width - (columnBox.x + columnBox.width);
   expect(leftSpace).toBeGreaterThan(60);
   expect(rightSpace).toBeGreaterThan(60);
   expect(Math.abs(leftSpace - rightSpace)).toBeLessThan(24);
+
+  // #331 (1): fullscreen uses meaningfully more width than the windowed cap.
+  expect(columnBox.width).toBeGreaterThan(windowedColumnBox.width + 100);
   await viewer.getByRole("button", { name: "Exit fullscreen" }).click();
 
   // ── #236: zoom reaches true full-screen size, capped at natural ───────
