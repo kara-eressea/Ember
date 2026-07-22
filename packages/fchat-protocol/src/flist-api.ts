@@ -132,6 +132,17 @@ export const characterImageSchema = z.object({
 });
 export type CharacterImage = z.infer<typeof characterImageSchema>;
 
+/** character-data inline images: the map `[img]` references by id. The
+ * assembled URL is
+ * `https://static.f-list.net/images/charinline/{hash 0-1}/{hash 2-3}/{hash}.{extension}`.
+ * `nyan` is a rating/flags field the client doesn't need. */
+export const characterInlineSchema = z.object({
+  hash: z.string(),
+  extension: z.string(),
+  nyan: z.coerce.number().optional(),
+});
+export type CharacterInline = z.infer<typeof characterInlineSchema>;
+
 export const customKinkSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
@@ -181,7 +192,9 @@ export const characterDataSchema = z.object({
   /** infotag id (string key) → listitem id for list-type tags, free text
    * otherwise; resolve via mapping-list. */
   infotags: phpRecord(z.string()).optional(),
-  inlines: phpRecord(z.unknown()).optional(),
+  /** inline id (string key) → { hash, extension } for `[img]` in the
+   * description. */
+  inlines: phpRecord(characterInlineSchema).optional(),
   images: z.array(characterImageSchema).optional(),
   timezone: z.coerce.number().nullable().optional(),
 });

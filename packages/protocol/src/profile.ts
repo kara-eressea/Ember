@@ -45,6 +45,14 @@ export const profileImageSchema = z.object({
   description: z.string(),
 });
 
+/** A resolved inline image referenced by `[img]id[/img]` in the description
+ * BBCode. Keyed by the inline id; the hash/extension are already assembled
+ * into a static.f-list.net URL server-side. */
+export const profileInlineSchema = z.object({
+  url: z.string(),
+});
+export type ProfileInline = z.infer<typeof profileInlineSchema>;
+
 export const profileDtoSchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -67,6 +75,9 @@ export const profileDtoSchema = z.object({
   kinks: z.array(profileKinkSchema),
   customKinks: z.array(profileCustomKinkSchema),
   images: z.array(profileImageSchema),
+  /** Inline images referenced by `[img]id[/img]` in `description`, keyed by
+   * inline id. Empty when the profile uses none. */
+  inlines: z.record(z.string(), profileInlineSchema),
   timezone: z.number().nullable(),
 });
 export type ProfileDto = z.infer<typeof profileDtoSchema>;

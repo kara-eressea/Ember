@@ -332,6 +332,42 @@ describe("profile dialect (M8)", () => {
       "[collapse=Deep Story][center][b]hi[/b][/center][hr][/collapse]";
     expect(serializeBBCode(parseBBCode(input, "profile"))).toBe(input);
   });
+
+  it("parses [img] with an inline id, a URL, and the alt form (#212)", () => {
+    expect(parseBBCode("[img]90101[/img]", "profile")).toEqual([
+      { type: "img", src: "90101", alt: "" },
+    ]);
+    expect(
+      parseBBCode("[img]https://static.f-list.net/a/b/c.png[/img]", "profile"),
+    ).toEqual([
+      { type: "img", src: "https://static.f-list.net/a/b/c.png", alt: "" },
+    ]);
+    expect(parseBBCode("[img=90101]Me by the river[/img]", "profile")).toEqual([
+      { type: "img", src: "90101", alt: "Me by the river" },
+    ]);
+  });
+
+  it("keeps [img] literal on the chat wire and when empty/unclosed", () => {
+    expect(parseBBCode("[img]90101[/img]")).toEqual([
+      { type: "text", text: "[img]90101[/img]" },
+    ]);
+    // Unclosed opener and empty body both degrade to literal text.
+    expect(parseBBCode("[img]dangling", "profile")).toEqual([
+      { type: "text", text: "[img]dangling" },
+    ]);
+    expect(parseBBCode("[img][/img]", "profile")).toEqual([
+      { type: "text", text: "[img][/img]" },
+    ]);
+  });
+
+  it("round-trips [img] nodes through the serializer", () => {
+    for (const input of [
+      "[img]90101[/img]",
+      "[img=90101]Me by the river[/img]",
+    ]) {
+      expect(serializeBBCode(parseBBCode(input, "profile"))).toBe(input);
+    }
+  });
 });
 
 describe("bbcodeToText", () => {

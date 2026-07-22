@@ -85,6 +85,11 @@ export type BBNode =
       readonly title: string;
       readonly children: readonly BBNode[];
     }
+  // Profile inline image: [img]id[/img] references an inline by id; the
+  // renderer resolves it against the character-data `inlines` map. A direct
+  // http(s) URL in `src` is rendered as-is. `alt` carries the [img=src]alt
+  // form's description (empty for the bare-body form).
+  | { readonly type: "img"; readonly src: string; readonly alt: string }
   | { readonly type: "hr" };
 
 /** F-List character names; eicon names additionally allow dots. */
@@ -340,6 +345,31 @@ export function parseBBCode(
 
     // Profile-dialect blocks.
     if (dialect === "profile") {
+      // [img]id-or-url[/img] and [img=id]alt[/img] — a raw-body tag: the body
+      // is an inline id or a direct URL, never nested markup.
+      if (token.tag === "img") {
+        const bodyStart = at + token.length;
+        const close = findClose("img", bodyStart);
+        if (close === -1) {
+          pushText(top().children, token.raw);
+          at = bodyStart;
+          continue;
+        }
+        const body = input.slice(bodyStart, close);
+        const src = (token.param ?? body).trim();
+        if (src === "") {
+          pushText(top().children, token.raw);
+          at = bodyStart;
+          continue;
+        }
+        top().children.push({
+          type: "img",
+          src,
+          alt: token.param === undefined ? "" : body,
+        });
+        at = close + "[/img]".length;
+        continue;
+      }
       if (token.tag === "hr" && token.param === undefined) {
         top().children.push({ type: "hr" });
         at += token.length;
@@ -408,6 +438,10 @@ export function bbcodeToText(
         case "collapse":
         case "spoiler":
           out += walk(node.children);
+          break;
+        case "img":
+          // Decorative in a one-line context; carry the alt text if any.
+          out += node.alt;
           break;
         case "hr":
           out += " ";
@@ -482,6 +516,12 @@ export function serializeBBCode(nodes: readonly BBNode[]): string {
           node.title === ""
             ? `[collapse]${serializeBBCode(node.children)}[/collapse]`
             : `[collapse=${node.title}]${serializeBBCode(node.children)}[/collapse]`;
+        break;
+      case "img":
+        out +=
+          node.alt === ""
+            ? `[img]${node.src}[/img]`
+            : `[img=${node.src}]${node.alt}[/img]`;
         break;
       case "hr":
         out += "[hr]";
