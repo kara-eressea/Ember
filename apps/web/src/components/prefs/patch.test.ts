@@ -6,7 +6,10 @@ import { PREFS_DEFAULTS } from "@emberchat/protocol";
 
 const cmdMock = vi.hoisted(() => vi.fn());
 vi.mock("../../gateway/socket.js", () => ({ gateway: { cmd: cmdMock } }));
-vi.mock("../../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+vi.mock("../../theme/theme.js", () => ({
+  hydrateTheme: vi.fn(),
+  hydrateInterface: vi.fn(),
+}));
 import { useSessionsStore } from "../../stores/sessions.js";
 import { hydrateTheme } from "../../theme/theme.js";
 import { patchPrefs } from "./patch.js";

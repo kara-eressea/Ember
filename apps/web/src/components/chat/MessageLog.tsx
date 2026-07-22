@@ -893,7 +893,10 @@ function RollLine({
           {time}
         </span>
       )}
-      <span aria-hidden>🎲</span>
+      {/* Text die-face glyph (U+2684, default text presentation) — the
+          design system allows only SVG/text glyphs, never system emoji
+          like 🎲 (COMPONENTS.md §8, #269 item 4). */}
+      <span aria-hidden>⚄</span>
       <span>
         <RichText bbcode={message.bbcode} />
       </span>
