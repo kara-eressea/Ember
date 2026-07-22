@@ -46,6 +46,14 @@ const EMPTY_OUTBOX: OutboxItemDto[] = [];
 const LOAD_OLDER_THRESHOLD_PX = 120;
 /** Within this of the bottom still counts as "at the bottom". */
 const AT_BOTTOM_SLACK_PX = 60;
+/** Frames to keep re-applying a scroll correction while the newly rendered
+ * variable-height rows (ads, grouped messages, dividers) settle their
+ * measurements. Small — one paint is rarely enough, a dozen is plenty. */
+const SCROLL_SETTLE_FRAMES = 8;
+/** Auto-fill (#254) stop condition: after this many consecutive older pages
+ * that add no visible rows (all filtered/ignored), give up rather than
+ * cascade through the whole backlog. */
+const AUTO_FILL_MAX_EMPTY_PAGES = 3;
 
 export interface MessageLogProps {
   identityId: string;
@@ -95,8 +103,12 @@ export function MessageLog({
   // while the user is scrolled away from the newest messages.
   const [atBottom, setAtBottom] = useState(true);
   const loadingRef = useRef(false);
-  /** Message id to keep in place after a history page prepends. */
-  const anchorRef = useRef<number>(undefined);
+  /** Anchor a history prepend: the id of the row to keep visually fixed and
+   * its distance below the viewport top (in px) captured *before* the
+   * prepend. We restore against measured offsets, not the 26px estimate, so
+   * variable-height rows re-measuring above the anchor no longer jump the
+   * view (#266). */
+  const anchorRef = useRef<{ id: number; gap: number }>(undefined);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -173,20 +185,42 @@ export function MessageLog({
     // user sat at the bottom (the #254 auto-fill).
   }, [lastKey, rows.length, detachedTail]);
 
-  // After older history prepends, restore the previous top row so the view
-  // doesn't jump.
+  // After older history prepends, keep the anchor row visually fixed. The old
+  // approach (scrollToIndex align:start) restored against the 26px estimate
+  // and jumped once ads/grouped rows/dividers re-measured. Instead we pin the
+  // anchor against its *measured* offset and re-apply the correction across a
+  // few frames while the newly rendered rows above it settle (#266).
   useEffect(() => {
-    const anchorId = anchorRef.current;
-    if (anchorId === undefined) {
+    const anchor = anchorRef.current;
+    if (anchor === undefined) {
       return;
     }
     anchorRef.current = undefined;
     const index = rows.findIndex(
-      (row) => row.type === "message" && row.message.id === anchorId,
+      (row) => row.type === "message" && row.message.id === anchor.id,
     );
-    if (index >= 0) {
-      virtualizer.scrollToIndex(index, { align: "start" });
+    if (index < 0) {
+      return;
     }
+    let raf = 0;
+    let frames = 0;
+    const pin = () => {
+      const el = scrollRef.current;
+      // Measured offset that aligns the anchor row to the top — reflects the
+      // real heights of every row now rendered above it, not the estimate.
+      const measured = virtualizer.getOffsetForIndex(index, "start")?.[0];
+      if (el && measured !== undefined) {
+        el.scrollTop = measured - anchor.gap;
+      }
+      frames += 1;
+      if (frames < SCROLL_SETTLE_FRAMES) {
+        raf = requestAnimationFrame(pin);
+      }
+    };
+    pin();
+    return () => {
+      cancelAnimationFrame(raf);
+    };
   }, [rows, virtualizer]);
 
   // A short buffer never scrolls, so scroll-to-top could never trigger
@@ -196,14 +230,32 @@ export function MessageLog({
   const hasMoreBefore = buffer?.hasMoreBefore === true;
   const backfilled = buffer?.backfilled === true;
   const loadingOlder = buffer?.loadingOlder === true;
+  // Auto-fill progress guard: the row count at the last auto-fill page and a
+  // run-length of pages that added no visible rows. A backlog of nothing but
+  // ignored/merged messages must not page forever (#266).
+  const autoFillRowsRef = useRef(0);
+  const autoFillEmptyRef = useRef(0);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !backfilled || !hasMoreBefore || loadingOlder) {
       return;
     }
-    if (el.scrollHeight <= el.clientHeight + LOAD_OLDER_THRESHOLD_PX) {
-      void loadOlder();
+    if (el.scrollHeight > el.clientHeight + LOAD_OLDER_THRESHOLD_PX) {
+      return;
     }
+    // A page that grew the visible log resets the run; one that added no
+    // rows advances it. Stop once too many consecutive pages made no
+    // progress — otherwise a fully filtered backlog cascades to its start.
+    if (rows.length > autoFillRowsRef.current) {
+      autoFillEmptyRef.current = 0;
+    } else {
+      autoFillEmptyRef.current += 1;
+    }
+    autoFillRowsRef.current = rows.length;
+    if (autoFillEmptyRef.current >= AUTO_FILL_MAX_EMPTY_PAGES) {
+      return;
+    }
+    void loadOlder();
     // loadOlder is re-created per render but reads only fresh store state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.length, backfilled, hasMoreBefore, loadingOlder]);
@@ -239,12 +291,23 @@ export function MessageLog({
     if (newest) {
       gateway.readAck(identityId, convId, newest.id);
     }
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
     atBottomRef.current = true;
     setAtBottom(true);
+    // Setting scrollTop once to the *estimated* scrollHeight can land short —
+    // rows below re-measure taller and the pill lingers. Re-stick across a
+    // few frames until the measurements settle (#266).
+    let frames = 0;
+    const stick = () => {
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+      frames += 1;
+      if (frames < SCROLL_SETTLE_FRAMES && atBottomRef.current) {
+        requestAnimationFrame(stick);
+      }
+    };
+    stick();
   }
 
   // Whether there is a newer position to jump to. Detached tail always
@@ -275,6 +338,30 @@ export function MessageLog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canJumpToRecent, detachedTail, identityId, convId]);
 
+  /** Snapshot the anchor row's on-screen position before a prepend: its id
+   * plus the pixel gap between its top and the viewport top. Returns
+   * undefined when stuck to the bottom (no anchor — the bottom stick wins)
+   * or when the row isn't currently rendered. */
+  function captureAnchor(
+    id: number | undefined,
+  ): { id: number; gap: number } | undefined {
+    const el = scrollRef.current;
+    if (atBottomRef.current || el == null || id === undefined) {
+      return undefined;
+    }
+    const index = rows.findIndex(
+      (row) => row.type === "message" && row.message.id === id,
+    );
+    if (index < 0) {
+      return undefined;
+    }
+    const rowEl = el.querySelector(`[data-index="${String(index)}"]`);
+    const gap = rowEl
+      ? rowEl.getBoundingClientRect().top - el.getBoundingClientRect().top
+      : 0;
+    return { id, gap };
+  }
+
   async function loadOlder() {
     const current = useMessagesStore.getState().buffers[convId];
     if (
@@ -290,10 +377,10 @@ export function MessageLog({
       // Hold the previous top row in place after the prepend — except while
       // stuck to the bottom (the auto-fill of a too-short log, #254), where
       // anchoring an old top row would drag the view away from the newest
-      // messages; the bottom stick wins there.
-      anchorRef.current = atBottomRef.current
-        ? undefined
-        : current.messages[0]?.id;
+      // messages; the bottom stick wins there. Capture the anchor's distance
+      // below the viewport top *now*, against measured DOM, so the restore
+      // can pin it back exactly regardless of how the prepended rows measure.
+      anchorRef.current = captureAnchor(current.messages[0]?.id);
       await useMessagesStore.getState().loadOlder(identityId, convId);
     } catch (error) {
       anchorRef.current = undefined;

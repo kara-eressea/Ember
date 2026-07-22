@@ -102,6 +102,12 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // Synchronous correctness guard against double-send (#267). `busy` is
+  // captured at render time, so two Enter events in one frame both see
+  // busy=false and both dispatch. This ref flips synchronously before any
+  // dispatch and clears on ack/error, so a second Enter in the same frame is
+  // a no-op. `busy` stays as the UI-facing state; this is the latch.
+  const sendingRef = useRef(false);
   const [error, setError] = useState<string>();
   const [markdown, setMarkdown] = useState(savedMarkdownMode);
   const [eiconAnchor, setEiconAnchor] = useState<CardAnchor>();
@@ -387,9 +393,20 @@ export function Composer({
     // (#235 audit). Everything below derives from this one source of truth.
     const source = inputRef.current?.value ?? text;
     const body = (markdown ? mdToBBCode(source) : source).trim();
-    if (!body || busy) {
+    // The ref latch is the synchronous guard (busy is a stale render capture,
+    // #267); it is set below before any dispatch and cleared in `finally`.
+    if (!body || busy || sendingRef.current) {
       return;
     }
+    sendingRef.current = true;
+    try {
+      await sendInner(source, body);
+    } finally {
+      sendingRef.current = false;
+    }
+  }
+
+  async function sendInner(source: string, body: string) {
     // Slash commands act on the raw typed text, before any translation.
     let slash;
     try {
