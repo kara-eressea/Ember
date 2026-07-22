@@ -593,11 +593,16 @@ export class GatewayConnection {
       case "channel.leave": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
+          // Leave the wire channel when we're a live member (leaveChannel
+          // skips the LCH for a dead/desynced key on its own). Then hide the
+          // conversation row so the sidebar loses it everywhere — the kept
+          // message history stays in the DB (reachable via log export) and a
+          // later rejoin un-hides it in place. Hiding also drops it from the
+          // resume set, so no auto-rejoin can drag it back, subsuming the old
+          // unpin-on-leave (#169). Works for a live channel, a kicked ghost,
+          // and a private room destroyed while detached alike (#327).
           session.leaveChannel(cmd.d.key);
-          // Explicit leave unpins (#169): otherwise the pin's auto-rejoin
-          // would drag the channel back on the next reconnect. The updated
-          // row fans out via the sink's conversation event.
-          await this.#ctx.history.unpinChannelForLeave(identity.id, cmd.d.key);
+          this.#ctx.history.closeChannelConversation(identity.id, cmd.d.key);
           this.#ack(id, { ok: true });
         }
         return;

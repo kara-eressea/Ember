@@ -110,6 +110,20 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // Rejoin affordance state (#327): a dead private room never echoes a join,
+  // so a bounded wait that times out flips this to "gone" — no infinite
+  // Join-retry loop, just plain language that the room is no longer there.
+  const [rejoinState, setRejoinState] = useState<"idle" | "joining" | "gone">(
+    "idle",
+  );
+  // Reset when the affordance's channel changes (the composer persists across
+  // conversation switches) — the render-phase reset React recommends over an
+  // effect that would setState after paint.
+  const [rejoinKeyMark, setRejoinKeyMark] = useState(rejoinKey);
+  if (rejoinKey !== rejoinKeyMark) {
+    setRejoinKeyMark(rejoinKey);
+    setRejoinState("idle");
+  }
   // Synchronous correctness guard against double-send (#267). `busy` is
   // captured at render time, so two Enter events in one frame both see
   // busy=false and both dispatch. This ref flips synchronously before any
@@ -668,23 +682,55 @@ export function Composer({
   }
 
   if (rejoinKey !== undefined) {
+    const key = rejoinKey;
+    const isPrivateRoom = key.startsWith("ADH-");
+    const attemptRejoin = async () => {
+      setRejoinState("joining");
+      await gateway.cmd({
+        identityId: session.identityId,
+        action: "channel.join",
+        d: { key },
+      });
+      // Wait for the join to land us in the live channel. A successful join
+      // re-renders this composer away (the parent stops passing rejoinKey
+      // once we're a member); a room that no longer exists never echoes, so
+      // a timeout means it's gone.
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const live =
+          useSessionsStore.getState().sessions[session.identityId]?.channels[
+            key
+          ];
+        if (live && live.members.length > 0) {
+          setRejoinState("idle");
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      setRejoinState("gone");
+    };
     return (
       <div className={styles.composer}>
         <div className={styles.joinPrompt}>
-          You are not in this channel.
-          <button
-            className={styles.joinButton}
-            disabled={!online}
-            onClick={() => {
-              void gateway.cmd({
-                identityId: session.identityId,
-                action: "channel.join",
-                d: { key: rejoinKey },
-              });
-            }}
-          >
-            Join {rejoinKey}
-          </button>
+          {rejoinState === "gone" ? (
+            isPrivateRoom ? (
+              "This private room no longer exists — it closed when the last person left. Leave it from the sidebar to clear the row."
+            ) : (
+              "This channel is no longer available. Leave it from the sidebar to clear the row."
+            )
+          ) : (
+            <>
+              You are not in this channel.
+              <button
+                className={styles.joinButton}
+                disabled={!online || rejoinState === "joining"}
+                onClick={() => {
+                  void attemptRejoin();
+                }}
+              >
+                {rejoinState === "joining" ? `Joining ${key}…` : `Join ${key}`}
+              </button>
+            </>
+          )}
         </div>
       </div>
     );

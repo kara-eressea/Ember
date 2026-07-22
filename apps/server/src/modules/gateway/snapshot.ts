@@ -151,7 +151,15 @@ export async function buildSnapshot(
   const rows = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.identityId, identityId))
+    // Hidden rows (a left/closed channel, #327) stay in the DB for their kept
+    // history and log export, but never seed the sidebar. PMs are never
+    // hidden, so this only ever drops explicitly-left channels.
+    .where(
+      and(
+        eq(conversations.identityId, identityId),
+        eq(conversations.hidden, false),
+      ),
+    )
     .orderBy(conversations.createdAt);
 
   const counts = await conversationCounts(db, identityId);

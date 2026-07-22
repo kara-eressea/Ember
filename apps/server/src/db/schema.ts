@@ -126,6 +126,12 @@ export const conversations = pgTable(
     title: text().notNull(),
     pinned: boolean().notNull().default(false),
     joined: boolean().notNull().default(false),
+    /** Explicitly left/closed (#327): the row leaves the sidebar everywhere,
+     * but its message history stays in the DB and is reachable through log
+     * export. A rejoin (or the room recreated under the same key) clears it,
+     * so history continues in place. Distinct from `joined` (live membership)
+     * — a channel can be not-joined yet still shown (kicked, offering rejoin). */
+    hidden: boolean().notNull().default(false),
     /** Cursor into messages.id; not a FK so retention can trim messages freely. */
     lastReadMessageId: bigint({ mode: "number" }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

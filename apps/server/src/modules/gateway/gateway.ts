@@ -64,6 +64,15 @@ export class GatewayHub {
         });
       },
     );
+    options.history.events.on(
+      "conversationRemoved",
+      ({ identityId, conversationId }) => {
+        this.broadcast(identityId, {
+          kind: "conversation.removed",
+          d: { convId: conversationId },
+        });
+      },
+    );
   }
 
   /**

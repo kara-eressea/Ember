@@ -383,3 +383,40 @@ describe("case-insensitive member-set moves (#265)", () => {
     expect(nyx?.status).toBe("away");
   });
 });
+
+describe("removeConversation (#327)", () => {
+  it("drops a channel row and its convId mapping outright", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(null));
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
+    ).toBeDefined();
+
+    store.removeConversation(IDENTITY, CONV);
+    const session = useSessionsStore.getState().sessions[IDENTITY];
+    expect(session?.channels[KEY]).toBeUndefined();
+    expect(session?.channelByConvId[CONV]).toBeUndefined();
+  });
+
+  it("drops a DM row by convId", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV],
+    ).toBeDefined();
+
+    store.removeConversation(IDENTITY, CONV);
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV],
+    ).toBeUndefined();
+  });
+
+  it("is a no-op for an unknown conversation id", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(null));
+    store.removeConversation(IDENTITY, "99999999-9999-7999-8999-999999999999");
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
+    ).toBeDefined();
+  });
+});

@@ -98,6 +98,10 @@ interface ChannelState {
   /** Character → timeout expiry (epoch ms). Expired entries are pruned on
    * the next join attempt. */
   readonly timeouts: Map<string, number>;
+  /** CCR-created rooms are reaped when their last member leaves/disconnects,
+   * like the real server destroying empty private rooms (#327). Seeded rooms
+   * are persistent test fixtures and are never reaped. */
+  readonly ephemeral: boolean;
 }
 
 interface CharacterState {
@@ -226,6 +230,7 @@ export class FchatSim {
         members: new Set(seed.npcs),
         banned: new Set(),
         timeouts: new Map(),
+        ephemeral: false,
       });
     }
     for (const npc of this.#world.npcs) {
@@ -955,6 +960,7 @@ export class FchatSim {
       members: new Set(),
       banned: new Set(),
       timeouts: new Map(),
+      ephemeral: true,
     });
     this.#handleJoin(connection, character, name);
   }
@@ -1048,6 +1054,19 @@ export class FchatSim {
       payload: { channel: channel.name, character },
     });
     channel.members.delete(character);
+    this.#reapPrivateRoom(channel);
+  }
+
+  /**
+   * F-Chat destroys a private room once its last occupant leaves: a later
+   * JCH answers with ERR 26 (ChannelNotFound). Official channels persist.
+   * Modeled so the restart→dead-room repro (#327) is reproducible: the sole
+   * occupant disconnects, the room vanishes, and a rejoin fails.
+   */
+  #reapPrivateRoom(channel: ChannelState): void {
+    if (channel.ephemeral && channel.members.size === 0) {
+      this.#channels.delete(channel.name);
+    }
   }
 
   #handleChannelMessage(
@@ -1688,8 +1707,12 @@ export class FchatSim {
       return;
     }
     this.#online.delete(character);
-    for (const channel of this.#channels.values()) {
-      channel.members.delete(character);
+    for (const channel of [...this.#channels.values()]) {
+      if (channel.members.delete(character)) {
+        // A private room whose last member just dropped is destroyed, exactly
+        // like the real server reaping empty ADH- rooms (#327).
+        this.#reapPrivateRoom(channel);
+      }
     }
     // FLN is "treated as a global LCH", so no per-channel LCH on disconnect.
     this.#broadcast({ cmd: "FLN", payload: { character } });
