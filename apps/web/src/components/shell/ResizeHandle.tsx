@@ -17,9 +17,22 @@ import {
 } from "../../lib/sidebar-resize.js";
 import styles from "./shell.module.css";
 
-// The IdentityRail occupies a fixed leading column; the left sidebar width is
-// measured from its trailing edge, so drags offset by exactly this much.
-const RAIL_WIDTH = 60;
+// The IdentityRail occupies the leading grid track; the left sidebar width is
+// measured from its trailing edge, so left drags offset by the rail's current
+// width. That width is NOT constant: the #346 avatar toggle collapses it to 0
+// (--eb-rail-width). Reading the live CSS variable keeps the drag math correct
+// whether the rail is shown or hidden — a hardcoded 60 would jump the sidebar
+// by 60px per drag while the rail is hidden. The fallback mirrors the CSS
+// default (`var(--eb-rail-width, 60px)`) for the shown state.
+const RAIL_DEFAULT_WIDTH = 60;
+
+function railWidth(shell: HTMLElement): number {
+  const raw = getComputedStyle(shell)
+    .getPropertyValue("--eb-rail-width")
+    .trim();
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : RAIL_DEFAULT_WIDTH;
+}
 
 interface Props {
   column: ResizableColumn;
@@ -47,7 +60,7 @@ export function ResizeHandle({
     const rect = shell.getBoundingClientRect();
     const raw =
       column === "left"
-        ? clientX - rect.left - RAIL_WIDTH
+        ? clientX - rect.left - railWidth(shell)
         : rect.right - clientX;
     return clampColumnWidth(raw, column);
   }

@@ -25,16 +25,25 @@
     1fr;
 }
 
-/* Identity-rail hidden (#346): the avatar toggle collapses the rail track to
-   zero and removes the rail from the layout. The left resize handle offset
-   (--eb-rail-width, below) tracks the same variable so the sidebar stays
-   draggable against the window edge. */
+/* Identity-rail hidden (#346, layout fix #351): the avatar toggle collapses
+   the rail's grid track to zero via --eb-rail-width. The rail element MUST
+   stay a grid item — `display: none` would drop it out of the grid entirely,
+   shifting every later child one track to the left (sidebar into the 0px
+   track, chat into the sidebar-width track, members into 1fr). Instead we keep
+   it in place at zero width and clip its contents, so the track→area mapping
+   is untouched. The left resize handle offset (--eb-rail-width, below) tracks
+   the same variable so the sidebar stays draggable against the window edge. */
 .shell.railHidden {
   --eb-rail-width: 0px;
 }
 
 .shell.railHidden .rail {
-  display: none;
+  /* min-width: 0 defeats the grid item's automatic minimum size, so the box
+     is truly zero-width and cannot overflow into the sidebar. */
+  min-width: 0;
+  padding: 0;
+  border-right: none;
+  overflow: hidden;
 }
 
 /* ── Column resize handles (#292) ────────────────────────────────────────
