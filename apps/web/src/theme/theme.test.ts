@@ -6,7 +6,7 @@ import {
   hydrateTheme,
   themeVariables,
   uiScaleFactor,
-  UI_FONT_PX,
+  UI_FONT_SCALE,
 } from "./theme.js";
 import {
   BASE_THEMES,
@@ -297,23 +297,28 @@ describe("uiScaleFactor", () => {
   });
 });
 
-describe("UI_FONT_PX ramp", () => {
-  it("keeps M at the 13px body base and steps S/L around it", () => {
-    expect(UI_FONT_PX.s).toBe(12);
-    expect(UI_FONT_PX.m).toBe(13);
-    expect(UI_FONT_PX.l).toBe(15);
+describe("UI_FONT_SCALE ramp", () => {
+  it("keeps M at 1 (exact today's look) and swings S/L for visibility", () => {
+    expect(UI_FONT_SCALE.m).toBe(1);
+    expect(UI_FONT_SCALE.s).toBeLessThan(1);
+    expect(UI_FONT_SCALE.l).toBeGreaterThan(1);
   });
 });
 
 describe("interface font + scale on :root", () => {
   const stored = new Map<string, string>();
-  const style: Record<string, string> = {};
+  const style: Record<string, string> & { setProperty?: unknown } = {};
+  const setProperty = vi.fn((name: string, value: string) => {
+    (style as Record<string, string>)[name] = value;
+  });
 
   beforeEach(() => {
     stored.clear();
+    setProperty.mockClear();
     for (const key of Object.keys(style)) {
-      delete style[key];
+      delete (style as Record<string, unknown>)[key];
     }
+    style.setProperty = setProperty;
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => stored.get(key) ?? null,
       setItem: (key: string, value: string) => void stored.set(key, value),
@@ -325,13 +330,19 @@ describe("interface font + scale on :root", () => {
     vi.unstubAllGlobals();
   });
 
-  it("applyInterface writes the font-size ramp and the zoom factor", () => {
+  it("applyInterface writes the font multiplier and the zoom factor", () => {
     applyInterface("l", 125);
-    expect(style.fontSize).toBe("15px");
+    expect(setProperty).toHaveBeenCalledWith(
+      "--eb-font-ui-scale",
+      String(UI_FONT_SCALE.l),
+    );
     expect(style.zoom).toBe("1.25");
 
     applyInterface("s", 100);
-    expect(style.fontSize).toBe("12px");
+    expect(setProperty).toHaveBeenCalledWith(
+      "--eb-font-ui-scale",
+      String(UI_FONT_SCALE.s),
+    );
     expect(style.zoom).toBe("1");
   });
 
@@ -339,7 +350,7 @@ describe("interface font + scale on :root", () => {
     hydrateInterface({ uiFontSize: "l", uiScale: 125 });
     expect(stored.get("eb.uiFontSize")).toBe("l");
     expect(stored.get("eb.uiScale")).toBe("125");
-    expect(style.fontSize).toBe("15px");
+    expect(style["--eb-font-ui-scale"]).toBe(String(UI_FONT_SCALE.l));
     expect(style.zoom).toBe("1.25");
   });
 
@@ -347,7 +358,7 @@ describe("interface font + scale on :root", () => {
     stored.set("eb.uiFontSize", "m");
     stored.set("eb.uiScale", "100");
     hydrateInterface({ uiFontSize: "m", uiScale: 100 });
-    expect(style.fontSize).toBeUndefined();
+    expect(setProperty).not.toHaveBeenCalled();
     expect(style.zoom).toBeUndefined();
   });
 
@@ -358,6 +369,7 @@ describe("interface font + scale on :root", () => {
     hydrateInterface({ uiFontSize: "xl", uiScale: 999 });
     expect(stored.get("eb.uiFontSize")).toBe("l");
     expect(stored.get("eb.uiScale")).toBe("125");
+    expect(setProperty).not.toHaveBeenCalled();
     expect(style.zoom).toBeUndefined();
   });
 });

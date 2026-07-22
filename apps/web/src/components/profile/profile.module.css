@@ -590,17 +590,33 @@
 .content {
   flex: 1;
   min-height: 0;
-  /* Centered reading column (#238): the scroll container fills the main
-     region, but its content is capped to a comfortable width and centered
-     with auto margins so wide (fullscreen) windows don't strand the text on
-     the left. In the normal 900px window the region is already narrower than
-     the cap, so the auto margins collapse and nothing shifts. */
+  /* The scroll container spans the full main region so its scrollbar anchors
+     to the viewport edge like a normal page (#331) — the reading column is
+     capped and centered *inside* it (.contentColumn), rather than the scrollbar
+     riding the centered column mid-screen. Padding stays here so the loading /
+     error branches (which render straight into .content) keep their gutters. */
   width: 100%;
-  max-width: 792px;
-  margin-inline: auto;
   padding: 18px 22px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+/* Centered reading column (#238): capped to a comfortable width and centered
+   with auto margins so wide (fullscreen) windows don't strand the text on the
+   left. In the normal 900px window the main region is already narrower than the
+   cap, so the auto margins collapse and nothing shifts. */
+.contentColumn {
+  width: 100%;
+  max-width: 792px;
+  margin-inline: auto;
+}
+
+/* Fullscreen only (#331): give the reading column meaningfully more room. The
+   scroll container above still spans the full width, so the scrollbar stays at
+   the viewport edge while the column grows and stays centered. Windowed mode
+   never reaches this cap (its main region is ~700px), so it is unchanged. */
+.windowFull .contentColumn {
+  max-width: 1000px;
 }
 
 /* ── §7 Details / §7b Insights ────────────────────────────────────────── */
@@ -787,6 +803,14 @@
   grid-template-columns: repeat(4, minmax(190px, 1fr));
   gap: 12px;
   align-items: start;
+}
+
+/* Fullscreen (#331): the wider reading column lets each swimlane breathe — a
+   larger per-column minimum. The narrow-layout horizontal scroll from #286 is
+   untouched (windowed keeps the 190px minimum, so cramped panes still scroll
+   sideways inside .kinkPane rather than squashing the page). */
+.windowFull .kinkGrid {
+  grid-template-columns: repeat(4, minmax(240px, 1fr));
 }
 
 .kinkCol {
