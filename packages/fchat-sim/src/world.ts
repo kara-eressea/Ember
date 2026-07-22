@@ -191,6 +191,19 @@ export const DEFAULT_WORLD: SimWorld = {
       friends: [{ own: "Fern Glade", friend: "Nyx Firemane" }],
       incomingRequests: [{ from: "Tally Marsh", to: "Fern Glade" }],
     },
+    // Reserved for the #316 "Invite to →" E2E (same parallelism rule). Briar
+    // Vale owns the private Invite Harbor; Nettle Fen is the raw-SimClient
+    // invitee (met in a public room). Nettle gets her own account so her
+    // connection is never disturbed by Briar's account-wide ticket churn —
+    // the receiving side needs a stable connection (cf. chat.spec's Birch).
+    "briar@example.test": {
+      password: "hunter2",
+      characters: ["Briar Vale"],
+    },
+    "nettle@example.test": {
+      password: "hunter2",
+      characters: ["Nettle Fen"],
+    },
   },
   channels: [
     {
@@ -362,6 +375,16 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Fronds everywhere.",
       oplist: ["Nyx Firemane"],
       npcs: ["Tally Marsh", "Old Greywhisker"],
+      listed: false,
+    },
+    // Reserved for the #316 "Invite to →" E2E: Briar Vale's private room.
+    // Hidden (never listed in ORS); Briar reaches it by exact id.
+    {
+      name: "ADH-316inviteharbor00aa11bb",
+      title: "Invite Harbor",
+      mode: "chat",
+      description: "Members by invitation.",
+      oplist: ["Briar Vale"],
       listed: false,
     },
   ],
