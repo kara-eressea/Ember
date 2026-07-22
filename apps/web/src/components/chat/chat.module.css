@@ -638,111 +638,8 @@
   background: var(--eb-hover);
 }
 
-/* Room-settings popover (RoomChip, private rooms, op+ viewers). */
-
-.roomChipWrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.roomMenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 280px;
-  padding: 12px;
-  background: var(--eb-side);
-  border: 1px solid var(--eb-border);
-  border-radius: calc(var(--eb-radius) + 2px);
-  box-shadow: 0 14px 40px -12px rgb(0 0 0 / 55%);
-}
-
-/* Each labeled setting: a GroupLabel above its control. The shared
-   GroupLabel carries Preferences-pane margins meant for a taller layout;
-   flatten them here so the popover keeps a tight vertical rhythm. */
-.roomSection {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.roomSection > * {
-  margin: 0;
-}
-
-.roomMenuForm {
-  display: flex;
-  gap: 6px;
-}
-
-.roomMenuForm input {
-  flex: 1;
-  min-width: 0;
-}
-
-.roomMenuColumn {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.roomSelfEnd {
-  align-self: flex-end;
-}
-
-.roomHint {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--eb-meta);
-}
-
-.roomMenuTextarea {
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--eb-border);
-  border-radius: 6px;
-  background: var(--eb-bg);
-  color: var(--eb-text);
-  font: inherit;
-  font-size: 12.5px;
-  resize: vertical;
-}
-
-/* Banlist etc. — quiet, secondary; reads as a link, not a primary action. */
-.roomMenuFooter {
-  display: flex;
-  padding-top: 2px;
-  border-top: 1px solid var(--eb-border);
-}
-
-.roomQuietButton {
-  padding: 4px 0;
-  border: none;
-  background: none;
-  color: var(--eb-dim);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.roomQuietButton:hover:not(:disabled) {
-  color: var(--eb-accent);
-}
-
-.roomQuietButton:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.roomMenuInfo {
-  margin: 0;
-  font-size: 11.5px;
-  color: var(--eb-dim);
-}
+/* Room settings moved to a Preferences-style modal (RoomSettingsWindow +
+   room-settings.module.css); the header only keeps the ⚙ chip now. */
 
 /* ── MemberContextMenu (§10) ── */
 
@@ -1205,33 +1102,6 @@
 
 .mdToggleOn {
   color: var(--eb-accent);
-}
-
-.miniInput {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--eb-border);
-  border-radius: 15px;
-  background: var(--eb-bg);
-  color: var(--eb-text);
-  font-size: 12.5px;
-}
-
-.miniInput::placeholder {
-  color: var(--eb-meta);
-}
-
-.miniButton {
-  height: 30px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 15px;
-  background: var(--eb-accent);
-  color: var(--eb-bg);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 /* Delayed sends parked in the server outbox (local echo, M4). */

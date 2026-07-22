@@ -23,6 +23,16 @@ export type BaseThemeId = (typeof BASE_THEME_IDS)[number];
 
 export const DENSITIES = ["cozy", "compact"] as const;
 export const FONT_SIZES = ["s", "m", "l"] as const;
+/** Interface (chrome) type ramp — sidebar, headers, menus, prefs — S/M/L,
+ * independent of the message-body FONT_SIZES above. Mirrored by the web
+ * theme's UI_FONT_PX. */
+export const UI_FONT_SIZES = ["s", "m", "l"] as const;
+/** Whole-interface scale steps (percent), browser-zoom style. The UI offers
+ * exactly these; the schema validates the [min, max] band so a future step
+ * doesn't reject an older stored value. Default 100. */
+export const UI_SCALE_STEPS = [80, 90, 100, 110, 125, 150] as const;
+export const UI_SCALE_MIN = 80;
+export const UI_SCALE_MAX = 150;
 /** `[12:04]` · `[12:04:33]` · hidden. */
 export const TIMESTAMP_FORMATS = ["time", "seconds", "off"] as const;
 /** Inline images vs name chips with a hover preview (decisions.md §8). */
@@ -86,6 +96,13 @@ const prefsShape = {
   density: z.enum(DENSITIES),
   /** Message body font size. */
   fontSize: z.enum(FONT_SIZES),
+  /** Interface (chrome) type size — scales sidebar/header/menu/prefs text,
+   * independent of the message-body `fontSize` above (issue #319). */
+  uiFontSize: z.enum(UI_FONT_SIZES),
+  /** Whole-interface scale, percent (browser-zoom style, issue #319). Stored
+   * as an integer in [UI_SCALE_MIN, UI_SCALE_MAX]; the UI steps through
+   * UI_SCALE_STEPS. Default 100. */
+  uiScale: z.number().int().min(UI_SCALE_MIN).max(UI_SCALE_MAX),
   /** Colorblind-friendly status colors + shape-coded presence dots (M9):
    * ok/warn/danger move to an Okabe–Ito-derived set and the away/offline
    * dots gain distinct shapes so hue is never the only signal. */
@@ -243,6 +260,8 @@ export const PREFS_DEFAULTS: UserPrefs = {
   baseTheme: "slate",
   density: "cozy",
   fontSize: "m",
+  uiFontSize: "m",
+  uiScale: 100,
   colorblindMode: false,
   timestampFormat: "time",
   use24HourClock: true,

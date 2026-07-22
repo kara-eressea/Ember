@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { hydrateTheme, themeVariables } from "./theme.js";
+import {
+  applyInterface,
+  hydrateInterface,
+  hydrateTheme,
+  themeVariables,
+  uiScaleFactor,
+  UI_FONT_PX,
+} from "./theme.js";
 import {
   BASE_THEMES,
   genderColorVar,
@@ -271,5 +278,86 @@ describe("hydrateTheme", () => {
     stored.set("eb.baseTheme", "slate");
     hydrateTheme({ accent: "clay", baseTheme: "slate" });
     expect(setProperty).not.toHaveBeenCalled();
+  });
+});
+
+describe("uiScaleFactor", () => {
+  it("maps a percent to a unitless zoom factor", () => {
+    expect(uiScaleFactor(100)).toBe(1);
+    expect(uiScaleFactor(80)).toBe(0.8);
+    expect(uiScaleFactor(125)).toBe(1.25);
+    expect(uiScaleFactor(150)).toBe(1.5);
+  });
+
+  it("clamps out-of-band and non-finite input to the supported range", () => {
+    expect(uiScaleFactor(40)).toBe(0.8); // below UI_SCALE_MIN
+    expect(uiScaleFactor(300)).toBe(1.5); // above UI_SCALE_MAX
+    expect(uiScaleFactor(Number.NaN)).toBe(1);
+    expect(uiScaleFactor(Infinity)).toBe(1);
+  });
+});
+
+describe("UI_FONT_PX ramp", () => {
+  it("keeps M at the 13px body base and steps S/L around it", () => {
+    expect(UI_FONT_PX.s).toBe(12);
+    expect(UI_FONT_PX.m).toBe(13);
+    expect(UI_FONT_PX.l).toBe(15);
+  });
+});
+
+describe("interface font + scale on :root", () => {
+  const stored = new Map<string, string>();
+  const style: Record<string, string> = {};
+
+  beforeEach(() => {
+    stored.clear();
+    for (const key of Object.keys(style)) {
+      delete style[key];
+    }
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    });
+    vi.stubGlobal("document", { documentElement: { style } });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("applyInterface writes the font-size ramp and the zoom factor", () => {
+    applyInterface("l", 125);
+    expect(style.fontSize).toBe("15px");
+    expect(style.zoom).toBe("1.25");
+
+    applyInterface("s", 100);
+    expect(style.fontSize).toBe("12px");
+    expect(style.zoom).toBe("1");
+  });
+
+  it("hydrateInterface applies server prefs and refreshes the flash cache", () => {
+    hydrateInterface({ uiFontSize: "l", uiScale: 125 });
+    expect(stored.get("eb.uiFontSize")).toBe("l");
+    expect(stored.get("eb.uiScale")).toBe("125");
+    expect(style.fontSize).toBe("15px");
+    expect(style.zoom).toBe("1.25");
+  });
+
+  it("no-ops when the cache already matches", () => {
+    stored.set("eb.uiFontSize", "m");
+    stored.set("eb.uiScale", "100");
+    hydrateInterface({ uiFontSize: "m", uiScale: 100 });
+    expect(style.fontSize).toBeUndefined();
+    expect(style.zoom).toBeUndefined();
+  });
+
+  it("falls back to the cache for unknown/out-of-band values", () => {
+    stored.set("eb.uiFontSize", "l");
+    stored.set("eb.uiScale", "125");
+    // Garbage from a newer client must not repaint to default.
+    hydrateInterface({ uiFontSize: "xl", uiScale: 999 });
+    expect(stored.get("eb.uiFontSize")).toBe("l");
+    expect(stored.get("eb.uiScale")).toBe("125");
+    expect(style.zoom).toBeUndefined();
   });
 });

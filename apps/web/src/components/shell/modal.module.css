@@ -1,0 +1,12 @@
+/* Shared modal backdrop for centered dialog windows (Preferences, Room
+   settings…). Window chrome/sizing stays with each consumer's own class;
+   this only owns the dimmed, click-to-close backdrop. Tokens only. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 45%);
+}

@@ -15,7 +15,7 @@ import { useMessagesStore } from "../stores/messages.js";
 import { useSearchStore } from "../stores/search.js";
 import { sameCharacter, useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
-import { hydrateTheme } from "../theme/theme.js";
+import { hydrateInterface, hydrateTheme } from "../theme/theme.js";
 
 export function dispatchFrame(frame: ServerFrame): void {
   const sessions = useSessionsStore.getState();
@@ -39,6 +39,7 @@ export function dispatchFrame(frame: ServerFrame): void {
     case "snapshot":
       sessions.applySnapshot(frame.d);
       hydrateTheme(frame.d.self.prefs);
+      hydrateInterface(frame.d.self.prefs);
       return;
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
@@ -239,6 +240,7 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "prefs.updated":
       sessions.applyPrefs(identityId, event.d);
       hydrateTheme(event.d.prefs);
+      hydrateInterface(event.d.prefs);
       return;
     case "campaign.updated":
       // Rotation-campaign fan-out (M11): full-state idempotent overwrite —
