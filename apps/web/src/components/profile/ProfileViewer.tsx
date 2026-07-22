@@ -347,14 +347,20 @@ function ViewerBody({
           F-List <span aria-hidden>↗</span>
         </a>
       </div>
+      {/* Scroll container spans the full main region so the scrollbar anchors
+          to the viewport edge (#331); the reading column is capped and centered
+          inside it. The inner wrapper is a stable, always-present element, so it
+          never remounts the tab content beneath it (#283/#289). */}
       <div className={styles.content} data-testid="profile-content">
-        <TabContent
-          identityId={identityId}
-          profile={profile}
-          activeTab={activeTab}
-          ownCharacter={ownCharacter}
-          fullscreen={fullscreen}
-        />
+        <div className={styles.contentColumn} data-testid="profile-column">
+          <TabContent
+            identityId={identityId}
+            profile={profile}
+            activeTab={activeTab}
+            ownCharacter={ownCharacter}
+            fullscreen={fullscreen}
+          />
+        </div>
       </div>
     </>
   );
