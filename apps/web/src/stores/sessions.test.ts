@@ -204,6 +204,66 @@ describe("Seen recently roster moves (#200)", () => {
       "Tally Marsh",
     ]);
   });
+
+  it("merges a stray raw-keyed private-room duplicate on reattach (#311)", () => {
+    const roomId = "ADH-abc123";
+    const snapshotChannel = (
+      convId: string,
+      key: string,
+      title: string,
+      joined: boolean,
+      unread: number,
+    ) => ({
+      convId,
+      key,
+      title,
+      description: "",
+      mode: "both",
+      oplist: [],
+      members: [],
+      seen: [],
+      joined,
+      pinned: false,
+      unread,
+      mentions: 0,
+      lastReadMessageId: null,
+    });
+    useSessionsStore.getState().applySnapshot({
+      identityId: IDENTITY,
+      self: {
+        character: "Amber Vale",
+        sessionStatus: "online",
+        status: "online",
+        statusmsg: "",
+        ignores: [],
+        limits: {
+          chatMax: 4096,
+          privMax: 50000,
+          lfrpMax: 50000,
+          lfrpFlood: 600,
+        },
+        iconBlacklist: [],
+        chatop: false,
+        sendDelaySeconds: 0,
+        prefs: PREFS_DEFAULTS,
+        outbox: [],
+        campaign: null,
+        social: null,
+      },
+      // A pre-fix session persisted both the real room and a stray
+      // conversation keyed/titled by the lowercased id.
+      channels: [
+        snapshotChannel("conv-real", roomId, "Ember Attic", true, 0),
+        snapshotChannel("conv-stray", "adh-abc123", "adh-abc123", false, 3),
+      ],
+      dms: [],
+    });
+
+    const channels =
+      useSessionsStore.getState().sessions[IDENTITY]?.channels ?? {};
+    expect(Object.keys(channels)).toEqual([roomId]);
+    expect(channels[roomId]).toMatchObject({ title: "Ember Attic", unread: 0 });
+  });
 });
 
 function channelConversation(
