@@ -17,6 +17,7 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { GroupLabel, Segmented } from "../prefs/controls.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { SearchGlyph } from "../icons/Glyphs.js";
 import { RichText } from "./RichText.js";
@@ -224,6 +225,10 @@ function RoomChip({
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<string>();
   const [draft, setDraft] = useState<string>();
+  // F-Chat never reports a room's open/invite-only state, so we can't seed
+  // this from the channel — it tracks the last choice made here (undefined
+  // until the owner picks one) and drives the segmented control's highlight.
+  const [visibility, setVisibility] = useState<"public" | "private" | "">("");
   const containerRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -285,6 +290,9 @@ function RoomChip({
         action: "channel.status",
         d: { key: channelKey, status },
       });
+      if (ack.ok) {
+        setVisibility(status);
+      }
       setInfo(
         ack.ok
           ? status === "public"
@@ -335,104 +343,110 @@ function RoomChip({
         >
           {isPrivateRoom && (
             <>
-              <form
-                className={styles.roomMenuForm}
-                onSubmit={(event) => {
-                  void invite(event);
-                }}
-              >
-                <input
-                  className={styles.miniInput}
-                  value={character}
-                  onChange={(e) => {
-                    setCharacter(e.target.value);
+              <section className={styles.roomSection}>
+                <GroupLabel>Invite someone</GroupLabel>
+                <form
+                  className={styles.roomMenuForm}
+                  onSubmit={(event) => {
+                    void invite(event);
                   }}
-                  placeholder="Invite a character…"
-                  aria-label="Invite a character"
+                >
+                  <input
+                    className={styles.miniInput}
+                    value={character}
+                    onChange={(e) => {
+                      setCharacter(e.target.value);
+                    }}
+                    placeholder="Character name…"
+                    aria-label="Invite a character"
+                  />
+                  <button
+                    className={styles.miniButton}
+                    type="submit"
+                    disabled={busy}
+                  >
+                    Invite
+                  </button>
+                </form>
+              </section>
+              <section className={styles.roomSection}>
+                <GroupLabel>Who can join</GroupLabel>
+                <Segmented
+                  label="Who can join"
+                  value={visibility as "public" | "private"}
+                  options={[
+                    { value: "public", label: "Anyone" },
+                    { value: "private", label: "Invite only" },
+                  ]}
+                  onChange={(next) => {
+                    void setStatus(next);
+                  }}
                 />
-                <button
-                  className={styles.miniButton}
-                  type="submit"
-                  disabled={busy}
-                >
-                  Invite
-                </button>
-              </form>
-              <div className={styles.roomMenuActions}>
-                <button
-                  className={styles.miniButton}
-                  disabled={busy}
-                  onClick={() => {
-                    void setStatus("public");
-                  }}
-                >
-                  Make open
-                </button>
-                <button
-                  className={styles.miniButton}
-                  disabled={busy}
-                  onClick={() => {
-                    void setStatus("private");
-                  }}
-                >
-                  Make invite-only
-                </button>
-              </div>
+                <p className={styles.roomHint}>
+                  F-Chat can’t tell us the current setting — pick one to change
+                  it.
+                </p>
+              </section>
             </>
           )}
           {/* Room mode (RMO): which message kinds the room accepts. The
               active segment reflects the live mode via channel.info. */}
-          <div
-            className={styles.roomMenuActions}
-            role="radiogroup"
-            aria-label="Room mode"
-          >
-            {(["chat", "ads", "both"] as const).map((option) => (
-              <button
-                key={option}
-                className={`${styles.miniButton} ${mode === option ? (styles.miniButtonActive ?? "") : ""}`}
-                role="radio"
-                aria-checked={mode === option}
-                disabled={busy || mode === option}
-                onClick={() => {
-                  void run(`Room mode set to ${option}`, {
-                    identityId,
-                    action: "channel.mode",
-                    d: { key: channelKey, mode: option },
-                  });
-                }}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-          <form
-            className={styles.roomMenuForm}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run("Description updated", {
-                identityId,
-                action: "channel.describe",
-                d: { key: channelKey, description: draft ?? description },
-              });
-            }}
-          >
-            <textarea
-              className={styles.roomMenuTextarea}
-              value={draft ?? description}
-              onChange={(e) => {
-                setDraft(e.target.value);
+          <section className={styles.roomSection}>
+            <GroupLabel>Allowed messages</GroupLabel>
+            <Segmented
+              label="Allowed messages"
+              value={mode as "chat" | "ads" | "both"}
+              options={[
+                { value: "chat", label: "Chat" },
+                { value: "ads", label: "Ads" },
+                { value: "both", label: "Both" },
+              ]}
+              onChange={(next) => {
+                if (next === mode) {
+                  return;
+                }
+                void run(`Allowed messages set to ${next}`, {
+                  identityId,
+                  action: "channel.mode",
+                  d: { key: channelKey, mode: next },
+                });
               }}
-              rows={3}
-              aria-label="Channel description"
             />
-            <button className={styles.miniButton} type="submit" disabled={busy}>
-              Save
-            </button>
-          </form>
-          <div className={styles.roomMenuActions}>
+          </section>
+          <section className={styles.roomSection}>
+            <GroupLabel>Description</GroupLabel>
+            <form
+              className={styles.roomMenuColumn}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run("Description updated", {
+                  identityId,
+                  action: "channel.describe",
+                  d: { key: channelKey, description: draft ?? description },
+                });
+              }}
+            >
+              <textarea
+                className={styles.roomMenuTextarea}
+                value={draft ?? description}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                }}
+                rows={3}
+                aria-label="Channel description"
+              />
+              <button
+                className={`${styles.miniButton} ${styles.roomSelfEnd ?? ""}`}
+                type="submit"
+                disabled={busy}
+              >
+                Save
+              </button>
+            </form>
+          </section>
+          <div className={styles.roomMenuFooter}>
             <button
-              className={styles.miniButton}
+              className={styles.roomQuietButton}
               disabled={busy}
               onClick={() => {
                 setOpen(false);

@@ -652,13 +652,26 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: 250px;
-  padding: 10px;
+  gap: 6px;
+  width: 280px;
+  padding: 12px;
   background: var(--eb-side);
   border: 1px solid var(--eb-border);
   border-radius: calc(var(--eb-radius) + 2px);
   box-shadow: 0 14px 40px -12px rgb(0 0 0 / 55%);
+}
+
+/* Each labeled setting: a GroupLabel above its control. The shared
+   GroupLabel carries Preferences-pane margins meant for a taller layout;
+   flatten them here so the popover keeps a tight vertical rhythm. */
+.roomSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.roomSection > * {
+  margin: 0;
 }
 
 .roomMenuForm {
@@ -671,20 +684,24 @@
   min-width: 0;
 }
 
-.roomMenuActions {
+.roomMenuColumn {
   display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-/* Mode segmented in the room menu: the live mode reads as pressed. */
-.miniButtonActive {
-  background: var(--eb-bg);
-  color: var(--eb-accent);
-  box-shadow: inset 0 0 0 1px var(--eb-accent);
+.roomSelfEnd {
+  align-self: flex-end;
+}
+
+.roomHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--eb-meta);
 }
 
 .roomMenuTextarea {
-  flex: 1;
   min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--eb-border);
@@ -694,6 +711,31 @@
   font: inherit;
   font-size: 12.5px;
   resize: vertical;
+}
+
+/* Banlist etc. — quiet, secondary; reads as a link, not a primary action. */
+.roomMenuFooter {
+  display: flex;
+  padding-top: 2px;
+  border-top: 1px solid var(--eb-border);
+}
+
+.roomQuietButton {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--eb-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.roomQuietButton:hover:not(:disabled) {
+  color: var(--eb-accent);
+}
+
+.roomQuietButton:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .roomMenuInfo {
