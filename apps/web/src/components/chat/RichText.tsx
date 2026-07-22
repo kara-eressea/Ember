@@ -277,11 +277,11 @@ function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
         }
       }}
     >
-      <span className={styles.linkChipGlyph} aria-hidden>
-        {previewable ? "▣" : "↗"}
-      </span>
       <span className={styles.linkChipLabel}>
         {children ?? chipLabel(href)}
+      </span>
+      <span className={styles.linkChipGlyph} aria-hidden>
+        {previewable ? "▣" : "↗"}
       </span>
       {host !== "" && <span className={styles.linkChipHost}>[{host}]</span>}
     </a>
