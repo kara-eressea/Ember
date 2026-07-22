@@ -15,6 +15,7 @@ import {
 import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
+import { markConversationRead } from "../../lib/mark-read.js";
 import { identityPath } from "../../lib/routes.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
@@ -146,6 +147,13 @@ export function ChannelContextMenu({
     void patchPrefs(identityId, setChannelAdView(prefs, channel.key, next));
   }
 
+  /** Clear the backlog without opening the channel (#315): advances the read
+   * cursor to the newest message, converging every device. */
+  function markRead() {
+    onClose();
+    markConversationRead(identityId, channel.convId);
+  }
+
   /** Leave, no confirmation. The server unpins on explicit leave (#223)
    * so the pin's auto-rejoin can't drag the channel back — one gateway
    * command does both. Navigate away first when this channel is on
@@ -194,6 +202,19 @@ export function ChannelContextMenu({
           </span>
           <span className={styles.memberMenuNick}>{channel.title}</span>
         </div>
+        <button
+          className={styles.memberMenuItem}
+          role="menuitem"
+          disabled={
+            channel.unread === 0 &&
+            channel.mentions === 0 &&
+            channel.highlightedAt === 0
+          }
+          title="Clear the unread count without opening the channel"
+          onClick={markRead}
+        >
+          Mark as read
+        </button>
         <button
           className={styles.memberMenuItem}
           role="menuitem"
