@@ -9,10 +9,18 @@ import {
   DEFAULT_IMAGE_PREVIEW_HOSTS,
   IMAGE_PREVIEW_HOST,
   PREFS_DEFAULTS,
+  UI_SCALE_STEPS,
 } from "@emberchat/protocol";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { ACCENTS, type AccentId } from "../../theme/tokens.js";
-import { FieldRow, GroupLabel, Segmented, Swatch, Toggle } from "./controls.js";
+import {
+  FieldRow,
+  GroupLabel,
+  Segmented,
+  Stepper,
+  Swatch,
+  Toggle,
+} from "./controls.js";
 import { patchPrefs } from "./patch.js";
 import styles from "./prefs.module.css";
 
@@ -69,6 +77,45 @@ export function AppearancePane({ identityId }: { identityId: string }) {
           checked={prefs.colorblindMode}
           onChange={(colorblindMode) => {
             set({ colorblindMode });
+          }}
+        />
+      </FieldRow>
+
+      <GroupLabel>Interface</GroupLabel>
+      <FieldRow
+        label="Interface font size"
+        help="Size of text in the sidebar, headers, menus, and settings — separate from the message font size below"
+      >
+        <Segmented
+          label="Interface font size"
+          options={[
+            { value: "s", label: "S" },
+            { value: "m", label: "M" },
+            { value: "l", label: "L" },
+          ]}
+          value={prefs.uiFontSize}
+          onChange={(uiFontSize) => {
+            set({ uiFontSize });
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Interface scale"
+        help="Zoom the whole app in or out, like your browser's zoom"
+      >
+        <Stepper
+          label="Interface scale"
+          options={UI_SCALE_STEPS}
+          value={
+            UI_SCALE_STEPS.includes(
+              prefs.uiScale as (typeof UI_SCALE_STEPS)[number],
+            )
+              ? (prefs.uiScale as (typeof UI_SCALE_STEPS)[number])
+              : 100
+          }
+          format={(value) => `${String(value)}%`}
+          onChange={(uiScale) => {
+            set({ uiScale });
           }}
         />
       </FieldRow>

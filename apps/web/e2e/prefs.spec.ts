@@ -182,6 +182,40 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     .getByRole("switch", { name: "Colorblind-friendly status colors" })
     .click();
   await dialog.getByRole("radio", { name: "Slate" }).click();
+
+  // ── Interface font size + scale (#319): both write onto :root live ────
+  const rootFontSize = () =>
+    page.evaluate(() => document.documentElement.style.fontSize);
+  const rootZoom = () =>
+    page.evaluate(() => document.documentElement.style.zoom);
+  // Interface font size L → root font-size steps up (13px M base → 15px L).
+  await dialog
+    .getByRole("radiogroup", { name: "Interface font size" })
+    .getByRole("radio", { name: "L" })
+    .click();
+  await expect.poll(rootFontSize, { timeout: 5000 }).toBe("15px");
+  // Interface scale: two +steps from 100% → 110% → 125% (zoom 1.25).
+  const scaleControl = dialog.getByRole("group", { name: "Interface scale" });
+  const scaleUp = dialog.getByRole("button", {
+    name: "Increase Interface scale",
+  });
+  await scaleUp.click();
+  await scaleUp.click();
+  await expect(scaleControl.getByText("125%")).toBeVisible();
+  await expect.poll(rootZoom, { timeout: 5000 }).toBe("1.25");
+  // Reset both to the defaults so the rest of the spec runs unscaled.
+  await dialog
+    .getByRole("radiogroup", { name: "Interface font size" })
+    .getByRole("radio", { name: "M" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Decrease Interface scale" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Decrease Interface scale" })
+    .click();
+  await expect.poll(rootZoom, { timeout: 5000 }).toBe("1");
+
   await page.keyboard.press("Escape");
 
   // Survives a reload (flash cache + server prefs agree).
