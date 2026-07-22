@@ -5,9 +5,18 @@
 // token pass (links, @name, #channel). [icon]/[eicon] render as name chips
 // until step 3 brings inline images.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
+import { parseCharacterUrl } from "../../lib/character-url.js";
 import { chipHost, chipLabel, resolvePreview } from "../../lib/link-preview.js";
 import {
   openPreviewFrom,
@@ -21,6 +30,18 @@ import { useSessionsStore, useUserPrefs } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { spoilerSegments, textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
+
+/**
+ * How an intercepted f-list.net/c/<name> link opens its character (#214).
+ * The default matches a chat `[user]` click — the mini card anchored to the
+ * link. The profile viewer overrides it (ProfileLinkProvider) to swap the
+ * viewer instead, since the popover would layer below the modal.
+ */
+export type ProfileLinkOpener = (element: Element, name: string) => void;
+
+const ProfileLinkContext = createContext<ProfileLinkOpener>(openCardFrom);
+
+export const ProfileLinkProvider = ProfileLinkContext.Provider;
 
 export function RichText({ bbcode }: { bbcode: string }) {
   // Memoized: the log re-renders far more often than messages change, and
@@ -108,11 +129,20 @@ function renderNode(
           {node.text}
         </span>
       );
+    case "spoiler":
+      // Incoming [spoiler] from other clients (#204): same covered bar as the
+      // `||…||` spelling, but wrapping full markup (text, eicons, …).
+      return (
+        <Spoiler key={key}>{renderNodes(node.children, key, extra)}</Spoiler>
+      );
     // Profile-dialect nodes never occur in chat parses; if one arrives
     // unclaimed (no `extra`), degrade to unstyled content — never crash.
     case "block":
     case "collapse":
       return <span key={key}>{renderNodes(node.children, key, extra)}</span>;
+    // Profile inline images never occur in a chat parse; the profile renderer
+    // claims them via `extra`. Anything reaching here degrades silently.
+    case "img":
     case "hr":
       return null;
   }
@@ -230,6 +260,8 @@ function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
   const prefs = useUserPrefs();
   const mode = prefs.linkPreviewMode;
   const source = resolvePreview(href, prefs.imagePreviewHosts);
+  const character = useMemo(() => parseCharacterUrl(href), [href]);
+  const openProfile = useContext(ProfileLinkContext);
   const active = useLinkPreviewStore((s) => s.preview?.href === href);
   const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
@@ -247,6 +279,19 @@ function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
       target="_blank"
       rel="noreferrer noopener"
       onClick={(event) => {
+        // A plain click on an f-list.net/c/<name> link opens the in-app
+        // profile viewer (#214); modified clicks (Ctrl/Cmd/Shift, and
+        // middle-click, which fires onAuxClick not onClick) follow the URL.
+        if (
+          character !== undefined &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        ) {
+          event.preventDefault();
+          openProfile(event.currentTarget, character);
+          return;
+        }
         if (
           previewable &&
           mode === "click" &&

@@ -193,6 +193,7 @@ export async function profilesRoutes(
           identity.id,
           request.query.limit,
           request.query.before,
+          identity.character,
         ),
       };
     },
