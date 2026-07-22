@@ -296,16 +296,55 @@ export function loadOwnProfile(
   return load;
 }
 
-/** Debounced note autosave (design: no save button). */
+/** Note autosave (design: no save button). `onSaved`/`onError` drive the
+ * editor's ✓ Saved / ⚠ Not saved chip. A failed write never drops the text —
+ * the editor keeps it and the next edit (or blur flush) retries. */
+export interface NoteSaveCallbacks {
+  onSaved?: () => void;
+  onError?: () => void;
+}
+
 const noteTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+function noteKey(identityId: string, name: string): string {
+  return `${identityId}:${name.toLowerCase()}`;
+}
+
+function putNote(
+  identityId: string,
+  name: string,
+  note: string,
+  callbacks: NoteSaveCallbacks,
+): void {
+  api
+    .putProfileNote(identityId, name, note)
+    .then(() => {
+      // Keep the cached profile response in step so reopening the surface
+      // (or the other surface) shows the saved note without a refetch — the
+      // one-source-of-truth guarantee (#170).
+      const lower = name.toLowerCase();
+      const cached = useProfileStore.getState().profiles[lower];
+      if (cached?.response) {
+        setProfile(lower, {
+          ...cached,
+          response: { ...cached.response, note: note === "" ? null : note },
+        });
+      }
+      callbacks.onSaved?.();
+    })
+    .catch(() => {
+      callbacks.onError?.();
+    });
+}
+
+/** Debounced save while typing (≈600ms idle). */
 export function saveNoteDebounced(
   identityId: string,
   name: string,
   note: string,
-  onSaved: () => void,
+  callbacks: NoteSaveCallbacks = {},
 ): void {
-  const key = `${identityId}:${name.toLowerCase()}`;
+  const key = noteKey(identityId, name);
   const existing = noteTimers.get(key);
   if (existing) {
     clearTimeout(existing);
@@ -314,12 +353,24 @@ export function saveNoteDebounced(
     key,
     setTimeout(() => {
       noteTimers.delete(key);
-      api
-        .putProfileNote(identityId, name, note)
-        .then(onSaved)
-        .catch(() => {
-          // Autosave failure: the editor keeps the text; next edit retries.
-        });
+      putNote(identityId, name, note, callbacks);
     }, 600),
   );
+}
+
+/** Immediate save (on blur / Escape): cancels any pending debounce and
+ * commits now, so an empty-on-blur note deletes the record without waiting. */
+export function saveNoteNow(
+  identityId: string,
+  name: string,
+  note: string,
+  callbacks: NoteSaveCallbacks = {},
+): void {
+  const key = noteKey(identityId, name);
+  const existing = noteTimers.get(key);
+  if (existing) {
+    clearTimeout(existing);
+    noteTimers.delete(key);
+  }
+  putNote(identityId, name, note, callbacks);
 }

@@ -3,6 +3,7 @@
 // connection state). Panel/dialog state joins here as it appears.
 
 import { create } from "zustand";
+import { persistDmSidebarOpen, savedDmSidebarOpen } from "../lib/dm-sidebar.js";
 
 export type GatewayConnectionStatus = "connecting" | "online" | "offline";
 
@@ -17,6 +18,12 @@ interface UiState {
   gatewayStatus: GatewayConnectionStatus;
   /** Members column visibility (header ☰ toggle). */
   membersOpen: boolean;
+  /** DM profile sidebar — the persisted global open preference (header ◨ /
+   * sidebar » toggle). Governs the wide-window grid column (#170). */
+  dmSidebarOpen: boolean;
+  /** DM profile sidebar as a right-edge overlay drawer on narrow windows —
+   * transient (never persisted) and always starts closed (#170). */
+  dmDrawerOpen: boolean;
   /** Preferences window (COMPONENTS.md §12), opened from the MeBar gear. */
   prefsOpen: boolean;
   /** Channel browser dialog (COMPONENTS.md §11), opened from the sidebar
@@ -42,6 +49,10 @@ interface UiState {
   setLastConv: (identityId: string, suffix: string) => void;
   setGatewayStatus: (status: GatewayConnectionStatus) => void;
   toggleMembers: () => void;
+  toggleDmSidebar: () => void;
+  setDmSidebarOpen: (open: boolean) => void;
+  toggleDmDrawer: () => void;
+  setDmDrawerOpen: (open: boolean) => void;
   setPrefsOpen: (open: boolean) => void;
   setChannelBrowserOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
@@ -58,6 +69,8 @@ export const useUiStore = create<UiState>()((set) => ({
   lastConvByIdentity: {},
   gatewayStatus: "offline",
   membersOpen: true,
+  dmSidebarOpen: savedDmSidebarOpen(),
+  dmDrawerOpen: false,
   prefsOpen: false,
   channelBrowserOpen: false,
   searchOpen: false,
@@ -83,6 +96,23 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   toggleMembers() {
     set((state) => ({ membersOpen: !state.membersOpen }));
+  },
+  toggleDmSidebar() {
+    set((state) => {
+      const dmSidebarOpen = !state.dmSidebarOpen;
+      persistDmSidebarOpen(dmSidebarOpen);
+      return { dmSidebarOpen };
+    });
+  },
+  setDmSidebarOpen(open) {
+    persistDmSidebarOpen(open);
+    set({ dmSidebarOpen: open });
+  },
+  toggleDmDrawer() {
+    set((state) => ({ dmDrawerOpen: !state.dmDrawerOpen }));
+  },
+  setDmDrawerOpen(open) {
+    set({ dmDrawerOpen: open });
   },
   setPrefsOpen(open) {
     set({ prefsOpen: open });

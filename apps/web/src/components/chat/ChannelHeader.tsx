@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
+import { useIsNarrow } from "../../lib/dm-sidebar.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
 import {
@@ -613,6 +614,13 @@ export function DmHeader({
   const ownCharacter = useSessionsStore(
     (s) => s.sessions[identityId]?.character ?? "",
   );
+  // DM profile-sidebar toggle (#170): same header slot as the channel's
+  // "☰ members" button. On the wide layout it flips the persisted grid-column
+  // pref; on narrow windows it opens/closes the overlay drawer.
+  const narrow = useIsNarrow();
+  const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
+  const dmDrawerOpen = useUiStore((s) => s.dmDrawerOpen);
+  const sidebarOn = narrow ? dmDrawerOpen : dmSidebarOpen;
   const [closing, setClosing] = useState(false);
   // The partner's identity menu (#167) — the same menu a member-list row
   // opens, anchored under the ⋮ button.
@@ -689,6 +697,31 @@ export function DmHeader({
           }}
         >
           <SearchGlyph />
+        </button>
+        <button
+          className={styles.headerButton}
+          title={
+            sidebarOn ? "Hide the profile panel" : "Show the profile panel"
+          }
+          aria-label="Toggle profile panel"
+          aria-pressed={sidebarOn}
+          style={
+            sidebarOn
+              ? {
+                  color: "var(--eb-accent)",
+                  background: "var(--eb-accent-soft)",
+                }
+              : undefined
+          }
+          onClick={() => {
+            if (narrow) {
+              useUiStore.getState().toggleDmDrawer();
+            } else {
+              useUiStore.getState().toggleDmSidebar();
+            }
+          }}
+        >
+          ◨
         </button>
         <button
           className={styles.headerButton}

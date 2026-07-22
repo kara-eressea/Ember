@@ -150,6 +150,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Juniper Wren"],
     },
+    // Reserved for the #170 DM mini-profile sidebar E2E (same parallelism
+    // rule); Bramble Fen is its raw-SimClient "other side" (the PM sender,
+    // whose profile is seeded so the sidebar's note + match load).
+    "thistle@example.test": {
+      password: "hunter2",
+      characters: ["Thistle Vane", "Bramble Fen"],
+    },
     // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
     // with a bookmark, a friend, and a pending incoming request from Tally.
     "fern@example.test": {

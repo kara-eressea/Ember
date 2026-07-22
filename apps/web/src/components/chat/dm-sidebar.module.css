@@ -1,0 +1,301 @@
+/* DM profile sidebar (COMPONENTS-dm-sidebar.md). Occupies the same 232px
+   right-column slot as MemberList; side2 surface, left border. All values
+   against --eb-* tokens — accent-swappable, works on slate / charcoal /
+   parchment. Shared primitives (badges, note, match pill/chip, group label)
+   are imported from profile.module.css and never restyled here. */
+
+.dmProfile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--eb-side2);
+  border-left: 1px solid var(--eb-border);
+}
+
+/* Narrow windows (< 900px): a right-edge overlay drawer over the log. */
+.overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(280px, 86vw);
+  box-shadow: -18px 0 50px -18px rgb(0 0 0 / 55%);
+  animation: dmDrawerIn 0.15s ease;
+}
+
+@keyframes dmDrawerIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgb(0 0 0 / 25%);
+}
+
+/* ── DmpHeader ─────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 12px 11px 16px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.collapse {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 6px;
+}
+
+.collapse:hover {
+  background: var(--eb-hover);
+  color: var(--eb-dim);
+}
+
+/* ── DmpBody ───────────────────────────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.section {
+  padding: 14px 16px;
+  border-top: 1px solid var(--eb-border);
+}
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 16px 16px;
+  text-align: center;
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      var(--gender-accent, var(--eb-accent)) 10%,
+      var(--eb-side2)
+    ),
+    var(--eb-side2)
+  );
+}
+
+.avatarWrap {
+  position: relative;
+  width: 76px;
+  height: 76px;
+}
+
+.heroDot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--eb-side2);
+  border-radius: 50%;
+}
+
+.dotOk {
+  background: var(--eb-ok);
+  box-shadow: 0 0 4px var(--eb-ok);
+}
+
+.dotWarn {
+  background: var(--eb-warn);
+}
+
+.dotFaint {
+  background: var(--eb-faint);
+}
+
+/* Colorblind mode: shape-code the presence dot like the rest of the app. */
+:global(.eb-colorblind) .dotWarn {
+  border-radius: 3px;
+}
+
+:global(.eb-colorblind) .dotFaint {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--eb-faint);
+}
+
+.nameRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.heroName {
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gender-accent, var(--eb-text));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presenceLine {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--eb-mono, monospace);
+  font-size: 11.5px;
+}
+
+.presenceMini {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.presenceOk {
+  color: var(--eb-ok);
+}
+
+.presenceWarn {
+  color: var(--eb-warn);
+}
+
+.presenceFaint {
+  color: var(--eb-faint);
+}
+
+.heroStatus {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--eb-dim);
+  text-align: left;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  word-break: break-word;
+}
+
+/* ── Actions ───────────────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.primary {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--eb-bg);
+  cursor: pointer;
+  background: var(--eb-accent);
+  border: none;
+  border-radius: var(--eb-radius);
+}
+
+.primary:hover {
+  background: color-mix(in srgb, var(--eb-accent) 88%, var(--eb-text));
+}
+
+.btnRow {
+  display: flex;
+  gap: 8px;
+}
+
+.ghost {
+  display: flex;
+  flex: 1;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eb-dim);
+  text-decoration: none;
+  cursor: pointer;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+}
+
+.ghost:hover {
+  color: var(--eb-text);
+  background: var(--eb-hover);
+  text-decoration: none;
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ghostOn {
+  color: var(--eb-accent);
+  background: var(--eb-accent-soft);
+  border-color: var(--eb-accent-med);
+}
+
+.ghostOn:hover {
+  color: var(--eb-accent);
+  background: var(--eb-accent-soft);
+}
+
+/* ── MatchSummary ──────────────────────────────────────────────────────── */
+
+.matchHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.matchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.noMatch {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--eb-meta);
+}
+
+/* ── PrivateNote wrapper ───────────────────────────────────────────────── */
+
+.noteHead {
+  margin-bottom: 8px;
+}

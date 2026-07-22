@@ -79,6 +79,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // Kolvarr is offline until m10.spec connects him — the saved-search
     // rerun then finds one NEW character and the badge reads "1 new".
     sim.setCharacterProfile("Kolvarr", { kinks: { "501": "yes" } });
+    // DM mini-profile sidebar (#170, dm-sidebar.spec): the partner needs a
+    // profile so the sidebar's note and compatibility summary load, and the
+    // viewer's own character needs one so the match pill (not the "connect
+    // your own character" prompt) renders.
+    sim.setCharacterProfile("Bramble Fen", { kinks: { "501": "yes" } });
+    sim.setCharacterProfile("Thistle Vane", { kinks: { "501": "fave" } });
     sim.setGuestbook(
       "Nyx Firemane",
       Array.from({ length: 12 }, (_, index) => ({

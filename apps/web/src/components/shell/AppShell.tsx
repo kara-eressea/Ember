@@ -29,7 +29,9 @@ import { useUiStore } from "../../stores/ui.js";
 import { adViewFor } from "../chat/ads.js";
 import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
+import { DmProfile } from "../chat/DmProfile.js";
 import { MemberList } from "../chat/MemberList.js";
+import { useIsNarrow } from "../../lib/dm-sidebar.js";
 import { MessageLog } from "../chat/MessageLog.js";
 import { SearchPanel } from "../chat/SearchPanel.js";
 import { CharacterSearch } from "../search/CharacterSearch.js";
@@ -66,6 +68,9 @@ export function AppShell() {
     identityId === undefined ? undefined : s.sessions[identityId],
   );
   const membersOpen = useUiStore((s) => s.membersOpen);
+  const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
+  const dmDrawerOpen = useUiStore((s) => s.dmDrawerOpen);
+  const narrow = useIsNarrow();
   const prefsOpen = useUiStore((s) => s.prefsOpen);
   const profileViewing = useProfileStore((s) => s.viewing);
   const profileCard = useProfileStore((s) => s.card);
@@ -250,10 +255,18 @@ export function AppShell() {
   const channel =
     conversation?.kind === "channel" ? conversation.channel : undefined;
   const showMembers = channel !== undefined && membersOpen;
+  // The DM sidebar shares the same 232px right-column slot as MemberList; the
+  // two are mutually exclusive by conversation kind. On the wide layout it's a
+  // grid column (persisted pref); below the responsive breakpoint it's a
+  // transient right-edge overlay drawer that starts closed.
+  const dmView = conversation?.kind === "pm" ? conversation.dm : undefined;
+  const showDmGrid = dmView !== undefined && dmSidebarOpen && !narrow;
+  const showDmOverlay = dmView !== undefined && narrow && dmDrawerOpen;
+  const rightColumnOpen = showMembers || showDmGrid;
 
   return (
     <div
-      className={`${styles.shell} ${showMembers ? "" : (styles.membersClosed ?? "")}`}
+      className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")}`}
     >
       <IdentityRail activeId={activeId} />
       <Sidebar session={session} activeConvId={convId} />
@@ -355,6 +368,21 @@ export function AppShell() {
           identityId={activeId}
           ownCharacter={session.character}
           channel={channel}
+        />
+      )}
+      {(showDmGrid || showDmOverlay) && dmView && (
+        <DmProfile
+          identityId={activeId}
+          ownCharacter={session.character}
+          dm={dmView}
+          overlay={showDmOverlay}
+          onCollapse={() => {
+            if (narrow) {
+              useUiStore.getState().setDmDrawerOpen(false);
+            } else {
+              useUiStore.getState().toggleDmSidebar();
+            }
+          }}
         />
       )}
       {prefsOpen && (
