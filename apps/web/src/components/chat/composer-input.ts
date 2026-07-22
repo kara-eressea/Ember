@@ -49,5 +49,4 @@ export function textareaHandle(
  * the handler only touches key/shiftKey/ctrlKey/metaKey/preventDefault,
  * which native and synthetic events share. */
 export type AnyKeyEvent =
-  | KeyboardEvent
-  | ReactKeyboardEvent<HTMLTextAreaElement>;
+  KeyboardEvent | ReactKeyboardEvent<HTMLTextAreaElement>;

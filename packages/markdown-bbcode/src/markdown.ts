@@ -39,13 +39,7 @@ const ESCAPABLE = new Set(["*", "`", "~", "[", "]", "\\", "(", "|"]);
 /** Styled-range kinds the inline-composer highlighter renders. `delim`
  * covers the marker characters themselves (dimmed, never hidden). */
 export type MdSpanType =
-  | "bold"
-  | "italic"
-  | "strike"
-  | "spoiler"
-  | "code"
-  | "eicon"
-  | "delim";
+  "bold" | "italic" | "strike" | "spoiler" | "code" | "eicon" | "delim";
 
 /** A styled range over the *original markdown string* (absolute offsets). */
 export interface MdSpan {
