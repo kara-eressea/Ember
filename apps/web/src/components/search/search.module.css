@@ -38,7 +38,7 @@
 .railTitle {
   padding: 15px 14px 10px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-meta);
   text-transform: uppercase;
@@ -54,7 +54,7 @@
 .railEmpty {
   padding: 4px 14px;
   margin: 0;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   line-height: 1.5;
   color: var(--eb-meta);
 }
@@ -100,7 +100,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   font-weight: 500;
   color: var(--eb-dim);
   text-overflow: ellipsis;
@@ -116,7 +116,7 @@
   flex: none;
   padding: 0 6px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-bg);
   background: var(--eb-accent);
@@ -125,7 +125,7 @@
 
 .savedMeta {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: calc(10px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
@@ -133,7 +133,7 @@
   flex: none;
   padding: 8px 8px 0 2px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: calc(10px * var(--eb-font-ui-scale));
   color: var(--eb-faint);
   cursor: pointer;
   background: none;
@@ -161,7 +161,7 @@
   justify-content: center;
   width: 100%;
   height: 32px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   font-weight: 600;
   color: var(--eb-dim);
   cursor: pointer;
@@ -179,7 +179,7 @@
   width: 100%;
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   color: var(--eb-text);
   background: var(--eb-bg);
   border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
@@ -207,7 +207,7 @@
 
 .title {
   margin: 0;
-  font-size: 17px;
+  font-size: calc(17px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-heading);
 }
@@ -216,13 +216,13 @@
   display: block;
   margin-top: 3px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   color: var(--eb-meta);
 }
 
 .close {
   padding: 2px;
-  font-size: 13px;
+  font-size: var(--eb-font-ui);
   color: var(--eb-faint);
   cursor: pointer;
   background: none;
@@ -256,7 +256,7 @@
   gap: 7px;
   align-items: center;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-meta);
   text-transform: uppercase;
@@ -265,7 +265,7 @@
 
 .requiredTag {
   padding: 0 5px;
-  font-size: 9px;
+  font-size: calc(9px * var(--eb-font-ui-scale));
   color: var(--eb-accent);
   letter-spacing: 0.02em;
   background: var(--eb-accent-soft);
@@ -274,7 +274,7 @@
 }
 
 .kinkCount {
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   color: var(--eb-meta);
 }
 
@@ -299,7 +299,7 @@
   gap: 5px;
   align-items: center;
   padding: 3px 6px 3px 9px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   font-weight: 500;
   color: var(--eb-accent);
   background: var(--eb-accent-soft);
@@ -310,7 +310,7 @@
 .kinkRemove {
   padding: 0;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   color: color-mix(in srgb, var(--eb-accent) 65%, var(--eb-bg));
   cursor: pointer;
   background: none;
@@ -325,7 +325,7 @@
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   font-weight: 600;
   color: var(--eb-accent-text);
   cursor: pointer;
@@ -340,7 +340,7 @@
 
 .vocabError {
   margin: 6px 0 0;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   color: var(--eb-danger);
 }
 
@@ -366,7 +366,7 @@
   flex: 1;
   height: 32px;
   padding: 0 11px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   color: var(--eb-text);
   background: var(--eb-bg);
   border: 1px solid color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
@@ -377,7 +377,7 @@
 .pickerCount {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: calc(10px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
@@ -416,7 +416,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  font-size: 10px;
+  font-size: calc(10px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-bg);
   background: var(--eb-bg);
@@ -433,7 +433,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   color: var(--eb-dim);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -446,7 +446,7 @@
 .pickerGroup {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
@@ -456,7 +456,7 @@
   justify-content: space-between;
   padding: 8px 11px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: calc(10px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
   background: var(--eb-head);
   border-top: 1px solid var(--eb-border);
@@ -477,7 +477,7 @@
 .primer {
   padding: 14px;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   line-height: 1.5;
   color: var(--eb-dim);
   background: color-mix(in srgb, var(--eb-accent) 10%, var(--eb-side));
@@ -504,7 +504,7 @@
 
 .filterLabel {
   padding-top: 4px;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   font-weight: 600;
   color: var(--eb-meta);
 }
@@ -517,7 +517,7 @@
 
 .filterChip {
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   font-weight: 500;
   color: var(--eb-dim);
   cursor: pointer;
@@ -554,7 +554,7 @@
   flex: 1;
   height: 32px;
   padding: 0 11px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   color: var(--eb-text);
   background: var(--eb-bg);
   border: 1px solid var(--eb-border);
@@ -569,7 +569,7 @@
 .resultsCount {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   color: var(--eb-dim);
 }
 
@@ -601,7 +601,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--eb-font-ui-scale));
   font-weight: 600;
   text-align: left;
   text-overflow: ellipsis;
@@ -637,14 +637,14 @@
   width: 52px;
   height: 52px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 20px;
+  font-size: calc(20px * var(--eb-font-ui-scale));
   color: var(--eb-faint);
   border: 1px dashed var(--eb-border);
   border-radius: var(--eb-radius);
 }
 
 .emptyTitle {
-  font-size: 14px;
+  font-size: calc(14px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-text);
 }
@@ -652,7 +652,7 @@
 .emptyCopy {
   max-width: 300px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   line-height: 1.55;
   color: var(--eb-meta);
 }
@@ -669,7 +669,7 @@
 }
 
 .footStatus {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
@@ -682,7 +682,7 @@
 .buttonPrimary {
   height: 36px;
   padding: 0 18px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   font-weight: 600;
   cursor: pointer;
   border-radius: var(--eb-radius);
