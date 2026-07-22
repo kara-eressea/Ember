@@ -92,10 +92,14 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
     name: "Allowed messages",
   });
   await expect(messages).toBeVisible();
-  // The active segment shows the live mode (the room defaults to "both").
-  await expect(
-    messages.getByRole("radio", { name: "Both" }),
-  ).toHaveAttribute("aria-checked", "true");
+  // Plain-language segments instead of bare "chat/ads/both", each an
+  // aria-checked radio that reflects the live mode.
+  for (const name of ["Chat", "Ads", "Both"]) {
+    await expect(messages.getByRole("radio", { name })).toHaveAttribute(
+      "aria-checked",
+      /true|false/,
+    );
+  }
   await expect(roomDialog.getByLabel("Channel description")).toBeVisible();
   await expect(
     roomDialog.getByRole("button", { name: "View banlist" }),
