@@ -206,7 +206,9 @@ describe("Seen recently roster moves (#200)", () => {
   });
 });
 
-function channelConversation(lastReadMessageId: number | null): ConversationDto {
+function channelConversation(
+  lastReadMessageId: number | null,
+): ConversationDto {
   return {
     id: CONV,
     kind: "channel",
@@ -274,9 +276,9 @@ describe("read-ack echo vs. live unread (#264)", () => {
       ...pmConversation("Nyx Firemane"),
       lastReadMessageId: 200,
     });
-    expect(useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV]?.unread).toBe(
-      1,
-    );
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV]?.unread,
+    ).toBe(1);
   });
 });
 
@@ -304,9 +306,9 @@ describe("case-insensitive member-set moves (#265)", () => {
       .getState()
       .applyMemberJoin(IDENTITY, KEY, member("NYX firemane"));
     const names = channelState()?.members.map((m) => m.character) ?? [];
-    expect(names.filter((n) => n.toLowerCase() === "nyx firemane")).toHaveLength(
-      1,
-    );
+    expect(
+      names.filter((n) => n.toLowerCase() === "nyx firemane"),
+    ).toHaveLength(1);
   });
 
   it("folds a live presence update onto the differently-cased member", () => {

@@ -66,6 +66,7 @@ function session(): IdentitySession {
         mentions: 0,
         highlightedAt: 0,
         lastReadMessageId: null,
+        newestMessageId: null,
       },
       "ADH-abc123": {
         convId: "c-2",
@@ -82,6 +83,7 @@ function session(): IdentitySession {
         mentions: 0,
         highlightedAt: 0,
         lastReadMessageId: null,
+        newestMessageId: null,
       },
     },
     dms: {
@@ -97,6 +99,7 @@ function session(): IdentitySession {
         unread: 0,
         highlightedAt: 0,
         lastReadMessageId: null,
+        newestMessageId: null,
       },
     },
     channelByConvId: { "c-1": "Frontpage", "c-2": "ADH-abc123" },

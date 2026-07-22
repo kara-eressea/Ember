@@ -25,8 +25,8 @@ import type { SessionState } from "../session-engine/session-state.js";
 /** F-Chat resolves character names case-insensitively; own-character filters
  * must fold case or a frame whose casing diverges from ownCharacter slips the
  * guard and mis-stamps our own moves (#265). */
-function sameCharacter(a: string, b: string): boolean {
-  return a.toLowerCase() === b.toLowerCase();
+function sameCharacter(a: string, b: string | undefined): boolean {
+  return b !== undefined && a.toLowerCase() === b.toLowerCase();
 }
 
 /** Rows older than this are aged out (spec: retention ~1 week). */
