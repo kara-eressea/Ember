@@ -229,6 +229,16 @@ export default function InlineEditor(props: InlineEditorProps) {
       focused() {
         return viewRef.current?.hasFocus ?? false;
       },
+      focusAtCoords(clientX, clientY) {
+        const view = viewRef.current;
+        if (!view) {
+          return;
+        }
+        view.focus();
+        const pos =
+          view.posAtCoords({ x: clientX, y: clientY }) ?? view.state.doc.length;
+        view.dispatch({ selection: { anchor: pos } });
+      },
       applyEdit(text, selStart, selEnd) {
         const view = viewRef.current;
         if (!view) {

@@ -72,6 +72,23 @@ test("inline composer: decorations, send, slash, toolbar, timer, paste, undo", a
   await page.keyboard.press("Delete");
   await expect(input.locator(".cm-placeholder")).toBeVisible();
 
+  // ── Click-to-focus: the whole input bar is a focus surface (#313) ─────
+  // In inline mode the target is CodeMirror; clicking the bar's inert chrome
+  // (top-left padding) focuses the editor and places the caret via
+  // posAtCoords, so typing lands in the document.
+  await input.evaluate((el) => {
+    (el as HTMLElement).blur();
+  });
+  await expect(input).not.toBeFocused();
+  const inputBar = page.getByTitle("Attachments arrive later").locator("..");
+  await inputBar.click({ position: { x: 4, y: 4 } });
+  await expect(input).toBeFocused();
+  await page.keyboard.type("bar padding focuses");
+  await expect(input).toContainText("bar padding focuses");
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Delete");
+  await expect(input.locator(".cm-placeholder")).toBeVisible();
+
   // ── Slash autocomplete from live editor state (#235) ──────────────────
   await page.keyboard.type("/rol");
   const slash = page.getByTestId("slash-autocomplete");
