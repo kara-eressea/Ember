@@ -46,6 +46,11 @@ const EMPTY_OUTBOX: OutboxItemDto[] = [];
 const LOAD_OLDER_THRESHOLD_PX = 120;
 /** Within this of the bottom still counts as "at the bottom". */
 const AT_BOTTOM_SLACK_PX = 60;
+/** Hysteresis for the stick-to-bottom intent: the user must scroll further
+ * than this from the bottom to release the glue. Larger than the at-bottom
+ * slack so a few pixels of post-jump measurement growth never releases it
+ * (which would leave the jump landing short), while a real scroll-up does. */
+const STICK_RELEASE_PX = 120;
 /** Frames to keep re-applying a scroll correction while the newly rendered
  * variable-height rows (ads, grouped messages, dividers) settle their
  * measurements. Small — one paint is rarely enough, a dozen is plenty. */
@@ -102,7 +107,19 @@ export function MessageLog({
   // Mirrors atBottomRef for rendering — the "Jump to recent" pill shows
   // while the user is scrolled away from the newest messages.
   const [atBottom, setAtBottom] = useState(true);
+  // The single owner of "should we be glued to the bottom?". Unlike atBottom
+  // (a per-frame position read that our OWN programmatic scrolls flip), this
+  // intent only changes when the user meaningfully scrolls away (hysteresis in
+  // onScroll) or a deliberate jump/backfill sets it. Every bottom-directed
+  // controller (bottom-stick, jump re-stick) gates on it, and the prepend
+  // re-pin yields to it — so the controllers can never fight (#266). Without
+  // this, scrolling to the top to read history (which triggers a prepend +
+  // re-pin toward the top) raced the bottom-stick, flipping atBottom every
+  // frame and flickering the jump pill until an e2e click timed out.
+  const stickBottomRef = useRef(true);
   const loadingRef = useRef(false);
+  /** Handle for the in-flight prepend re-pin rAF, so a jump can cancel it. */
+  const rePinRafRef = useRef<number>(0);
   /** Anchor a history prepend: the id of the row to keep visually fixed and
    * its distance below the viewport top (in px) captured *before* the
    * prepend. We restore against measured offsets, not the 26px estimate, so
@@ -121,6 +138,7 @@ export function MessageLog({
   // Initial page for this conversation (once; live events merge on top).
   useEffect(() => {
     atBottomRef.current = true;
+    stickBottomRef.current = true;
     useMessagesStore
       .getState()
       .backfill(identityId, convId)
@@ -148,6 +166,7 @@ export function MessageLog({
     if (index >= 0) {
       scrolledTargetRef.current = jumpTarget.messageId;
       atBottomRef.current = false;
+      stickBottomRef.current = false;
       virtualizer.scrollToIndex(index, { align: "center" });
     }
   }, [jumpTarget, rows, convId, virtualizer]);
@@ -163,14 +182,20 @@ export function MessageLog({
   useEffect(() => {
     if (wasDetachedRef.current && !detachedTail) {
       atBottomRef.current = true;
+      stickBottomRef.current = true;
     }
     wasDetachedRef.current = detachedTail;
   }, [detachedTail]);
   useEffect(() => {
-    if (!atBottomRef.current || detachedTail) {
+    if (!stickBottomRef.current || detachedTail) {
       return;
     }
     const toBottom = () => {
+      // Re-check the intent every frame: a deferred rAF must never clobber a
+      // scroll the user has since made away from the bottom (#266).
+      if (!stickBottomRef.current) {
+        return;
+      }
       const el = scrollRef.current;
       if (el) {
         el.scrollTop = el.scrollHeight;
@@ -196,13 +221,17 @@ export function MessageLog({
       return;
     }
     anchorRef.current = undefined;
+    // A jump-to-bottom that landed between the prepend and this effect wins —
+    // never hold an old top row against an in-progress stick to the newest.
+    if (stickBottomRef.current) {
+      return;
+    }
     const index = rows.findIndex(
       (row) => row.type === "message" && row.message.id === anchor.id,
     );
     if (index < 0) {
       return;
     }
-    let raf = 0;
     let frames = 0;
     // The last scrollTop we wrote (read back, so a browser clamp/round is
     // accounted for). If the container's scrollTop no longer matches it at the
@@ -211,7 +240,9 @@ export function MessageLog({
     let lastSet: number | undefined;
     const pin = () => {
       const el = scrollRef.current;
-      if (!el) {
+      // Yield the instant a jump takes over (stick intent flips on): the two
+      // must never write the scroll position in the same frame (#266).
+      if (!el || stickBottomRef.current) {
         return;
       }
       if (lastSet !== undefined && el.scrollTop !== lastSet) {
@@ -230,12 +261,12 @@ export function MessageLog({
       // Stop once the anchor offset stops moving (rows measured) or the frame
       // budget runs out — never keep looping under a slow CI render.
       if (!settled && frames < SCROLL_SETTLE_FRAMES) {
-        raf = requestAnimationFrame(pin);
+        rePinRafRef.current = requestAnimationFrame(pin);
       }
     };
     pin();
     return () => {
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(rePinRafRef.current);
     };
   }, [rows, virtualizer]);
 
@@ -281,10 +312,20 @@ export function MessageLog({
     if (!el) {
       return;
     }
-    const bottom =
-      el.scrollTop + el.clientHeight >= el.scrollHeight - AT_BOTTOM_SLACK_PX;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const bottom = distanceFromBottom <= AT_BOTTOM_SLACK_PX;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
+    // Update the stick-to-bottom intent with hysteresis: reaching the bottom
+    // engages it; only a scroll further than STICK_RELEASE_PX releases it. A
+    // few pixels of post-jump measurement growth (between the two thresholds)
+    // leaves it engaged, so the bottom-stick keeps closing the gap instead of
+    // the jump landing short.
+    if (bottom) {
+      stickBottomRef.current = true;
+    } else if (distanceFromBottom > STICK_RELEASE_PX) {
+      stickBottomRef.current = false;
+    }
     if (el.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
       void loadOlder();
     }
@@ -307,19 +348,35 @@ export function MessageLog({
     if (newest) {
       gateway.readAck(identityId, convId, newest.id);
     }
+    // Take exclusive scroll ownership: engage the stick intent and abandon any
+    // in-flight prepend anchor + its re-pin rAF, so the "hold the top row" and
+    // "go to the newest" controllers can never write the scroll in the same
+    // frame (the #266 pill-flicker hang).
     atBottomRef.current = true;
+    stickBottomRef.current = true;
+    anchorRef.current = undefined;
+    cancelAnimationFrame(rePinRafRef.current);
     setAtBottom(true);
     // Setting scrollTop once to the *estimated* scrollHeight can land short —
     // rows below re-measure taller and the pill lingers. Re-stick across a
-    // few frames until the measurements settle (#266).
+    // few frames until the measurements settle (#266). Bail the instant the
+    // stick intent is released (a user scroll-up mid-settle).
     let frames = 0;
     const stick = () => {
+      // Check the intent BEFORE writing: if the user scrolled away since this
+      // frame was scheduled (stick released via onScroll's hysteresis), abandon
+      // rather than snap them back to the bottom. Writing first and only then
+      // checking let a stale in-flight frame clobber a fresh scroll-to-top,
+      // hiding the jump pill mid-click and hanging (#266).
+      if (!stickBottomRef.current) {
+        return;
+      }
       const el = scrollRef.current;
       if (el) {
         el.scrollTop = el.scrollHeight;
       }
       frames += 1;
-      if (frames < SCROLL_SETTLE_FRAMES && atBottomRef.current) {
+      if (frames < SCROLL_SETTLE_FRAMES) {
         requestAnimationFrame(stick);
       }
     };
@@ -362,7 +419,9 @@ export function MessageLog({
     id: number | undefined,
   ): { id: number; gap: number } | undefined {
     const el = scrollRef.current;
-    if (atBottomRef.current || el == null || id === undefined) {
+    // While the stick intent is engaged the bottom-stick owns the scroll —
+    // capturing an anchor here would let the re-pin fight it (#266).
+    if (stickBottomRef.current || el == null || id === undefined) {
       return undefined;
     }
     const index = rows.findIndex(

@@ -15,6 +15,10 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: `http://127.0.0.1:${String(WEB_PORT)}`,
+    // Keep a full trace whenever a test fails (including the retry) so CI
+    // failures that don't reproduce locally can still be inspected after the
+    // fact — uploaded as an artifact from the workflow.
+    trace: "retain-on-failure",
   },
   webServer: {
     command: `pnpm exec vite --host 127.0.0.1 --port ${String(WEB_PORT)} --strictPort`,
