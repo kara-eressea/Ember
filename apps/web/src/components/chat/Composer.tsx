@@ -5,13 +5,7 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
@@ -31,6 +25,12 @@ import {
   wrapRange,
 } from "./composer-edit.js";
 import { ComposerToolbar } from "./ComposerToolbar.js";
+import {
+  InlineEditor,
+  textareaHandle,
+  type AnyKeyEvent,
+  type ComposerInputHandle,
+} from "./InlineEditor.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
 import { HelpPanel } from "./HelpPanel.js";
@@ -50,6 +50,18 @@ import styles from "./chat.module.css";
 const MAX_INPUT_HEIGHT_PX = 160;
 
 const MARKDOWN_MODE_KEY = "emberchat.composeMarkdown";
+
+// SPIKE (#226): opt-in flag for the inline-rendering CodeMirror input.
+// `localStorage.setItem("emberchat.inlineComposer", "on")` and reload.
+const INLINE_COMPOSER_KEY = "emberchat.inlineComposer";
+
+function inlineComposerEnabled(): boolean {
+  try {
+    return localStorage.getItem(INLINE_COMPOSER_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
 
 const utf8 = new TextEncoder();
 
@@ -108,7 +120,11 @@ export function Composer({
   const [slashActive, setSlashActive] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // SPIKE (#226): everything programs against the textarea-shaped handle;
+  // textareaRef only exists for the legacy path's autogrow.
+  const [inline] = useState(inlineComposerEnabled);
+  const inputRef = useRef<ComposerInputHandle>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
   // Room mode decides what a send is: ads-only rooms force LRP, chat-only
   // rooms force MSG, "both" offers the toggle (RMO re-gates this live).
@@ -206,7 +222,7 @@ export function Composer({
   }
 
   function autogrow() {
-    const el = inputRef.current;
+    const el = textareaRef.current;
     if (el) {
       el.style.height = "auto";
       el.style.height = `${String(Math.min(el.scrollHeight, MAX_INPUT_HEIGHT_PX))}px`;
@@ -463,7 +479,10 @@ export function Composer({
     requestAnimationFrame(autogrow);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+  // One handler for both inputs. `liveText` is the input's value *at event
+  // time* (textarea: currentTarget.value; CodeMirror: the live doc) — the
+  // stale-state contract from the #235 audit holds identically on both.
+  function onKeyDown(event: AnyKeyEvent, liveText: string) {
     // Slash autocomplete keyboard (#235). The decision reads the *live*
     // textarea value, not the closured `text` state — fast programmatic input
     // (and quick typists) can fire keydown before React has re-rendered with
@@ -471,7 +490,6 @@ export function Composer({
     // of running a command, or swallowing a send). Escape closes the popover
     // from any state; arrow/Tab/Enter selection applies only while the command
     // word is being chosen (list mode) — in signature-hint mode Enter sends.
-    const liveText = event.currentTarget.value;
     const liveSuggestions = suggestCommands(liveText, {
       inChannel: channelKey !== undefined,
       canModerate,
@@ -533,7 +551,7 @@ export function Composer({
     // ArrowUp in an empty composer recalls the newest pending send (by
     // creation, not release — a shorter delay must not shadow an earlier
     // message; audit). The outbox row dies and the typed text comes back.
-    if (event.key === "ArrowUp" && text === "" && pending.length > 0) {
+    if (event.key === "ArrowUp" && liveText === "" && pending.length > 0) {
       event.preventDefault();
       const newest = newestPending(pending);
       if (newest) {
@@ -612,7 +630,7 @@ export function Composer({
           {error}
         </p>
       )}
-      {markdown && text.trim() !== "" && (
+      {markdown && !inline && text.trim() !== "" && (
         <div className={styles.previewPanel} data-testid="md-preview">
           <div className={styles.previewHead}>PREVIEW · markdown</div>
           <div
@@ -696,19 +714,36 @@ export function Composer({
             >
               +
             </span>
-            <textarea
-              ref={inputRef}
-              className={styles.composerInput}
-              rows={1}
-              value={text}
-              onChange={(e) => {
-                onTextChange(e.target.value);
-              }}
-              onKeyDown={onKeyDown}
-              placeholder={online ? placeholder : "Session is not connected"}
-              disabled={!online}
-              aria-label="Message"
-            />
+            {inline ? (
+              <InlineEditor
+                value={text}
+                disabled={!online}
+                placeholder={online ? placeholder : "Session is not connected"}
+                onChange={onTextChange}
+                onKeyDown={onKeyDown}
+                handleRef={inputRef}
+                ariaLabel="Message"
+              />
+            ) : (
+              <textarea
+                ref={(el) => {
+                  textareaRef.current = el;
+                  inputRef.current = textareaHandle(el);
+                }}
+                className={styles.composerInput}
+                rows={1}
+                value={text}
+                onChange={(e) => {
+                  onTextChange(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  onKeyDown(e, e.currentTarget.value);
+                }}
+                placeholder={online ? placeholder : "Session is not connected"}
+                disabled={!online}
+                aria-label="Message"
+              />
+            )}
           </div>
         </div>
       </div>

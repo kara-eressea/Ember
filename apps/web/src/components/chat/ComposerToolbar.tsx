@@ -15,6 +15,7 @@ import {
   type RefObject,
 } from "react";
 import { placePopover, type PopoverPlacement } from "../profile/popover.js";
+import type { ComposerInputHandle } from "./InlineEditor.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import {
   ACTION_LABELS,
@@ -51,7 +52,9 @@ export interface ComposerToolbarProps {
   markdown: boolean;
   disabled: boolean;
   text: string;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  // SPIKE (#226): textarea-shaped handle — either the real textarea (via
+  // textareaHandle) or the CodeMirror shim; the caret maths are identical.
+  inputRef: RefObject<ComposerInputHandle | null>;
   sendDelaySeconds: number;
   onSetDelay: (seconds: number) => void;
   onWrapFormat: (md: string | undefined, tag: string, param?: string) => void;
@@ -111,7 +114,7 @@ export function ComposerToolbar(props: ComposerToolbarProps) {
   useEffect(() => {
     function refresh() {
       const el = props.inputRef.current;
-      if (!el || document.activeElement !== el) {
+      if (!el || !el.focused()) {
         return;
       }
       setActive(caretFormats(el.value, el.selectionStart));
