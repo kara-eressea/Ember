@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
+import { genderColorVar } from "../theme/tokens.js";
 import type {
   CampaignDto,
   OutboxItemDto,
@@ -293,6 +294,57 @@ export function useUserPrefs(): UserPrefs {
     }
     return PREFS_DEFAULTS;
   });
+}
+
+/**
+ * A character's gender as this session currently knows it — present channel
+ * members first, then the "seen recently" roster. Undefined when no channel
+ * holds the character, so a sender name without a known gender falls back to
+ * the default text colour, exactly like a member-list row does. This is the
+ * one source the member list and the message log share: both colour a name
+ * by feeding this gender to `genderColorVar`, so the same character always
+ * carries the same colour in both places (#338).
+ */
+export function genderOf(
+  session: IdentitySession | undefined,
+  character: string,
+): string | undefined {
+  if (!session) {
+    return undefined;
+  }
+  for (const channel of Object.values(session.channels)) {
+    const member = channel.members.find((m) =>
+      sameCharacter(m.character, character),
+    );
+    if (member) {
+      return member.gender;
+    }
+  }
+  for (const channel of Object.values(session.channels)) {
+    const seen = channel.seen.find((s) =>
+      sameCharacter(s.character, character),
+    );
+    if (seen) {
+      return seen.gender;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The gender-based name colour for a character in one identity's session, as
+ * a `var(--eb-gender-…)` token — or undefined when the gender is unknown
+ * (name renders in the default text colour). The member list and the message
+ * log both colour names through this, so a character reads the same in both
+ * (#338).
+ */
+export function useGenderColorVar(
+  identityId: string,
+  character: string,
+): string | undefined {
+  return useSessionsStore((s) =>
+    genderColorVar(genderOf(s.sessions[identityId], character)),
+  );
 }
 
 function emptySession(identityId: string): IdentitySession {

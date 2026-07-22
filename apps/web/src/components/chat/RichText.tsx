@@ -26,7 +26,11 @@ import { useNavigate } from "react-router";
 import { gateway } from "../../gateway/socket.js";
 import { channelPath } from "../../lib/routes.js";
 import { openCardFrom } from "../../stores/profile.js";
-import { useSessionsStore, useUserPrefs } from "../../stores/sessions.js";
+import {
+  useGenderColorVar,
+  useSessionsStore,
+  useUserPrefs,
+} from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { spoilerSegments, textTokens } from "./rich-text.js";
 import styles from "./chat.module.css";
@@ -42,6 +46,26 @@ export type ProfileLinkOpener = (element: Element, name: string) => void;
 const ProfileLinkContext = createContext<ProfileLinkOpener>(openCardFrom);
 
 export const ProfileLinkProvider = ProfileLinkContext.Provider;
+
+/**
+ * How `[user]` names in this subtree render. By default a `[user]` tag is a
+ * mid-sentence mention chip (the "@name" body treatment). Inside a roll line
+ * the server names the roller/target in `[user]` tags, which should read as
+ * plain inline sender names — no chip — carrying the member-list gender
+ * colour, so the die line reads as a normal chat line (#337). The identity
+ * whose roster resolves that gender rides along in the context.
+ */
+interface PlainNamesMode {
+  plain: boolean;
+  identityId: string;
+}
+
+const PlainNamesContext = createContext<PlainNamesMode>({
+  plain: false,
+  identityId: "",
+});
+
+export const PlainNamesProvider = PlainNamesContext.Provider;
 
 export function RichText({ bbcode }: { bbcode: string }) {
   // Memoized: the log re-renders far more often than messages change, and
@@ -110,16 +134,7 @@ function renderNode(
       // [user] opens the mini profile card (M8) — the f-list.net website
       // link lives in the context menu / full viewer instead.
       return node.tag === "user" ? (
-        <button
-          key={key}
-          type="button"
-          className={`${styles.nameButton ?? ""} ${styles.bodyMention}`}
-          onClick={(event) => {
-            openCardFrom(event.currentTarget, node.name);
-          }}
-        >
-          {node.name}
-        </button>
+        <UserName key={key} name={node.name} />
       ) : (
         <InlineIcon key={key} tag={node.tag} name={node.name} />
       );
@@ -146,6 +161,34 @@ function renderNode(
     case "hr":
       return null;
   }
+}
+
+/**
+ * A `[user]` name. Both spellings open the mini profile card on click (M8).
+ * By default it wears the mid-sentence mention chip; inside a roll line
+ * (PlainNamesProvider) it renders as a plain inline sender name — the same
+ * `.nick` treatment as a message sender, coloured by the member-list gender
+ * token — so the die line reads as a normal chat line, not a badge (#337).
+ */
+function UserName({ name }: { name: string }) {
+  const mode = useContext(PlainNamesContext);
+  const genderColor = useGenderColorVar(mode.identityId, name);
+  return (
+    <button
+      type="button"
+      className={
+        mode.plain
+          ? `${styles.nameButton ?? ""} ${styles.nick}`
+          : `${styles.nameButton ?? ""} ${styles.bodyMention}`
+      }
+      style={mode.plain && genderColor ? { color: genderColor } : undefined}
+      onClick={(event) => {
+        openCardFrom(event.currentTarget, name);
+      }}
+    >
+      {name}
+    </button>
+  );
 }
 
 function renderText(text: string, keyBase: string): ReactNode[] {
