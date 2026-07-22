@@ -357,7 +357,8 @@
 
 /* The note now composes at the top of the Insights tab (#211). */
 .insightsNote {
-  margin-bottom: 14px;
+  /* Sits below the insights content now (#283) — space it above, not below. */
+  margin-top: 18px;
 }
 
 .noteAdd {
