@@ -52,9 +52,8 @@ test("offline DM row hides when read, and the header toggle shows it", async ({
     await expect(dmRow).toHaveCount(0, { timeout: 15_000 });
 
     // Right-click the Direct messages header → "Show offline" reveals it.
-    await nav.getByText("Direct messages", { exact: true }).click({
-      button: "right",
-    });
+    const header = nav.getByRole("button", { name: "Direct messages" });
+    await header.click({ button: "right" });
     const menu = page.getByRole("menu", {
       name: "Direct messages section menu",
     });
@@ -62,9 +61,7 @@ test("offline DM row hides when read, and the header toggle shows it", async ({
     await expect(dmRow).toBeVisible({ timeout: 15_000 });
 
     // Toggling it back off hides the offline, read row again.
-    await nav.getByText("Direct messages", { exact: true }).click({
-      button: "right",
-    });
+    await header.click({ button: "right" });
     await page
       .getByRole("menu", { name: "Direct messages section menu" })
       .getByRole("menuitemcheckbox", { name: "Show offline" })
