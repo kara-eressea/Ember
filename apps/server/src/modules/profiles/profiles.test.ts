@@ -53,6 +53,22 @@ beforeAll(async () => {
     images: [{ id: 31, extension: "png", height: 640, width: 480 }],
     inlines: { "42": { hash: "abcdef0123456789", extension: "png" } },
   });
+  // Grouped kinks (#274): a custom kink acts as a folder over standard kinks.
+  // 501/502 are grouped under a "fave" custom; 620 is ALSO listed top-level as
+  // "no", so precedence (top-level wins) is exercised.
+  sim.setCharacterProfile("Fern Ashwood", {
+    description: "[b]Fern[/b], folder-keeper.",
+    kinks: { "620": "no" },
+    customKinks: {
+      "1": {
+        name: "Quiet evenings",
+        description: "Grouped favourites.",
+        choice: "fave",
+        children: [501, 502, 620],
+      },
+    },
+    infotags: {},
+  });
   // The session's own character — used by the self-exclusion test (#209).
   sim.setCharacterProfile(CHARACTER, {
     description: "[b]Birch[/b], the viewer's own character.",
@@ -179,6 +195,36 @@ describe("profile fetch-through-cache", () => {
         .json<{ history: { name: string; viewCount: number }[] }>()
         .history.find((row) => row.name === "Nyx Firemane")?.viewCount,
     ).toBe(1);
+  });
+
+  it("flattens grouped standard kinks into the matchable list (#274)", async () => {
+    const response = await get(`${base()}/profile/Fern Ashwood`);
+    expect(response.statusCode).toBe(200);
+    const profile = response.json<ProfileResponse>().profile;
+    // Grouped standard kinks inherit the parent custom's choice for matching.
+    expect(profile.kinks).toContainEqual({
+      id: 501,
+      name: "Campfire Stories",
+      description: "Long tales told in warm light.",
+      choice: "fave",
+    });
+    expect(profile.kinks).toContainEqual({
+      id: 502,
+      name: "Tea Ceremonies",
+      description: "Quiet ritual and good company.",
+      choice: "fave",
+    });
+    // Precedence: an explicit top-level choice wins over the grouped one.
+    const ageGap = profile.kinks.filter((kink) => kink.id === 620);
+    expect(ageGap).toHaveLength(1);
+    expect(ageGap[0]!.choice).toBe("no");
+    // The custom kink itself stays display-only, folder intact.
+    expect(profile.customKinks).toContainEqual({
+      name: "Quiet evenings",
+      description: "Grouped favourites.",
+      choice: "fave",
+      children: [501, 502, 620],
+    });
   });
 
   it("cache hit: serves without spending budget, bumps the view count", async () => {
