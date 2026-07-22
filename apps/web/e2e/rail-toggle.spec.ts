@@ -34,13 +34,11 @@ test("identity rail: avatar toggle hides it, the choice survives a reload, a sec
 
   // ── Reload → the per-device choice is remembered, no flash-then-hide ───
   await page.reload();
-  await expect(page.getByText("Tamarisk Ash · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  // The rail comes back hidden from the first render (read synchronously at
+  // store init): the avatar still offers to show it, and the rail is absent.
+  await expect(show).toBeVisible({ timeout: 15_000 });
+  await expect(show).toHaveAttribute("aria-pressed", "true");
   await expect(rail).toBeHidden();
-  await expect(
-    page.getByRole("button", { name: "Show identity rail" }),
-  ).toBeVisible();
 
   // ── Connect a second identity → the hidden rail is forced back visible.
   //    The rail's own "+" is hidden with it, so reach the manager directly.
