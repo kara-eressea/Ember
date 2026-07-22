@@ -14,6 +14,7 @@ import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import { api } from "../../lib/api.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { loadSocial } from "../../lib/social.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { nickColor } from "../../theme/tokens.js";
 import {
   loadOwnProfile,
@@ -71,21 +72,9 @@ export function DmProfile({
     void loadOwnProfile(identityId, ownCharacter);
   }, [identityId, partner, ownCharacter]);
 
-  // Dismiss the overlay drawer on Escape (click-away is the backdrop).
-  useEffect(() => {
-    if (!overlay) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onCollapse();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [overlay, onCollapse]);
+  // Dismiss the overlay drawer on Escape (click-away is the backdrop). Only
+  // the overlay drawer claims Escape; the docked panel leaves it alone.
+  useEscapeToClose(onCollapse, overlay);
 
   const response = loaded?.response;
   const note = response?.note ?? null;

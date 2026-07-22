@@ -9,6 +9,7 @@
 import { expect, test } from "@playwright/test";
 import {
   SimClient,
+  delay,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
@@ -85,4 +86,75 @@ test("seen recently: part → fold appears, expand, filter, rejoin clears", asyn
   await expect(fold).toHaveCount(0);
 
   dell.close();
+});
+
+// #262 regression: dismissing an overlay with Escape must not fall through to
+// MessageLog's jump-to-bottom / mark-read. Scrolled up in a channel, opening
+// the member context menu and pressing Escape closes only the menu — the
+// scroll position (and thus the unread/catch-up state) survives.
+test("member menu: Escape closes the menu without jumping the log", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "clover@example.test", "Clover Hart");
+  await joinChannel(page, CHANNEL_KEY, CHANNEL_TITLE);
+
+  const members = page.getByRole("complementary", { name: "Members" });
+  const log = page.getByTestId("message-log");
+
+  const dell = await SimClient.connect(
+    "clover@example.test",
+    "hunter2",
+    "Dell Marsh",
+  );
+  try {
+    dell.send("JCH", { channel: CHANNEL_KEY });
+    await expect(
+      members.getByRole("listitem").filter({ hasText: "Dell Marsh" }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // Enough backlog that the log scrolls and the jump-to-recent pill can arm.
+    for (let i = 1; i <= 40; i += 1) {
+      dell.send("MSG", { channel: CHANNEL_KEY, message: `line #${String(i)}` });
+      await delay(80);
+    }
+    await expect(log.getByText("line #40", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Scroll to the top — the floating "jump to recent" pill appears, marking
+    // that we are no longer pinned to the newest messages.
+    const jumpPill = page.getByTestId("jump-to-recent");
+    await expect(async () => {
+      await log.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await expect(jumpPill).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
+    const scrollTop = await log.evaluate((el) => el.scrollTop);
+
+    // Open the member context menu, then Escape it. The menu owns the key —
+    // MessageLog must not also fire, so the pill stays and the log holds
+    // position instead of snapping to the bottom.
+    await members.getByText("Dell Marsh").click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Dell Marsh menu" });
+    await expect(menu).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).not.toBeVisible();
+
+    await expect(jumpPill).toBeVisible();
+    expect(await log.evaluate((el) => el.scrollTop)).toBe(scrollTop);
+
+    // A second, bare Escape (no overlay open) still reaches the log and jumps
+    // to the newest message — proving the menu-Escape backed off, not the log.
+    await page.keyboard.press("Escape");
+    await expect(log.getByText("line #40", { exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(jumpPill).not.toBeVisible();
+  } finally {
+    dell.close();
+  }
 });

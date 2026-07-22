@@ -13,7 +13,7 @@ import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useAdsStore } from "../stores/ads.js";
 import { useMessagesStore } from "../stores/messages.js";
 import { useSearchStore } from "../stores/search.js";
-import { useSessionsStore } from "../stores/sessions.js";
+import { sameCharacter, useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
 import { hydrateTheme } from "../theme/theme.js";
 
@@ -81,7 +81,9 @@ function logPresence(
   if (!channel) {
     return;
   }
-  const isMember = channel.members.some((m) => m.character === d.character);
+  const isMember = channel.members.some((m) =>
+    sameCharacter(m.character, d.character),
+  );
   if (isMember === d.ifMember) {
     useMessagesStore
       .getState()
@@ -119,7 +121,7 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       if (!active) {
         // The mention verdict is stamped server-side at persist time (M5)
         // and rides the message — the client never re-matches.
-        sessions.bumpUnread(identityId, convId, message.mention);
+        sessions.bumpUnread(identityId, convId, message.id, message.mention);
         if (message.mention && prefs) {
           // When-highlighted actions, each behind its pref.
           if (prefs.highlightSound && !muted) {
@@ -198,7 +200,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         // character is (still) a member of, before the store drops them.
         const channels = sessions.sessions[identityId]?.channels ?? {};
         for (const channel of Object.values(channels)) {
-          if (channel.members.some((m) => m.character === event.d.character)) {
+          if (
+            channel.members.some((m) =>
+              sameCharacter(m.character, event.d.character),
+            )
+          ) {
             useMessagesStore
               .getState()
               .appendPresence(channel.convId, "quit", event.d.character);

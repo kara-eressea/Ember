@@ -169,16 +169,21 @@ export async function socialRoutes(
       // time against the live roster so presence stays current (#218).
       // Account-wide pairs scoped to this identity: source is our
       // character, dest the friend (same orientation as friend-remove).
+      // F-Chat resolves names case-insensitively, so the JSON API's casing
+      // for our own character may diverge from the identity's stored casing;
+      // fold before matching or a genuine friend/request silently drops
+      // (#265). Same convention as the rest of the social module.
+      const ownLower = identity.character.toLowerCase();
       const lists: SocialLists = {
         bookmarks: bookmarks.characters ?? [],
         friends: (friends.friends ?? [])
-          .filter((pair) => pair.source === identity.character)
+          .filter((pair) => pair.source.toLowerCase() === ownLower)
           .map((pair) => pair.dest),
         incoming: (incoming.requests ?? [])
-          .filter((entry) => entry.dest === identity.character)
+          .filter((entry) => entry.dest.toLowerCase() === ownLower)
           .map((entry) => ({ id: entry.id, name: entry.source })),
         outgoing: (outgoing.requests ?? [])
-          .filter((entry) => entry.source === identity.character)
+          .filter((entry) => entry.source.toLowerCase() === ownLower)
           .map((entry) => ({ id: entry.id, name: entry.dest })),
       };
       cache.set(identity.id, lists);

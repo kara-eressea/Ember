@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import type { ProfileDto } from "@emberchat/protocol";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./profile.module.css";
 
 export function ImagesTab({ profile }: { profile: ProfileDto }) {
@@ -119,22 +120,21 @@ export function Lightbox({
     onNavigate((index + 1) % images.length);
   };
 
-  // Capture-phase keys with stopPropagation so Escape closes the lightbox,
-  // not the profile modal underneath (both listen on window).
+  // Escape closes the lightbox before the profile modal underneath: the
+  // shared stack hands Escape to the most recently mounted overlay (this one)
+  // and claims the event. Arrow keys navigate and don't need claiming.
+  useEscapeToClose(onClose);
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      } else if (event.key === "ArrowLeft") {
+      if (event.key === "ArrowLeft") {
         previous();
       } else if (event.key === "ArrowRight") {
         next();
       }
     }
-    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKey);
     };
   });
 
