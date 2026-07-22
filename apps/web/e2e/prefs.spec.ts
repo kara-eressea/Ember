@@ -136,6 +136,24 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await hostField.pressSequentially("ple.com");
   await expect(hostField).toBeFocused();
   await expect(hostField).toHaveValue("example.com");
+
+  // ── Allowlist editing (#215): submit adds a chip, ✕ removes it ─────────
+  const allowlist = dialog.getByRole("list", {
+    name: "Allowed preview sites",
+  });
+  await expect(
+    allowlist.getByRole("listitem").filter({ hasText: "example.com" }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Add" }).click();
+  const exampleChip = allowlist
+    .getByRole("listitem")
+    .filter({ hasText: "example.com" });
+  await expect(exampleChip).toBeVisible();
+  // The add form clears for the next entry.
+  await expect(hostField).toHaveValue("");
+  // Remove it again — the chip disappears, leaving the defaults intact.
+  await exampleChip.getByRole("button", { name: "Remove example.com" }).click();
+  await expect(exampleChip).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // Toggling the pref off hides the lines — they are render-gated.

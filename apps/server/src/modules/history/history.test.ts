@@ -753,6 +753,35 @@ describe("history pagination", () => {
     expect(page3.hasMore).toBe(false);
   });
 
+  it("rejects a malformed before-cursor and honors an out-of-range one (#268)", async () => {
+    const { identityId, conversationId, token } = await seedConversation(3);
+
+    // Non-numeric, zero, and negative cursors fail schema validation (400) —
+    // the keyset query never sees a garbage bound.
+    for (const bad of ["abc", "0", "-5", "1.5"]) {
+      const response = await getMessages(
+        identityId,
+        conversationId,
+        `?before=${bad}`,
+        token,
+      );
+      expect(response.statusCode, `before=${bad}`).toBe(400);
+    }
+
+    // A syntactically valid cursor far below every row is honored verbatim:
+    // an empty page, no more history — not an error.
+    const empty = await getMessages(
+      identityId,
+      conversationId,
+      "?before=1",
+      token,
+    );
+    expect(empty.statusCode).toBe(200);
+    const body = empty.json<{ messages: unknown[]; hasMore: boolean }>();
+    expect(body.messages).toEqual([]);
+    expect(body.hasMore).toBe(false);
+  });
+
   it("searches the identity's log with filters, cursor-paged (M9)", async () => {
     const { identityId, conversationId, token } = await seedConversation(3);
     // A second conversation proves scoping; a foreign sender proves from:.
