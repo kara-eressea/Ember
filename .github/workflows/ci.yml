@@ -24,6 +24,16 @@ jobs:
       - run: pnpm lint
       - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium
       - run: pnpm turbo e2e
+      - name: Upload Playwright report + traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Boots the production image against a real Postgres and asserts /healthz.
   # Catches whole-image failures the workspace test suite can't see — missing
