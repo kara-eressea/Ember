@@ -203,6 +203,59 @@ test("profile viewer: fullscreen centers content, lightbox zoom fills the viewpo
   expect(smallZoom.height).toBeLessThanOrEqual(202);
 });
 
+// #283: the Insights private-note editor must survive the insights data load
+// resolving under it (the fetch lands ~1s after the tab opens), and the note
+// now sits below the insights content — not above it.
+test("insights note: survives the insights load and sits below the content", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await interceptAvatars(page);
+
+  // Hold the insights fetch open so its resolution — and the render branch it
+  // flips (shimmer → loaded panel) — lands after the editor is already open,
+  // the exact timing that used to remount PrivateNote and slam it shut once the
+  // note was moved below the swapping content.
+  await page.route("**/profile/**/insights", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+
+  await provisionAndConnect(page, "juniper@example.test", "Juniper Wren");
+  await joinChannel(page, ROOM_ID, "Reading Nook");
+
+  const members = page.getByRole("complementary", { name: "Members" });
+  await members.getByText("Tally Marsh").click({ button: "right" });
+  await page
+    .getByRole("menu", { name: "Tally Marsh menu" })
+    .getByRole("menuitem", { name: "View profile" })
+    .click();
+  const viewer = page.getByRole("dialog", { name: "Profile: Tally Marsh" });
+  await expect(viewer).toBeVisible();
+
+  await viewer.getByRole("tab", { name: "Insights" }).click();
+  // Open the editor while insights is still loading (shimmer showing).
+  await viewer.getByRole("button", { name: "+ Add private note" }).click();
+  const editor = viewer.getByPlaceholder(
+    "Anything you want to remember about Tally Marsh…",
+  );
+  await expect(editor).toBeVisible();
+
+  // Let the held insights fetch resolve and the panel render underneath.
+  await expect(viewer.getByText(/YOU ×/)).toBeVisible({ timeout: 10_000 });
+
+  // The editor must still be here and writable — typing after the load lands.
+  const survived = "written after the insights panel rendered";
+  await editor.fill(survived);
+  await expect(editor).toHaveValue(survived);
+  await expect(viewer.getByText("✓ Saved")).toBeVisible({ timeout: 10_000 });
+
+  // …and the note lives below the insights content now, not above it.
+  const noteTop = (await editor.boundingBox())!.y;
+  const insightsTop = (await viewer.getByText(/YOU ×/).boundingBox())!.y;
+  expect(noteTop).toBeGreaterThan(insightsTop);
+});
+
 // #276 item 1: the full-screen window choice is a device-level pref that
 // survives a reload and applies to the next profile opened.
 test("profile viewer: full-screen window size persists across reopen", async ({

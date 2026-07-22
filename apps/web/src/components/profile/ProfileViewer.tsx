@@ -3,7 +3,7 @@
 // Details / Kinks / Insights; Compare arrives with the matcher surfaces
 // (step 9), Images/Guestbook with step 10.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { match } from "@emberchat/matcher";
 import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
@@ -797,125 +797,134 @@ function InsightsTab({
     void loadInsights(identityId, name);
   }, [identityId, name]);
 
+  // The note editor's open/draft state lives inside PrivateNote's local state,
+  // so it only survives a re-render if React keeps the same instance. The
+  // insights content below swaps between branches (shimmer while the fetch is
+  // in flight → the loaded panel ~1s later), so the note is rendered *outside*
+  // that swap: it always occupies the same, keyed position after `content`.
+  // Without this, the branch flip that lands when the insights load resolves
+  // would remount PrivateNote and slam the editor shut mid-write (#283).
   const noteBlock = (
-    <div className={styles.insightsNote}>
+    <div key="private-note" className={styles.insightsNote}>
       <PrivateNote identityId={identityId} name={name} initial={note} />
     </div>
   );
 
-  if (!insights) {
-    return (
-      <>
-        {noteBlock}
-        <div className={styles.shimmer} style={{ height: 120 }} />
-      </>
-    );
-  }
-  if (insights === "error") {
-    return (
-      <>
-        {noteBlock}
-        <EmptyState glyph="?" title="Couldn't load insights">
-          Reading your local history with {name} failed.
-          <span className={styles.emptyActions}>
-            <button
-              type="button"
-              className={styles.button}
-              onClick={() => {
-                resetInsights(name);
-                void loadInsights(identityId, name);
-              }}
-            >
-              Retry
-            </button>
-          </span>
-        </EmptyState>
-      </>
-    );
-  }
   const crossed =
-    insights.messagesSent + insights.messagesReceived > 0 ||
-    insights.lastSeenTalkingAt !== null ||
-    insights.sharedChannels.length > 0;
-  if (!crossed) {
-    return (
+    insights !== undefined &&
+    insights !== "error" &&
+    (insights.messagesSent + insights.messagesReceived > 0 ||
+      insights.lastSeenTalkingAt !== null ||
+      insights.sharedChannels.length > 0);
+
+  let content: ReactNode;
+  if (!insights) {
+    content = <div className={styles.shimmer} style={{ height: 120 }} />;
+  } else if (insights === "error") {
+    content = (
+      <EmptyState glyph="?" title="Couldn't load insights">
+        Reading your local history with {name} failed.
+        <span className={styles.emptyActions}>
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => {
+              resetInsights(name);
+              void loadInsights(identityId, name);
+            }}
+          >
+            Retry
+          </button>
+        </span>
+      </EmptyState>
+    );
+  } else if (!crossed) {
+    content = (
+      <EmptyState glyph="⇄" title="You haven't crossed paths yet">
+        Once you share a channel or exchange messages with {name}, your history
+        together will show up here.
+      </EmptyState>
+    );
+  } else {
+    content = (
       <>
-        {noteBlock}
-        <EmptyState glyph="⇄" title="You haven't crossed paths yet">
-          Once you share a channel or exchange messages with {name}, your
-          history together will show up here.
-        </EmptyState>
+        <div className={styles.insightsEyebrow}>
+          <span className={styles.noteDot} aria-hidden />
+          YOU × {name}
+        </div>
+        <div className={styles.insightsSub}>
+          from your local history, never fetched from F-List
+        </div>
+        <div className={styles.columns}>
+          <InsightGroup
+            label="Conversation"
+            rows={[
+              [
+                "Messages exchanged",
+                String(insights.messagesSent + insights.messagesReceived),
+                true,
+              ],
+              [
+                "First encountered",
+                insights.firstEncountered
+                  ? `${dateLabel(insights.firstEncountered.at)} · ${insights.firstEncountered.conversation}`
+                  : "—",
+              ],
+              [
+                "Last chatted",
+                insights.lastChattedAt ? ago(insights.lastChattedAt) : "never",
+              ],
+              [
+                "Last seen talking",
+                insights.lastSeenTalkingAt
+                  ? ago(insights.lastSeenTalkingAt)
+                  : "—",
+              ],
+            ]}
+          />
+          <InsightGroup
+            label="Right now"
+            rows={[
+              [
+                "Currently online",
+                insights.online
+                  ? `yes${insights.status ? ` · ${insights.status}` : ""}`
+                  : ownCharacter
+                    ? "no"
+                    : "unknown (disconnected)",
+                insights.online,
+              ],
+              [
+                "Shared channels",
+                insights.sharedChannels.length > 0
+                  ? insights.sharedChannels.join(", ")
+                  : "none right now",
+              ],
+            ]}
+          />
+          <InsightGroup
+            label="This profile"
+            rows={[
+              ["Times you've viewed", String(insights.timesViewed)],
+              [
+                "First viewed",
+                insights.firstViewedAt
+                  ? dateLabel(insights.firstViewedAt)
+                  : "—",
+              ],
+            ]}
+          />
+        </div>
       </>
     );
   }
+
+  // Note last (below the insights content, #283) and pinned to a stable key so
+  // it is never remounted by a content branch swap.
   return (
     <>
+      {content}
       {noteBlock}
-      <div className={styles.insightsEyebrow}>
-        <span className={styles.noteDot} aria-hidden />
-        YOU × {name}
-      </div>
-      <div className={styles.insightsSub}>
-        from your local history, never fetched from F-List
-      </div>
-      <div className={styles.columns}>
-        <InsightGroup
-          label="Conversation"
-          rows={[
-            [
-              "Messages exchanged",
-              String(insights.messagesSent + insights.messagesReceived),
-              true,
-            ],
-            [
-              "First encountered",
-              insights.firstEncountered
-                ? `${dateLabel(insights.firstEncountered.at)} · ${insights.firstEncountered.conversation}`
-                : "—",
-            ],
-            [
-              "Last chatted",
-              insights.lastChattedAt ? ago(insights.lastChattedAt) : "never",
-            ],
-            [
-              "Last seen talking",
-              insights.lastSeenTalkingAt
-                ? ago(insights.lastSeenTalkingAt)
-                : "—",
-            ],
-          ]}
-        />
-        <InsightGroup
-          label="Right now"
-          rows={[
-            [
-              "Currently online",
-              insights.online
-                ? `yes${insights.status ? ` · ${insights.status}` : ""}`
-                : ownCharacter
-                  ? "no"
-                  : "unknown (disconnected)",
-              insights.online,
-            ],
-            [
-              "Shared channels",
-              insights.sharedChannels.length > 0
-                ? insights.sharedChannels.join(", ")
-                : "none right now",
-            ],
-          ]}
-        />
-        <InsightGroup
-          label="This profile"
-          rows={[
-            ["Times you've viewed", String(insights.timesViewed)],
-            [
-              "First viewed",
-              insights.firstViewedAt ? dateLabel(insights.firstViewedAt) : "—",
-            ],
-          ]}
-        />
-      </div>
     </>
   );
 }
