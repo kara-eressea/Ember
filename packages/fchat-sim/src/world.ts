@@ -163,6 +163,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Tansy Meridian"],
     },
+    // Reserved for the #284 background-scroll E2E (same parallelism rule);
+    // Wren Salloway is its raw-SimClient "other side" (the message sender
+    // while the profile modal obscures the log).
+    "marigold@example.test": {
+      password: "hunter2",
+      characters: ["Marigold Bell", "Wren Salloway"],
+    },
     // Reserved for the M8 profile E2E (same parallelism rule).
     "juniper@example.test": {
       password: "hunter2",
@@ -309,6 +316,18 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Shelves, lamplight, and low voices.",
       oplist: ["Nyx Firemane"],
       npcs: ["Tally Marsh", "Old Greywhisker"],
+      listed: false,
+    },
+    // Reserved for the #284 background-scroll E2E: Wren Salloway sends
+    // messages while the profile modal is open. Hidden and NPC-free for
+    // the usual isolation reasons.
+    {
+      name: "ADH-284sunporch11aa22bb",
+      title: "Sun Porch",
+      mode: "chat",
+      description: "Warm light through old glass.",
+      oplist: ["Wren Salloway"],
+      npcs: [],
       listed: false,
     },
     // Reserved for the #200 seen-recently E2E: Dell Marsh joins and parts

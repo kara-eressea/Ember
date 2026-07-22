@@ -10,7 +10,13 @@ import type { ProfileDto } from "@emberchat/protocol";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./profile.module.css";
 
-export function ImagesTab({ profile }: { profile: ProfileDto }) {
+export function ImagesTab({
+  profile,
+  fullscreen,
+}: {
+  profile: ProfileDto;
+  fullscreen: boolean;
+}) {
   const [lightbox, setLightbox] = useState<number>();
   const images = profile.images;
 
@@ -57,6 +63,7 @@ export function ImagesTab({ profile }: { profile: ProfileDto }) {
           images={images}
           index={lightbox}
           onNavigate={setLightbox}
+          defaultZoomed={fullscreen}
           onClose={() => {
             setLightbox(undefined);
           }}
@@ -102,21 +109,27 @@ export function Lightbox({
   index,
   onNavigate,
   onClose,
+  defaultZoomed = false,
 }: {
   images: readonly LightboxImage[];
   index: number;
   onNavigate: (index: number) => void;
   onClose: () => void;
+  // #276 item 3: when the viewer itself is in full-size mode, images open
+  // zoomed to full-size too. The no-upscale-past-natural rule (#246) is
+  // enforced by the CSS max-* bounds, so a small image still opens at its
+  // natural size even here.
+  defaultZoomed?: boolean;
 }) {
   const image = images[index];
-  const [zoomed, setZoomed] = useState(false);
-  // Each image opens fit-to-box, so reset zoom on every navigation.
+  // #276 item 2: zoom is carried across images within a lightbox session —
+  // paging no longer resets it. The initial state honours defaultZoomed so a
+  // full-size viewer opens the gallery zoomed.
+  const [zoomed, setZoomed] = useState(defaultZoomed);
   const previous = () => {
-    setZoomed(false);
     onNavigate((index - 1 + images.length) % images.length);
   };
   const next = () => {
-    setZoomed(false);
     onNavigate((index + 1) % images.length);
   };
 

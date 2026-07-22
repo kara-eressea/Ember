@@ -78,9 +78,12 @@ export function resolveImgSrc(
 export function ProfileBBCode({
   bbcode,
   inlines = {},
+  fullscreen = false,
 }: {
   bbcode: string;
   inlines?: Readonly<Record<string, ProfileInline>>;
+  // #276 item 3: inline images open zoomed when the viewer is full-size.
+  fullscreen?: boolean;
 }) {
   const nodes = useMemo(() => parseBBCode(bbcode, "profile"), [bbcode]);
   const allowHosts = useUserPrefs().imagePreviewHosts;
@@ -101,6 +104,7 @@ export function ProfileBBCode({
         <Lightbox
           images={[{ url: lightbox.url, description: lightbox.alt }]}
           index={0}
+          defaultZoomed={fullscreen}
           onNavigate={() => {
             // Single slide — navigation is a no-op.
           }}

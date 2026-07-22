@@ -6,6 +6,8 @@ import {
   genderColorVar,
   GENDER_PALETTE,
   GENDER_PALETTE_LIGHT,
+  KINK_PALETTE,
+  KINK_PALETTE_LIGHT,
   mix,
   nickColor,
   NICK_PALETTE,
@@ -118,6 +120,41 @@ describe("themeVariables", () => {
     const lightGround = BASE_THEMES.parchment.side2;
     for (const hex of Object.values(GENDER_PALETTE_LIGHT)) {
       expect(ratio(hex, lightGround)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("writes the kink-choice palette per ground (#278)", () => {
+    const dark = themeVariables("dusk", "slate");
+    expect(dark["--eb-kink-fave"]).toBe("#86cf6f");
+    expect(dark["--eb-kink-no"]).toBe("#e08a6a");
+    const light = themeVariables("dusk", "parchment");
+    expect(light["--eb-kink-fave"]).toBe("#487030");
+    expect(light["--eb-kink-no"]).toBe("#a94d30");
+  });
+
+  it("every kink-choice colour clears AA (4.5:1) as text on its ground", () => {
+    const lum = (hex: string) => {
+      const ch = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const lin = ch.map((v) =>
+        v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
+      );
+      return 0.2126 * lin[0]! + 0.7152 * lin[1]! + 0.0722 * lin[2]!;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    };
+    // Columns sit on --eb-bg; the darkest dark ground is charcoal, the light
+    // ground is parchment. Both the bg and the adjacent side must clear AA.
+    for (const hex of Object.values(KINK_PALETTE)) {
+      expect(ratio(hex, BASE_THEMES.charcoal.bg)).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(hex, BASE_THEMES.charcoal.side)).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const hex of Object.values(KINK_PALETTE_LIGHT)) {
+      expect(ratio(hex, BASE_THEMES.parchment.bg)).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(hex, BASE_THEMES.parchment.side)).toBeGreaterThanOrEqual(
+        4.5,
+      );
     }
   });
 
