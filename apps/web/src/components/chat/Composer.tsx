@@ -22,6 +22,14 @@ import type { CardAnchor } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { countdownLabel } from "./composer-toolbar.js";
+import {
+  insertAt,
+  isSlashListMode,
+  newestPending,
+  slashKeyAction,
+  stripColor,
+  wrapRange,
+} from "./composer-edit.js";
 import { ComposerToolbar } from "./ComposerToolbar.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
@@ -281,10 +289,11 @@ export function Composer({
     const el = inputRef.current;
     const at = el?.selectionStart ?? text.length;
     const end = el?.selectionEnd ?? text.length;
-    setText(text.slice(0, at) + snippet + text.slice(end));
+    const edit = insertAt(text, at, end, snippet);
+    setText(edit.text);
     requestAnimationFrame(() => {
       el?.focus();
-      el?.setSelectionRange(at + snippet.length, at + snippet.length);
+      el?.setSelectionRange(edit.selStart, edit.selEnd);
       autogrow();
     });
   }
@@ -295,13 +304,17 @@ export function Composer({
     if (!el) {
       return;
     }
-    const from = el.selectionStart;
-    const to = el.selectionEnd;
-    const selected = text.slice(from, to);
-    setText(text.slice(0, from) + open + selected + close + text.slice(to));
+    const edit = wrapRange(
+      text,
+      el.selectionStart,
+      el.selectionEnd,
+      open,
+      close,
+    );
+    setText(edit.text);
     requestAnimationFrame(() => {
       el.focus();
-      el.setSelectionRange(from + open.length, to + open.length);
+      el.setSelectionRange(edit.selStart, edit.selEnd);
     });
   }
 
@@ -329,15 +342,11 @@ export function Composer({
     if (!el) {
       return;
     }
-    const from = el.selectionStart;
-    const to = el.selectionEnd;
-    const stripped = text
-      .slice(from, to)
-      .replace(/\[color=[a-z]+\]|\[\/color\]/gi, "");
-    setText(text.slice(0, from) + stripped + text.slice(to));
+    const edit = stripColor(text, el.selectionStart, el.selectionEnd);
+    setText(edit.text);
     requestAnimationFrame(() => {
       el.focus();
-      el.setSelectionRange(from, from + stripped.length);
+      el.setSelectionRange(edit.selStart, edit.selEnd);
     });
   }
 
@@ -473,7 +482,7 @@ export function Composer({
       setSlashDismissed(true);
       return;
     }
-    const liveListMode = liveShow && !/^\/\S*\s/.test(liveText);
+    const liveListMode = liveShow && isSlashListMode(liveText);
     if (liveListMode) {
       const count = liveSuggestions.length;
       if (event.key === "ArrowDown") {
@@ -491,15 +500,15 @@ export function Composer({
       // to type args into). Enter completes too — unless the highlighted
       // command is already exactly what's typed, in which case Enter runs it
       // (so a bare "/help" or "/bottle" still fires on the first Enter).
-      const alreadyTyped =
-        hint !== undefined && liveText.slice(1).toLowerCase() === hint.name;
-      if (event.key === "Tab" || (event.key === "Enter" && !alreadyTyped)) {
+      const action = slashKeyAction(event.key, liveText, hint?.name);
+      if (action === "complete") {
         event.preventDefault();
         if (hint) {
           completeSlash(hint);
         }
         return;
       }
+      // action === "run" falls through to the Enter-send path below.
     }
     // Toolbar shortcuts (spec §3): mirrored in the button tooltips.
     if (event.ctrlKey || event.metaKey) {
@@ -526,10 +535,10 @@ export function Composer({
     // message; audit). The outbox row dies and the typed text comes back.
     if (event.key === "ArrowUp" && text === "" && pending.length > 0) {
       event.preventDefault();
-      const newest = [...pending]
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .at(-1)!;
-      void recall(newest.id);
+      const newest = newestPending(pending);
+      if (newest) {
+        void recall(newest.id);
+      }
     }
   }
 

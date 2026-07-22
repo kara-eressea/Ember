@@ -42,6 +42,15 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(log.getByText("a code span")).toBeVisible();
   await expect(log).not.toContainText("**bold words**");
 
+  // ── Enter sends, Shift+Enter breaks the line (spec §composer) ─────────
+  // Shift+Enter must never send: it inserts a newline and the text stays put.
+  await input.fill("line one");
+  await input.press("Shift+Enter");
+  await input.pressSequentially("line two");
+  await expect(input).toHaveValue("line one\nline two");
+  await expect(log).not.toContainText("line one", { timeout: 1000 });
+  await input.fill("");
+
   // ── Formatting toolbar + /help (#205) ─────────────────────────────────
   // Every promoted action sits on the MessageBox toolbar now. Bold is
   // Markdown-aware; Underline (BBCode-only) works with Markdown on because
@@ -75,11 +84,41 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(slash.getByText("/me <action>")).toBeVisible();
   await expect(slash.getByRole("option", { name: /\/kick/ })).toHaveCount(0);
   await expect(slash.getByRole("option", { name: /\/timeout/ })).toHaveCount(0);
+  // Arrow keys move the highlight (aria-selected follows the active row).
+  await input.fill("/");
+  const firstOption = slash.getByRole("option").first();
+  await expect(firstOption).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowDown");
+  await expect(firstOption).toHaveAttribute("aria-selected", "false");
+  await expect(slash.getByRole("option").nth(1)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // ArrowUp wraps back to the top of the list.
+  await input.press("ArrowUp");
+  await expect(firstOption).toHaveAttribute("aria-selected", "true");
   // Filtering narrows as you type; Tab completes the highlighted command.
   await input.fill("/ro");
   await expect(slash.getByText("/roll <dice>")).toBeVisible();
   await input.press("Tab");
   await expect(input).toHaveValue("/roll ");
+  // Enter completes a partially-typed command (adds the trailing space)…
+  await input.fill("/rol");
+  await expect(slash.getByText("/roll <dice>")).toBeVisible();
+  await input.press("Enter");
+  await expect(input).toHaveValue("/roll ");
+  // …but Enter on a fully-typed bare command runs it (stale-state fix #235):
+  // "/help" is exactly the highlighted row, so Enter fires the command
+  // (opening the help dialog and clearing the input) instead of re-completing
+  // it to "/help ".
+  await input.fill("/help");
+  await expect(slash.getByText("/help")).toBeVisible();
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
+  const runHelp = page.getByRole("dialog", { name: "Help" });
+  await expect(runHelp).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(runHelp).not.toBeVisible();
   // Escape dismisses without changing the text; typing reopens it.
   await input.fill("/b");
   await expect(slash).toBeVisible();
@@ -146,6 +185,18 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await page.keyboard.press("Escape");
   await expect(picker).not.toBeVisible();
   await expect(input).toHaveValue("[eicon]teacup[/eicon]");
+
+  // Insertion respects the caret, not the end: drop an eicon between two
+  // characters and it lands mid-text (guards the rework's caret maths).
+  await input.fill("XY");
+  await input.evaluate((el: HTMLTextAreaElement) => {
+    el.setSelectionRange(1, 1);
+  });
+  await page.getByRole("button", { name: "Eicon", exact: true }).click();
+  await picker.getByRole("tab", { name: "Favorites" }).click();
+  await picker.getByRole("button", { name: "Insert teacup" }).click();
+  await page.keyboard.press("Escape");
+  await expect(input).toHaveValue("X[eicon]teacup[/eicon]Y");
   await input.fill("");
 
   // ── Link previews (M8 step 13): media chip → floating panel ────────────
