@@ -207,6 +207,33 @@ export function genderColorVar(gender: string | undefined): string | undefined {
   return key ? `var(--eb-gender-${GENDER_SLUGS[key]})` : undefined;
 }
 
+/** Kink-choice colours for the profile Kinks tab (#278). A character's stance
+ * on each kink — fave / yes / maybe / no — painted as a coloured label around
+ * every kink, the F-Chat Rising/Horizon convention: bright green (fave), a
+ * deeper green (yes), yellow (maybe), red (no). Two grounds like the nick and
+ * gender palettes: KINK_PALETTE for the dark bases, KINK_PALETTE_LIGHT pulled
+ * down for paper. Every value used as text clears WCAG AA (≥4.5:1) on the
+ * kink-column ground (--eb-bg) for its base — the dark set against #121110,
+ * the light set against parchment (#f6f1e7), each also ≥4.5:1 on the adjacent
+ * side ground. Colour is never the only channel: the glyph badge (choices.ts)
+ * carries the same signal for the colourblind path. */
+export const KINK_CHOICE_SLUGS = ["fave", "yes", "maybe", "no"] as const;
+export type KinkChoiceSlug = (typeof KINK_CHOICE_SLUGS)[number];
+
+export const KINK_PALETTE = {
+  fave: "#86cf6f",
+  yes: "#57a06a",
+  maybe: "#d8bd5f",
+  no: "#e08a6a",
+} as const satisfies Record<KinkChoiceSlug, string>;
+
+export const KINK_PALETTE_LIGHT = {
+  fave: "#487030",
+  yes: "#3f6a46",
+  maybe: "#75621e",
+  no: "#a94d30",
+} as const satisfies Record<KinkChoiceSlug, string>;
+
 export function nickIndex(nick: string): number {
   let sum = 0;
   for (const char of nick) {
