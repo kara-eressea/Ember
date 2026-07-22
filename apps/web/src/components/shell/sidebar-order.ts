@@ -21,16 +21,18 @@ export function orderRows<T>(
 }
 
 /**
- * One row per character (#227): the lowercased set of partners who already
- * have an open DM row. Friends/bookmarks in this set are suppressed from the
- * social sections — the character shows only as its DM row, which carries
- * presence (#229), unread, and the active anchor. F-Chat resolves names
- * case-insensitively, so membership is tested lowercased.
+ * One row per character (#290, reversing #227/#242's direction): the
+ * lowercased set of characters who are friends or bookmarks. A partner in
+ * this set keeps their home row under Friends/Bookmarks — that row carries
+ * the DM's unread badge, active anchor, and open-on-click — so the Direct
+ * Messages section omits them, listing only partners who are neither friend
+ * nor bookmark. F-Chat resolves names case-insensitively, so membership is
+ * tested lowercased.
  */
-export function openDmPartnerSet(partners: Iterable<string>): Set<string> {
+export function socialNameSet(names: Iterable<string>): Set<string> {
   const set = new Set<string>();
-  for (const partner of partners) {
-    set.add(partner.toLowerCase());
+  for (const name of names) {
+    set.add(name.toLowerCase());
   }
   return set;
 }

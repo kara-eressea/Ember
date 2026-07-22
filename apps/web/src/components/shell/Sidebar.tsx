@@ -25,7 +25,7 @@ import { api } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
-import { channelPath, dmPath } from "../../lib/routes.js";
+import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
@@ -42,7 +42,7 @@ import { Avatar } from "../common/Avatar.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
 import { matchScore } from "./quick-switch.js";
-import { openDmPartnerSet, orderRows, orderSocial } from "./sidebar-order.js";
+import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
 import {
   loadCollapsedSections,
   toggleCollapsedSection,
@@ -89,6 +89,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar({ session, activeConvId }: SidebarProps) {
+  const navigate = useNavigate();
   const gatewayStatus = useUiStore((s) => s.gatewayStatus);
   const online = session.sessionStatus === "online";
   const headDot: DotKind =
@@ -158,8 +159,25 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     (c) => c.highlightedAt,
     bump,
   );
+  // One row per character (#290): a friend/bookmark keeps their home row in
+  // Friends/Bookmarks even with an open DM — that social row carries the DM's
+  // unread badge, active anchor, and open-on-click (see socialNames below).
+  // So the Direct Messages section omits any partner who is a friend or
+  // bookmark, listing only conversation partners who are neither. F-Chat
+  // resolves names case-insensitively, so compare lowercased.
+  const socialNames = socialNameSet([
+    ...(session.social?.friends ?? []).map((f) => f.name),
+    ...(session.social?.bookmarks ?? []).map((b) => b.name),
+  ]);
+  // Lowercased partner → DmView, so a social row can find and carry its DM.
+  const dmByPartner = new Map<string, DmView>();
+  for (const dm of Object.values(session.dms)) {
+    dmByPartner.set(dm.partner.toLowerCase(), dm);
+  }
   const allDms = orderRows(
-    Object.values(session.dms).filter((dm) => matches(dm.partner)),
+    Object.values(session.dms).filter(
+      (dm) => matches(dm.partner) && !socialNames.has(dm.partner.toLowerCase()),
+    ),
     (d) => d.partner,
     (d) => d.highlightedAt,
     bump,
@@ -175,24 +193,19 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     ...allDms.filter((d) => !d.pinned),
   ];
 
-  // One row per character (#227): a friend/bookmark with an open DM shows
-  // only as its DM row — which already carries presence (#229), unread, and
-  // the active anchor — so suppress the duplicate social row while the DM is
-  // open. F-Chat resolves names case-insensitively, so compare lowercased.
-  const openDmPartners = openDmPartnerSet(
-    Object.values(session.dms).map((dm) => dm.partner),
-  );
-
   // Friends/Bookmarks: online first (#164), offline hidden behind the
-  // synced pref (#165), then the toolbar filter like everything else.
+  // synced pref (#165), then the toolbar filter like everything else. A row
+  // with an open DM stays visible regardless of the offline pref (#290) —
+  // otherwise the conversation would have no reachable row in the sidebar.
   const hideOffline = session.prefs.hideOfflineCharacters;
   const socialRows = (rows: readonly SocialCharacter[] | undefined) =>
     orderSocial(
       (rows ?? []).filter(
         (row) =>
-          (row.online || !hideOffline) &&
-          matches(row.name) &&
-          !openDmPartners.has(row.name.toLowerCase()),
+          (row.online ||
+            !hideOffline ||
+            dmByPartner.has(row.name.toLowerCase())) &&
+          matches(row.name),
       ),
       (row) => row.name,
       (row) => row.online,
@@ -205,6 +218,65 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     allChannels.length + allDms.length + friends.length + bookmarks.length ===
       0;
 
+  // Leave a channel (#291): the same action as the channel menu's Leave —
+  // the server unpins on explicit leave (#223) so the pin can't drag it back.
+  // Navigate away first when it's on screen: the fan-out drops the row and
+  // would otherwise strand the route.
+  const leaveChannel = (channel: ChannelView) => {
+    if (channel.convId === activeConvId) {
+      void navigate(identityPath(session.character));
+    }
+    void gateway
+      .cmd({
+        identityId: session.identityId,
+        action: "channel.leave",
+        d: { key: channel.key },
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              session.identityId,
+              "error",
+              ack.error ?? "Could not leave",
+            );
+        }
+      });
+  };
+
+  // Close a DM (#291): the same gateway pm.close the DM header uses — history
+  // is kept, the row and window go away, and the conversation reopens on the
+  // next pm.open or inbound message. Navigate away first when it's active.
+  const closeDm = (dm: DmView) => {
+    if (dm.convId === activeConvId) {
+      void navigate(identityPath(session.character));
+    }
+    void gateway
+      .cmd({
+        identityId: session.identityId,
+        action: "pm.close",
+        d: { convId: dm.convId },
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              session.identityId,
+              "error",
+              ack.error ?? "Could not close the conversation",
+            );
+          return;
+        }
+        if (ack.conversation) {
+          useSessionsStore
+            .getState()
+            .applyConversation(session.identityId, ack.conversation);
+        }
+      });
+  };
+
   const channelRow = (channel: ChannelView, pinned: boolean) => (
     <NavRow
       key={`c:${channel.key}`}
@@ -215,6 +287,12 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       pinned={pinned}
       glyph="#"
       label={channel.title}
+      affordance={{
+        label: `Leave ${channel.title}`,
+        onActivate: () => {
+          leaveChannel(channel);
+        },
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         setChannelMenu({
@@ -237,6 +315,12 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       dot={presenceDot(dm.online, dm.status)}
       offline={!dm.online}
       label={dm.partner}
+      affordance={{
+        label: `Close conversation with ${dm.partner}`,
+        onActivate: () => {
+          closeDm(dm);
+        },
+      }}
       onContextMenu={(event) => {
         openPersonMenu(event, dm.partner, dm.status, dm.statusmsg);
       }}
@@ -324,6 +408,8 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           friends={friends}
           bookmarks={bookmarks}
           filtering={filtering}
+          dmByPartner={dmByPartner}
+          activeConvId={activeConvId}
           openSection={openSection}
           onToggle={toggleSection}
           onRowContextMenu={openPersonMenu}
@@ -666,6 +752,14 @@ function sessionStatusLabel(session: IdentitySession): string {
   return session.sessionStatus.replace("_", " ");
 }
 
+/** Hover/focus affordance on the right of a row (#291): closes a DM or
+ * leaves a channel. The counter badge swaps for this X on hover (CSS), and
+ * it stays keyboard-reachable (focusable, aria-labelled). */
+interface RowAffordance {
+  label: string;
+  onActivate: () => void;
+}
+
 interface NavRowProps {
   to: string;
   active: boolean;
@@ -676,6 +770,7 @@ interface NavRowProps {
   glyph?: string;
   dot?: DotKind;
   offline?: boolean;
+  affordance?: RowAffordance;
   onContextMenu?: (event: ReactMouseEvent) => void;
 }
 
@@ -689,6 +784,7 @@ function NavRow({
   glyph,
   dot,
   offline,
+  affordance,
   onContextMenu,
 }: NavRowProps) {
   const classes = [styles.navItem];
@@ -701,29 +797,57 @@ function NavRow({
   if (offline) {
     classes.push(styles.offlineRow);
   }
+  // The close/leave button (#291) is a sibling of the Link, not a child:
+  // nesting interactive controls inside an <a> is invalid HTML and would fold
+  // the X's label into the link's accessible name. A relatively-positioned
+  // wrapper lets the X overlay the row's right edge on hover instead.
   return (
-    <Link className={classes.join(" ")} to={to} onContextMenu={onContextMenu}>
-      {glyph !== undefined && <span className={styles.navGlyph}>{glyph}</span>}
-      {dot !== undefined && (
-        <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
-      )}
-      <span className={styles.navLabel}>{label}</span>
-      {pinned && <span className={styles.navPin}>⚲</span>}
-      {mentions > 0 ? (
-        <span
-          className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}
-          data-testid="nav-badge"
-        >
-          @{clampBadge(mentions)}
+    <div className={styles.navRowWrap}>
+      <Link className={classes.join(" ")} to={to} onContextMenu={onContextMenu}>
+        {glyph !== undefined && (
+          <span className={styles.navGlyph}>{glyph}</span>
+        )}
+        {dot !== undefined && (
+          <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
+        )}
+        <span className={styles.navLabel}>{label}</span>
+        {pinned && <span className={styles.navPin}>⚲</span>}
+        <span className={styles.navTrail}>
+          {mentions > 0 ? (
+            <span
+              className={`${styles.navBadge} ${styles.navBadgeMention ?? ""} ${styles.navTrailBadge ?? ""}`}
+              data-testid="nav-badge"
+            >
+              @{clampBadge(mentions)}
+            </span>
+          ) : (
+            unread > 0 && (
+              <span
+                className={`${styles.navBadge} ${styles.navTrailBadge ?? ""}`}
+                data-testid="nav-badge"
+              >
+                {clampBadge(unread)}
+              </span>
+            )
+          )}
         </span>
-      ) : (
-        unread > 0 && (
-          <span className={styles.navBadge} data-testid="nav-badge">
-            {clampBadge(unread)}
-          </span>
-        )
+      </Link>
+      {affordance && (
+        <button
+          type="button"
+          className={styles.navClose}
+          aria-label={affordance.label}
+          title={affordance.label}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            affordance.onActivate();
+          }}
+        >
+          ✕
+        </button>
       )}
-    </Link>
+    </div>
   );
 }
 
@@ -830,6 +954,8 @@ function SocialSections({
   friends,
   bookmarks,
   filtering,
+  dmByPartner,
+  activeConvId,
   openSection,
   onToggle,
   onRowContextMenu,
@@ -838,6 +964,8 @@ function SocialSections({
   friends: SocialCharacter[];
   bookmarks: SocialCharacter[];
   filtering: boolean;
+  dmByPartner: Map<string, DmView>;
+  activeConvId: string | undefined;
   openSection: (section: SidebarSection) => boolean;
   onToggle: (section: SidebarSection) => void;
   onRowContextMenu: (
@@ -899,22 +1027,29 @@ function SocialSections({
     </button>
   );
 
-  const row = (character: SocialCharacter, glyph: string) => (
-    <SocialRow
-      key={character.name}
-      session={session}
-      character={character}
-      glyph={glyph}
-      onContextMenu={(event) => {
-        onRowContextMenu(
-          event,
-          character.name,
-          character.status,
-          character.statusmsg,
-        );
-      }}
-    />
-  );
+  const row = (character: SocialCharacter, glyph: string) => {
+    // #290: a friend/bookmark with an open DM carries the DM's unread badge
+    // and active anchor onto its own row.
+    const dm = dmByPartner.get(character.name.toLowerCase());
+    return (
+      <SocialRow
+        key={character.name}
+        session={session}
+        character={character}
+        glyph={glyph}
+        unread={dm?.unread ?? 0}
+        active={dm !== undefined && dm.convId === activeConvId}
+        onContextMenu={(event) => {
+          onRowContextMenu(
+            event,
+            character.name,
+            character.status,
+            character.statusmsg,
+          );
+        }}
+      />
+    );
+  };
 
   return (
     <>
@@ -994,11 +1129,15 @@ function SocialRow({
   session,
   character,
   glyph,
+  unread,
+  active,
   onContextMenu,
 }: {
   session: IdentitySession;
   character: SocialCharacter;
   glyph: string;
+  unread: number;
+  active: boolean;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
   const navigate = useNavigate();
@@ -1027,10 +1166,20 @@ function SocialRow({
     );
   }
 
+  const classes = [styles.navItem, styles.socialRow ?? ""];
+  if (active) {
+    classes.push(styles.active ?? "");
+  }
+  if (unread > 0) {
+    classes.push(styles.unread ?? "");
+  }
+  if (!character.online) {
+    classes.push(styles.offlineRow ?? "");
+  }
   return (
     <button
       type="button"
-      className={`${styles.navItem} ${styles.socialRow ?? ""} ${character.online ? "" : (styles.offlineRow ?? "")}`}
+      className={classes.join(" ")}
       onClick={() => {
         void open();
       }}
@@ -1048,6 +1197,16 @@ function SocialRow({
         {glyph}
       </span>
       <span className={styles.navLabel}>{character.name}</span>
+      {unread > 0 && (
+        <span className={styles.navTrail}>
+          <span
+            className={`${styles.navBadge} ${styles.navTrailBadge ?? ""}`}
+            data-testid="nav-badge"
+          >
+            {clampBadge(unread)}
+          </span>
+        </span>
+      )}
     </button>
   );
 }
