@@ -660,18 +660,62 @@
 
 /* ── §8 Kinks ─────────────────────────────────────────────────────────── */
 
+/* Legend: a colour key for this character's four stances (#278) — each chip
+   carries the choice colour plus its glyph so the key reads on the colourblind
+   path too. `--kink-col` is set per chip in the component. */
 .kinkLegend {
   display: flex;
-  gap: 14px;
-  margin-bottom: 12px;
-  font-family: var(--eb-mono, monospace);
-  font-size: 10.5px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  font-size: 11px;
   color: var(--eb-meta);
+}
+
+.kinkLegendLabel {
+  font-weight: 600;
+  color: var(--eb-dim);
+}
+
+.kinkLegendChip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 2px 9px 2px 7px;
+  font-weight: 600;
+  color: var(--kink-col);
+  background: color-mix(in srgb, var(--kink-col) 14%, var(--eb-bg));
+  border: 1px solid color-mix(in srgb, var(--kink-col) 42%, var(--eb-bg));
+  border-radius: 999px;
+}
+
+.kinkLegendGlyph {
+  display: grid;
+  place-items: center;
+  min-width: 14px;
+  height: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kinkLegendNote {
+  font-size: 10.5px;
+  color: var(--eb-faint);
+}
+
+/* The kinks area scrolls sideways inside its own pane on the narrow layout
+   (#281) — the columns keep a usable fixed width instead of collapsing, and
+   the page/modal body never scrolls horizontally. */
+.kinkPane {
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 .kinkGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -679,6 +723,7 @@
 .kinkCol {
   background: var(--eb-bg);
   border: 1px solid var(--eb-border);
+  border-top: 2px solid var(--kink-col);
   border-radius: var(--eb-radius);
 }
 
@@ -687,18 +732,22 @@
   gap: 7px;
   align-items: center;
   padding: 9px 10px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--eb-dim);
   border-bottom: 1px solid var(--eb-border);
 }
 
-.kinkColSquare {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
+.kinkColLabel {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 9px 2px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kink-col);
+  background: color-mix(in srgb, var(--kink-col) 16%, var(--eb-bg));
+  border: 1px solid color-mix(in srgb, var(--kink-col) 40%, var(--eb-bg));
+  border-radius: 999px;
 }
 
 .kinkColCount {
@@ -715,13 +764,16 @@
   gap: 2px;
 }
 
+/* Each kink is a coloured label in its column's stance colour (#278): a stance
+   stripe plus the name tinted to match, so the choice reads at a glance. */
 .kinkRow {
   display: flex;
   gap: 7px;
   align-items: center;
-  padding: 5px 7px;
+  padding: 5px 7px 5px 9px;
   font-size: 12px;
-  color: var(--eb-text);
+  color: var(--kink-col);
+  border-left: 3px solid var(--kink-col);
   border-radius: 5px;
 }
 
@@ -729,14 +781,33 @@
   display: grid;
   flex-shrink: 0;
   place-items: center;
-  width: 15px;
-  height: 15px;
-  font-family: var(--eb-mono, monospace);
-  font-size: 10px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--mine-col);
+  background: color-mix(in srgb, var(--mine-col) 20%, var(--eb-side));
+  border: 1px solid color-mix(in srgb, var(--mine-col) 46%, var(--eb-side));
   border-radius: 4px;
 }
 
+/* Colourblind path: the glyph is the primary signal, so grow it and firm up
+   its outline (#278) — colour still present but no longer load-bearing. */
+:global(.eb-colorblind) .choiceMark {
+  min-width: 20px;
+  height: 20px;
+  font-size: 13px;
+  border-width: 2px;
+}
+
+:global(.eb-colorblind) .kinkLegendGlyph {
+  font-size: 13px;
+}
+
 .kinkName {
+  flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -751,12 +822,24 @@
   border-radius: 4px;
 }
 
+.kinkGroupCount {
+  flex-shrink: 0;
+  min-width: 15px;
+  padding: 0 4px;
+  font-family: var(--eb-mono, monospace);
+  font-size: 9.5px;
+  text-align: center;
+  color: var(--kink-col);
+  background: color-mix(in srgb, var(--kink-col) 16%, var(--eb-bg));
+  border-radius: 4px;
+}
+
 .kinkExpand {
-  margin-left: auto;
+  flex-shrink: 0;
   padding: 0 3px;
   font-family: var(--eb-mono, monospace);
-  font-size: 11px;
-  color: var(--eb-faint);
+  font-size: 13px;
+  color: var(--eb-dim);
   cursor: pointer;
   background: none;
   border: none;
@@ -767,6 +850,24 @@
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--eb-dim);
+}
+
+/* Grouped standard kinks listed under an expanded custom (#277). */
+.kinkGroupChildren {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 2px 7px 6px 20px;
+  list-style: none;
+}
+
+.kinkGroupChild {
+  position: relative;
+  padding: 2px 6px;
+  font-size: 11.5px;
+  color: var(--kink-col);
+  border-left: 2px solid color-mix(in srgb, var(--kink-col) 45%, var(--eb-bg));
 }
 
 /* ── §10 BBCodeBody ───────────────────────────────────────────────────── */

@@ -23,6 +23,11 @@ import {
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { CHOICES } from "./choices.js";
+import {
+  groupedChildren,
+  kinkNameCatalog,
+  type GroupedKink,
+} from "./kink-groups.js";
 import { CompareTab } from "./CompareTab.js";
 import { PrivateNote } from "./PrivateNote.js";
 import { GuestbookTab } from "./GuestbookTab.js";
@@ -545,81 +550,99 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
       </EmptyState>
     );
   }
+  // id → name for resolving a custom group's `children` back to display rows
+  // (#275 flattens grouped standard kinks into `profile.kinks`, names intact).
+  const catalog = kinkNameCatalog(profile.kinks);
   return (
     <>
-      <div className={styles.kinkLegend} aria-hidden>
+      <div className={styles.kinkLegend}>
+        <span className={styles.kinkLegendLabel}>This character:</span>
         {CHOICES.map((choice) => (
-          <span key={choice.id}>
-            {choice.glyph} your “{choice.label.toLowerCase()}”
+          <span
+            key={choice.id}
+            className={styles.kinkLegendChip}
+            style={{ "--kink-col": choice.color } as React.CSSProperties}
+          >
+            <span className={styles.kinkLegendGlyph} aria-hidden>
+              {choice.glyph}
+            </span>
+            {choice.label}
           </span>
         ))}
-        <span>· not on your list</span>
+        <span className={styles.kinkLegendNote}>
+          Trailing badge = your own choice
+        </span>
       </div>
-      <div className={styles.kinkGrid}>
-        {CHOICES.map((column) => {
-          const rows = profile.kinks.filter(
-            (kink) => kink.choice === column.id,
-          );
-          const customs = profile.customKinks.filter(
-            (custom) => custom.choice === column.id,
-          );
-          return (
-            <section key={column.id} className={styles.kinkCol}>
-              <header className={styles.kinkColHead}>
-                <span
-                  className={styles.kinkColSquare}
-                  style={{ background: column.color }}
-                  aria-hidden
-                />
-                {column.label}
-                <span className={styles.kinkColCount}>
-                  {rows.length + customs.length}
-                </span>
-              </header>
-              <div className={styles.kinkList}>
-                {customs.map((custom) => (
-                  <CustomKinkRow key={custom.name} custom={custom} />
-                ))}
-                {rows.map((kink) => {
-                  const mine = ownChoice.get(kink.id);
-                  const mineColor = CHOICES.find(
-                    (choice) => choice.id === mine,
-                  )?.color;
-                  return (
-                    <div
-                      key={kink.id}
-                      className={styles.kinkRow}
-                      title={kink.description}
-                      style={
-                        mineColor
-                          ? {
-                              background: `color-mix(in srgb, ${mineColor} 10%, var(--eb-bg))`,
-                              boxShadow: `inset 2px 0 0 color-mix(in srgb, ${mineColor} 50%, var(--eb-bg))`,
-                            }
-                          : undefined
-                      }
-                    >
-                      <span
-                        className={styles.choiceMark}
-                        style={{
-                          color: mineColor ?? "var(--eb-faint)",
-                          background: mineColor
-                            ? `color-mix(in srgb, ${mineColor} 18%, var(--eb-side))`
-                            : "var(--eb-side)",
-                        }}
-                        aria-label={mine ? `your ${mine}` : "not on your list"}
+      {/* Fixed-width columns that scroll horizontally inside this pane on the
+          narrow layout (#281) — the page/modal body never scrolls sideways. */}
+      <div className={styles.kinkPane}>
+        <div className={styles.kinkGrid}>
+          {CHOICES.map((column) => {
+            const rows = profile.kinks.filter(
+              (kink) => kink.choice === column.id,
+            );
+            const customs = profile.customKinks.filter(
+              (custom) => custom.choice === column.id,
+            );
+            return (
+              <section
+                key={column.id}
+                className={styles.kinkCol}
+                style={{ "--kink-col": column.color } as React.CSSProperties}
+              >
+                <header className={styles.kinkColHead}>
+                  <span className={styles.kinkColLabel}>
+                    <span className={styles.kinkLegendGlyph} aria-hidden>
+                      {column.glyph}
+                    </span>
+                    {column.label}
+                  </span>
+                  <span className={styles.kinkColCount}>
+                    {rows.length + customs.length}
+                  </span>
+                </header>
+                <div className={styles.kinkList}>
+                  {customs.map((custom) => (
+                    <CustomKinkRow
+                      key={custom.name}
+                      custom={custom}
+                      grouped={groupedChildren(custom.children, catalog)}
+                    />
+                  ))}
+                  {rows.map((kink) => {
+                    const mine = ownChoice.get(kink.id);
+                    const mineChoice = CHOICES.find(
+                      (choice) => choice.id === mine,
+                    );
+                    return (
+                      <div
+                        key={kink.id}
+                        className={styles.kinkRow}
+                        title={kink.description}
                       >
-                        {CHOICES.find((choice) => choice.id === mine)?.glyph ??
-                          "·"}
-                      </span>
-                      <span className={styles.kinkName}>{kink.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })}
+                        <span className={styles.kinkName}>{kink.name}</span>
+                        {mineChoice && (
+                          <span
+                            className={styles.choiceMark}
+                            style={
+                              {
+                                "--mine-col": mineChoice.color,
+                              } as React.CSSProperties
+                            }
+                            title={`Your choice: ${mineChoice.label}`}
+                            aria-label={`your ${mineChoice.label.toLowerCase()}`}
+                          >
+                            {mineChoice.glyph}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </>
   );
@@ -627,16 +650,22 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
 
 function CustomKinkRow({
   custom,
+  grouped,
 }: {
   custom: ProfileDto["customKinks"][number];
+  grouped: GroupedKink[];
 }) {
   const [open, setOpen] = useState(false);
+  const expandable = custom.description !== "" || grouped.length > 0;
   return (
     <div>
       <div className={styles.kinkRow}>
         <span className={styles.customTag}>CUSTOM</span>
         <span className={styles.kinkName}>{custom.name}</span>
-        {custom.description !== "" && (
+        {grouped.length > 0 && (
+          <span className={styles.kinkGroupCount}>{grouped.length}</span>
+        )}
+        {expandable && (
           <button
             type="button"
             className={styles.kinkExpand}
@@ -650,7 +679,18 @@ function CustomKinkRow({
           </button>
         )}
       </div>
-      {open && <div className={styles.kinkDesc}>{custom.description}</div>}
+      {open && custom.description !== "" && (
+        <div className={styles.kinkDesc}>{custom.description}</div>
+      )}
+      {open && grouped.length > 0 && (
+        <ul className={styles.kinkGroupChildren}>
+          {grouped.map((child) => (
+            <li key={child.id} className={styles.kinkGroupChild}>
+              {child.name}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
