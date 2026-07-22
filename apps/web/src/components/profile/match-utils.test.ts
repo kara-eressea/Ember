@@ -2,7 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { MatchReport } from "@emberchat/matcher";
-import { compareSummary, notableDimensions } from "./match-utils.js";
+import {
+  compareSummary,
+  matchedKinkIds,
+  notableDimensions,
+} from "./match-utils.js";
 
 function report(overrides: Partial<MatchReport> = {}): MatchReport {
   return {
@@ -79,6 +83,42 @@ describe("notableDimensions", () => {
       dimension.tier = "neutral";
     }
     expect(notableDimensions(allNeutral, 4)).toEqual([]);
+  });
+});
+
+describe("matchedKinkIds", () => {
+  it("collects the ids of kinks that overlap (present on both lists)", () => {
+    const ids = matchedKinkIds(
+      report({
+        kinks: [
+          {
+            id: 8,
+            name: "Dirty Talking",
+            yourChoice: "fave",
+            theirChoice: "fave",
+            tier: "match",
+          },
+          {
+            id: 21,
+            name: "Bondage",
+            yourChoice: "yes",
+            theirChoice: "no",
+            tier: "mismatch",
+          },
+        ],
+      }),
+    );
+    expect(ids).toEqual(new Set([8, 21]));
+  });
+
+  it("is empty when no kinks overlap", () => {
+    expect(matchedKinkIds(report())).toEqual(new Set());
+  });
+
+  it("is empty when there is no match data at all", () => {
+    // No own-character/match report → nothing is a match, so the Kinks tab
+    // colours nothing (#293).
+    expect(matchedKinkIds(undefined)).toEqual(new Set());
   });
 });
 
