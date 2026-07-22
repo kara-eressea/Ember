@@ -3,7 +3,7 @@
 // sub; durable state (messages) resumes via per-conversation messages.id
 // cursors read straight from the messages table — it *is* the resume log.
 
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
 import type {
   MemberDto,
   MessageDto,
@@ -238,6 +238,14 @@ export interface CatchupPlanEntry {
 export const CATCHUP_REPLAY_BUDGET = 2_000;
 
 /**
+ * Eager attach catch-up reaches back at most this far (#254): a fresh
+ * attach replays the unread backlog since the persisted read cursor, but
+ * never eagerly streams more than roughly a day of it — anything older
+ * stays one scroll-back page away (`history.page`, uncapped).
+ */
+export const CATCHUP_EAGER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Which conversations to replay on sub, and from where. Two regimes:
  *
  * - The client sent a cursor: it holds a contiguous buffer up to that id, so
@@ -245,11 +253,16 @@ export const CATCHUP_REPLAY_BUDGET = 2_000;
  *   for foreign or deleted conversations are silently dropped (the plan is
  *   built from the identity's own rows).
  * - No cursor (conversation created or first seen while this client was
- *   detached, or a fresh device): replay only the unread tail — from
- *   lastReadMessageId, floored at `maxId - batchSize`. Ids are global across
- *   conversations, so that floor is an id-space bound: at most `batchSize`
- *   rows, usually fewer. A fully-read conversation replays nothing, and deep
- *   history stays with REST backfill on open; replaying from id 0 would
+ *   detached, or a fresh device, or a browser reload): replay the unread
+ *   backlog "since you were last here" — from the persisted
+ *   lastReadMessageId, floored by the eager caps: at most
+ *   CATCHUP_EAGER_WINDOW_MS of history and at most a
+ *   CATCHUP_REPLAY_BUDGET id-span (ids are global, so both are upper
+ *   bounds — usually fewer rows). When the caps would replay LESS than a
+ *   plain `batchSize` tail, the tail wins, so short absences and old
+ *   quiet channels still get their context lines. A fully-read
+ *   conversation replays nothing; deeper history stays reachable through
+ *   scroll-back paging, which is uncapped. Replaying from id 0 would
  *   stream entire histories to every new device.
  */
 export async function catchupPlan(
@@ -264,6 +277,7 @@ export async function catchupPlan(
   // drizzle renders interpolated columns in selected fields unqualified,
   // which mis-scopes the correlated outer reference. mapWith(Number)
   // because max(bigint) comes back from node-postgres as a string.
+  const eagerCutoff = new Date(Date.now() - CATCHUP_EAGER_WINDOW_MS);
   const rows = await db
     .select({
       id: conversations.id,
@@ -272,6 +286,13 @@ export async function catchupPlan(
         sql<number>`(select coalesce(max(m.id), 0) from messages m where m.conversation_id = conversations.id)`.mapWith(
           Number,
         ),
+      // Oldest message still inside the eager window — the day cap in
+      // id-space. Walks the (conversation_id, id desc) index backwards.
+      oldestRecentId: sql<
+        number | null
+      >`(select min(m.id) from messages m where m.conversation_id = conversations.id and m.created_at >= ${eagerCutoff})`.mapWith(
+        (value: unknown) => (value === null ? null : Number(value)),
+      ),
     })
     .from(conversations)
     .where(eq(conversations.identityId, identityId));
@@ -296,12 +317,48 @@ export async function catchupPlan(
       });
       continue;
     }
-    const afterId = Math.max(row.lastRead ?? 0, row.maxId - batchSize);
+    // Eager floor: nothing older than the day window, and never more than
+    // the replay budget's id-span — but at least the plain batch tail, so
+    // the caps only ever ADD context relative to the pre-#254 behavior.
+    const dayFloor =
+      row.oldestRecentId === null ? row.maxId : row.oldestRecentId - 1;
+    const eagerFloor = Math.max(dayFloor, row.maxId - CATCHUP_REPLAY_BUDGET);
+    const afterId = Math.max(
+      row.lastRead ?? 0,
+      Math.min(eagerFloor, row.maxId - batchSize),
+    );
     if (afterId < row.maxId) {
       plan.push({ convId: row.id, afterId, gap: false });
     }
   }
   return plan;
+}
+
+/**
+ * One scroll-back page (#254): up to `limit` messages strictly before the
+ * cursor, returned ascending for the wire; `hasMore` says whether older
+ * history still exists past this page. No age cap — paging walks the full
+ * stored history.
+ */
+export async function fetchMessagesBefore(
+  db: Db,
+  conversationId: string,
+  beforeId: number,
+  limit: number,
+): Promise<{ rows: MessageRow[]; hasMore: boolean }> {
+  const rows = await db
+    .select()
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        lt(messages.id, beforeId),
+      ),
+    )
+    .orderBy(desc(messages.id))
+    .limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return { rows: rows.slice(0, limit).reverse(), hasMore };
 }
 
 /** One ascending catchup batch: messages strictly after the cursor. */
