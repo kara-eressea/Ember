@@ -7,7 +7,9 @@ describe("parseBanlistLine", () => {
       parseBanlistLine("Channel bans for Potting Shed: Sorrel Vane."),
     ).toEqual(["Sorrel Vane"]);
     expect(
-      parseBanlistLine("Channel bans for Mod Bench: Birch Rowan, Nyx Firemane."),
+      parseBanlistLine(
+        "Channel bans for Mod Bench: Birch Rowan, Nyx Firemane.",
+      ),
     ).toEqual(["Birch Rowan", "Nyx Firemane"]);
   });
 

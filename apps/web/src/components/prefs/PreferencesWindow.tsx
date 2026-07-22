@@ -43,56 +43,52 @@ export function PreferencesWindow({
       onClose={onClose}
     >
       <nav className={styles.rail} aria-label="Preference sections">
-          <div className={styles.railTitle}>Preferences</div>
-          {PANES.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`${styles.railItem} ${
-                entry.id === pane ? styles.railItemActive : ""
-              }`}
-              aria-current={entry.id === pane ? "page" : undefined}
-              onClick={() => {
-                setPane(entry.id);
-              }}
-            >
-              <span className={styles.railGlyph} aria-hidden>
-                {entry.glyph}
-              </span>
-              {entry.label}
-            </button>
-          ))}
-          <div className={styles.railFoot}>
-            <a
-              className={styles.railFootLink}
-              href="https://www.f-list.net/account_settings.php"
-              target="_blank"
-              rel="noopener"
-            >
-              F-List account ↗
-            </a>
-          </div>
-        </nav>
-        <section className={styles.pane}>
-          <header className={styles.paneHead}>
-            <h2 className={styles.paneTitle}>{active.label}</h2>
-            <button
-              type="button"
-              className={styles.close}
-              aria-label="Close preferences"
-              onClick={onClose}
-            >
-              ✕
-            </button>
-          </header>
-          <div className={styles.paneBody}>
-            <PaneContent
-              pane={pane}
-              identityId={identityId}
-              onClose={onClose}
-            />
-          </div>
-        </section>
+        <div className={styles.railTitle}>Preferences</div>
+        {PANES.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            className={`${styles.railItem} ${
+              entry.id === pane ? styles.railItemActive : ""
+            }`}
+            aria-current={entry.id === pane ? "page" : undefined}
+            onClick={() => {
+              setPane(entry.id);
+            }}
+          >
+            <span className={styles.railGlyph} aria-hidden>
+              {entry.glyph}
+            </span>
+            {entry.label}
+          </button>
+        ))}
+        <div className={styles.railFoot}>
+          <a
+            className={styles.railFootLink}
+            href="https://www.f-list.net/account_settings.php"
+            target="_blank"
+            rel="noopener"
+          >
+            F-List account ↗
+          </a>
+        </div>
+      </nav>
+      <section className={styles.pane}>
+        <header className={styles.paneHead}>
+          <h2 className={styles.paneTitle}>{active.label}</h2>
+          <button
+            type="button"
+            className={styles.close}
+            aria-label="Close preferences"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </header>
+        <div className={styles.paneBody}>
+          <PaneContent pane={pane} identityId={identityId} onClose={onClose} />
+        </div>
+      </section>
     </ModalWindow>
   );
 }

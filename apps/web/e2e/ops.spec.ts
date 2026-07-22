@@ -150,7 +150,9 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
   await roomDialog
     .getByRole("button", { name: "Lift ban on Sorrel Vane" })
     .click();
-  await expect(roomDialog.getByText("No one is banned from this room.")).toBeVisible({
+  await expect(
+    roomDialog.getByText("No one is banned from this room."),
+  ).toBeVisible({
     timeout: 15_000,
   });
 
