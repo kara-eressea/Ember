@@ -77,6 +77,21 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(log).not.toContainText("line one", { timeout: 1000 });
   await input.fill("");
 
+  // ── Click-to-focus: the whole input bar is a focus surface (#313) ─────
+  // The bar is ~46px tall but the textarea is one line; clicking its inert
+  // chrome (top-left padding, above the line) used to land on dead space.
+  // Now it focuses the composer and typing goes straight in.
+  await input.evaluate((el) => {
+    el.blur();
+  });
+  await expect(input).not.toBeFocused();
+  const inputBar = page.getByTitle("Attachments arrive later").locator("..");
+  await inputBar.click({ position: { x: 4, y: 4 } });
+  await expect(input).toBeFocused();
+  await page.keyboard.type("bar padding focuses");
+  await expect(input).toHaveValue("bar padding focuses");
+  await input.fill("");
+
   // ── Formatting toolbar + /help (#205) ─────────────────────────────────
   // Every promoted action sits on the MessageBox toolbar now. Bold is
   // Markdown-aware; Underline (BBCode-only) works with Markdown on because

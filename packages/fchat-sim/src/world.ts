@@ -354,6 +354,18 @@ export const DEFAULT_WORLD: SimWorld = {
       npcs: [],
       listed: false,
     },
+    // Reserved for the #268 combined-reattach E2E (catchup.spec): Ember
+    // Hollis sits here while Coal Whitby joins, parts during a detach (seen
+    // fold), and rejoins live. Hidden and NPC-free for isolation.
+    {
+      name: "ADH-268catchupdd44ee55ff66",
+      title: "Ember Catchup",
+      mode: "chat",
+      description: "Where the waves catch up.",
+      oplist: ["Ember Hollis"],
+      npcs: [],
+      listed: false,
+    },
     // Reserved for the M6 social E2E: NPC members to right-click. Hidden
     // for the same listing-stability reason.
     {

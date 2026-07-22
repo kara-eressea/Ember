@@ -12,7 +12,10 @@ import { useUiStore } from "../stores/ui.js";
 
 // Node environment — hydrateTheme writes to document/localStorage, and the
 // when-highlighted actions touch Audio/document.title.
-vi.mock("../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+vi.mock("../theme/theme.js", () => ({
+  hydrateTheme: vi.fn(),
+  hydrateInterface: vi.fn(),
+}));
 vi.mock("../lib/highlight-notify.js", () => ({
   playHighlightChime: vi.fn(),
   flashTitle: vi.fn(),

@@ -16,5 +16,9 @@ export default defineConfig({
   },
   test: {
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    // Default environment is node (the bulk of the suite is pure logic);
+    // component-render tests opt into jsdom with a per-file
+    // `// @vitest-environment jsdom` docblock (issue #268).
+    setupFiles: ["./vitest.setup.ts"],
   },
 });

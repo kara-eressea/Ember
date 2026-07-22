@@ -1,0 +1,190 @@
+/* Room-settings window (COMPONENTS.md §12, narrowed): the Preferences shell
+   pattern scoped to one channel. Reuses the prefs rail/pane classes; this
+   module owns the smaller window box and the room-specific field layout.
+   Tokens only. */
+
+.roomWindow {
+  display: grid;
+  grid-template-columns: 176px 1fr;
+  width: 600px;
+  height: 448px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 5px);
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 60%);
+  outline: none;
+}
+
+/* The channel title under the rail heading. */
+.railSub {
+  padding: 0 10px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--eb-meta);
+  overflow-wrap: anywhere;
+}
+
+/* ── Settings pane ── */
+
+.section {
+  margin-bottom: 18px;
+}
+
+.section:last-child {
+  margin-bottom: 0;
+}
+
+/* Tighten the shared GroupLabel: it carries Preferences-pane top margin. */
+.section > :first-child {
+  margin-top: 0;
+}
+
+.inlineForm {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.input::placeholder {
+  color: var(--eb-meta);
+}
+
+.textarea {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-bg);
+  color: var(--eb-text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.primaryBtn {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--eb-radius);
+  background: var(--eb-accent);
+  color: var(--eb-bg);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.selfEnd {
+  align-self: flex-end;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--eb-meta);
+}
+
+.info {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--eb-dim);
+}
+
+/* ── Banned-characters pane ── */
+
+.banHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.banIntro {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--eb-meta);
+}
+
+.secondaryBtn {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: var(--eb-bg);
+  color: var(--eb-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  color: var(--eb-text);
+  border-color: var(--eb-accent);
+}
+
+.secondaryBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.banList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.banRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 4px 8px 10px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.banName {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--eb-text);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--eb-meta);
+}
