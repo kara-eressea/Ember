@@ -11,6 +11,7 @@ import {
   validatorCompiler,
 } from "fastify-type-provider-zod";
 import { trustProxyValue, type AppConfig } from "./config.js";
+import { contentSecurityDirectives } from "./security/csp.js";
 import type { Db } from "./db/index.js";
 import { adsRoutes } from "./modules/ads/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
@@ -259,22 +260,7 @@ export async function buildApp({
   await app.register(fastifyHelmet, {
     contentSecurityPolicy:
       config.WEB_DIST !== undefined
-        ? {
-            directives: {
-              "default-src": ["'self'"],
-              "script-src": ["'self'"],
-              // React style attributes need inline styles allowed.
-              "style-src": ["'self'", "'unsafe-inline'"],
-              // Avatars/eicons hotlink from F-List's static host (§6/§8).
-              "img-src": ["'self'", "data:", "https://static.f-list.net"],
-              "connect-src": ["'self'"],
-              "font-src": ["'self'"],
-              "object-src": ["'none'"],
-              "frame-ancestors": ["'none'"],
-              "base-uri": ["'self'"],
-              "form-action": ["'self'"],
-            },
-          }
+        ? { directives: contentSecurityDirectives() }
         : false,
     // F-List's static host serves images without CORP headers; embedder
     // policies would block them, so keep the helmet defaults that allow
