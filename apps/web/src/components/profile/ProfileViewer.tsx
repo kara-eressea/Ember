@@ -38,7 +38,7 @@ import { PrivateNote } from "./PrivateNote.js";
 import { GuestbookTab } from "./GuestbookTab.js";
 import { ImagesTab } from "./ImagesTab.js";
 import { DimChip, MatchPill } from "./MatchTier.js";
-import { notableDimensions } from "./match-utils.js";
+import { matchedKinkIds, notableDimensions } from "./match-utils.js";
 import { ProfileBBCode } from "./ProfileBBCode.js";
 import { ago, dateLabel } from "./time.js";
 import styles from "./profile.module.css";
@@ -393,7 +393,13 @@ function TabContent({
     case "details":
       return <DetailsTab profile={profile} />;
     case "kinks":
-      return <KinksTab profile={profile} />;
+      return (
+        <KinksTab
+          profile={profile}
+          ownProfile={ownProfile}
+          ownCharacter={ownCharacter}
+        />
+      );
     case "compare":
       return (
         <CompareTab
@@ -618,10 +624,30 @@ function DetailsTab({ profile }: { profile: ProfileDto }) {
 
 // ── Kinks (§8) ───────────────────────────────────────────────────────────────
 
-function KinksTab({ profile }: { profile: ProfileDto }) {
-  const ownProfile = useProfileStore((s) => s.ownProfile);
+function KinksTab({
+  profile,
+  ownProfile,
+  ownCharacter,
+}: {
+  profile: ProfileDto;
+  ownProfile: ProfileDto | undefined;
+  ownCharacter: string | undefined;
+}) {
+  // Overlap with your own connected character drives the colour scope (#293):
+  // only kinks you both list get the coloured stance label + glyph, computed
+  // from the same matcher the Compare tab uses. Viewing yourself, or with no
+  // own-character/match data, leaves the whole list neutral.
+  const self =
+    ownCharacter !== undefined &&
+    profile.name.toLowerCase() === ownCharacter.toLowerCase();
+  const report = useMemo(
+    () => (ownProfile && !self ? match(ownProfile, profile) : undefined),
+    [ownProfile, profile, self],
+  );
+  const matchIds = useMemo(() => matchedKinkIds(report), [report]);
+  const hasMatches = matchIds.size > 0;
   const ownChoice = new Map(
-    (ownProfile?.profile.kinks ?? []).map((kink) => [kink.id, kink.choice]),
+    (ownProfile?.kinks ?? []).map((kink) => [kink.id, kink.choice]),
   );
   if (profile.kinks.length === 0 && profile.customKinks.length === 0) {
     return (
@@ -636,22 +662,32 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
   return (
     <>
       <div className={styles.kinkLegend}>
-        <span className={styles.kinkLegendLabel}>This character:</span>
-        {CHOICES.map((choice) => (
-          <span
-            key={choice.id}
-            className={styles.kinkLegendChip}
-            style={{ "--kink-col": choice.color } as React.CSSProperties}
-          >
-            <span className={styles.kinkLegendGlyph} aria-hidden>
-              {choice.glyph}
+        {hasMatches ? (
+          <>
+            <span className={styles.kinkLegendLabel}>Shared with you:</span>
+            {CHOICES.map((choice) => (
+              <span
+                key={choice.id}
+                className={styles.kinkLegendChip}
+                style={{ "--kink-col": choice.color } as React.CSSProperties}
+              >
+                <span className={styles.kinkLegendGlyph} aria-hidden>
+                  {choice.glyph}
+                </span>
+                {choice.label}
+              </span>
+            ))}
+            <span className={styles.kinkLegendNote}>
+              Colours mark kinks you also list — the colour is {profile.name}'s
+              choice; the trailing badge is yours. The rest are shown plainly.
             </span>
-            {choice.label}
+          </>
+        ) : (
+          <span className={styles.kinkLegendNote}>
+            {profile.name}'s kink list. Colours would mark the ones you also
+            list, once your own character's profile is loaded to compare.
           </span>
-        ))}
-        <span className={styles.kinkLegendNote}>
-          Trailing badge = your own choice
-        </span>
+        )}
       </div>
       {/* Fixed-width columns that scroll horizontally inside this pane on the
           narrow layout (#281) — the page/modal body never scrolls sideways. */}
@@ -664,14 +700,22 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
             const customs = profile.customKinks.filter(
               (custom) => custom.choice === column.id,
             );
+            // The stance colour only keys the column when there is overlap to
+            // mark (#293); otherwise the header reads as a neutral category.
             return (
               <section
                 key={column.id}
                 className={styles.kinkCol}
-                style={{ "--kink-col": column.color } as React.CSSProperties}
+                style={
+                  hasMatches
+                    ? ({ "--kink-col": column.color } as React.CSSProperties)
+                    : undefined
+                }
               >
                 <header className={styles.kinkColHead}>
-                  <span className={styles.kinkColLabel}>
+                  <span
+                    className={`${styles.kinkColLabel} ${hasMatches ? styles.kinkColLabelMatch : ""}`}
+                  >
                     <span className={styles.kinkLegendGlyph} aria-hidden>
                       {column.glyph}
                     </span>
@@ -687,9 +731,13 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
                       key={custom.name}
                       custom={custom}
                       grouped={groupedChildren(custom.children, catalog)}
+                      matchIds={matchIds}
                     />
                   ))}
                   {rows.map((kink) => {
+                    // Coloured stance label + your-choice glyph appear only on
+                    // kinks you both list (#293); the rest stay neutral.
+                    const isMatch = matchIds.has(kink.id);
                     const mine = ownChoice.get(kink.id);
                     const mineChoice = CHOICES.find(
                       (choice) => choice.id === mine,
@@ -697,11 +745,11 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
                     return (
                       <div
                         key={kink.id}
-                        className={styles.kinkRow}
+                        className={`${styles.kinkRow} ${isMatch ? styles.kinkRowMatch : ""}`}
                         title={kink.description}
                       >
                         <span className={styles.kinkName}>{kink.name}</span>
-                        {mineChoice && (
+                        {isMatch && mineChoice && (
                           <span
                             className={styles.choiceMark}
                             style={
@@ -731,9 +779,11 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
 function CustomKinkRow({
   custom,
   grouped,
+  matchIds,
 }: {
   custom: ProfileDto["customKinks"][number];
   grouped: GroupedKink[];
+  matchIds: Set<number>;
 }) {
   const [open, setOpen] = useState(false);
   const expandable = custom.description !== "" || grouped.length > 0;
@@ -765,7 +815,10 @@ function CustomKinkRow({
       {open && grouped.length > 0 && (
         <ul className={styles.kinkGroupChildren}>
           {grouped.map((child) => (
-            <li key={child.id} className={styles.kinkGroupChild}>
+            <li
+              key={child.id}
+              className={`${styles.kinkGroupChild} ${matchIds.has(child.id) ? styles.kinkGroupChildMatch : ""}`}
+            >
               {child.name}
             </li>
           ))}

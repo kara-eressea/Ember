@@ -3,8 +3,16 @@
    add button. All values against --eb-* tokens. */
 
 .shell {
+  /* Anchors the absolutely-positioned column resize handles (#292). */
+  position: relative;
   display: grid;
-  grid-template-columns: 60px 244px 1fr 232px;
+  /* Column widths are drag-resizable (#292): the left sidebar and the right
+     column read a CSS variable set inline by AppShell, falling back to the
+     design-system defaults (244 / 232px). */
+  grid-template-columns: 60px var(--eb-left-width, 244px) 1fr var(
+      --eb-right-width,
+      232px
+    );
   /* The implicit row would auto-size to content, un-constraining every
      internal scroll region — pin it to the viewport instead. */
   grid-template-rows: minmax(0, 1fr);
@@ -13,7 +21,47 @@
 }
 
 .shell.membersClosed {
-  grid-template-columns: 60px 244px 1fr;
+  grid-template-columns: 60px var(--eb-left-width, 244px) 1fr;
+}
+
+/* ── Column resize handles (#292) ────────────────────────────────────────
+   Thin strips centred on a column edge: a ~6px hit area (touch-friendly),
+   the col-resize cursor on hover, and a subtle accent line that appears on
+   hover/drag. Absolutely positioned against the shell so they float over the
+   column border without disturbing the grid tracks. */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-1px);
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:active::after {
+  background: var(--eb-accent-med);
+}
+
+.resizeLeft {
+  left: calc(60px + var(--eb-left-width, 244px) - 3px);
+}
+
+.resizeRight {
+  right: calc(var(--eb-right-width, 232px) - 3px);
 }
 
 /* ── IdentityRail (COMPONENTS.md §1) ─────────────────────────────────── */
@@ -466,6 +514,62 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Row wrapper (#291): lets the close/leave X overlay the row's right edge as
+   a sibling of the Link, without nesting a button inside an anchor. */
+.navRowWrap {
+  position: relative;
+}
+
+/* Trailing slot of a nav row: holds the counter badge. Fixed minimum size so
+   the X can overlay this spot instead of widening the row. */
+.navTrail {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-width: 18px;
+  min-height: 16px;
+  justify-content: flex-end;
+}
+
+/* Close a DM / leave a channel (#291): hidden until the row is hovered or
+   the button itself is keyboard-focused. Kept in the DOM (opacity, not
+   display) so it stays tab-reachable; the counter badge swaps out for it. */
+.navClose {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+  opacity: 0;
+}
+
+.navRowWrap:hover .navClose,
+.navClose:focus-visible {
+  opacity: 1;
+}
+
+.navClose:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
+.navRowWrap:hover:has(.navClose) .navTrailBadge,
+.navRowWrap:has(.navClose:focus-visible) .navTrailBadge {
+  visibility: hidden;
 }
 
 .navBadge {
