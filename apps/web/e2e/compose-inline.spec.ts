@@ -165,6 +165,9 @@ test("inline composer: decorations, send, slash, toolbar, timer, paste, undo", a
   await page.keyboard.press("Enter");
   const pending = page.getByTestId("pending-send");
   await expect(pending).toBeVisible();
+  // The editor clears when the send is acknowledged — wait for that before
+  // ArrowUp, which only recalls from an *empty* composer.
+  await expect(input.locator(".cm-placeholder")).toBeVisible();
   // ArrowUp in the empty composer pulls it back — as typed, not as BBCode.
   await page.keyboard.press("ArrowUp");
   await expect(input).toContainText("**recalled** never arrives", {

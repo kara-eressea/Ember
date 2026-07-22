@@ -224,6 +224,20 @@ export default function InlineEditor(props: InlineEditorProps) {
       focused() {
         return viewRef.current?.hasFocus ?? false;
       },
+      applyEdit(text, selStart, selEnd) {
+        const view = viewRef.current;
+        if (!view) {
+          return;
+        }
+        view.focus();
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: text },
+          selection: {
+            anchor: Math.min(selStart, text.length),
+            head: Math.min(selEnd, text.length),
+          },
+        });
+      },
     }),
     [],
   );

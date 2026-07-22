@@ -16,6 +16,15 @@ export interface ComposerInputHandle {
   /** Replaces `document.activeElement === el` checks — CodeMirror's focus
    * target is an inner contenteditable, not the component root. */
   focused(): boolean;
+  /** Atomically replace the whole text and the selection in one edit,
+   * keeping focus. The CodeMirror handle implements this as a single
+   * synchronous transaction — the composer's programmatic edits (toolbar
+   * wraps, eicon inserts, slash completion) must never defer the selection
+   * restore, or fast subsequent input races it (a rAF-deferred
+   * setSelectionRange can collapse a select-all the user just made). The
+   * textarea handle deliberately does not implement it: that path keeps the
+   * legacy setState + rAF restore behavior unchanged. */
+  applyEdit?(text: string, selStart: number, selEnd: number): void;
 }
 
 /** Adapter: the legacy textarea satisfies the same handle. */

@@ -203,10 +203,17 @@ export function Composer({
 
   function completeSlash(hint: SlashHint) {
     const next = `/${hint.name} `;
-    setText(next);
     setSlashActive(0);
+    const el = inputRef.current;
+    if (el?.applyEdit) {
+      // Inline editor: text + caret land in one synchronous transaction —
+      // a deferred restore could collapse a selection the user makes next.
+      el.applyEdit(next, next.length, next.length);
+      setText(next);
+      return;
+    }
+    setText(next);
     requestAnimationFrame(() => {
-      const el = inputRef.current;
       el?.focus();
       el?.setSelectionRange(next.length, next.length);
       autogrow();
@@ -298,6 +305,11 @@ export function Composer({
     const at = el?.selectionStart ?? text.length;
     const end = el?.selectionEnd ?? text.length;
     const edit = insertAt(text, at, end, snippet);
+    if (el?.applyEdit) {
+      el.applyEdit(edit.text, edit.selStart, edit.selEnd);
+      setText(edit.text);
+      return;
+    }
     setText(edit.text);
     requestAnimationFrame(() => {
       el?.focus();
@@ -319,6 +331,11 @@ export function Composer({
       open,
       close,
     );
+    if (el.applyEdit) {
+      el.applyEdit(edit.text, edit.selStart, edit.selEnd);
+      setText(edit.text);
+      return;
+    }
     setText(edit.text);
     requestAnimationFrame(() => {
       el.focus();
@@ -351,6 +368,11 @@ export function Composer({
       return;
     }
     const edit = stripColor(text, el.selectionStart, el.selectionEnd);
+    if (el.applyEdit) {
+      el.applyEdit(edit.text, edit.selStart, edit.selEnd);
+      setText(edit.text);
+      return;
+    }
     setText(edit.text);
     requestAnimationFrame(() => {
       el.focus();
