@@ -101,6 +101,43 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     page.getByTestId("presence-line").filter({ hasText: "went offline" }),
   ).toContainText("Fenwick Sprout went offline", { timeout: 10_000 });
 
+  // ── #294 regression: a prefs input keeps focus across a shell re-render ─
+  // The image-preview host field (an Appearance pane text input) used to be
+  // yanked back to the dialog whenever anything re-rendered AppShell — the
+  // window's focus effect re-ran on every parent render because its onClose
+  // dep was a fresh arrow each time. Focus the field, type half an entry,
+  // let a live presence event re-render the shell underneath it, then finish
+  // typing: every keystroke must still land in the field, and it must keep
+  // focus. (Any store update — the prefs-sync round trip, presence — hits
+  // the same path; presence is the deterministic, awaitable trigger here.)
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "Appearance" }).click();
+  const hostField = dialog.getByRole("textbox", { name: "Site address" });
+  await hostField.click();
+  await hostField.pressSequentially("exam");
+  const linesBefore = await page.getByTestId("presence-line").count();
+  const sproutFocus = await SimClient.connect(
+    "hazel@example.test",
+    "hunter2",
+    "Fenwick Sprout",
+  );
+  try {
+    sproutFocus.send("JCH", { channel: "Terrarium" });
+    // A fresh presence line proves the store updated and the shell
+    // re-rendered under the open, focused input.
+    await expect
+      .poll(() => page.getByTestId("presence-line").count(), {
+        timeout: 10_000,
+      })
+      .toBeGreaterThan(linesBefore);
+  } finally {
+    sproutFocus.close();
+  }
+  await hostField.pressSequentially("ple.com");
+  await expect(hostField).toBeFocused();
+  await expect(hostField).toHaveValue("example.com");
+  await page.keyboard.press("Escape");
+
   // Toggling the pref off hides the lines — they are render-gated.
   await page.getByRole("button", { name: "Preferences" }).click();
   await dialog.getByRole("button", { name: "Appearance" }).click();

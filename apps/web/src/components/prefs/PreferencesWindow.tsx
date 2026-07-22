@@ -34,18 +34,29 @@ export function PreferencesWindow({
   const [pane, setPane] = useState<PaneId>("general");
   const windowRef = useRef<HTMLDivElement>(null);
 
+  // onClose is an inline arrow in the parent, so it's a fresh reference on
+  // every parent render. Keep it in a ref the mount-only effect reads, so a
+  // parent re-render (e.g. the prefs-sync round trip or a presence tick)
+  // never re-runs the effect — re-running it would call windowRef.focus()
+  // and yank focus out of whatever pane input the user is typing in (#294).
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    // Focus the dialog once, on open — not on every parent render.
     windowRef.current?.focus();
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, []);
 
   const active = PANES.find((entry) => entry.id === pane) ?? PANES[0];
 
