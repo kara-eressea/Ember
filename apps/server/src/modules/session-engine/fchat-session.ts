@@ -124,10 +124,10 @@ function rawDataToString(data: WebSocket.RawData): string {
  */
 function canonicalizeCommandChannel(command: ServerCommand): void {
   // Payload-less commands (PIN) have no channel to fold.
-  const payload = command.payload as Record<string, unknown> | undefined;
-  if (payload === undefined) {
+  if (!("payload" in command)) {
     return;
   }
+  const payload = command.payload as Record<string, unknown>;
   if (typeof payload.channel === "string") {
     payload.channel = canonicalChannelKey(payload.channel);
   }
