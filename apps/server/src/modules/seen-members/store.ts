@@ -22,6 +22,13 @@ import type { SessionLogger } from "../session-engine/fchat-session.js";
 import type { SessionEventBus } from "../session-engine/event-bus.js";
 import type { SessionState } from "../session-engine/session-state.js";
 
+/** F-Chat resolves character names case-insensitively; own-character filters
+ * must fold case or a frame whose casing diverges from ownCharacter slips the
+ * guard and mis-stamps our own moves (#265). */
+function sameCharacter(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 /** Rows older than this are aged out (spec: retention ~1 week). */
 export const SEEN_RETENTION_MS = 7 * 86_400_000;
 /** Per-channel ceiling (spec: a few hundred); oldest lastSeen evicts first. */
@@ -163,7 +170,7 @@ export class SeenMembersStore {
     switch (command.cmd) {
       case "JCH": {
         const { channel: key, character } = command.payload;
-        if (character.identity === state.ownCharacter) {
+        if (sameCharacter(character.identity, state.ownCharacter)) {
           // Our own join: the ICH that follows seeds the mirror.
           return;
         }
@@ -218,7 +225,7 @@ export class SeenMembersStore {
       case "CBU":
       case "CTU": {
         const { channel: key, character } = command.payload;
-        if (character === state.ownCharacter) {
+        if (sameCharacter(character, state.ownCharacter)) {
           // Our own departure: the channel's roster is no longer observed.
           mirror.delete(key);
           return;
@@ -243,7 +250,7 @@ export class SeenMembersStore {
       case "FLN": {
         // A global leave: the character departs every channel we observe.
         const { character } = command.payload;
-        if (character === state.ownCharacter) {
+        if (sameCharacter(character, state.ownCharacter)) {
           return;
         }
         const lower = character.toLowerCase();
