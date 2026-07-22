@@ -176,7 +176,10 @@
 .nick {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: var(--eb-msg-nick-font, 12.5px);
+  /* The sender name tracks the message body size (#338) — a name and the
+     message it labels read as one line at one size. Only the weight sets it
+     apart. */
+  font-size: var(--eb-msg-font, 13px);
   font-weight: 600;
   white-space: nowrap;
 }

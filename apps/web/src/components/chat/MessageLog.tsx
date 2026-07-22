@@ -17,7 +17,7 @@ import {
 import { useMessagesStore } from "../../stores/messages.js";
 import type { PresenceLine } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
-import { useSessionsStore } from "../../stores/sessions.js";
+import { useGenderColorVar, useSessionsStore } from "../../stores/sessions.js";
 import { CachedMatchChip } from "../profile/CachedMatchChip.js";
 import { RateEditor } from "../ratings/RateEditor.js";
 import { StarRow } from "../ratings/StarRating.js";
@@ -27,16 +27,18 @@ import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
 import { parseEmote } from "./rich-text.js";
-import { RichText } from "./RichText.js";
+import { PlainNamesProvider, RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
 /** Message-log type ramp (Appearance pref, issue #188): body plus the
- * proportional secondary sizes — timestamp/mono meta and the nick column.
- * S preserves the pre-#188 density; the default is M (prefs schema). */
+ * proportional mono meta size (timestamps). The sender name tracks the body
+ * size directly (#338) — a name and the message it labels read as one line at
+ * one size — so the ramp no longer carries a separate nick step. S preserves
+ * the pre-#188 density; the default is M (prefs schema). */
 const FONT_RAMP_PX = {
-  s: { body: 13, meta: 11.5, nick: 12.5 },
-  m: { body: 14, meta: 12, nick: 13 },
-  l: { body: 15, meta: 13, nick: 14 },
+  s: { body: 13, meta: 11.5 },
+  m: { body: 14, meta: 12 },
+  l: { body: 15, meta: 13 },
 } as const;
 
 const EMPTY: MessageDto[] = [];
@@ -516,7 +518,6 @@ export function MessageLog({
   const styleVars: Record<string, string> = {
     "--eb-msg-font": `${String(ramp.body)}px`,
     "--eb-msg-meta-font": `${String(ramp.meta)}px`,
-    "--eb-msg-nick-font": `${String(ramp.nick)}px`,
   };
   if (prefs.highlightTint !== "accent") {
     styleVars["--eb-hl"] = ACCENTS[prefs.highlightTint].hex;
@@ -590,7 +591,11 @@ export function MessageLog({
                 ) : row.message.kind === "sys" ? (
                   <SystemLine message={row.message} prefs={prefs} />
                 ) : row.message.kind === "rll" ? (
-                  <RollLine message={row.message} prefs={prefs} />
+                  <RollLine
+                    message={row.message}
+                    prefs={prefs}
+                    identityId={identityId}
+                  />
                 ) : row.message.kind === "lrp" ? (
                   <AdLine message={row.message} prefs={prefs} />
                 ) : (
@@ -598,6 +603,7 @@ export function MessageLog({
                     message={row.message}
                     prefs={prefs}
                     grouped={row.grouped === true}
+                    identityId={identityId}
                   />
                 )}
               </div>
@@ -807,13 +813,20 @@ function MessageLine({
   message,
   prefs,
   grouped,
+  identityId,
 }: {
   message: MessageDto;
   prefs: UserPrefs;
   grouped: boolean;
+  identityId: string;
 }) {
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
+  // Sender names carry the member list's gender colour (#338) — the same
+  // token, resolved from the same roster, so a character reads identically in
+  // the list and in the log. Unknown gender → default text colour, as in the
+  // list.
+  const nameColor = useGenderColorVar(identityId, message.senderCharacter);
   return (
     <div
       className={`${styles.messageLine} ${
@@ -836,7 +849,7 @@ function MessageLine({
           className={`${styles.nick} ${styles.nickGrouped ?? ""} ${
             emote ? (styles.emoteNick ?? "") : ""
           }`}
-          style={{ color: nickColor(message.senderCharacter) }}
+          style={nameColor ? { color: nameColor } : undefined}
           aria-hidden
         >
           {message.senderCharacter}
@@ -847,7 +860,7 @@ function MessageLine({
           className={`${styles.nick} ${styles.nameButton ?? ""} ${
             emote ? (styles.emoteNick ?? "") : ""
           }`}
-          style={{ color: nickColor(message.senderCharacter) }}
+          style={nameColor ? { color: nameColor } : undefined}
           onClick={(event) => {
             openCardFrom(event.currentTarget, message.senderCharacter);
           }}
@@ -874,13 +887,19 @@ function MessageLine({
 }
 
 /** A dice roll / bottle spin: the server-rendered BBCode already names the
- * roller, so it reads like a system line with a die glyph. */
+ * roller (and, for a bottle spin, the target) in `[user]` tags, so it reads
+ * like a system line with a die glyph. Those names render as plain inline
+ * sender names — not the mid-sentence mention chip — carrying the member-list
+ * gender colour like any other name, so the die line reads as a normal chat
+ * line rather than a badge (#337). */
 function RollLine({
   message,
   prefs,
+  identityId,
 }: {
   message: MessageDto;
   prefs: UserPrefs;
+  identityId: string;
 }) {
   const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
@@ -898,7 +917,9 @@ function RollLine({
           like 🎲 (COMPONENTS.md §8, #269 item 4). */}
       <span aria-hidden>⚄</span>
       <span>
-        <RichText bbcode={message.bbcode} />
+        <PlainNamesProvider value={{ plain: true, identityId }}>
+          <RichText bbcode={message.bbcode} />
+        </PlainNamesProvider>
       </span>
     </div>
   );
