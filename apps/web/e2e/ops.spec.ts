@@ -87,10 +87,10 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
     name: "Room settings — Potting Shed",
   });
   await expect(
-    roomDialog.getByRole("button", { name: "Settings" }),
+    roomDialog.getByRole("button", { name: "Settings", exact: true }),
   ).toBeVisible();
   await expect(
-    roomDialog.getByRole("button", { name: "Banned characters" }),
+    roomDialog.getByRole("button", { name: "Banned characters", exact: true }),
   ).toBeVisible();
   await expect(roomDialog.getByText("Invite someone")).toBeVisible();
   await expect(
@@ -141,7 +141,9 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
   // with a per-row unban, reusing the same CBL/CUB commands. Opening the pane
   // requests the list; the freshly-banned Sorrel appears; "Lift ban" unbans.
   await page.getByRole("button", { name: "⚙ room" }).click();
-  await roomDialog.getByRole("button", { name: "Banned characters" }).click();
+  await roomDialog
+    .getByRole("button", { name: "Banned characters", exact: true })
+    .click();
   await expect(
     roomDialog.getByRole("button", { name: "Lift ban on Sorrel Vane" }),
   ).toBeVisible({ timeout: 15_000 });
