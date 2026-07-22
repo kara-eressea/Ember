@@ -158,6 +158,11 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Ember Hollis", "Coal Whitby"],
     },
+    // Reserved for the inline-composer E2E (#226, same parallelism rule).
+    "tansy@example.test": {
+      password: "hunter2",
+      characters: ["Tansy Meridian"],
+    },
     // Reserved for the M8 profile E2E (same parallelism rule).
     "juniper@example.test": {
       password: "hunter2",

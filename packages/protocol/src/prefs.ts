@@ -99,6 +99,10 @@ const prefsShape = {
   alignedColumns: z.boolean(),
   /** Render join/part/quit lines in channel logs (live-only lines). */
   showJoinPartQuit: z.boolean(),
+  /** Composer input that styles Markdown as you type (#226): **bold**
+   * renders bold in place, markers stay visible but dimmed. Off = the
+   * classic plain-text input with the separate preview panel. */
+  inlineComposer: z.boolean(),
   /** Inline eicon images vs name chips with hover preview. */
   eiconDisplay: z.enum(EICON_DISPLAY_MODES),
   /** Off = eicons freeze on their first frame. */
@@ -245,6 +249,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   groupConsecutive: false,
   alignedColumns: false,
   showJoinPartQuit: false,
+  inlineComposer: false,
   eiconDisplay: "inline",
   animateEicons: true,
   eiconFavorites: [],
