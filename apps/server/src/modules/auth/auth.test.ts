@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
-import { appUsers, authSessions } from "../../db/schema.js";
+import { appUsers, authSessions, userPreferences } from "../../db/schema.js";
 import { MAX_SESSIONS_PER_USER } from "./routes.js";
 import { SessionJanitor } from "./session-janitor.js";
 
@@ -398,6 +398,64 @@ describe("security headers", () => {
       expect(csp).toContain("default-src 'self'");
       expect(csp).toContain("img-src 'self' data: https://static.f-list.net");
       expect(csp).toContain("frame-ancestors 'none'");
+    } finally {
+      await spa.close();
+      await rm(dist, { recursive: true, force: true });
+    }
+  });
+
+  it("widens img-src/media-src to a user-added preview host after refresh (#342)", async () => {
+    const dist = await mkdtemp(path.join(tmpdir(), "emberchat-csp-user-"));
+    await writeFile(
+      path.join(dist, "index.html"),
+      "<!doctype html><html><head><title>x</title></head><body></body></html>",
+    );
+    const spa = await buildApp({
+      config: testConfig(container.getConnectionUri(), { WEB_DIST: dist }),
+      db,
+      logger: false,
+    });
+    try {
+      const HOST = "wimg.rule34.xxx";
+
+      // Before the user allowlists it, the browser would refuse the fetch.
+      const before = String(
+        (await spa.inject({ method: "GET", url: "/" })).headers[
+          "content-security-policy"
+        ],
+      );
+      expect(before).not.toContain(HOST);
+
+      // A user adds the host to their allowlist (the shape prefs.set persists),
+      // alongside a hostile entry that must never reach the header.
+      const { user } = await registerUser();
+      await db.insert(userPreferences).values({
+        userId: user.id,
+        prefs: { imagePreviewHosts: [HOST, "evil.example;script-src *"] },
+      });
+
+      // The prefs.set hook calls registry.refresh(); the header follows without
+      // a restart because helmet evaluates the extra-hosts source per response.
+      await spa.imagePreviewHosts.refresh();
+
+      const after = String(
+        (await spa.inject({ method: "GET", url: "/" })).headers[
+          "content-security-policy"
+        ],
+      );
+      const imgSrc = after
+        .split(";")
+        .map((d) => d.trim())
+        .find((d) => d.startsWith("img-src "));
+      const mediaSrc = after
+        .split(";")
+        .map((d) => d.trim())
+        .find((d) => d.startsWith("media-src "));
+      expect(imgSrc).toContain(`https://${HOST}`);
+      expect(mediaSrc).toContain(`https://${HOST}`);
+      // The malformed entry was sanitized out — no directive injection.
+      expect(after).not.toContain("script-src *");
+      expect(imgSrc).not.toContain("evil.example");
     } finally {
       await spa.close();
       await rm(dist, { recursive: true, force: true });

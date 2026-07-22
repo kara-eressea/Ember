@@ -38,6 +38,7 @@ import {
   userPreferences,
 } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
+import type { ImagePreviewHostRegistry } from "../../security/image-preview-hosts.js";
 import {
   ConversationLimitError,
   type ConversationRow,
@@ -84,6 +85,9 @@ export interface GatewayConnectionContext {
   readonly hub: GatewayHub;
   readonly outbox: Outbox;
   readonly highlights: Pick<HighlightMatcher, "invalidate">;
+  /** Live union of user image-preview allowlists; refreshed when a user's
+   * imagePreviewHosts pref changes so the CSP admits the new host (#342). */
+  readonly imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
   readonly campaigns: CampaignScheduler;
   /** Cached social lists — served in the snapshot when present (#194). */
   readonly social: SocialCache;
@@ -1054,6 +1058,12 @@ export class GatewayConnection {
       });
     // The highlight matcher caches highlightOwnNick per user (M5).
     this.#ctx.highlights.invalidate(this.#userId);
+    // The CSP folds in every user's image-preview allowlist (#342); rebuild
+    // the cached union when this patch touched it so the next response admits
+    // (or drops) the host. Cheap and rare — a full recompute is fine.
+    if (Object.prototype.hasOwnProperty.call(patch, "imagePreviewHosts")) {
+      await this.#ctx.imagePreviewHosts.refresh();
+    }
     // Broadcast the full resolved state, not the patch — every tab applies
     // it as an idempotent overwrite regardless of what it missed.
     const state = {
