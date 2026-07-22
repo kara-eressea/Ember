@@ -166,9 +166,7 @@ describe("RichText server-entity decode (#335 follow-up)", () => {
   it("does NOT decode locally composed preview text (local prop)", () => {
     // Composer/ad previews render pre-wire text, never server-escaped: a
     // literal "&amp;" the user typed must survive verbatim.
-    const { container } = render(
-      <RichText bbcode={"Tom &amp; Jerry"} local />,
-    );
+    const { container } = render(<RichText bbcode={"Tom &amp; Jerry"} local />);
     expect(container.textContent).toBe("Tom &amp; Jerry");
   });
 });
