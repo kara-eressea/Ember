@@ -988,7 +988,13 @@
 /* ── §10 BBCodeBody ───────────────────────────────────────────────────── */
 
 .bbBody {
+  /* Center the readable-width prose block within its column (#339). The old
+     single-column layout capped the column near this width so the block read as
+     centered; the wider full-screen column (#332) left it stranded on the left.
+     Windowed mode's inner column is narrower than this cap, so the auto margins
+     collapse and nothing shifts. */
   max-width: 660px;
+  margin-inline: auto;
   font-size: 13px;
   line-height: 1.65;
   color: var(--eb-text);

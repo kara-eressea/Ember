@@ -81,10 +81,20 @@
   font-weight: 600;
 }
 
-.typing {
+/* Typing status on the message bar (#336): a slim line resting directly above
+   the message box. Rendered for every DM so its height is always reserved —
+   the text swaps in and out without pushing the log, so bottom-stick never
+   jumps. Chrome-ramp tiny type (#330), tokens only. */
+.typingLine {
+  min-height: calc(var(--eb-font-ui-tiny) + 6px);
+  padding: 0 2px 4px;
+  overflow: hidden;
   color: var(--eb-dim);
-  font-size: var(--eb-font-ui-small);
+  font-size: var(--eb-font-ui-tiny);
   font-style: italic;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ── MessageLog ──────────────────────────────────────────────────────── */

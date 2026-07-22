@@ -237,6 +237,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Vault Keeper"],
     },
+    // Reserved for the #336 typing-indicator-placement E2E (same parallelism
+    // rule). Two characters on one account so the partner is a raw SimClient:
+    // Rowan Birch pushes TPN states the browser identity (Yarrow Dale) sees on
+    // the message bar.
+    "yarrow@example.test": {
+      password: "hunter2",
+      characters: ["Yarrow Dale", "Rowan Birch"],
+    },
   },
   channels: [
     {

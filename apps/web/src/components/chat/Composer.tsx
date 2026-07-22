@@ -65,6 +65,21 @@ const InlineEditor = lazy(() => import("./InlineEditor.js"));
 
 const utf8 = new TextEncoder();
 
+/** The partner's typing status as a plain-language line above the message bar
+ * (#336, Discord-style — that's where the eyes are). TPN is DM-only, so this
+ * only ever renders for a DM composer. "clear" (and unknown) reads as an empty
+ * string: the line keeps its reserved height so the message log never jumps
+ * when the status comes and goes. */
+function typingLabel(partner: string, status: string | undefined): string {
+  if (status === "typing") {
+    return `${partner} is typing…`;
+  }
+  if (status === "paused") {
+    return `${partner} has typed something`;
+  }
+  return "";
+}
+
 function savedMarkdownMode(): boolean {
   try {
     return localStorage.getItem(MARKDOWN_MODE_KEY) !== "off";
@@ -793,6 +808,19 @@ export function Composer({
         />
       )}
       <div className={styles.composerField}>
+        {partner !== undefined && (
+          // A slim line resting on the message box (#336). Rendered for every
+          // DM so its height is always reserved — the text swaps in and out
+          // without resizing the composer, so the log's bottom-stick never
+          // glitches (the ResizeObserver from #288 sees no growth).
+          <div
+            className={styles.typingLine}
+            aria-live="polite"
+            data-testid="typing-line"
+          >
+            {typingLabel(partner, session.dms[convId]?.typing)}
+          </div>
+        )}
         {showSlash && (
           <SlashAutocomplete
             suggestions={slashSuggestions}
