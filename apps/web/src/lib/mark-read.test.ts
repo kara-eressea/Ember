@@ -14,7 +14,10 @@ const { markReadToLatest } = vi.hoisted(() => ({
 vi.mock("../gateway/socket.js", () => ({ gateway: { markReadToLatest } }));
 // dispatchFrame boots the theme (localStorage) on snapshot — stub it out in
 // this node-environment unit test, as the dispatch suite does.
-vi.mock("../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+vi.mock("../theme/theme.js", () => ({
+  hydrateTheme: vi.fn(),
+  hydrateInterface: vi.fn(),
+}));
 
 import { useSessionsStore } from "../stores/sessions.js";
 import { dispatchFrame } from "../gateway/dispatch.js";
