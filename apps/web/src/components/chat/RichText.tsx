@@ -257,8 +257,9 @@ function ChannelChip({ name }: { name: string }) {
 }
 
 function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
-  const mode = useUserPrefs().linkPreviewMode;
-  const source = resolvePreview(href);
+  const prefs = useUserPrefs();
+  const mode = prefs.linkPreviewMode;
+  const source = resolvePreview(href, prefs.imagePreviewHosts);
   const character = useMemo(() => parseCharacterUrl(href), [href]);
   const openProfile = useContext(ProfileLinkContext);
   const active = useLinkPreviewStore((s) => s.preview?.href === href);

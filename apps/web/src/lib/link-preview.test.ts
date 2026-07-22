@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { chipHost, chipLabel, resolvePreview } from "./link-preview.js";
+import {
+  chipHost,
+  chipLabel,
+  hostAllowed,
+  resolvePreview,
+} from "./link-preview.js";
 
 describe("resolvePreview", () => {
   it("recognizes direct image and video extensions, case-insensitively", () => {
@@ -83,6 +88,65 @@ describe("resolvePreview", () => {
       kind: "image",
       src: href,
       host: "cdn.discordapp.com",
+    });
+  });
+});
+
+describe("hostAllowed", () => {
+  it("matches exact hosts and subdomains, case-insensitively", () => {
+    const list = ["xariah.net", "imgur.com"];
+    expect(hostAllowed("xariah.net", list)).toBe(true);
+    expect(hostAllowed("XARIAH.NET", list)).toBe(true);
+    // Subdomain of a listed apex is covered.
+    expect(hostAllowed("i.imgur.com", list)).toBe(true);
+    expect(hostAllowed("cdn.imgur.com", list)).toBe(true);
+    // Unlisted host, and a look-alike that only ends with the string.
+    expect(hostAllowed("evil.com", list)).toBe(false);
+    expect(hostAllowed("notimgur.com", list)).toBe(false);
+    expect(hostAllowed("imgur.com.evil.com", list)).toBe(false);
+  });
+
+  it("returns false for an empty allowlist", () => {
+    expect(hostAllowed("imgur.com", [])).toBe(false);
+  });
+});
+
+describe("resolvePreview allowlist gating (#215)", () => {
+  it("returns the source only when the media host is allowed", () => {
+    const allow = ["static.f-list.net"];
+    expect(
+      resolvePreview("https://static.f-list.net/images/a/pic.png", allow),
+    ).toMatchObject({ kind: "image", host: "static.f-list.net" });
+    // Not on the list → plain link, even though it is resolvable media.
+    expect(
+      resolvePreview("https://cdn.example.com/pic.png", allow),
+    ).toBeUndefined();
+  });
+
+  it("gates on the effective host after a page→direct rewrite", () => {
+    // imgur.com rewrites to i.imgur.com — listing the apex covers it via the
+    // subdomain match, so the preview resolves to the direct host.
+    expect(
+      resolvePreview("https://imgur.com/aB3dE9f", ["imgur.com"]),
+    ).toMatchObject({ src: "https://i.imgur.com/aB3dE9f.jpg", kind: "image" });
+    // But a list that omits imgur entirely blocks it.
+    expect(
+      resolvePreview("https://imgur.com/aB3dE9f", ["xariah.net"]),
+    ).toBeUndefined();
+  });
+
+  it("gates twimg format-param images on the allowlist too", () => {
+    const href = "https://pbs.twimg.com/media/AbC123?format=jpg&name=large";
+    expect(resolvePreview(href, ["pbs.twimg.com"])).toMatchObject({
+      kind: "image",
+      src: href,
+    });
+    expect(resolvePreview(href, ["imgur.com"])).toBeUndefined();
+  });
+
+  it("without an allowlist argument, skips the gate (resolver in isolation)", () => {
+    expect(resolvePreview("https://cdn.example.com/pic.png")).toMatchObject({
+      kind: "image",
     });
   });
 });

@@ -396,6 +396,23 @@
   color: var(--eb-danger);
 }
 
+/* Image-preview allowlist editor (#215): the list/form sit below the
+   label/help header, full width rather than in a right-hand control column. */
+.hostEditorBody {
+  margin-top: 11px;
+}
+
+/* Inline text button (e.g. "Reset to defaults") within a hint line. */
+.linkButton {
+  padding: 0;
+  font-size: inherit;
+  color: var(--eb-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
 /* ── Away & logs (§12, M5 step 7) ─────────────────────────────────────── */
 
 .paneNote {

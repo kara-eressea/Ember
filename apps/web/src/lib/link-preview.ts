@@ -51,8 +51,35 @@ const HOST_REWRITES: {
   },
 ];
 
-/** A previewable media source for the URL, or undefined (= plain link). */
-export function resolvePreview(href: string): PreviewSource | undefined {
+/**
+ * Is `host` covered by the allowlist? A host matches an entry when it equals
+ * it exactly or is a subdomain of it (`i.imgur.com` matches `imgur.com`), so
+ * adding an apex host sensibly covers the `i.`/`cdn.`/`www.` variants our
+ * rewrites can produce. Both sides are lowercased (hostnames are
+ * case-insensitive). (#215)
+ */
+export function hostAllowed(
+  host: string,
+  allowHosts: readonly string[],
+): boolean {
+  const target = host.toLowerCase();
+  return allowHosts.some((entry) => {
+    const allowed = entry.toLowerCase();
+    return target === allowed || target.endsWith(`.${allowed}`);
+  });
+}
+
+/**
+ * A previewable media source for the URL, or undefined (= plain link). When
+ * `allowHosts` is given, the *effective* media host (after any page→direct
+ * rewrite) must be on the allowlist (#215) — otherwise a resolvable link
+ * still renders as a plain link. Omitting `allowHosts` skips the gate (used
+ * by unit tests exercising the resolver in isolation).
+ */
+export function resolvePreview(
+  href: string,
+  allowHosts?: readonly string[],
+): PreviewSource | undefined {
   let url: URL;
   try {
     url = new URL(href);
@@ -63,28 +90,47 @@ export function resolvePreview(href: string): PreviewSource | undefined {
     return undefined;
   }
   const path = `${url.host}${url.pathname}`;
+  let source: PreviewSource | undefined;
   if (IMAGE_EXT.test(url.pathname)) {
-    return { src: href, kind: "image", host: url.host, path };
-  }
-  if (VIDEO_EXT.test(url.pathname)) {
-    return { src: href, kind: "video", host: url.host, path };
-  }
-  // Some hosts (Twitter/X's pbs.twimg.com) declare the image type in a
-  // `format=` query param rather than the path extension — the URL still
-  // hotlinks directly, so keep the full query (name=, etc.) on the src.
-  const format = url.searchParams.get("format");
-  if (format !== null && IMAGE_FORMAT_PARAM.test(format)) {
-    return { src: href, kind: "image", host: url.host, path };
-  }
-  for (const entry of HOST_REWRITES) {
-    if (entry.host.test(url.hostname)) {
-      const src = entry.rewrite(url);
-      if (src !== undefined) {
-        return { src, kind: "image", host: url.host, path };
+    source = { src: href, kind: "image", host: url.host, path };
+  } else if (VIDEO_EXT.test(url.pathname)) {
+    source = { src: href, kind: "video", host: url.host, path };
+  } else {
+    // Some hosts (Twitter/X's pbs.twimg.com) declare the image type in a
+    // `format=` query param rather than the path extension — the URL still
+    // hotlinks directly, so keep the full query (name=, etc.) on the src.
+    const format = url.searchParams.get("format");
+    if (format !== null && IMAGE_FORMAT_PARAM.test(format)) {
+      source = { src: href, kind: "image", host: url.host, path };
+    } else {
+      for (const entry of HOST_REWRITES) {
+        if (entry.host.test(url.hostname)) {
+          const src = entry.rewrite(url);
+          if (src !== undefined) {
+            source = { src, kind: "image", host: url.host, path };
+            break;
+          }
+        }
       }
     }
   }
-  return undefined;
+  if (source === undefined) {
+    return undefined;
+  }
+  if (allowHosts !== undefined) {
+    // Gate on the host actually hotlinked — the rewrite target, not the page
+    // host (issue guidance: match the effective host after any rewrite).
+    let effectiveHost = source.host;
+    try {
+      effectiveHost = new URL(source.src).host;
+    } catch {
+      // source.src is always a URL we built; the fallback is defensive only.
+    }
+    if (!hostAllowed(effectiveHost, allowHosts)) {
+      return undefined;
+    }
+  }
+  return source;
 }
 
 /** LinkChip label: media filename, else the last path segment, else the
