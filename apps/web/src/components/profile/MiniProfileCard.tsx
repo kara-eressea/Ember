@@ -8,6 +8,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { match, type MatchReport } from "@emberchat/matcher";
+import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import type { ProfileDto } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import type { SocialDto } from "../../lib/api.js";
@@ -22,6 +23,7 @@ import {
   type LoadedProfile,
 } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { RichText } from "../chat/RichText.js";
 import { Avatar } from "../common/Avatar.js";
 import { RateEditor } from "../ratings/RateEditor.js";
 import { StarRow } from "../ratings/StarRating.js";
@@ -102,7 +104,7 @@ export function MiniProfileCard({
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
   // Live STA status message from whichever session source knows it (member
   // rosters, DM partner, friends/bookmarks) — the same data the member list
-  // renders. Plain text, matching how status is shown elsewhere.
+  // renders. Rendered through the shared chat BBCode renderer (#210).
   const statusMessage = useSessionsStore((s) =>
     findStatusMessage(s.sessions[identityId], name),
   );
@@ -359,8 +361,12 @@ function CardContent({
         </div>
       </div>
       {statusMessage && (
-        <div className={styles.cardStatus} title={statusMessage}>
-          {statusMessage}
+        // Render the chat BBCode subset the way the log and DM header do
+        // (#210): [url], [eicon], [color] and friends must never show as raw
+        // tags. The card has room for the full inline render; the title falls
+        // back to the flattened plain text for the hover tooltip.
+        <div className={styles.cardStatus} title={bbcodeToText(statusMessage)}>
+          <RichText bbcode={statusMessage} />
         </div>
       )}
       {!self &&

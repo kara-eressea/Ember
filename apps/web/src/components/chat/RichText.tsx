@@ -129,6 +129,12 @@ function renderNode(
           {node.text}
         </span>
       );
+    case "spoiler":
+      // Incoming [spoiler] from other clients (#204): same covered bar as the
+      // `||…||` spelling, but wrapping full markup (text, eicons, …).
+      return (
+        <Spoiler key={key}>{renderNodes(node.children, key, extra)}</Spoiler>
+      );
     // Profile-dialect nodes never occur in chat parses; if one arrives
     // unclaimed (no `extra`), degrade to unstyled content — never crash.
     case "block":
@@ -313,11 +319,11 @@ function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
         }
       }}
     >
-      <span className={styles.linkChipGlyph} aria-hidden>
-        {previewable ? "▣" : "↗"}
-      </span>
       <span className={styles.linkChipLabel}>
         {children ?? chipLabel(href)}
+      </span>
+      <span className={styles.linkChipGlyph} aria-hidden>
+        {previewable ? "▣" : "↗"}
       </span>
       {host !== "" && <span className={styles.linkChipHost}>[{host}]</span>}
     </a>

@@ -121,6 +121,50 @@ describe("parseBBCode", () => {
     expect(sanitizeBBCode("plain [ bracket")).toBe("plain [ bracket");
   });
 
+  it("parses [spoiler] in every dialect, nesting subset markup (#204)", () => {
+    expect(parseBBCode("hush [spoiler]the [b]butler[/b][/spoiler]!")).toEqual([
+      { type: "text", text: "hush " },
+      {
+        type: "spoiler",
+        children: [
+          { type: "text", text: "the " },
+          {
+            type: "wrapper",
+            tag: "b",
+            children: [{ type: "text", text: "butler" }],
+          },
+        ],
+      },
+      { type: "text", text: "!" },
+    ]);
+    // Wraps an eicon just as well (the QA screenshot case).
+    expect(parseBBCode("[spoiler][eicon]boop[/eicon][/spoiler]")).toEqual([
+      {
+        type: "spoiler",
+        children: [{ type: "name", tag: "eicon", name: "boop" }],
+      },
+    ]);
+    // Available under the profile dialect too.
+    expect(parseBBCode("[spoiler]x[/spoiler]", "profile")).toEqual([
+      { type: "spoiler", children: [{ type: "text", text: "x" }] },
+    ]);
+  });
+
+  it("[spoiler] with a parameter or unclosed stays literal (#204)", () => {
+    expect(sanitizeBBCode("[spoiler=hint]x[/spoiler]")).toBe(
+      "[spoiler=hint]x[/spoiler]",
+    );
+    expect(sanitizeBBCode("[spoiler]never closed")).toBe(
+      "[spoiler]never closed",
+    );
+  });
+
+  it("round-trips [spoiler] and flattens it to visible text (#204)", () => {
+    const input = "[spoiler]the [b]butler[/b] did it[/spoiler]";
+    expect(sanitizeBBCode(input)).toBe(input);
+    expect(bbcodeToText(input)).toBe("the butler did it");
+  });
+
   it("never throws on hostile input", () => {
     fc.assert(
       fc.property(fc.string(), (input) => {
