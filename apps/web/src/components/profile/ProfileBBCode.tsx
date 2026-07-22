@@ -18,9 +18,20 @@ import {
 import type { ProfileInline } from "@emberchat/protocol";
 import { useProfileStore } from "../../stores/profile.js";
 import chatStyles from "../chat/chat.module.css";
-import { renderNodes, type ExtraNodeRenderer } from "../chat/RichText.js";
+import {
+  ProfileLinkProvider,
+  renderNodes,
+  type ExtraNodeRenderer,
+} from "../chat/RichText.js";
 import { Lightbox } from "./ImagesTab.js";
 import styles from "./profile.module.css";
+
+// Inside the viewer, an f-list.net/c/<name> link swaps the viewer rather
+// than opening the mini card (which would layer below the modal) — mirrors
+// the [user] handling in `extra` below.
+const openProfileLink = (_element: Element, name: string): void => {
+  useProfileStore.getState().open(name);
+};
 
 const ALIGN_CLASS: Record<string, string> = {
   left: styles.bbAlignLeft!,
@@ -62,7 +73,7 @@ export function ProfileBBCode({
   );
 
   return (
-    <>
+    <ProfileLinkProvider value={openProfileLink}>
       <div className={styles.bbBody}>{renderNodes(nodes, "p", extra)}</div>
       {lightbox && (
         <Lightbox
@@ -76,7 +87,7 @@ export function ProfileBBCode({
           }}
         />
       )}
-    </>
+    </ProfileLinkProvider>
   );
 }
 

@@ -22,6 +22,7 @@ import {
   flistAccounts,
   identities,
   messages,
+  profileViews,
 } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { CharacterDataBudget } from "./../flist-api/character-data-budget.js";
@@ -51,6 +52,12 @@ beforeAll(async () => {
     infotags: { "1": "116", "2": "9", "9": "Elf" },
     images: [{ id: 31, extension: "png", height: 640, width: 480 }],
     inlines: { "42": { hash: "abcdef0123456789", extension: "png" } },
+  });
+  // The session's own character — used by the self-exclusion test (#209).
+  sim.setCharacterProfile(CHARACTER, {
+    description: "[b]Birch[/b], the viewer's own character.",
+    kinks: { "620": "yes" },
+    infotags: {},
   });
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
@@ -238,6 +245,34 @@ describe("history", () => {
       (await request("DELETE", `${base()}/profile-history/old greywhisker`))
         .statusCode,
     ).toBe(404);
+  });
+
+  it("does not record the session's own character as a view (#209)", async () => {
+    // The Compare/kink-match block fetches the viewer's own profile in the
+    // background; that must never surface in recent views.
+    const response = await get(`${base()}/profile/${CHARACTER}`);
+    expect(response.statusCode).toBe(200);
+    expect(response.json<ProfileResponse>().profile.name).toBe(CHARACTER);
+
+    const names = (await get(`${base()}/profile-history`))
+      .json<{ history: { name: string }[] }>()
+      .history.map((row) => row.name);
+    expect(names).not.toContain(CHARACTER);
+  });
+
+  it("filters a pre-existing self view out of history at serve time (#209)", async () => {
+    // Simulate a row recorded before the fix; it must not be served.
+    await db.insert(profileViews).values({
+      identityId,
+      characterLower: CHARACTER.toLowerCase(),
+      characterName: CHARACTER,
+      firstViewedAt: new Date(),
+      lastViewedAt: new Date(),
+    });
+    const names = (await get(`${base()}/profile-history`))
+      .json<{ history: { name: string }[] }>()
+      .history.map((row) => row.name);
+    expect(names).not.toContain(CHARACTER);
   });
 });
 
