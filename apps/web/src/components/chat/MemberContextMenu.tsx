@@ -20,6 +20,7 @@ import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
@@ -122,26 +123,18 @@ export function MemberContextMenu({
     });
   }, [identityId]);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") {
-        return;
-      }
-      // While drafting a report, the first Escape collapses the form back to
-      // the menu (so a reflexive tap doesn't discard the complaint); a
-      // second Escape closes the menu as usual.
-      if (reporting) {
-        setReporting(false);
-        setReportText("");
-        return;
-      }
-      onClose();
+  // While drafting a report, the first Escape collapses the form back to the
+  // menu (so a reflexive tap doesn't discard the complaint); a second Escape
+  // closes the menu as usual. Either way the event is claimed by the shared
+  // stack so MessageLog's jump/mark-read doesn't also fire.
+  useEscapeToClose(() => {
+    if (reporting) {
+      setReporting(false);
+      setReportText("");
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose, reporting]);
+    onClose();
+  });
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {

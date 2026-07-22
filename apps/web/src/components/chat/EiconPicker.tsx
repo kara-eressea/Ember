@@ -16,6 +16,7 @@ import { api, ApiError } from "../../lib/api.js";
 import { eiconUrl } from "../../lib/avatar.js";
 import { placePopover } from "../profile/popover.js";
 import { patchPrefs } from "../prefs/patch.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
 import {
@@ -60,17 +61,7 @@ export function EiconPicker({
   const [pos, setPos] = useState<{ top: number; left: number }>();
   const [placement, setPlacement] = useState<"above" | "below">("above");
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useEscapeToClose(onClose);
 
   // Measure and place per §13 — the composer sits at the bottom of the
   // viewport, so the below-start preference flips this above the ☺ button

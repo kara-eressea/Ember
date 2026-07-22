@@ -14,6 +14,7 @@ import { gateway } from "../../gateway/socket.js";
 import type { SocialDto } from "../../lib/api.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { nickColor } from "../../theme/tokens.js";
 import {
   loadOwnProfile,
@@ -123,17 +124,7 @@ export function MiniProfileCard({
     void loadOwnProfile(identityId, ownCharacter);
   }, [identityId, name, ownCharacter]);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useEscapeToClose(onClose);
 
   // Measure after render, place per §13. Re-runs when the content state
   // changes shape (skeleton → loaded → error) since the height changes.
