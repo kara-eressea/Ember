@@ -10,6 +10,8 @@ import {
   DEFAULT_ACCENT,
   GENDER_PALETTE,
   GENDER_PALETTE_LIGHT,
+  KINK_PALETTE,
+  KINK_PALETTE_LIGHT,
   LIGHT_THEMES,
   mix,
   NICK_PALETTE,
@@ -84,6 +86,7 @@ export function themeVariables(
   const bbc = light ? bbcLight(text, heading) : BBC_DARK;
   const nicks = light ? NICK_PALETTE_LIGHT : NICK_PALETTE;
   const genders = light ? GENDER_PALETTE_LIGHT : GENDER_PALETTE;
+  const kinks = light ? KINK_PALETTE_LIGHT : KINK_PALETTE;
   return {
     ...Object.fromEntries(
       nicks.map((hex, index) => [`--eb-nick-${String(index)}`, hex]),
@@ -93,6 +96,9 @@ export function themeVariables(
         `--eb-gender-${slug}`,
         hex,
       ]),
+    ),
+    ...Object.fromEntries(
+      Object.entries(kinks).map(([slug, hex]) => [`--eb-kink-${slug}`, hex]),
     ),
     "--eb-heading": heading,
     "--eb-bg": bg,
