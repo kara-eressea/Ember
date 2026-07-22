@@ -12,7 +12,7 @@ import {
   serializeClientCommand,
   type ClientCommand,
 } from "@emberchat/fchat-protocol";
-import { FchatSim, rawDataToString } from "./sim-server.js";
+import { FchatSim, escapeWireText, rawDataToString } from "./sim-server.js";
 
 class TestClient {
   readonly closed: Promise<void>;
@@ -1894,5 +1894,35 @@ describe("character JSON API + eicon index (M8 step 3)", () => {
     const deltaLines = delta.split("\n").filter((line) => line !== "");
     expect(deltaLines[0]).toBe("# As Of: 1752000900");
     expect(deltaLines.slice(1)).toEqual(["-\tteacup"]);
+  });
+});
+
+describe("escapeWireText (#335 follow-up)", () => {
+  // The sim mirrors the real F-Chat server: it entity-escapes & < > on
+  // outbound MSG/LRP so e2e sees the same escaped wire the live server emits
+  // (a signed CDN URL's '&' arriving as '&amp;'), exercising the client decode.
+  it("escapes the three entities the live server injects", () => {
+    expect(escapeWireText("Tom & Jerry")).toBe("Tom &amp; Jerry");
+    expect(escapeWireText("<3")).toBe("&lt;3");
+    expect(escapeWireText("a > b")).toBe("a &gt; b");
+  });
+
+  it("turns a signed twimg URL into the escaped wire shape", () => {
+    expect(
+      escapeWireText("https://pbs.twimg.com/media/AbC?format=jpg&name=large"),
+    ).toBe("https://pbs.twimg.com/media/AbC?format=jpg&amp;name=large");
+  });
+
+  it("escapes '&' first, so it is the exact inverse of the client decode", () => {
+    // escape(text) then the client's &amp;-last decode returns the original —
+    // the round-trip is the identity for any input.
+    const decode = (s: string): string =>
+      s
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&");
+    for (const original of ["a & b", "<b>&amp;</b>", "x & y < z > w"]) {
+      expect(decode(escapeWireText(original))).toBe(original);
+    }
   });
 });

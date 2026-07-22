@@ -4,6 +4,37 @@
 // #channel refs — and the /me emote shape. Kept free of React so it unit-tests
 // without a DOM.
 
+/**
+ * Decode the HTML entities the F-Chat *server* injects into inbound text
+ * (#335 follow-up). The reference client never escapes on send — the server
+ * entity-escapes incoming text and re-broadcasts (and echoes) the escaped
+ * form, so every wire text field arrives with `&` → `&amp;`, `<` → `&lt;`,
+ * `>` → `&gt;`. Left undecoded, a signed CDN URL like
+ * `…?ex=…&amp;is=…&amp;hm=…` reaches the DOM with literal `&amp;`, the CDN
+ * sees a param named `amp;is`, and every Discord/twimg preview *and* direct
+ * click 404s. F-List's own static URLs carry no query string, so they were
+ * unaffected — matching the live report.
+ *
+ * We mirror the reference client's `decodeHTML` exactly (f-list/exported
+ * `fchat/common.ts`): only these three entities, `&amp;` decoded LAST so a
+ * user-typed `&amp;amp;` (server-escaped from a literal `&amp;`) collapses to
+ * `&amp;` and never cascades to `&`. Deliberately NOT decoded: `&quot;`,
+ * `&#39;`/`&apos;`, and numeric refs — the server never emits them and the
+ * reference client renders them literally, so decoding them would diverge
+ * from the ecosystem. React renders the result as text/attributes (never
+ * innerHTML), so this stays injection-safe.
+ *
+ * Applies to inbound wire text only (messages, statuses, ads, channel
+ * descriptions). Locally composed text in the composer/ad previews is
+ * pre-wire — never server-escaped — so it must NOT be decoded.
+ */
+export function decodeWireEntities(text: string): string {
+  return text
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&");
+}
+
 export type TextToken =
   | { kind: "plain"; text: string }
   | { kind: "link"; href: string }

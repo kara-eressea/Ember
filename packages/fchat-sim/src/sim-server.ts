@@ -37,6 +37,21 @@ import { SocialService } from "./social-service.js";
 import { TicketService } from "./ticket-service.js";
 import { DEFAULT_WORLD, type SimWorld } from "./world.js";
 
+/**
+ * Entity-escape outbound chat text exactly like the real F-Chat server, which
+ * escapes `& < >` on incoming MSG/LRP and re-broadcasts (and echoes) the
+ * escaped form — so a signed CDN URL's `&` reaches clients as `&amp;`. Mirrors
+ * the wire the live server produces so e2e exercises the client's entity
+ * decode (#335 follow-up). `&` is escaped first — the standard escape order,
+ * the exact inverse of the client's `&amp;`-last decode, so escape∘decode is
+ * the identity on any text. */
+export function escapeWireText(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export interface FchatSimOptions {
   /** Port to listen on; 0 (default) picks a free port. */
   readonly port?: number;
@@ -1102,7 +1117,11 @@ export class FchatSim {
       channel,
       {
         cmd: "MSG",
-        payload: { character, message: payload.message, channel: channel.name },
+        payload: {
+          character,
+          message: escapeWireText(payload.message),
+          channel: channel.name,
+        },
       },
       character,
     );
@@ -1143,7 +1162,11 @@ export class FchatSim {
       channel,
       {
         cmd: "LRP",
-        payload: { character, message: payload.message, channel: channel.name },
+        payload: {
+          character,
+          message: escapeWireText(payload.message),
+          channel: channel.name,
+        },
       },
       character,
     );
