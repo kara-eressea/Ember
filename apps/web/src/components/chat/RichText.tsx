@@ -32,11 +32,8 @@ import {
   useUserPrefs,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
-import {
-  decodeWireEntities,
-  spoilerSegments,
-  textTokens,
-} from "./rich-text.js";
+import { spoilerSegments, textTokens } from "./rich-text.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import styles from "./chat.module.css";
 
 /**

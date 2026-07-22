@@ -11,6 +11,7 @@ import { gateway } from "../../gateway/socket.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -336,18 +337,22 @@ export function ChannelHeader({
   const canManageRoom =
     roleFor(ownCharacter, channel.oplist) !== null || chatop;
 
+  // Room titles are wire text the server entity-escapes (#350); decode for the
+  // plain-text header + chip tooltip. The description below goes through
+  // RichText, which decodes on its own path — so it is left untouched here.
+  const title = decodeWireEntities(channel.title);
   return (
     <header className={styles.header}>
       <div className={styles.headerRow}>
         <span className={styles.headerGlyph}>#</span>
-        <h1 className={styles.headerTitle}>{channel.title}</h1>
+        <h1 className={styles.headerTitle}>{title}</h1>
         <CampaignChip identityId={identityId} channelKey={channel.key} />
         {canManageRoom && (
           <RoomChip
             identityId={identityId}
             channelKey={channel.key}
             convId={channel.convId}
-            title={channel.title}
+            title={title}
             isPrivateRoom={channel.key.startsWith("ADH-")}
             mode={channel.mode}
             description={channel.description}

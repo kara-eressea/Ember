@@ -28,6 +28,7 @@ import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
 import {
@@ -342,9 +343,9 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       mentions={channel.mentions}
       pinned={pinned}
       glyph="#"
-      label={channel.title}
+      label={decodeWireEntities(channel.title)}
       affordance={{
-        label: `Leave ${channel.title}`,
+        label: `Leave ${decodeWireEntities(channel.title)}`,
         onActivate: () => {
           leaveChannel(channel);
         },
@@ -1009,14 +1010,16 @@ function InviteRow({
     }
   }
 
+  // Invite room titles are wire text the server entity-escapes (#350).
+  const inviteTitle = decodeWireEntities(invite.title);
   return (
     <div className={styles.inviteRow}>
       <span
         className={styles.inviteText}
-        title={`${invite.title} (${invite.key})`}
+        title={`${inviteTitle} (${invite.key})`}
       >
         ✉ <strong>{invite.sender}</strong> invited you to{" "}
-        <strong>{invite.title}</strong>
+        <strong>{inviteTitle}</strong>
       </span>
       <button
         type="button"
@@ -1298,7 +1301,7 @@ function SocialRow({
       onContextMenu={onContextMenu}
       title={
         character.online
-          ? `${character.status}${character.statusmsg ? ` — ${character.statusmsg}` : ""}`
+          ? `${character.status}${character.statusmsg ? ` — ${decodeWireEntities(character.statusmsg)}` : ""}`
           : "offline"
       }
     >

@@ -14,7 +14,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { MemberDto, SeenMemberDto } from "@emberchat/protocol";
-import { bbcodeToText } from "@emberchat/markdown-bbcode";
+import { wireToPlainText } from "../../lib/wire-text.js";
 import { presenceDot } from "../../lib/presence.js";
 import { loadSocial } from "../../lib/social.js";
 import { openCardFrom } from "../../stores/profile.js";
@@ -273,7 +273,7 @@ function MemberRow({
   const dot = presenceDot(true, member.status);
   // Status shows on a second line under the name (#217). BBCode is stripped to
   // its text content — one-line/dense context, raw tags must never show (#210).
-  const status = member.statusmsg ? bbcodeToText(member.statusmsg) : "";
+  const status = member.statusmsg ? wireToPlainText(member.statusmsg) : "";
   // Gender tint is supplementary (#177): the name keeps AA contrast regardless,
   // so it stays fully readable without the colour.
   const genderColor = genderColorVar(member.gender);

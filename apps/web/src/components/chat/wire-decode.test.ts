@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
-import { decodeWireEntities } from "./rich-text.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import { resolvePreview } from "../../lib/link-preview.js";
 
 /** The href of the first [url] node in a parsed tree (the real specimens are a
