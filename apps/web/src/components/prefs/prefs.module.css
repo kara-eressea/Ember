@@ -1,14 +1,8 @@
 /* Preferences window + control primitives — COMPONENTS.md §12 exactly.
    Styled against the --eb-* theme tokens only. */
 
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  background: rgb(0 0 0 / 45%);
-}
+/* The dimmed backdrop lives in the shared ModalWindow (modal.module.css);
+   this module owns only the window box and its rail + pane layout. */
 
 .window {
   display: grid;

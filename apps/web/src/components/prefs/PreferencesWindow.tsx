@@ -4,7 +4,8 @@
 // pane persists goes through the gateway `prefs.set` patch — per app
 // account, synced across every device (decisions.md §10).
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { ModalWindow } from "../shell/ModalWindow.js";
 import { AppearancePane } from "./AppearancePane.js";
 import { AwayLogsPane } from "./AwayLogsPane.js";
 import { GeneralPane } from "./GeneralPane.js";
@@ -32,53 +33,16 @@ export function PreferencesWindow({
   onClose: () => void;
 }) {
   const [pane, setPane] = useState<PaneId>("general");
-  const windowRef = useRef<HTMLDivElement>(null);
-
-  // onClose is an inline arrow in the parent, so it's a fresh reference on
-  // every parent render. Keep it in a ref the mount-only effect reads, so a
-  // parent re-render (e.g. the prefs-sync round trip or a presence tick)
-  // never re-runs the effect — re-running it would call windowRef.focus()
-  // and yank focus out of whatever pane input the user is typing in (#294).
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
-
-  useEffect(() => {
-    // Focus the dialog once, on open — not on every parent render.
-    windowRef.current?.focus();
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onCloseRef.current();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, []);
 
   const active = PANES.find((entry) => entry.id === pane) ?? PANES[0];
 
   return (
-    <div
-      className={styles.overlay}
-      onPointerDown={(event) => {
-        // Backdrop only — clicks inside the window must not close it.
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+    <ModalWindow
+      ariaLabel="Preferences"
+      windowClassName={styles.window}
+      onClose={onClose}
     >
-      <div
-        className={styles.window}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Preferences"
-        tabIndex={-1}
-        ref={windowRef}
-      >
-        <nav className={styles.rail} aria-label="Preference sections">
+      <nav className={styles.rail} aria-label="Preference sections">
           <div className={styles.railTitle}>Preferences</div>
           {PANES.map((entry) => (
             <button
@@ -129,8 +93,7 @@ export function PreferencesWindow({
             />
           </div>
         </section>
-      </div>
-    </div>
+    </ModalWindow>
   );
 }
 

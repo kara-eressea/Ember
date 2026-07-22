@@ -3,7 +3,7 @@
 // editable TOPIC row has no wire counterpart and is omitted. For DMs the
 // header shows the partner with presence and the TPN typing state.
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
@@ -17,8 +17,8 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
-import { GroupLabel, Segmented } from "../prefs/controls.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
+import { RoomSettingsWindow } from "./RoomSettingsWindow.js";
 import { SearchGlyph } from "../icons/Glyphs.js";
 import { RichText } from "./RichText.js";
 import { roleFor } from "./member-roles.js";
@@ -200,274 +200,58 @@ function PinChip({
 }
 
 /**
- * Room management for op+ viewers: invites and public/private (private
- * rooms only — RST/CIU have no meaning on official channels), plus the op
- * tooling that works everywhere: room mode (RMO), description (CDS), and
- * the banlist (CBL — the answer lands in the log as a SystemLine). F-Chat
- * has no command reporting the open/closed state, so both of those actions
- * are always offered — the server's SYS response says what happened.
+ * Room management for op+ viewers. The chip opens the room-settings window
+ * (RoomSettingsWindow): invites and public/private (private rooms only —
+ * RST/CIU have no meaning on official channels), plus the op tooling that
+ * works everywhere: room mode (RMO), description (CDS), and the banlist
+ * (CBL). F-Chat reports no open/closed state, so the window offers both
+ * visibility actions and echoes the server's SYS response.
  */
 function RoomChip({
   identityId,
   channelKey,
+  convId,
+  title,
   isPrivateRoom,
   mode,
   description,
 }: {
   identityId: string;
   channelKey: string;
+  convId: string;
+  title: string;
   isPrivateRoom: boolean;
   mode: string;
   description: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [character, setCharacter] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [info, setInfo] = useState<string>();
-  const [draft, setDraft] = useState<string>();
-  // F-Chat never reports a room's open/invite-only state, so we can't seed
-  // this from the channel — it tracks the last choice made here (undefined
-  // until the owner picks one) and drives the segmented control's highlight.
-  const [visibility, setVisibility] = useState<"public" | "private" | "">("");
-  const containerRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-    function onPointerDown(event: PointerEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("pointerdown", onPointerDown);
-    };
-  }, [open]);
-
-  async function invite(event: FormEvent) {
-    event.preventDefault();
-    const target = character.trim();
-    if (!target || busy) {
-      return;
-    }
-    setBusy(true);
-    setInfo(undefined);
-    try {
-      const ack = await gateway.cmd({
-        identityId,
-        action: "channel.invite",
-        d: { key: channelKey, character: target },
-      });
-      if (ack.ok) {
-        setCharacter("");
-        setInfo(`Invite sent to ${target}`);
-      } else {
-        setInfo(ack.error ?? "Could not invite");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function setStatus(status: "public" | "private") {
-    if (busy) {
-      return;
-    }
-    setBusy(true);
-    setInfo(undefined);
-    try {
-      const ack = await gateway.cmd({
-        identityId,
-        action: "channel.status",
-        d: { key: channelKey, status },
-      });
-      if (ack.ok) {
-        setVisibility(status);
-      }
-      setInfo(
-        ack.ok
-          ? status === "public"
-            ? "Room is now open and listed"
-            : "Room is now invite-only"
-          : (ack.error ?? "Could not change the room status"),
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Shared shape for the op commands whose feedback is just the result. */
-  async function run(
-    label: string,
-    command: Parameters<typeof gateway.cmd>[0],
-  ) {
-    if (busy) {
-      return;
-    }
-    setBusy(true);
-    setInfo(undefined);
-    try {
-      const ack = await gateway.cmd(command);
-      setInfo(ack.ok ? label : (ack.error ?? "Command failed"));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
-    <span className={styles.roomChipWrap} ref={containerRef}>
+    <>
       <button
         className={styles.pinChip}
         onClick={() => {
-          setOpen(!open);
-          setInfo(undefined);
+          setOpen(true);
         }}
-        title="Room settings — invites and visibility"
+        title="Room settings — invites, visibility, bans"
       >
         ⚙ room
       </button>
       {open && (
-        <div
-          className={styles.roomMenu}
-          role="dialog"
-          aria-label="Room settings"
-        >
-          {isPrivateRoom && (
-            <>
-              <section className={styles.roomSection}>
-                <GroupLabel>Invite someone</GroupLabel>
-                <form
-                  className={styles.roomMenuForm}
-                  onSubmit={(event) => {
-                    void invite(event);
-                  }}
-                >
-                  <input
-                    className={styles.miniInput}
-                    value={character}
-                    onChange={(e) => {
-                      setCharacter(e.target.value);
-                    }}
-                    placeholder="Character name…"
-                    aria-label="Invite a character"
-                  />
-                  <button
-                    className={styles.miniButton}
-                    type="submit"
-                    disabled={busy}
-                  >
-                    Invite
-                  </button>
-                </form>
-              </section>
-              <section className={styles.roomSection}>
-                <GroupLabel>Who can join</GroupLabel>
-                <Segmented
-                  label="Who can join"
-                  value={visibility as "public" | "private"}
-                  options={[
-                    { value: "public", label: "Anyone" },
-                    { value: "private", label: "Invite only" },
-                  ]}
-                  onChange={(next) => {
-                    void setStatus(next);
-                  }}
-                />
-                <p className={styles.roomHint}>
-                  F-Chat can’t tell us the current setting — pick one to change
-                  it.
-                </p>
-              </section>
-            </>
-          )}
-          {/* Room mode (RMO): which message kinds the room accepts. The
-              active segment reflects the live mode via channel.info. */}
-          <section className={styles.roomSection}>
-            <GroupLabel>Allowed messages</GroupLabel>
-            <Segmented
-              label="Allowed messages"
-              value={mode as "chat" | "ads" | "both"}
-              options={[
-                { value: "chat", label: "Chat" },
-                { value: "ads", label: "Ads" },
-                { value: "both", label: "Both" },
-              ]}
-              onChange={(next) => {
-                if (next === mode) {
-                  return;
-                }
-                void run(`Allowed messages set to ${next}`, {
-                  identityId,
-                  action: "channel.mode",
-                  d: { key: channelKey, mode: next },
-                });
-              }}
-            />
-          </section>
-          <section className={styles.roomSection}>
-            <GroupLabel>Description</GroupLabel>
-            <form
-              className={styles.roomMenuColumn}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run("Description updated", {
-                  identityId,
-                  action: "channel.describe",
-                  d: { key: channelKey, description: draft ?? description },
-                });
-              }}
-            >
-              <textarea
-                className={styles.roomMenuTextarea}
-                value={draft ?? description}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                }}
-                rows={3}
-                aria-label="Channel description"
-              />
-              <button
-                className={`${styles.miniButton} ${styles.roomSelfEnd ?? ""}`}
-                type="submit"
-                disabled={busy}
-              >
-                Save
-              </button>
-            </form>
-          </section>
-          <div className={styles.roomMenuFooter}>
-            <button
-              className={styles.roomQuietButton}
-              disabled={busy}
-              onClick={() => {
-                setOpen(false);
-                void run("", {
-                  identityId,
-                  action: "channel.banlist",
-                  d: { key: channelKey },
-                });
-              }}
-            >
-              View banlist
-            </button>
-          </div>
-          {info && (
-            <p className={styles.roomMenuInfo} role="status">
-              {info}
-            </p>
-          )}
-        </div>
+        <RoomSettingsWindow
+          identityId={identityId}
+          channelKey={channelKey}
+          convId={convId}
+          title={title}
+          isPrivateRoom={isPrivateRoom}
+          mode={mode}
+          description={description}
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
       )}
-    </span>
+    </>
   );
 }
 
@@ -561,6 +345,8 @@ export function ChannelHeader({
           <RoomChip
             identityId={identityId}
             channelKey={channel.key}
+            convId={channel.convId}
+            title={channel.title}
             isPrivateRoom={channel.key.startsWith("ADH-")}
             mode={channel.mode}
             description={channel.description}
