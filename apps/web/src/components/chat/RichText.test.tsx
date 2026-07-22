@@ -123,6 +123,56 @@ describe("RichText mini-profile status render (#210)", () => {
   });
 });
 
+describe("RichText server-entity decode (#335 follow-up)", () => {
+  // NB: the bbcode is passed as a JS string expression ({"…&amp;…"}), not a
+  // JSX string attribute — JSX would itself decode entities in a "…" literal
+  // and rob the test of its point. The strings below carry literal entities.
+  it("renders a server-escaped ampersand as a single '&'", () => {
+    const { container } = render(<RichText bbcode={"Tom &amp; Jerry"} />);
+    expect(container.textContent).toBe("Tom & Jerry");
+  });
+
+  it("gives a [url=] chip an href with the query intact (no &amp;)", () => {
+    render(
+      <RichText
+        bbcode={
+          "[url=https://pbs.twimg.com/media/AbC123?format=jpg&amp;name=large]pic[/url]"
+        }
+      />,
+    );
+    const link = screen.getByRole("link", { name: /pic/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://pbs.twimg.com/media/AbC123?format=jpg&name=large",
+    );
+  });
+
+  it("decodes entities sitting adjacent to eicon/user tags", () => {
+    const { container } = render(
+      <RichText
+        bbcode={"&lt;3 [eicon]spark[/eicon] &amp; [user]Nyx[/user]&gt;"}
+      />,
+    );
+    // Entities decode; tags still resolve to elements (not literal brackets).
+    expect(container.textContent).toContain("<3");
+    expect(container.textContent).toContain("&"); // the standalone "&"
+    expect(container.textContent).toContain(">");
+    expect(container.textContent).not.toContain("&amp;");
+    expect(container.textContent).not.toContain("[eicon");
+    expect(container.querySelector("img")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Nyx" })).toBeInTheDocument();
+  });
+
+  it("does NOT decode locally composed preview text (local prop)", () => {
+    // Composer/ad previews render pre-wire text, never server-escaped: a
+    // literal "&amp;" the user typed must survive verbatim.
+    const { container } = render(
+      <RichText bbcode={"Tom &amp; Jerry"} local />,
+    );
+    expect(container.textContent).toBe("Tom &amp; Jerry");
+  });
+});
+
 describe("RichText autolink chip child order", () => {
   // COMPONENTS-link-preview-eicon.md §1: label → glyph → domain, in that DOM
   // order. An autolinked plain URL derives its label and shows the mono host

@@ -768,10 +768,10 @@ export function Composer({
               <>
                 {session.character}
                 {previewEmote.possessive ? "" : " "}
-                <RichText bbcode={previewEmote.action} />
+                <RichText bbcode={previewEmote.action} local />
               </>
             ) : (
-              <RichText bbcode={wire} />
+              <RichText bbcode={wire} local />
             )}
           </div>
           {lossCount > 0 && (

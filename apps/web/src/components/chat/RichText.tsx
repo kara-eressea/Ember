@@ -32,7 +32,11 @@ import {
   useUserPrefs,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
-import { spoilerSegments, textTokens } from "./rich-text.js";
+import {
+  decodeWireEntities,
+  spoilerSegments,
+  textTokens,
+} from "./rich-text.js";
 import styles from "./chat.module.css";
 
 /**
@@ -67,11 +71,24 @@ const PlainNamesContext = createContext<PlainNamesMode>({
 
 export const PlainNamesProvider = PlainNamesContext.Provider;
 
-export function RichText({ bbcode }: { bbcode: string }) {
+export function RichText({
+  bbcode,
+  local = false,
+}: {
+  bbcode: string;
+  /** `true` when `bbcode` is locally composed (composer / ad previews) rather
+   * than inbound wire text: skip the server-entity decode, since pre-send text
+   * was never server-escaped. Defaults to wire text (decode on). */
+  local?: boolean;
+}) {
   // Memoized: the log re-renders far more often than messages change, and
   // parsing every visible message per render is exactly the hot path a
-  // hostile long message would exploit (audit).
-  const nodes = useMemo(() => parseBBCode(bbcode), [bbcode]);
+  // hostile long message would exploit (audit). Inbound wire text is
+  // entity-decoded first (#335 follow-up) so signed CDN URLs survive intact.
+  const nodes = useMemo(
+    () => parseBBCode(local ? bbcode : decodeWireEntities(bbcode)),
+    [bbcode, local],
+  );
   return <>{renderNodes(nodes, "r")}</>;
 }
 
