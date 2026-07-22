@@ -37,16 +37,16 @@ test("a destroyed private room can still be left after its join fails", async ({
   // in the room, live.
   keeper.send("CIU", { channel: room, character: "Cinder Ash" });
   await page.getByRole("button", { name: "Join Ember Vault" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Ember Vault" }),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Ember Vault" })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Keeper kicks Cinder: her client keeps the row but she is no longer a live
   // member, so the composer flips to the rejoin affordance.
   keeper.send("CKU", { channel: room, character: "Cinder Ash" });
-  await expect(
-    page.getByRole("button", { name: `Join ${room}` }),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: `Join ${room}` })).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Keeper leaves the now sole-occupied room and the sim reaps it — waiting on
   // Keeper's own LCH echo confirms the room is gone before we probe it.

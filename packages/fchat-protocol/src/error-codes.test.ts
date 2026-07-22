@@ -27,9 +27,7 @@ describe("error codes", () => {
     // These mean a leave is already effectively done (#327).
     expect(isChannelGoneError(FchatErrorCode.ChannelNotFound)).toBe(true); // 26
     expect(isChannelGoneError(FchatErrorCode.NotInChannel)).toBe(true); // 45
-    expect(isChannelGoneError(FchatErrorCode.CharacterNotInChannel)).toBe(
-      true,
-    ); // 49
+    expect(isChannelGoneError(FchatErrorCode.CharacterNotInChannel)).toBe(true); // 49
   });
 
   it("does not classify unrelated errors as channel-gone", () => {

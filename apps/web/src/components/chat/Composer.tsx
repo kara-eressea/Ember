@@ -116,9 +116,14 @@ export function Composer({
   const [rejoinState, setRejoinState] = useState<"idle" | "joining" | "gone">(
     "idle",
   );
-  useEffect(() => {
+  // Reset when the affordance's channel changes (the composer persists across
+  // conversation switches) — the render-phase reset React recommends over an
+  // effect that would setState after paint.
+  const [rejoinKeyMark, setRejoinKeyMark] = useState(rejoinKey);
+  if (rejoinKey !== rejoinKeyMark) {
+    setRejoinKeyMark(rejoinKey);
     setRejoinState("idle");
-  }, [rejoinKey]);
+  }
   // Synchronous correctness guard against double-send (#267). `busy` is
   // captured at render time, so two Enter events in one frame both see
   // busy=false and both dispatch. This ref flips synchronously before any
@@ -707,9 +712,11 @@ export function Composer({
       <div className={styles.composer}>
         <div className={styles.joinPrompt}>
           {rejoinState === "gone" ? (
-            isPrivateRoom
-              ? "This private room no longer exists — it closed when the last person left. Leave it from the sidebar to clear the row."
-              : "This channel is no longer available. Leave it from the sidebar to clear the row."
+            isPrivateRoom ? (
+              "This private room no longer exists — it closed when the last person left. Leave it from the sidebar to clear the row."
+            ) : (
+              "This channel is no longer available. Leave it from the sidebar to clear the row."
+            )
           ) : (
             <>
               You are not in this channel.
@@ -720,9 +727,7 @@ export function Composer({
                   void attemptRejoin();
                 }}
               >
-                {rejoinState === "joining"
-                  ? `Joining ${key}…`
-                  : `Join ${key}`}
+                {rejoinState === "joining" ? `Joining ${key}…` : `Join ${key}`}
               </button>
             </>
           )}

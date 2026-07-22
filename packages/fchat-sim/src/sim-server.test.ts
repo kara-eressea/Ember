@@ -135,6 +135,15 @@ async function login(
   return client;
 }
 
+/** The ADH- id the sim minted for a CCR, read off its JCH echo. */
+function mintedRoom(raw: string): string {
+  const command = parseServerCommand(raw);
+  if (command.cmd === "JCH" && "payload" in command) {
+    return command.payload.channel;
+  }
+  throw new Error(`expected a JCH echo, got ${command.cmd}`);
+}
+
 describe("getApiTicket.php", () => {
   it("issues a ticket with the account's characters", async () => {
     const sim = await startSim();
@@ -554,9 +563,7 @@ describe("channels", () => {
     const sim = await startSim();
     const amber = await login(sim, "amber@example.test", "Amber Vale");
     amber.send({ cmd: "CCR", payload: { channel: "Amber's Room" } });
-    const created = parseServerCommand(await amber.waitFor("JCH"));
-    const room =
-      created.cmd === "JCH" ? created.payload.channel : "ADH-missing";
+    const room = mintedRoom(await amber.waitFor("JCH"));
     expect(room).toMatch(/^ADH-/);
     await amber.waitFor("CDS"); // drain the rest of the join flow
 
@@ -573,9 +580,7 @@ describe("channels", () => {
     const sim = await startSim();
     const amber = await login(sim, "amber@example.test", "Amber Vale");
     amber.send({ cmd: "CCR", payload: { channel: "Amber's Room" } });
-    const created = parseServerCommand(await amber.waitFor("JCH"));
-    const room =
-      created.cmd === "JCH" ? created.payload.channel : "ADH-missing";
+    const room = mintedRoom(await amber.waitFor("JCH"));
     await amber.waitFor("CDS");
 
     // The sole occupant drops (the restart-detach case). The room is gone, so
@@ -593,9 +598,7 @@ describe("channels", () => {
     const sim = await startSim();
     const amber = await login(sim, "amber@example.test", "Amber Vale");
     amber.send({ cmd: "CCR", payload: { channel: "Shared Room" } });
-    const created = parseServerCommand(await amber.waitFor("JCH"));
-    const room =
-      created.cmd === "JCH" ? created.payload.channel : "ADH-missing";
+    const room = mintedRoom(await amber.waitFor("JCH"));
     await amber.waitFor("CDS");
     // Invite a second member so the room has two occupants.
     amber.send({
