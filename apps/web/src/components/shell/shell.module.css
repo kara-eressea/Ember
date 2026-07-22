@@ -468,6 +468,62 @@
   text-overflow: ellipsis;
 }
 
+/* Row wrapper (#291): lets the close/leave X overlay the row's right edge as
+   a sibling of the Link, without nesting a button inside an anchor. */
+.navRowWrap {
+  position: relative;
+}
+
+/* Trailing slot of a nav row: holds the counter badge. Fixed minimum size so
+   the X can overlay this spot instead of widening the row. */
+.navTrail {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-width: 18px;
+  min-height: 16px;
+  justify-content: flex-end;
+}
+
+/* Close a DM / leave a channel (#291): hidden until the row is hovered or
+   the button itself is keyboard-focused. Kept in the DOM (opacity, not
+   display) so it stays tab-reachable; the counter badge swaps out for it. */
+.navClose {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--eb-radius);
+  opacity: 0;
+}
+
+.navRowWrap:hover .navClose,
+.navClose:focus-visible {
+  opacity: 1;
+}
+
+.navClose:hover {
+  background: var(--eb-hover);
+  color: var(--eb-text);
+}
+
+.navRowWrap:hover:has(.navClose) .navTrailBadge,
+.navRowWrap:has(.navClose:focus-visible) .navTrailBadge {
+  visibility: hidden;
+}
+
 .navBadge {
   margin-left: auto;
   flex: none;
