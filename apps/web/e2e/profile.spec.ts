@@ -189,15 +189,67 @@ test("profile viewer: fullscreen centers content, lightbox zoom fills the viewpo
   expect(zoomBox.height).toBeGreaterThan(800);
   expect(zoomBox.height).toBeLessThanOrEqual(846);
 
-  // ── #236: a small image is never upscaled past its natural size ───────
+  // ── #276 item 2 + #236: zoom carries across images within the lightbox,
+  // and a small image is still never upscaled past its natural size ───────
   await lightbox.getByRole("button", { name: "Next image" }).click();
   const smallLightbox = page.getByRole("dialog", { name: "Image 2 of 2" });
   const smallImg = smallLightbox.locator("img");
   await expect(smallImg).toHaveJSProperty("complete", true);
-  await smallImg.click();
+  // Paging no longer resets zoom: the next image opens already zoomed.
   await expect(smallImg).toHaveAttribute("aria-label", "Zoom out");
   const smallZoom = (await smallImg.boundingBox())!;
-  // Natural size is 300×200 — zoom must not blow it up.
+  // Natural size is 300×200 — carried zoom must not blow it up.
   expect(smallZoom.width).toBeLessThanOrEqual(302);
   expect(smallZoom.height).toBeLessThanOrEqual(202);
+});
+
+// #276 item 1: the full-screen window choice is a device-level pref that
+// survives a reload and applies to the next profile opened.
+test("profile viewer: full-screen window size persists across reopen", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "juniper@example.test", "Juniper Wren");
+  await joinChannel(page, ROOM_ID, "Reading Nook");
+
+  async function openTallyProfile() {
+    const members = page.getByRole("complementary", { name: "Members" });
+    await members.getByText("Tally Marsh").click({ button: "right" });
+    await page
+      .getByRole("menu", { name: "Tally Marsh menu" })
+      .getByRole("menuitem", { name: "View profile" })
+      .click();
+    const viewer = page.getByRole("dialog", { name: "Profile: Tally Marsh" });
+    await expect(viewer).toBeVisible();
+    return viewer;
+  }
+
+  // Open, go full-screen, then close.
+  let viewer = await openTallyProfile();
+  await viewer.getByRole("button", { name: "Fullscreen" }).click();
+  await expect(
+    viewer.getByRole("button", { name: "Exit fullscreen" }),
+  ).toBeVisible();
+  await viewer.getByRole("button", { name: "Close profile" }).click();
+  await expect(viewer).toBeHidden();
+
+  // Reopening the same session's viewer starts full-screen (in-memory pref).
+  viewer = await openTallyProfile();
+  await expect(
+    viewer.getByRole("button", { name: "Exit fullscreen" }),
+  ).toBeVisible();
+  await viewer.getByRole("button", { name: "Close profile" }).click();
+
+  // The choice is persisted to localStorage, so it also survives a full reload.
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Reading Nook" }),
+  ).toBeVisible({ timeout: 15_000 });
+  viewer = await openTallyProfile();
+  await expect(
+    viewer.getByRole("button", { name: "Exit fullscreen" }),
+  ).toBeVisible();
 });

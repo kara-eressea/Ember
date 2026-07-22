@@ -11,6 +11,10 @@ import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { api } from "../../lib/api.js";
 import {
+  persistViewerFullscreen,
+  savedViewerFullscreen,
+} from "../../lib/viewer-size.js";
+import {
   loadHistory,
   loadInsights,
   loadOwnProfile,
@@ -61,7 +65,10 @@ export function ProfileViewer({
     (s) => s.identities?.find((entry) => entry.id === identityId)?.name,
   );
   const windowRef = useRef<HTMLDivElement>(null);
-  const [fullscreen, setFullscreen] = useState(false);
+  // Window size is a device-level UI pref (#276): the viewer opens in whatever
+  // mode the user last left it in, so a full-screen session carries to the
+  // next profile they open. Persisted to localStorage on every toggle.
+  const [fullscreen, setFullscreen] = useState(savedViewerFullscreen);
 
   useEffect(() => {
     windowRef.current?.focus();
@@ -111,7 +118,11 @@ export function ProfileViewer({
             aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
             aria-pressed={fullscreen}
             onClick={() => {
-              setFullscreen((value) => !value);
+              setFullscreen((value) => {
+                const next = !value;
+                persistViewerFullscreen(next);
+                return next;
+              });
             }}
           >
             {fullscreen ? "⤡" : "⛶"}
@@ -134,6 +145,7 @@ export function ProfileViewer({
             loaded={loaded}
             activeTab={activeTab}
             ownCharacter={ownCharacter}
+            fullscreen={fullscreen}
           />
         </div>
       </div>
@@ -216,12 +228,14 @@ function ViewerBody({
   loaded,
   activeTab,
   ownCharacter,
+  fullscreen,
 }: {
   identityId: string;
   name: string;
   loaded: LoadedProfile | undefined;
   activeTab: TabId;
   ownCharacter: string | undefined;
+  fullscreen: boolean;
 }) {
   const setTab = useProfileStore((s) => s.setTab);
   const response = loaded?.response;
@@ -272,6 +286,7 @@ function ViewerBody({
           profile={profile}
           activeTab={activeTab}
           ownCharacter={ownCharacter}
+          fullscreen={fullscreen}
         />
       </div>
     </>
@@ -283,11 +298,13 @@ function TabContent({
   profile,
   activeTab,
   ownCharacter,
+  fullscreen,
 }: {
   identityId: string;
   profile: ProfileDto;
   activeTab: TabId;
   ownCharacter: string | undefined;
+  fullscreen: boolean;
 }) {
   const ownProfile = useProfileStore((s) => s.ownProfile?.profile);
   switch (activeTab) {
@@ -302,6 +319,7 @@ function TabContent({
           <ProfileBBCode
             bbcode={profile.description}
             inlines={profile.inlines}
+            fullscreen={fullscreen}
           />
         </>
       );
@@ -327,7 +345,7 @@ function TabContent({
         />
       );
     case "images":
-      return <ImagesTab profile={profile} />;
+      return <ImagesTab profile={profile} fullscreen={fullscreen} />;
     case "guestbook":
       return <GuestbookTab identityId={identityId} profile={profile} />;
   }
