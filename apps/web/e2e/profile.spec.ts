@@ -188,6 +188,17 @@ test("profile viewer: fullscreen centers content, lightbox zoom fills the viewpo
 
   // #331 (1): fullscreen uses meaningfully more width than the windowed cap.
   expect(columnBox.width).toBeGreaterThan(windowedColumnBox.width + 100);
+
+  // #339: the custom profile text (the readable-width BBCode block) is itself
+  // capped narrower than the wide column, and centers within it — equal gutters
+  // either side — rather than stranding on the left.
+  const textBox = (await viewer.getByTestId("profile-text").boundingBox())!;
+  expect(textBox.width).toBeLessThan(columnBox.width - 100);
+  const textLeft = textBox.x - columnBox.x;
+  const textRight = columnBox.x + columnBox.width - (textBox.x + textBox.width);
+  expect(textLeft).toBeGreaterThan(60);
+  expect(textRight).toBeGreaterThan(60);
+  expect(Math.abs(textLeft - textRight)).toBeLessThan(24);
   await viewer.getByRole("button", { name: "Exit fullscreen" }).click();
 
   // ── #236: zoom reaches true full-screen size, capped at natural ───────
