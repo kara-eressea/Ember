@@ -11,8 +11,13 @@ import {
   SimClient,
   delay,
   interceptAvatars,
+  joinChannel,
   provisionAndConnect,
 } from "./helpers.js";
+
+/** Spec-unique hidden channel for the combined-reattach case (#268). */
+const CHANNEL_KEY = "ADH-268catchupdd44ee55ff66";
+const CHANNEL_TITLE = "Ember Catchup";
 
 /** More than one REST/gateway page (50), so catch-up needs real paging. */
 const WAVE_COUNT = 60;
@@ -83,6 +88,102 @@ test("detach → backlog → reattach: divider and full scroll-back", async ({
       log.getByText(`wave #${String(WAVE_COUNT)}`, { exact: true }),
     ).toBeVisible();
     await expect(dmRow.getByTestId("nav-badge")).toHaveCount(0);
+  } finally {
+    coal.close();
+  }
+});
+
+// Combined reattach (#268): a single detach → reattach must reconcile three
+// independent signals the bouncer accrued while the browser was gone — the DM
+// "new since you left" divider, the channel member list's "Seen recently"
+// fold for someone who parted while detached, and live presence resuming
+// afterwards (a rejoin fans back into the online roster). One flow, so a
+// regression in any of the three snapshot facets is caught together.
+test("reattach reconciles divider, seen-fold, and live presence together", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "ember@example.test", "Ember Hollis");
+  await joinChannel(page, CHANNEL_KEY, CHANNEL_TITLE);
+
+  const coal = await SimClient.connect(
+    "ember@example.test",
+    "hunter2",
+    "Coal Whitby",
+  );
+  try {
+    const members = page.getByRole("complementary", { name: "Members" });
+    const coalMember = members
+      .getByRole("listitem")
+      .filter({ hasText: "Coal Whitby" });
+
+    // Coal joins the channel and appears in the online roster…
+    coal.send("JCH", { channel: CHANNEL_KEY });
+    await expect(coalMember).toBeVisible({ timeout: 15_000 });
+
+    // …and a first DM, read while attached, sets the last-seen point.
+    coal.send("PRI", { recipient: "Ember Hollis", message: "hello there" });
+    const nav = page.getByRole("navigation");
+    const dmRow = nav.getByRole("link", { name: /Coal Whitby/ });
+    await dmRow.click();
+    const log = page.getByTestId("message-log");
+    await expect(log.getByText("hello there")).toBeVisible();
+
+    // ── Detach: the bouncer holds the session and keeps accruing state ────
+    await page.goto("about:blank");
+    for (let i = 1; i <= WAVE_COUNT; i += 1) {
+      coal.send("PRI", {
+        recipient: "Ember Hollis",
+        message: `wave #${String(i)}`,
+      });
+      await delay(WAVE_SPACING_MS);
+    }
+    // Coal parts the channel while we're gone — the seen-members store records
+    // it, to surface as a "Seen recently" fold on reattach.
+    coal.send("LCH", { channel: CHANNEL_KEY });
+
+    // ── Reattach ──────────────────────────────────────────────────────────
+    await page.goto("/identities");
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\//);
+
+    // (1) Seen-fold: the channel snapshot carries Coal's departure. Open the
+    //     channel; Coal is gone from the online roster and folded under
+    //     "Seen recently".
+    await nav.getByRole("link", { name: CHANNEL_TITLE }).click();
+    await expect(
+      page.getByRole("heading", { name: CHANNEL_TITLE }),
+    ).toBeVisible();
+    const fold = members.getByRole("button", { name: /Seen recently/ });
+    await expect(fold).toBeVisible({ timeout: 15_000 });
+    await expect(fold).toContainText("1");
+    await expect(coalMember).toHaveCount(0);
+
+    // (2) Divider: open the DM — the reattach snapshot lands on the newest
+    //     message, and the "new since you left" divider sits above the backlog.
+    await nav.getByRole("link", { name: /Coal Whitby/ }).click();
+    await expect(
+      log.getByText(`wave #${String(WAVE_COUNT)}`, { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(async () => {
+      await log.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await expect(page.getByTestId("new-divider")).toBeVisible({
+        timeout: 1_000,
+      });
+      await expect(log.getByText("hello there")).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
+
+    // (3) Live presence after reattach: Coal rejoins and the fan-out puts the
+    //     nick back into the online roster, clearing the fold — proving the
+    //     resumed session's presence stream is live, not just the snapshot.
+    await nav.getByRole("link", { name: CHANNEL_TITLE }).click();
+    coal.send("JCH", { channel: CHANNEL_KEY });
+    await expect(coalMember).toBeVisible({ timeout: 15_000 });
+    await expect(fold).toHaveCount(0);
   } finally {
     coal.close();
   }
