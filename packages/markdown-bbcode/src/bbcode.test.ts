@@ -121,6 +121,50 @@ describe("parseBBCode", () => {
     expect(sanitizeBBCode("plain [ bracket")).toBe("plain [ bracket");
   });
 
+  it("parses [spoiler] in every dialect, nesting subset markup (#204)", () => {
+    expect(parseBBCode("hush [spoiler]the [b]butler[/b][/spoiler]!")).toEqual([
+      { type: "text", text: "hush " },
+      {
+        type: "spoiler",
+        children: [
+          { type: "text", text: "the " },
+          {
+            type: "wrapper",
+            tag: "b",
+            children: [{ type: "text", text: "butler" }],
+          },
+        ],
+      },
+      { type: "text", text: "!" },
+    ]);
+    // Wraps an eicon just as well (the QA screenshot case).
+    expect(parseBBCode("[spoiler][eicon]boop[/eicon][/spoiler]")).toEqual([
+      {
+        type: "spoiler",
+        children: [{ type: "name", tag: "eicon", name: "boop" }],
+      },
+    ]);
+    // Available under the profile dialect too.
+    expect(parseBBCode("[spoiler]x[/spoiler]", "profile")).toEqual([
+      { type: "spoiler", children: [{ type: "text", text: "x" }] },
+    ]);
+  });
+
+  it("[spoiler] with a parameter or unclosed stays literal (#204)", () => {
+    expect(sanitizeBBCode("[spoiler=hint]x[/spoiler]")).toBe(
+      "[spoiler=hint]x[/spoiler]",
+    );
+    expect(sanitizeBBCode("[spoiler]never closed")).toBe(
+      "[spoiler]never closed",
+    );
+  });
+
+  it("round-trips [spoiler] and flattens it to visible text (#204)", () => {
+    const input = "[spoiler]the [b]butler[/b] did it[/spoiler]";
+    expect(sanitizeBBCode(input)).toBe(input);
+    expect(bbcodeToText(input)).toBe("the butler did it");
+  });
+
   it("never throws on hostile input", () => {
     fc.assert(
       fc.property(fc.string(), (input) => {
@@ -287,6 +331,42 @@ describe("profile dialect (M8)", () => {
     const input =
       "[collapse=Deep Story][center][b]hi[/b][/center][hr][/collapse]";
     expect(serializeBBCode(parseBBCode(input, "profile"))).toBe(input);
+  });
+
+  it("parses [img] with an inline id, a URL, and the alt form (#212)", () => {
+    expect(parseBBCode("[img]90101[/img]", "profile")).toEqual([
+      { type: "img", src: "90101", alt: "" },
+    ]);
+    expect(
+      parseBBCode("[img]https://static.f-list.net/a/b/c.png[/img]", "profile"),
+    ).toEqual([
+      { type: "img", src: "https://static.f-list.net/a/b/c.png", alt: "" },
+    ]);
+    expect(parseBBCode("[img=90101]Me by the river[/img]", "profile")).toEqual([
+      { type: "img", src: "90101", alt: "Me by the river" },
+    ]);
+  });
+
+  it("keeps [img] literal on the chat wire and when empty/unclosed", () => {
+    expect(parseBBCode("[img]90101[/img]")).toEqual([
+      { type: "text", text: "[img]90101[/img]" },
+    ]);
+    // Unclosed opener and empty body both degrade to literal text.
+    expect(parseBBCode("[img]dangling", "profile")).toEqual([
+      { type: "text", text: "[img]dangling" },
+    ]);
+    expect(parseBBCode("[img][/img]", "profile")).toEqual([
+      { type: "text", text: "[img][/img]" },
+    ]);
+  });
+
+  it("round-trips [img] nodes through the serializer", () => {
+    for (const input of [
+      "[img]90101[/img]",
+      "[img=90101]Me by the river[/img]",
+    ]) {
+      expect(serializeBBCode(parseBBCode(input, "profile"))).toBe(input);
+    }
   });
 });
 

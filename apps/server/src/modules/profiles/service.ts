@@ -90,6 +90,7 @@ export type GuestbookResult =
   | { status: "upstream-error"; error: string };
 
 const IMAGE_BASE = "https://static.f-list.net/images/charimage";
+const INLINE_BASE = "https://static.f-list.net/images/charinline";
 const KINK_CHOICES = new Set(["fave", "yes", "maybe", "no"]);
 
 export class ProfileService {
@@ -782,6 +783,21 @@ export class ProfileService {
         height: image.height ?? null,
         description: image.description ?? "",
       })),
+      inlines: Object.fromEntries(
+        Object.entries(payload.inlines ?? {}).flatMap(([id, inline]) => {
+          // The hash is the sharded path; keep it hex so a hostile value
+          // can't escape the fixed static.f-list.net host (audit L: defense
+          // in depth). The extension stays a plain file suffix.
+          if (!/^[a-f0-9]{4,}$/i.test(inline.hash)) {
+            return [];
+          }
+          const ext = /^[a-zA-Z0-9]{1,5}$/.test(inline.extension)
+            ? inline.extension
+            : "jpg";
+          const url = `${INLINE_BASE}/${inline.hash.slice(0, 2)}/${inline.hash.slice(2, 4)}/${inline.hash}.${ext}`;
+          return [[id, { url }]];
+        }),
+      ),
       timezone: payload.timezone ?? null,
     };
   }

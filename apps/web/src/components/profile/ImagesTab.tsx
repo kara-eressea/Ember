@@ -89,13 +89,20 @@ function Thumb({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-function Lightbox({
+/** The minimum a lightbox slide needs — the profile gallery passes richer
+ * `ProfileDto["images"]`, the inline-image renderer passes ad-hoc slides. */
+export interface LightboxImage {
+  readonly url: string;
+  readonly description: string;
+}
+
+export function Lightbox({
   images,
   index,
   onNavigate,
   onClose,
 }: {
-  images: ProfileDto["images"];
+  images: readonly LightboxImage[];
   index: number;
   onNavigate: (index: number) => void;
   onClose: () => void;

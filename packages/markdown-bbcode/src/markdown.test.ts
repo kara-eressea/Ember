@@ -195,6 +195,41 @@ describe("subset invariant", () => {
   });
 });
 
+// ── Composer wire boundary (#226 pre-rework net) ─────────────────────────────
+// The composer emits every supported mark through mdToBBCode: some have a
+// Markdown syntax (b/i/s/noparse/url), the rest are inserted as literal BBCode
+// by the toolbar and must pass through untouched (u/sup/sub/color/user/icon/
+// eicon). Pinning all twelve here guards the rework's wire form mark-by-mark.
+describe("every supported mark survives to the wire", () => {
+  it("translates the Markdown-syntax marks", () => {
+    expect(mdToBBCode("**b**")).toBe("[b]b[/b]");
+    expect(mdToBBCode("*i*")).toBe("[i]i[/i]");
+    expect(mdToBBCode("~~s~~")).toBe("[s]s[/s]");
+    expect(mdToBBCode("`np`")).toBe("[noparse]np[/noparse]");
+    expect(mdToBBCode("[t](https://f-list.net)")).toBe(
+      "[url=https://f-list.net]t[/url]",
+    );
+  });
+
+  it("passes toolbar-inserted BBCode marks through untouched", () => {
+    // No Markdown syntax exists for these — the toolbar wraps them as literal
+    // BBCode and mdToBBCode must not mangle them.
+    expect(mdToBBCode("[u]u[/u]")).toBe("[u]u[/u]");
+    expect(mdToBBCode("[sup]hi[/sup]")).toBe("[sup]hi[/sup]");
+    expect(mdToBBCode("[sub]lo[/sub]")).toBe("[sub]lo[/sub]");
+    expect(mdToBBCode("[color=red]warm[/color]")).toBe(
+      "[color=red]warm[/color]",
+    );
+    expect(mdToBBCode("[user]Amber Vale[/user]")).toBe(
+      "[user]Amber Vale[/user]",
+    );
+    expect(mdToBBCode("[icon]Amber Vale[/icon]")).toBe(
+      "[icon]Amber Vale[/icon]",
+    );
+    expect(mdToBBCode("[eicon]teacup[/eicon]")).toBe("[eicon]teacup[/eicon]");
+  });
+});
+
 describe("spoiler ||…||", () => {
   it("passes the pipes through — plain text on the wire, never a tag", () => {
     expect(mdToBBCode("||secret||")).toBe("||secret||");

@@ -45,6 +45,10 @@ export interface SimCharacterProfileSeed {
     width?: number;
     description?: string;
   }[];
+  /** Inline images (`[img]id[/img]` in the description) keyed by id. */
+  readonly inlines?: Readonly<
+    Record<string, { hash: string; extension: string; nyan?: number }>
+  >;
   readonly timezone?: number;
 }
 
@@ -205,8 +209,23 @@ export class CharacterService {
     for (const npc of world.npcs) {
       this.#knownCharacters.add(npc.name);
       this.#npcByName.set(npc.name, npc);
-      if (npc.images && npc.images.length > 0) {
-        this.setProfile(npc.name, { images: npc.images });
+      if (npc.images || npc.inlines || npc.description !== undefined) {
+        this.setProfile(npc.name, {
+          ...(npc.images ? { images: npc.images } : {}),
+          ...(npc.description !== undefined
+            ? { description: npc.description }
+            : {}),
+          ...(npc.inlines
+            ? {
+                inlines: Object.fromEntries(
+                  npc.inlines.map((inline) => [
+                    String(inline.id),
+                    { hash: inline.hash, extension: inline.extension },
+                  ]),
+                ),
+              }
+            : {}),
+        });
       }
     }
   }
@@ -317,7 +336,17 @@ export class CharacterService {
         ]),
       ),
       infotags: { ...defaultInfotags, ...(seed.infotags ?? {}) },
-      inlines: {},
+      // Live quirk: inline nyan/flags are string-typed on the wire too.
+      inlines: Object.fromEntries(
+        Object.entries(seed.inlines ?? {}).map(([id, inline]) => [
+          id,
+          {
+            hash: inline.hash,
+            extension: inline.extension,
+            nyan: String(inline.nyan ?? 0),
+          },
+        ]),
+      ),
       // Live quirk: character-data image values are strings, no URL.
       images: (seed.images ?? []).map((image, index) => ({
         image_id: String(image.id),

@@ -60,6 +60,7 @@ function profile(seed: ProfileSeed): ProfileDto {
     })),
     customKinks: [],
     images: [],
+    inlines: {},
     timezone: null,
   };
 }

@@ -46,6 +46,16 @@ export interface SimNpc {
     readonly width?: number;
     readonly description?: string;
   }[];
+  /** Overrides the generated default description — used to embed profile
+   * BBCode (e.g. an inline [img]) the renderer must handle. */
+  readonly description?: string;
+  /** Optional inline-image seeds (character-data `inlines`): [img]id[/img] in
+   * the description resolves against these by id. */
+  readonly inlines?: readonly {
+    readonly id: number;
+    readonly hash: string;
+    readonly extension: string;
+  }[];
 }
 
 export interface SimWorld {
@@ -302,6 +312,18 @@ export const DEFAULT_WORLD: SimWorld = {
       gender: "Male",
       status: "looking",
       statusmsg: "Open for scenes!",
+      // Profile description embeds an inline image via [img]id[/img] (#212):
+      // the renderer resolves the id against `inlines` below.
+      description:
+        "[b]Tally Marsh[/b]\n[img]90101[/img]\nFound by the water most days.",
+      inlines: [
+        {
+          id: 90_101,
+          // Fixture hash — sharded into the charinline URL path; never real.
+          hash: "abcdef0123456789",
+          extension: "png",
+        },
+      ],
       // A small gallery so the profile E2E can exercise the Images tab and
       // the full-screen lightbox zoom (#236): one large portrait (zoom binds
       // on height and fills the viewport) and one tiny image (must never be
