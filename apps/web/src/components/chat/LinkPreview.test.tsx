@@ -39,7 +39,9 @@ describe("LinkPreview error fallback (#193)", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent(/could not be loaded/i);
     // The raw URL stays reachable in a new tab.
-    const escape = screen.getByRole("link", { name: /open link in a new tab/i });
+    const escape = screen.getByRole("link", {
+      name: /open link in a new tab/i,
+    });
     expect(escape).toHaveAttribute("href", "https://imgur.com/abc");
     // The image is gone once we degrade.
     expect(screen.queryByRole("img", { hidden: true })).not.toBeInTheDocument();

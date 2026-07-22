@@ -174,7 +174,9 @@ test("reattach reconciles divider, seen-fold, and live presence together", async
       await expect(page.getByTestId("new-divider")).toBeVisible({
         timeout: 1_000,
       });
-      await expect(log.getByText("hello there")).toBeVisible({ timeout: 1_000 });
+      await expect(log.getByText("hello there")).toBeVisible({
+        timeout: 1_000,
+      });
     }).toPass({ timeout: 20_000 });
 
     // (3) Live presence after reattach: Coal rejoins and the fan-out puts the
