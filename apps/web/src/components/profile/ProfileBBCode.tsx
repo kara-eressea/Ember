@@ -8,8 +8,19 @@ import { useMemo, useState, type ReactNode } from "react";
 import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { useProfileStore } from "../../stores/profile.js";
 import chatStyles from "../chat/chat.module.css";
-import { renderNodes, type ExtraNodeRenderer } from "../chat/RichText.js";
+import {
+  ProfileLinkProvider,
+  renderNodes,
+  type ExtraNodeRenderer,
+} from "../chat/RichText.js";
 import styles from "./profile.module.css";
+
+// Inside the viewer, an f-list.net/c/<name> link swaps the viewer rather
+// than opening the mini card (which would layer below the modal) — mirrors
+// the [user] handling in `extra` below.
+const openProfileLink = (_element: Element, name: string): void => {
+  useProfileStore.getState().open(name);
+};
 
 const ALIGN_CLASS: Record<string, string> = {
   left: styles.bbAlignLeft!,
@@ -20,7 +31,11 @@ const ALIGN_CLASS: Record<string, string> = {
 
 export function ProfileBBCode({ bbcode }: { bbcode: string }) {
   const nodes = useMemo(() => parseBBCode(bbcode, "profile"), [bbcode]);
-  return <div className={styles.bbBody}>{renderNodes(nodes, "p", extra)}</div>;
+  return (
+    <ProfileLinkProvider value={openProfileLink}>
+      <div className={styles.bbBody}>{renderNodes(nodes, "p", extra)}</div>
+    </ProfileLinkProvider>
+  );
 }
 
 const extra: ExtraNodeRenderer = (node, key) => {
