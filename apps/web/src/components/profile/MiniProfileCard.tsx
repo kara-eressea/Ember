@@ -8,7 +8,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { match, type MatchReport } from "@emberchat/matcher";
-import { bbcodeToText } from "@emberchat/markdown-bbcode";
+import { wireToPlainText } from "../../lib/wire-text.js";
 import type { ProfileDto } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import type { SocialDto } from "../../lib/api.js";
@@ -356,7 +356,10 @@ function CardContent({
         // (#210): [url], [eicon], [color] and friends must never show as raw
         // tags. The card has room for the full inline render; the title falls
         // back to the flattened plain text for the hover tooltip.
-        <div className={styles.cardStatus} title={bbcodeToText(statusMessage)}>
+        <div
+          className={styles.cardStatus}
+          title={wireToPlainText(statusMessage)}
+        >
           <RichText bbcode={statusMessage} />
         </div>
       )}
