@@ -44,6 +44,12 @@ export interface ChannelView {
    * persisted or restored by snapshots. */
   highlightedAt: number;
   lastReadMessageId: number | null;
+  /** Highest message id this client has seen live for the conversation
+   * (#264). An advancing read cursor only clears the badges once it reaches
+   * this — a slow read-ack echo (cursor below a live message that already
+   * bumped unread) must not wipe a genuinely-unread newer message. Null
+   * until the first live message is tracked. */
+  newestMessageId: number | null;
 }
 
 export interface DmView {
@@ -60,6 +66,8 @@ export interface DmView {
   /** Same bump sort key as ChannelView.highlightedAt. */
   highlightedAt: number;
   lastReadMessageId: number | null;
+  /** Highest live message id seen for this DM (#264) — see ChannelView. */
+  newestMessageId: number | null;
 }
 
 export interface IdentitySession {
@@ -258,7 +266,12 @@ interface SessionsState {
   clearNotice(identityId: string): void;
   addInvite(identityId: string, invite: ChannelInvite): void;
   dismissInvite(identityId: string, key: string): void;
-  bumpUnread(identityId: string, convId: string, mention?: boolean): void;
+  bumpUnread(
+    identityId: string,
+    convId: string,
+    messageId: number,
+    mention?: boolean,
+  ): void;
   /** Stamp the conversation's bump sort key (highlightBump pref). */
   bumpHighlight(identityId: string, convId: string): void;
   clearUnread(identityId: string, convId: string): void;
@@ -305,7 +318,6 @@ function emptySession(identityId: string): IdentitySession {
   };
 }
 
-/** F-Chat resolves character names case-insensitively (PM merge semantics). */
 /** Applies one presence delta to social rows, case-insensitively (#218). */
 function patchSocialPresence(
   social: SocialData,
@@ -349,8 +361,31 @@ function bulkRow(
     : row;
 }
 
-function sameCharacter(a: string, b: string): boolean {
+/** F-Chat resolves character names case-insensitively (PM merge semantics) —
+ * every member-set / roster comparison must fold case, or diverging frame vs
+ * roster casing leaves ghost members and unpopulated seen rosters (#265). */
+export function sameCharacter(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * Whether an advancing read cursor should clear the unread badges (#264).
+ * True only when the cursor moved forward AND it has caught up to the newest
+ * message this client has seen live — so a slow read-ack echo (cursor still
+ * below a live message that already bumped unread) leaves the genuinely
+ * newer message counted. When nothing live is tracked (`newest` null), an
+ * advance clears as before: the counters came from the server's own cursor
+ * (e.g. another device read everything). */
+function cursorClearsBadges(
+  prevCursor: number | null,
+  nextCursor: number | null,
+  newest: number | null,
+): boolean {
+  const next = nextCursor ?? 0;
+  if (next <= (prevCursor ?? 0)) {
+    return false;
+  }
+  return newest === null || next >= newest;
 }
 
 /** The seen roster without one nick (case-insensitive; unchanged input when
@@ -433,6 +468,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         mentions: 0,
         highlightedAt: 0,
         lastReadMessageId: null,
+        newestMessageId: null,
       };
       return {
         ...session,
@@ -513,12 +549,18 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           members: [...ch.members],
           seen: [...ch.seen],
           highlightedAt: 0,
+          newestMessageId: null,
         };
         channelByConvId[ch.convId] = ch.key;
       }
       const dms: Record<string, DmView> = {};
       for (const dm of d.dms) {
-        dms[dm.convId] = { ...dm, typing: "clear", highlightedAt: 0 };
+        dms[dm.convId] = {
+          ...dm,
+          typing: "clear",
+          highlightedAt: 0,
+          newestMessageId: null,
+        };
       }
       patch(d.identityId, (session) => ({
         ...session,
@@ -638,13 +680,19 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 mentions: 0,
                 highlightedAt: 0,
                 lastReadMessageId: conversation.lastReadMessageId,
+                newestMessageId: null,
               };
           // The read cursor moved (this tab's ack or another's): drop the
-          // badges — anything above the cursor is what the counters count.
+          // badges — but only once the cursor has caught up to the newest
+          // live message. A slow read-ack echo below a message that already
+          // bumped unread must not wipe that genuinely-unread line (#264).
           if (
             existing &&
-            (conversation.lastReadMessageId ?? 0) >
-              (existing.lastReadMessageId ?? 0)
+            cursorClearsBadges(
+              existing.lastReadMessageId,
+              conversation.lastReadMessageId,
+              existing.newestMessageId,
+            )
           ) {
             channel.unread = 0;
             channel.mentions = 0;
@@ -686,8 +734,11 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                     statusmsg: presence.statusmsg,
                   }
                 : {}),
-              ...((conversation.lastReadMessageId ?? 0) >
-              (existing.lastReadMessageId ?? 0)
+              ...(cursorClearsBadges(
+                existing.lastReadMessageId,
+                conversation.lastReadMessageId,
+                existing.newestMessageId,
+              )
                 ? { unread: 0, highlightedAt: 0 }
                 : {}),
             }
@@ -703,6 +754,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               unread: 0,
               highlightedAt: 0,
               lastReadMessageId: conversation.lastReadMessageId,
+              newestMessageId: null,
             };
         return { ...session, dms: { ...session.dms, [conversation.id]: dm } };
       });
@@ -713,7 +765,9 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         ...channel,
         // Set add: at-least-once delivery means a duplicate join must be a
         // no-op (gateway.ts contract).
-        members: channel.members.some((m) => m.character === member.character)
+        members: channel.members.some((m) =>
+          sameCharacter(m.character, member.character),
+        )
           ? channel.members
           : [...channel.members, member],
         // A rejoin moves the nick out of "Seen recently" — never in both.
@@ -766,7 +820,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           channels = Object.fromEntries(
             Object.entries(channels).map(([key, ch]) => [
               key,
-              ch.members.some((m) => m.character === d.character)
+              ch.members.some((m) => sameCharacter(m.character, d.character))
                 ? moveMemberToSeen(ch, d.character)
                 : ch,
             ]),
@@ -778,7 +832,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               {
                 ...ch,
                 members: ch.members.map((m) =>
-                  m.character === d.character
+                  sameCharacter(m.character, d.character)
                     ? {
                         ...m,
                         gender: d.gender ?? m.gender,
@@ -908,7 +962,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       patch(identityId, (session) => ({ ...session, notice: undefined }));
     },
 
-    bumpUnread(identityId, convId, mention = false) {
+    bumpUnread(identityId, convId, messageId, mention = false) {
       patch(identityId, (session) => {
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
@@ -921,6 +975,12 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 ...channel,
                 unread: channel.unread + 1,
                 mentions: channel.mentions + (mention ? 1 : 0),
+                // Track the newest live id so a later read-ack echo below it
+                // cannot wipe this still-unread message (#264).
+                newestMessageId: Math.max(
+                  channel.newestMessageId ?? 0,
+                  messageId,
+                ),
               },
             },
           };
@@ -931,7 +991,11 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             ...session,
             dms: {
               ...session.dms,
-              [convId]: { ...dm, unread: dm.unread + 1 },
+              [convId]: {
+                ...dm,
+                unread: dm.unread + 1,
+                newestMessageId: Math.max(dm.newestMessageId ?? 0, messageId),
+              },
             },
           };
         }
