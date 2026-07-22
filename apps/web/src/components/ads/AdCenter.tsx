@@ -452,7 +452,7 @@ export function AdCenter({
               <span className={styles.previewNote}>what the channel sees</span>
             </div>
             <div className={styles.previewBody}>
-              <RichText bbcode={wire} />
+              <RichText bbcode={wire} local />
             </div>
           </div>
         )}
