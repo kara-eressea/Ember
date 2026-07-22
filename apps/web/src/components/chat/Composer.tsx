@@ -5,7 +5,15 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
@@ -224,6 +232,34 @@ export function Composer({
       el?.setSelectionRange(next.length, next.length);
       autogrow();
     });
+  }
+
+  // Click-to-focus surface (#313): the whole visible input bar is ~46px tall
+  // but the focus target inside is a single text line. A mousedown on the
+  // bar's inert chrome (padding, the vertical gaps above/below the line, the
+  // + glyph) focuses the composer so no click lands on dead space. Clicks on
+  // the input itself (its own selection drags), a button, or any other
+  // interactive child are left to native handling — we only step in for the
+  // chrome, so text-selection drags starting inside the input are untouched.
+  function onBarMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (
+      target.closest(
+        'button, a, input, textarea, select, [role="button"], .cm-editor',
+      )
+    ) {
+      return;
+    }
+    // preventDefault stops the mousedown from blurring the input we are about
+    // to focus (it never runs for drags inside the input, excluded above), so
+    // this never steals focus on re-render — it is a direct pointer action.
+    event.preventDefault();
+    const el = inputRef.current;
+    if (el?.focusAtCoords) {
+      el.focusAtCoords(event.clientX, event.clientY);
+    } else {
+      el?.focus();
+    }
   }
 
   function autogrow() {
@@ -738,7 +774,7 @@ export function Composer({
               setHelpOpen(true);
             }}
           />
-          <div className={styles.inputBar}>
+          <div className={styles.inputBar} onMouseDown={onBarMouseDown}>
             <span
               className={styles.inputGlyph}
               title="Attachments arrive later"
