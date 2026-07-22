@@ -47,7 +47,7 @@ test("profile history + notes: both survive reload, notes survive prune", async 
   await viewer
     .getByPlaceholder("Anything you want to remember about Tally Marsh…")
     .fill(NOTE_TEXT);
-  await expect(viewer.getByText("Saved ✓")).toBeVisible({ timeout: 10_000 });
+  await expect(viewer.getByText("✓ Saved")).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press("Escape");
   await expect(viewer).not.toBeVisible();
 

@@ -468,6 +468,29 @@
   border: none;
 }
 
+/* Failed autosave chip (COMPONENTS-dm-sidebar.md §3). */
+.noteError {
+  color: var(--eb-danger);
+}
+
+/* DM-sidebar fill: the note fills the column width minus padding instead of
+   the viewer's fixed card width (COMPONENTS-dm-sidebar.md §0). Defined after
+   the base note classes so it wins on equal specificity. */
+.noteFull {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Sidebar peek preview: up to two clamped lines (COMPONENTS-dm-sidebar.md §3),
+   vs the viewer's single-line ellipsis. */
+.notePreviewClamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+
 /* ── §5 TabStrip ──────────────────────────────────────────────────────── */
 
 .tabs {

@@ -16,7 +16,6 @@ import {
   loadProfile,
   removeHistoryEntry,
   resetInsights,
-  saveNoteDebounced,
   useProfileStore,
   type LoadedProfile,
 } from "../../stores/profile.js";
@@ -24,6 +23,7 @@ import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { CHOICES } from "./choices.js";
 import { CompareTab } from "./CompareTab.js";
+import { PrivateNote } from "./PrivateNote.js";
 import { GuestbookTab } from "./GuestbookTab.js";
 import { ImagesTab } from "./ImagesTab.js";
 import { DimChip, MatchPill } from "./MatchTier.js";
@@ -507,113 +507,6 @@ function Header({
         </div>
       </div>
     </header>
-  );
-}
-
-function PrivateNote({
-  identityId,
-  name,
-  initial,
-}: {
-  identityId: string;
-  name: string;
-  initial: string | null;
-}) {
-  const [mode, setMode] = useState<"idle" | "editing">("idle");
-  const [body, setBody] = useState(initial ?? "");
-  const [saved, setSaved] = useState(false);
-
-  function edit(next: string) {
-    setBody(next);
-    setSaved(false);
-    saveNoteDebounced(identityId, name, next, () => {
-      setSaved(true);
-    });
-  }
-
-  if (mode === "editing") {
-    return (
-      <div className={styles.noteEditor}>
-        <span className={styles.noteEyebrow}>
-          <span className={styles.noteDot} aria-hidden />
-          PRIVATE NOTE
-          {saved && <span className={styles.noteSaved}>Saved ✓</span>}
-        </span>
-        <textarea
-          className={styles.noteBody}
-          value={body}
-          autoFocus
-          placeholder={`Anything you want to remember about ${name}…`}
-          onChange={(event) => {
-            edit(event.target.value);
-          }}
-          onBlur={() => {
-            if (body.trim() === "") {
-              setMode("idle");
-            }
-          }}
-        />
-        <span className={styles.noteFoot}>
-          autosaves · only you can see this
-          {body === "" && (
-            <>
-              {" · "}
-              <button
-                type="button"
-                className={styles.noteImport}
-                onClick={() => {
-                  void api
-                    .getProfileMemo(identityId, name)
-                    .then(({ note }) => {
-                      if (note) {
-                        edit(note);
-                      }
-                    })
-                    .catch(() => {
-                      // No memo / upstream trouble — the affordance is best-effort.
-                    });
-                }}
-              >
-                import F-List memo
-              </button>
-            </>
-          )}
-        </span>
-      </div>
-    );
-  }
-
-  if (body.trim() === "") {
-    return (
-      <button
-        type="button"
-        className={styles.noteAdd}
-        onClick={() => {
-          setMode("editing");
-        }}
-      >
-        + Add private note
-      </button>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      className={styles.notePeek}
-      onClick={() => {
-        setMode("editing");
-      }}
-    >
-      <span className={styles.noteEyebrow}>
-        <span className={styles.noteDot} aria-hidden />
-        PRIVATE NOTE
-        <span className={styles.notePencil} aria-hidden>
-          ✎
-        </span>
-      </span>
-      <span className={styles.notePreview}>{body}</span>
-    </button>
   );
 }
 
