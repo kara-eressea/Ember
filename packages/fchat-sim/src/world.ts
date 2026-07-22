@@ -436,6 +436,19 @@ export const DEFAULT_WORLD: SimWorld = {
       oplist: ["Briar Vale"],
       listed: false,
     },
+    // Reserved for the #351 rail-toggle-layout E2E: a channel with an NPC so
+    // the member list track has content, letting the spec assert the shell
+    // grid keeps its columns (sidebar / chat / members) when the rail hides.
+    // Hidden and single-NPC for the usual isolation reasons.
+    {
+      name: "ADH-351railshed99aa88bb77",
+      title: "Trellis Shed",
+      mode: "chat",
+      description: "Where the shape of things is checked.",
+      oplist: ["Nyx Firemane"],
+      npcs: ["Tally Marsh"],
+      listed: false,
+    },
   ],
   npcs: [
     { name: "Nyx Firemane", gender: "Female", status: "online", statusmsg: "" },
