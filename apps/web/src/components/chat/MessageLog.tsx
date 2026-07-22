@@ -103,6 +103,11 @@ export function MessageLog({
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** The virtualizer's inner sizing div — observed so content growth the
+   * message-keyed effects never see (late row re-measures, image loads,
+   * layout work deferred while an overlay obscures the log) still re-sticks
+   * the bottom while the intent is held (#284). */
+  const innerRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   // Mirrors atBottomRef for rendering — the "Jump to recent" pill shows
   // while the user is scrolled away from the newest messages.
@@ -209,6 +214,37 @@ export function MessageLog({
     // rows.length re-sticks after a prepend that grew the log while the
     // user sat at the bottom (the #254 auto-fill).
   }, [lastKey, rows.length, detachedTail]);
+
+  // Enforce the held intent against the scroll GEOMETRY, not just message
+  // arrivals: the effect above only fires when the row list changes, and its
+  // rAF settle pass covers a frame or two — anything that grows the log
+  // after that (rows re-measuring late, eicon/inline images loading, layout
+  // and paint work the browser defers while the log sits under an overlay
+  // like the profile viewer) leaves the view short of the bottom with no
+  // scroll event and no effect re-run (#284). A ResizeObserver on the
+  // viewport and on the virtualizer's sizing div fires whenever that
+  // deferred work lands — including in a burst the moment the modal closes —
+  // and re-sticks. This is not a second scroll controller: it writes only
+  // while stickBottomRef holds, the same gate as every other bottom-directed
+  // write, so releasing the intent silences it like the rest.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const inner = innerRef.current;
+    if (!el || !inner || detachedTail) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (!stickBottomRef.current) {
+        return;
+      }
+      el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    observer.observe(inner);
+    return () => {
+      observer.disconnect();
+    };
+  }, [detachedTail]);
 
   // After older history prepends, keep the anchor row visually fixed. The old
   // approach (scrollToIndex align:start) restored against the 26px estimate
@@ -524,6 +560,7 @@ export function MessageLog({
           <div className={styles.logNote}>No messages yet.</div>
         )}
         <div
+          ref={innerRef}
           className={styles.logInner}
           style={{ height: virtualizer.getTotalSize() }}
         >
