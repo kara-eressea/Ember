@@ -9,6 +9,7 @@ import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useRailCollapsed } from "../../lib/rail-collapse.js";
 import { api } from "../../lib/api.js";
 import {
   persistViewerFullscreen,
@@ -27,6 +28,11 @@ import {
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { CHOICES } from "./choices.js";
+import {
+  groupedChildren,
+  kinkNameCatalog,
+  type GroupedKink,
+} from "./kink-groups.js";
 import { CompareTab } from "./CompareTab.js";
 import { PrivateNote } from "./PrivateNote.js";
 import { GuestbookTab } from "./GuestbookTab.js";
@@ -37,17 +43,27 @@ import { ProfileBBCode } from "./ProfileBBCode.js";
 import { ago, dateLabel } from "./time.js";
 import styles from "./profile.module.css";
 
+// Insights sits last (#282); the guestbook slot is gated per-profile (#280).
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "details", label: "Details" },
   { id: "kinks", label: "Kinks" },
   { id: "compare", label: "Compare" },
-  { id: "insights", label: "Insights" },
   { id: "images", label: "Images" },
   { id: "guestbook", label: "Guestbook" },
+  { id: "insights", label: "Insights" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+/** Tabs actually shown for a profile: the Guestbook tab drops out entirely
+ * when the character has their guestbook turned off (#280). */
+function visibleTabs(profile: ProfileDto): readonly (typeof TABS)[number][] {
+  if (profile.settings.guestbook) {
+    return TABS;
+  }
+  return TABS.filter((tab) => tab.id !== "guestbook");
+}
 
 export function ProfileViewer({
   identityId,
@@ -164,16 +180,40 @@ function HistoryRail({
 }) {
   const history = useProfileStore((s) => s.history);
   const open = useProfileStore((s) => s.open);
+  // Collapsed = avatars only, no names (#279). Defaults on the narrow layout;
+  // the toggle records an explicit, persisted preference.
+  const [collapsed, toggleCollapsed] = useRailCollapsed();
   return (
-    <nav className={styles.rail} aria-label="Recently viewed profiles">
-      <div className={styles.railHead}>Recently viewed</div>
+    <nav
+      className={`${styles.rail} ${collapsed ? styles.railCollapsed : ""}`}
+      aria-label="Recently viewed profiles"
+    >
+      <div className={styles.railHead}>
+        {!collapsed && <span>Recently viewed</span>}
+        <button
+          type="button"
+          className={styles.railCollapseBtn}
+          aria-pressed={collapsed}
+          aria-label={
+            collapsed
+              ? "Expand recently viewed to show names"
+              : "Collapse recently viewed to avatars only"
+          }
+          title={collapsed ? "Show names" : "Avatars only"}
+          onClick={toggleCollapsed}
+        >
+          {collapsed ? "»" : "«"}
+        </button>
+      </div>
       {history.length === 0 ? (
-        <div className={styles.railEmpty}>
-          <span className={styles.railEmptyTile} aria-hidden>
-            ◌
-          </span>
-          Profiles you view will appear here.
-        </div>
+        collapsed ? null : (
+          <div className={styles.railEmpty}>
+            <span className={styles.railEmptyTile} aria-hidden>
+              ◌
+            </span>
+            Profiles you view will appear here.
+          </div>
+        )
       ) : (
         <div className={styles.railList}>
           {history.map((entry) => {
@@ -189,28 +229,34 @@ function HistoryRail({
                 <button
                   type="button"
                   className={styles.histOpen}
+                  // In collapsed mode the name only survives as the tooltip.
+                  title={collapsed ? entry.name : undefined}
                   onClick={() => {
                     open(entry.name);
                   }}
                 >
                   <Avatar name={entry.name} size={28} square />
-                  <span className={styles.histMeta}>
-                    <span className={styles.histName}>{entry.name}</span>
-                    <span className={styles.histAgo}>
-                      {ago(entry.lastViewedAt)}
+                  {!collapsed && (
+                    <span className={styles.histMeta}>
+                      <span className={styles.histName}>{entry.name}</span>
+                      <span className={styles.histAgo}>
+                        {ago(entry.lastViewedAt)}
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  className={styles.histRemove}
-                  aria-label={`Remove ${entry.name} from history`}
-                  onClick={() => {
-                    void removeHistoryEntry(identityId, entry.name);
-                  }}
-                >
-                  ×
-                </button>
+                {!collapsed && (
+                  <button
+                    type="button"
+                    className={styles.histRemove}
+                    aria-label={`Remove ${entry.name} from history`}
+                    onClick={() => {
+                      void removeHistoryEntry(identityId, entry.name);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           })}
@@ -239,15 +285,25 @@ function ViewerBody({
 }) {
   const setTab = useProfileStore((s) => s.setTab);
   const response = loaded?.response;
+  const profile = response?.profile;
+  const tabs = profile ? visibleTabs(profile) : TABS;
 
-  if (!response) {
+  // If the guestbook tab was active but this character has it turned off
+  // (#280), fall back to the first tab so the content region isn't blank.
+  useEffect(() => {
+    const fallback = tabs[0];
+    if (profile && fallback && !tabs.some((tab) => tab.id === activeTab)) {
+      setTab(fallback.id);
+    }
+  }, [profile, tabs, activeTab, setTab]);
+
+  if (!response || !profile) {
     if (loaded && loaded.state !== "loading") {
       return <ErrorState identityId={identityId} name={name} loaded={loaded} />;
     }
     return <LoadingState name={name} />;
   }
 
-  const profile = response.profile;
   return (
     <>
       <Header
@@ -265,7 +321,7 @@ function ViewerBody({
         </div>
       )}
       <div className={styles.tabs} role="tablist">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -279,6 +335,17 @@ function ViewerBody({
             {tab.label}
           </button>
         ))}
+        {/* Right-aligned action, NOT a tab (#282): a plain anchor so it opens
+            the real F-List site — deliberately exempt from the in-app
+            /c/ interception (#252), and middle/ctrl-click stay native. */}
+        <a
+          className={styles.flistLink}
+          href={`https://www.f-list.net/c/${encodeURIComponent(profile.name)}`}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          F-List <span aria-hidden>↗</span>
+        </a>
       </div>
       <div className={styles.content} data-testid="profile-content">
         <TabContent
@@ -563,81 +630,99 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
       </EmptyState>
     );
   }
+  // id → name for resolving a custom group's `children` back to display rows
+  // (#275 flattens grouped standard kinks into `profile.kinks`, names intact).
+  const catalog = kinkNameCatalog(profile.kinks);
   return (
     <>
-      <div className={styles.kinkLegend} aria-hidden>
+      <div className={styles.kinkLegend}>
+        <span className={styles.kinkLegendLabel}>This character:</span>
         {CHOICES.map((choice) => (
-          <span key={choice.id}>
-            {choice.glyph} your “{choice.label.toLowerCase()}”
+          <span
+            key={choice.id}
+            className={styles.kinkLegendChip}
+            style={{ "--kink-col": choice.color } as React.CSSProperties}
+          >
+            <span className={styles.kinkLegendGlyph} aria-hidden>
+              {choice.glyph}
+            </span>
+            {choice.label}
           </span>
         ))}
-        <span>· not on your list</span>
+        <span className={styles.kinkLegendNote}>
+          Trailing badge = your own choice
+        </span>
       </div>
-      <div className={styles.kinkGrid}>
-        {CHOICES.map((column) => {
-          const rows = profile.kinks.filter(
-            (kink) => kink.choice === column.id,
-          );
-          const customs = profile.customKinks.filter(
-            (custom) => custom.choice === column.id,
-          );
-          return (
-            <section key={column.id} className={styles.kinkCol}>
-              <header className={styles.kinkColHead}>
-                <span
-                  className={styles.kinkColSquare}
-                  style={{ background: column.color }}
-                  aria-hidden
-                />
-                {column.label}
-                <span className={styles.kinkColCount}>
-                  {rows.length + customs.length}
-                </span>
-              </header>
-              <div className={styles.kinkList}>
-                {customs.map((custom) => (
-                  <CustomKinkRow key={custom.name} custom={custom} />
-                ))}
-                {rows.map((kink) => {
-                  const mine = ownChoice.get(kink.id);
-                  const mineColor = CHOICES.find(
-                    (choice) => choice.id === mine,
-                  )?.color;
-                  return (
-                    <div
-                      key={kink.id}
-                      className={styles.kinkRow}
-                      title={kink.description}
-                      style={
-                        mineColor
-                          ? {
-                              background: `color-mix(in srgb, ${mineColor} 10%, var(--eb-bg))`,
-                              boxShadow: `inset 2px 0 0 color-mix(in srgb, ${mineColor} 50%, var(--eb-bg))`,
-                            }
-                          : undefined
-                      }
-                    >
-                      <span
-                        className={styles.choiceMark}
-                        style={{
-                          color: mineColor ?? "var(--eb-faint)",
-                          background: mineColor
-                            ? `color-mix(in srgb, ${mineColor} 18%, var(--eb-side))`
-                            : "var(--eb-side)",
-                        }}
-                        aria-label={mine ? `your ${mine}` : "not on your list"}
+      {/* Fixed-width columns that scroll horizontally inside this pane on the
+          narrow layout (#281) — the page/modal body never scrolls sideways. */}
+      <div className={styles.kinkPane}>
+        <div className={styles.kinkGrid}>
+          {CHOICES.map((column) => {
+            const rows = profile.kinks.filter(
+              (kink) => kink.choice === column.id,
+            );
+            const customs = profile.customKinks.filter(
+              (custom) => custom.choice === column.id,
+            );
+            return (
+              <section
+                key={column.id}
+                className={styles.kinkCol}
+                style={{ "--kink-col": column.color } as React.CSSProperties}
+              >
+                <header className={styles.kinkColHead}>
+                  <span className={styles.kinkColLabel}>
+                    <span className={styles.kinkLegendGlyph} aria-hidden>
+                      {column.glyph}
+                    </span>
+                    {column.label}
+                  </span>
+                  <span className={styles.kinkColCount}>
+                    {rows.length + customs.length}
+                  </span>
+                </header>
+                <div className={styles.kinkList}>
+                  {customs.map((custom) => (
+                    <CustomKinkRow
+                      key={custom.name}
+                      custom={custom}
+                      grouped={groupedChildren(custom.children, catalog)}
+                    />
+                  ))}
+                  {rows.map((kink) => {
+                    const mine = ownChoice.get(kink.id);
+                    const mineChoice = CHOICES.find(
+                      (choice) => choice.id === mine,
+                    );
+                    return (
+                      <div
+                        key={kink.id}
+                        className={styles.kinkRow}
+                        title={kink.description}
                       >
-                        {CHOICES.find((choice) => choice.id === mine)?.glyph ??
-                          "·"}
-                      </span>
-                      <span className={styles.kinkName}>{kink.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })}
+                        <span className={styles.kinkName}>{kink.name}</span>
+                        {mineChoice && (
+                          <span
+                            className={styles.choiceMark}
+                            style={
+                              {
+                                "--mine-col": mineChoice.color,
+                              } as React.CSSProperties
+                            }
+                            title={`Your choice: ${mineChoice.label}`}
+                            aria-label={`your ${mineChoice.label.toLowerCase()}`}
+                          >
+                            {mineChoice.glyph}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </>
   );
@@ -645,16 +730,22 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
 
 function CustomKinkRow({
   custom,
+  grouped,
 }: {
   custom: ProfileDto["customKinks"][number];
+  grouped: GroupedKink[];
 }) {
   const [open, setOpen] = useState(false);
+  const expandable = custom.description !== "" || grouped.length > 0;
   return (
     <div>
       <div className={styles.kinkRow}>
         <span className={styles.customTag}>CUSTOM</span>
         <span className={styles.kinkName}>{custom.name}</span>
-        {custom.description !== "" && (
+        {grouped.length > 0 && (
+          <span className={styles.kinkGroupCount}>{grouped.length}</span>
+        )}
+        {expandable && (
           <button
             type="button"
             className={styles.kinkExpand}
@@ -668,7 +759,18 @@ function CustomKinkRow({
           </button>
         )}
       </div>
-      {open && <div className={styles.kinkDesc}>{custom.description}</div>}
+      {open && custom.description !== "" && (
+        <div className={styles.kinkDesc}>{custom.description}</div>
+      )}
+      {open && grouped.length > 0 && (
+        <ul className={styles.kinkGroupChildren}>
+          {grouped.map((child) => (
+            <li key={child.id} className={styles.kinkGroupChild}>
+              {child.name}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
