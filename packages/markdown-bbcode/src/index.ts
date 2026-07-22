@@ -14,7 +14,12 @@ export {
   type BBNode,
   type BBWrapperTag,
 } from "./bbcode.js";
-export { mdToBBCode } from "./markdown.js";
+export {
+  markdownSpans,
+  mdToBBCode,
+  type MdSpan,
+  type MdSpanType,
+} from "./markdown.js";
 export {
   analyzeMarkdown,
   type MdLossDiagnostic,

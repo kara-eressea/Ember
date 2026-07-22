@@ -145,6 +145,24 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Rue Alder", "Alder Fen", "Sorrel Vane"],
     },
+    // Reserved for the #200 seen-recently E2E (same parallelism rule);
+    // Dell Marsh is its raw-SimClient "other side" (joins, then parts).
+    "clover@example.test": {
+      password: "hunter2",
+      characters: ["Clover Hart", "Dell Marsh"],
+    },
+    // Reserved for the history catch-up E2E (#254, same parallelism rule);
+    // Coal Whitby is its raw-SimClient "other side" (the DM partner whose
+    // messages pile up while the browser is detached).
+    "ember@example.test": {
+      password: "hunter2",
+      characters: ["Ember Hollis", "Coal Whitby"],
+    },
+    // Reserved for the inline-composer E2E (#226, same parallelism rule).
+    "tansy@example.test": {
+      password: "hunter2",
+      characters: ["Tansy Meridian"],
+    },
     // Reserved for the M8 profile E2E (same parallelism rule).
     "juniper@example.test": {
       password: "hunter2",
@@ -291,6 +309,17 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Shelves, lamplight, and low voices.",
       oplist: ["Nyx Firemane"],
       npcs: ["Tally Marsh", "Old Greywhisker"],
+      listed: false,
+    },
+    // Reserved for the #200 seen-recently E2E: Dell Marsh joins and parts
+    // live. Hidden and NPC-free for the usual isolation reasons.
+    {
+      name: "ADH-200fallow88ee99ff00",
+      title: "Fallow Field",
+      mode: "chat",
+      description: "Resting ground between seasons.",
+      oplist: ["Dell Marsh"],
+      npcs: [],
       listed: false,
     },
     // Reserved for the M6 social E2E: NPC members to right-click. Hidden

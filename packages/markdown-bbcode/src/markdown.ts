@@ -36,6 +36,18 @@ import type { MdLossReporter } from "./lossiness.js";
 
 const ESCAPABLE = new Set(["*", "`", "~", "[", "]", "\\", "(", "|"]);
 
+/** Styled-range kinds the inline-composer highlighter renders. `delim`
+ * covers the marker characters themselves (dimmed, never hidden). */
+export type MdSpanType =
+  "bold" | "italic" | "strike" | "spoiler" | "code" | "eicon" | "delim";
+
+/** A styled range over the *original markdown string* (absolute offsets). */
+export interface MdSpan {
+  from: number;
+  to: number;
+  type: MdSpanType;
+}
+
 const WRAPPER_TAGS = new Set(["b", "i", "u", "s", "sup", "sub"]);
 /** Elements whose body is copied verbatim, never Markdown-processed. */
 const RAW_BODY_TAGS = new Set(["noparse", "user", "icon", "eicon"]);
@@ -127,11 +139,32 @@ export function translateReporting(
   return translate(input, report);
 }
 
-function translate(input: string, report?: MdLossReporter, base = 0): string {
+/**
+ * The composer's inline-highlight ranges for `input`, sorted by position.
+ * This IS the translator: the same walk that produces the wire BBCode emits
+ * the spans, so what renders styled in the input and what actually
+ * translates can never disagree (#226). Nested emphasis yields overlapping
+ * spans (`**a *b* c**` → bold over the run, italic inside).
+ */
+export function markdownSpans(input: string): MdSpan[] {
+  const spans: MdSpan[] = [];
+  translate(input, undefined, 0, spans);
+  return spans.sort((a, b) => a.from - b.from || a.to - b.to);
+}
+
+function translate(
+  input: string,
+  report?: MdLossReporter,
+  base = 0,
+  spans?: MdSpan[],
+): string {
   let out = "";
   let at = 0;
   const masked = maskCodeSpans(input);
   const findClose = makeCloserFinder(masked.toLowerCase());
+  const mark = (from: number, to: number, type: MdSpanType) => {
+    spans?.push({ from: base + from, to: base + to, type });
+  };
 
   while (at < input.length) {
     const ch = input[at]!;
@@ -156,6 +189,9 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
           if (close !== -1) {
             const end = close + `[/${token.tag}]`.length;
             out += input.slice(at, end); // verbatim, contents untouched
+            if (token.tag === "eicon") {
+              mark(at, end, "eicon");
+            }
             at = end;
             continue;
           }
@@ -181,6 +217,7 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
                 input.slice(bodyStart, close),
                 report,
                 base + bodyStart,
+                spans,
               ) +
               input.slice(close, end);
             at = end;
@@ -206,7 +243,7 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
         input.slice(at),
       );
       if (link && validHref(link[2]!)) {
-        out += `[url=${link[2]!}]${translate(link[1]!)}[/url]`;
+        out += `[url=${link[2]!}]${translate(link[1]!, undefined, base + at + 1, spans)}[/url]`;
         at += link[0].length;
         continue;
       }
@@ -220,6 +257,9 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
       const close = input.indexOf("`", at + 1);
       if (close !== -1 && close > at + 1) {
         out += `[noparse]${input.slice(at + 1, close)}[/noparse]`;
+        mark(at, at + 1, "delim");
+        mark(at + 1, close, "code");
+        mark(close, close + 1, "delim");
         at = close + 1;
         continue;
       }
@@ -231,7 +271,10 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
     if (input.startsWith("**", at)) {
       const close = findDelimiter(masked, at + 2, "**");
       if (close !== undefined) {
-        out += `[b]${translate(input.slice(at + 2, close), report, base + at + 2)}[/b]`;
+        out += `[b]${translate(input.slice(at + 2, close), report, base + at + 2, spans)}[/b]`;
+        mark(at, at + 2, "delim");
+        mark(at + 2, close, "bold");
+        mark(close, close + 2, "delim");
         at = close + 2;
         continue;
       }
@@ -246,7 +289,10 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
     if (ch === "*") {
       const close = findDelimiter(masked, at + 1, "*");
       if (close !== undefined && masked[close + 1] !== "*") {
-        out += `[i]${translate(input.slice(at + 1, close), report, base + at + 1)}[/i]`;
+        out += `[i]${translate(input.slice(at + 1, close), report, base + at + 1, spans)}[/i]`;
+        mark(at, at + 1, "delim");
+        mark(at + 1, close, "italic");
+        mark(close, close + 1, "delim");
         at = close + 1;
         continue;
       }
@@ -272,7 +318,10 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
     if (input.startsWith("||", at)) {
       const close = findDelimiter(masked, at + 2, "||");
       if (close !== undefined) {
-        out += `||${translate(input.slice(at + 2, close), report, base + at + 2)}||`;
+        out += `||${translate(input.slice(at + 2, close), report, base + at + 2, spans)}||`;
+        mark(at, at + 2, "delim");
+        mark(at + 2, close, "spoiler");
+        mark(close, close + 2, "delim");
         at = close + 2;
         continue;
       }
@@ -284,7 +333,10 @@ function translate(input: string, report?: MdLossReporter, base = 0): string {
     if (input.startsWith("~~", at)) {
       const close = findDelimiter(masked, at + 2, "~~");
       if (close !== undefined) {
-        out += `[s]${translate(input.slice(at + 2, close), report, base + at + 2)}[/s]`;
+        out += `[s]${translate(input.slice(at + 2, close), report, base + at + 2, spans)}[/s]`;
+        mark(at, at + 2, "delim");
+        mark(at + 2, close, "strike");
+        mark(close, close + 2, "delim");
         at = close + 2;
         continue;
       }

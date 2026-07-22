@@ -46,6 +46,19 @@ export function GeneralPane({
           }}
         />
       </FieldRow>
+      <GroupLabel>Message box</GroupLabel>
+      <FieldRow
+        label="Style formatting as you type"
+        help="Shows **bold**, *italic* and friends styled right in the message box while you write, instead of in a separate preview above it. The markers stay visible, just dimmed. What you send is the same either way."
+      >
+        <Toggle
+          label="Style formatting as you type"
+          checked={prefs.inlineComposer}
+          onChange={(on) => {
+            void patchPrefs(identityId, { inlineComposer: on });
+          }}
+        />
+      </FieldRow>
       <GroupLabel>Roleplay ads</GroupLabel>
       <FieldRow
         label="Hide ads everywhere"

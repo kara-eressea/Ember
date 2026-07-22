@@ -333,6 +333,19 @@ const cmdSchema = z.discriminatedUnion("action", [
     action: z.literal("conv.pin"),
     d: z.object({ convId: z.uuid(), pinned: z.boolean() }),
   }),
+  z.object({
+    identityId: z.uuid(),
+    // Scroll-back history paging (#254): one older page of a conversation's
+    // stored history, strictly before `beforeId`. Paging walks the FULL
+    // stored history — there is no age cap; the ack's `hasMore` tells the
+    // client when it is exhausted.
+    action: z.literal("history.page"),
+    d: z.object({
+      convId: z.uuid(),
+      beforeId: z.number().int().positive(),
+      limit: z.number().int().min(1).max(200),
+    }),
+  }),
 ]);
 
 export const clientFrameSchema = z.discriminatedUnion("t", [
@@ -384,6 +397,19 @@ export interface MemberDto {
   gender: string;
   status: string;
   statusmsg: string;
+}
+
+/**
+ * One previously-seen channel member (#200): departed from this channel
+ * within the retention window and not present now. Server-persisted; the
+ * client renders what it receives and never prunes locally.
+ */
+export interface SeenMemberDto {
+  character: string;
+  /** Cached at part time so the nick keeps its gender colour offline. */
+  gender: string;
+  /** Epoch ms, server-stamped at part time. */
+  lastSeen: number;
 }
 
 export interface ConversationDto {
@@ -471,6 +497,10 @@ export interface SnapshotChannel {
   oplist: string[];
   /** Empty while the session is not online. */
   members: MemberDto[];
+  /** Previously-seen members not present now (#200), newest lastSeen
+   * first. Live moves between this and `members` ride the existing
+   * member.join / member.leave flow — no dedicated event. */
+  seen: SeenMemberDto[];
   joined: boolean;
   pinned: boolean;
   unread: number;
@@ -736,6 +766,10 @@ export type ServerFrame =
         conversation?: ConversationDto;
         /** outbox.recall result: what the user typed, back to the composer. */
         markdown?: string;
+        /** history.page result: one older page, ascending by id. */
+        messages?: MessageDto[];
+        /** history.page result: older history still exists past this page. */
+        hasMore?: boolean;
       };
     }
   | { t: "pong" }

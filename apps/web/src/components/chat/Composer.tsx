@@ -5,13 +5,7 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
@@ -31,6 +25,11 @@ import {
   wrapRange,
 } from "./composer-edit.js";
 import { ComposerToolbar } from "./ComposerToolbar.js";
+import {
+  textareaHandle,
+  type AnyKeyEvent,
+  type ComposerInputHandle,
+} from "./composer-input.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
 import { HelpPanel } from "./HelpPanel.js";
@@ -50,6 +49,11 @@ import styles from "./chat.module.css";
 const MAX_INPUT_HEIGHT_PX = 160;
 
 const MARKDOWN_MODE_KEY = "emberchat.composeMarkdown";
+
+// The inline-rendering CodeMirror input (#226, prefs.inlineComposer) loads
+// on demand — the editor chunk stays off the login/critical path and users
+// on the classic textarea never download it.
+const InlineEditor = lazy(() => import("./InlineEditor.js"));
 
 const utf8 = new TextEncoder();
 
@@ -108,7 +112,11 @@ export function Composer({
   const [slashActive, setSlashActive] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Everything programs against the textarea-shaped handle; textareaRef
+  // only exists for the legacy path's autogrow.
+  const inline = session.prefs.inlineComposer;
+  const inputRef = useRef<ComposerInputHandle>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const online = session.sessionStatus === "online";
   // Room mode decides what a send is: ads-only rooms force LRP, chat-only
   // rooms force MSG, "both" offers the toggle (RMO re-gates this live).
@@ -195,10 +203,17 @@ export function Composer({
 
   function completeSlash(hint: SlashHint) {
     const next = `/${hint.name} `;
-    setText(next);
     setSlashActive(0);
+    const el = inputRef.current;
+    if (el?.applyEdit) {
+      // Inline editor: text + caret land in one synchronous transaction —
+      // a deferred restore could collapse a selection the user makes next.
+      el.applyEdit(next, next.length, next.length);
+      setText(next);
+      return;
+    }
+    setText(next);
     requestAnimationFrame(() => {
-      const el = inputRef.current;
       el?.focus();
       el?.setSelectionRange(next.length, next.length);
       autogrow();
@@ -206,7 +221,7 @@ export function Composer({
   }
 
   function autogrow() {
-    const el = inputRef.current;
+    const el = textareaRef.current;
     if (el) {
       el.style.height = "auto";
       el.style.height = `${String(Math.min(el.scrollHeight, MAX_INPUT_HEIGHT_PX))}px`;
@@ -290,6 +305,11 @@ export function Composer({
     const at = el?.selectionStart ?? text.length;
     const end = el?.selectionEnd ?? text.length;
     const edit = insertAt(text, at, end, snippet);
+    if (el?.applyEdit) {
+      el.applyEdit(edit.text, edit.selStart, edit.selEnd);
+      setText(edit.text);
+      return;
+    }
     setText(edit.text);
     requestAnimationFrame(() => {
       el?.focus();
@@ -311,6 +331,11 @@ export function Composer({
       open,
       close,
     );
+    if (el.applyEdit) {
+      el.applyEdit(edit.text, edit.selStart, edit.selEnd);
+      setText(edit.text);
+      return;
+    }
     setText(edit.text);
     requestAnimationFrame(() => {
       el.focus();
@@ -343,6 +368,11 @@ export function Composer({
       return;
     }
     const edit = stripColor(text, el.selectionStart, el.selectionEnd);
+    if (el.applyEdit) {
+      el.applyEdit(edit.text, edit.selStart, edit.selEnd);
+      setText(edit.text);
+      return;
+    }
     setText(edit.text);
     requestAnimationFrame(() => {
       el.focus();
@@ -463,7 +493,10 @@ export function Composer({
     requestAnimationFrame(autogrow);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+  // One handler for both inputs. `liveText` is the input's value *at event
+  // time* (textarea: currentTarget.value; CodeMirror: the live doc) — the
+  // stale-state contract from the #235 audit holds identically on both.
+  function onKeyDown(event: AnyKeyEvent, liveText: string) {
     // Slash autocomplete keyboard (#235). The decision reads the *live*
     // textarea value, not the closured `text` state — fast programmatic input
     // (and quick typists) can fire keydown before React has re-rendered with
@@ -471,7 +504,6 @@ export function Composer({
     // of running a command, or swallowing a send). Escape closes the popover
     // from any state; arrow/Tab/Enter selection applies only while the command
     // word is being chosen (list mode) — in signature-hint mode Enter sends.
-    const liveText = event.currentTarget.value;
     const liveSuggestions = suggestCommands(liveText, {
       inChannel: channelKey !== undefined,
       canModerate,
@@ -533,7 +565,7 @@ export function Composer({
     // ArrowUp in an empty composer recalls the newest pending send (by
     // creation, not release — a shorter delay must not shadow an earlier
     // message; audit). The outbox row dies and the typed text comes back.
-    if (event.key === "ArrowUp" && text === "" && pending.length > 0) {
+    if (event.key === "ArrowUp" && liveText === "" && pending.length > 0) {
       event.preventDefault();
       const newest = newestPending(pending);
       if (newest) {
@@ -612,7 +644,7 @@ export function Composer({
           {error}
         </p>
       )}
-      {markdown && text.trim() !== "" && (
+      {markdown && !inline && text.trim() !== "" && (
         <div className={styles.previewPanel} data-testid="md-preview">
           <div className={styles.previewHead}>PREVIEW · markdown</div>
           <div
@@ -696,19 +728,53 @@ export function Composer({
             >
               +
             </span>
-            <textarea
-              ref={inputRef}
-              className={styles.composerInput}
-              rows={1}
-              value={text}
-              onChange={(e) => {
-                onTextChange(e.target.value);
-              }}
-              onKeyDown={onKeyDown}
-              placeholder={online ? placeholder : "Session is not connected"}
-              disabled={!online}
-              aria-label="Message"
-            />
+            {inline ? (
+              // While the editor chunk loads, the classic textarea stands in
+              // so the composer never blanks (a beat later the editor mounts
+              // with the same value/handle).
+              <Suspense
+                fallback={
+                  <textarea
+                    className={styles.composerInput}
+                    rows={1}
+                    value={text}
+                    readOnly
+                    aria-label="Message"
+                  />
+                }
+              >
+                <InlineEditor
+                  value={text}
+                  disabled={!online}
+                  placeholder={
+                    online ? placeholder : "Session is not connected"
+                  }
+                  onChange={onTextChange}
+                  onKeyDown={onKeyDown}
+                  handleRef={inputRef}
+                  ariaLabel="Message"
+                />
+              </Suspense>
+            ) : (
+              <textarea
+                ref={(el) => {
+                  textareaRef.current = el;
+                  inputRef.current = textareaHandle(el);
+                }}
+                className={styles.composerInput}
+                rows={1}
+                value={text}
+                onChange={(e) => {
+                  onTextChange(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  onKeyDown(e, e.currentTarget.value);
+                }}
+                placeholder={online ? placeholder : "Session is not connected"}
+                disabled={!online}
+                aria-label="Message"
+              />
+            )}
           </div>
         </div>
       </div>
