@@ -74,6 +74,9 @@ const MENU_WIDTH = 216;
 /** Right-click target of a sidebar people row (DM / friend / bookmark). */
 interface PersonMenuState {
   member: MemberDto;
+  /** Present when the row carries an open DM (#315): lets the identity menu
+   * offer "Mark as read" for that conversation. */
+  markRead?: { convId: string; unread: number };
   position: { x: number; y: number };
 }
 
@@ -129,10 +132,12 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     character: string,
     status: string,
     statusmsg: string,
+    markRead?: { convId: string; unread: number },
   ) => {
     event.preventDefault();
     setPersonMenu({
       member: { character, gender: "", status, statusmsg },
+      markRead,
       position: {
         x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
         y: Math.min(event.clientY, window.innerHeight - 160),
@@ -322,7 +327,10 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         },
       }}
       onContextMenu={(event) => {
-        openPersonMenu(event, dm.partner, dm.status, dm.statusmsg);
+        openPersonMenu(event, dm.partner, dm.status, dm.statusmsg, {
+          convId: dm.convId,
+          unread: dm.unread,
+        });
       }}
     />
   );
@@ -452,6 +460,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           ownCharacter={session.character}
           channelTitle={`Conversation with ${personMenu.member.character}`}
           member={personMenu.member}
+          markRead={personMenu.markRead}
           position={personMenu.position}
           onClose={() => {
             setPersonMenu(undefined);
@@ -973,6 +982,7 @@ function SocialSections({
     character: string,
     status: string,
     statusmsg: string,
+    markRead?: { convId: string; unread: number },
   ) => void;
 }) {
   const identityId = session.identityId;
@@ -1045,6 +1055,7 @@ function SocialSections({
             character.name,
             character.status,
             character.statusmsg,
+            dm ? { convId: dm.convId, unread: dm.unread } : undefined,
           );
         }}
       />

@@ -19,6 +19,7 @@ import { useNavigate } from "react-router";
 import type { MemberDto } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
+import { markConversationRead } from "../../lib/mark-read.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
@@ -43,6 +44,7 @@ export function MemberContextMenu({
   viewerRole = null,
   viewerChatop = false,
   present = true,
+  markRead,
   position,
   onClose,
 }: {
@@ -64,6 +66,11 @@ export function MemberContextMenu({
    * live channel role an absent member doesn't hold, so it never renders —
    * gated on presence, not just viewer role. Everything else is identical. */
   present?: boolean;
+  /** Set on sidebar rows that carry an open DM (#315): shows a "Mark as read"
+   * item that clears the conversation's backlog without opening it. Absent for
+   * channel member lists and other surfaces that have no conversation to mark.
+   * `unread` gates the item's disabled state. */
+  markRead?: { convId: string; unread: number };
   position: { x: number; y: number };
   onClose: () => void;
 }) {
@@ -361,6 +368,23 @@ export function MemberContextMenu({
             <span className={styles.memberMenuRole}>{roleTag(role)}</span>
           )}
         </div>
+        {markRead && (
+          <>
+            <button
+              className={styles.memberMenuItem}
+              role="menuitem"
+              disabled={markRead.unread === 0}
+              title="Clear the unread count without opening the conversation"
+              onClick={() => {
+                onClose();
+                markConversationRead(identityId, markRead.convId);
+              }}
+            >
+              Mark as read
+            </button>
+            <div className={styles.memberMenuDivider} />
+          </>
+        )}
         {!self && (
           <button
             className={styles.memberMenuItem}

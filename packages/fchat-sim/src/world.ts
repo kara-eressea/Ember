@@ -182,6 +182,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Thistle Vane", "Bramble Fen"],
     },
+    // Reserved for the #315 "Mark as read" E2E (same parallelism rule);
+    // Cress Dell is its raw-SimClient "other side" (the DM sender whose
+    // unread badge is cleared from the sidebar context menu).
+    "bracken@example.test": {
+      password: "hunter2",
+      characters: ["Bracken Vale", "Cress Dell"],
+    },
     // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
     // with a bookmark, a friend, and a pending incoming request from Tally.
     "fern@example.test": {

@@ -117,6 +117,23 @@ export class GatewayClient {
     this.#sendFrame({ t: "ack", d: { identityId, convId, messageId } });
   }
 
+  /**
+   * Marks a conversation read up to its newest message without having that id
+   * loaded (#315: "Mark as read" from a sidebar row, where the message buffer
+   * may be empty). The server's markRead clamps the id to the true max, so a
+   * sentinel means "everything up to now"; the resulting conversation.updated
+   * fans out and sticks across devices/reattach exactly like viewing does.
+   * Deliberately bypasses #acked — that map guards the live per-message
+   * readAck, and a sentinel recorded there would suppress genuine acks for
+   * messages that arrive later.
+   */
+  markReadToLatest(identityId: string, convId: string): void {
+    this.#sendFrame({
+      t: "ack",
+      d: { identityId, convId, messageId: Number.MAX_SAFE_INTEGER },
+    });
+  }
+
   #open(): void {
     useUiStore.getState().setGatewayStatus("connecting");
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
