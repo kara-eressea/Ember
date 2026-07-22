@@ -13,6 +13,7 @@ import type {
 import type { Db } from "../../db/index.js";
 import { conversations, messages } from "../../db/schema.js";
 import type { MessageRow } from "../history/sink.js";
+import { seenByChannel } from "../seen-members/store.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import type { SessionState } from "../session-engine/session-state.js";
 
@@ -154,6 +155,8 @@ export async function buildSnapshot(
     .orderBy(conversations.createdAt);
 
   const counts = await conversationCounts(db, identityId);
+  // Persisted "seen recently" rosters (#200), newest lastSeen first.
+  const seen = await seenByChannel(db, identityId);
 
   // F-Chat resolves names case-insensitively, and a DM row keeps the casing
   // of whoever created it — a typed lowercase partner must still find its
@@ -175,6 +178,12 @@ export async function buildSnapshot(
       const key = row.channelKey ?? "";
       const state = session?.state;
       const live = state?.channels.get(key);
+      // A nick must never be both present and seen: a part→rejoin whose
+      // delete is still queued behind the write queue may leave a stale
+      // seen row for a beat, so filter against the live roster at serve.
+      const liveLower = new Set(
+        [...(live?.members ?? [])].map((name) => name.toLowerCase()),
+      );
       channels.push({
         convId: row.id,
         key,
@@ -186,6 +195,9 @@ export async function buildSnapshot(
           live && state
             ? [...live.members].map((name) => memberDto(state, name))
             : [],
+        seen: (seen.get(key) ?? []).filter(
+          (member) => !liveLower.has(member.character.toLowerCase()),
+        ),
         joined: row.joined,
         pinned: row.pinned,
         unread: counts.get(row.id)?.unread ?? 0,

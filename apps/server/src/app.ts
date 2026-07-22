@@ -45,6 +45,7 @@ import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
 import { Outbox } from "./modules/outbox/outbox.js";
+import { SeenMembersStore } from "./modules/seen-members/store.js";
 import {
   SessionRegistry,
   type SessionTuning,
@@ -121,6 +122,10 @@ export async function buildApp({
   // Per-identity social lists (#194) — in memory alongside the sessions;
   // a restart just means the first GET refetches.
   const socialCache = new SocialCache();
+  // Departed-member rosters (#200) — persisted so "Seen recently" survives
+  // restarts; the snapshot reads them straight from the table.
+  const seenMembers = new SeenMembersStore({ db, logger: app.log });
+  seenMembers.start();
   const directory = new ChannelDirectory(
     db,
     app.log,
@@ -140,6 +145,7 @@ export async function buildApp({
       // sink's bus, so the sink must see every command the hub translates.
       history.attach(identityId, session);
       hub.attachSession(identityId, session);
+      seenMembers.attach(identityId, session);
       directory.attach(session);
       // Every session's manual ads must stamp the campaign scheduler's
       // app-wide spacing clock, campaign or not (M11 audit).
@@ -238,6 +244,7 @@ export async function buildApp({
     sessionJanitor.stop();
     detachedAway.stop();
     retention.stop();
+    seenMembers.stop();
     outbox.stop();
     campaignScheduler.stop();
     sessions.stopAll();

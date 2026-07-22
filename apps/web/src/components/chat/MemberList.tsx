@@ -1,13 +1,19 @@
-// MemberList (COMPONENTS.md §9): grouped Owner · Admins · Online · Idle.
-// Channel member lists only ever contain present characters (ICH/JCH/LCH),
-// so there is no Offline group. Avatars are the real F-List images,
-// lazy-loaded with the initial-on-color fallback (decisions.md §6).
-// Rows are interactive: left-click opens the mini profile card (M8),
-// right-click opens the MemberContextMenu — the f-list.net website link
-// lives there.
+// MemberList (COMPONENTS.md §9): grouped Owner · Admins · Online · Idle,
+// plus the "Seen recently" offline group (#200) — previously-seen members of
+// this channel who aren't present now, last in the same scroll, collapsed by
+// default. Avatars are the real F-List images, lazy-loaded with the
+// initial-on-color fallback (decisions.md §6). Rows are interactive:
+// left-click opens the mini profile card (M8), right-click opens the
+// MemberContextMenu — the f-list.net website link lives there. One filter
+// query matches every group, offline included.
 
-import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
-import type { MemberDto } from "@emberchat/protocol";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import type { MemberDto, SeenMemberDto } from "@emberchat/protocol";
 import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import { presenceDot } from "../../lib/presence.js";
 import { loadSocial } from "../../lib/social.js";
@@ -17,6 +23,13 @@ import { genderColorVar } from "../../theme/tokens.js";
 import { Avatar } from "../common/Avatar.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { groupMembers, nameSet } from "./member-sort.js";
+import {
+  isOfflineExpanded,
+  matchesMemberQuery,
+  offlineRows,
+  relativeSeen,
+  setOfflineExpanded,
+} from "./offline-members.js";
 import { roleFor, type ChannelRole } from "./member-roles.js";
 import styles from "./chat.module.css";
 
@@ -30,9 +43,16 @@ const DOT_COLOR = {
  * menu itself re-clamps against its measured size once rendered. */
 const MENU_WIDTH = 216;
 
+/** Shared cadence for recomputing visible relative times — one interval for
+ * the whole list, never one per row (spec §5). */
+const SEEN_TICK_MS = 60_000;
+
 interface MenuState {
   member: MemberDto;
   role: ChannelRole;
+  /** False for "Seen recently" targets: admin items act on a live channel
+   * role the absent member doesn't hold, so they never render. */
+  present: boolean;
   position: { x: number; y: number };
 }
 
@@ -46,33 +66,91 @@ export function MemberList({
   channel: ChannelView;
 }) {
   const [menu, setMenu] = useState<MenuState>();
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState(() =>
+    isOfflineExpanded(channel.key),
+  );
   const viewerChatop = useSessionsStore(
     (s) => s.sessions[identityId]?.chatop ?? false,
   );
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
   const viewerRole = roleFor(ownCharacter, channel.oplist);
 
+  // Switching channels restores that channel's remembered fold and starts
+  // with a clean filter — adjusted during render (the React-endorsed
+  // previous-state pattern), not in an effect.
+  const [prevKey, setPrevKey] = useState(channel.key);
+  if (prevKey !== channel.key) {
+    setPrevKey(channel.key);
+    setExpanded(isOfflineExpanded(channel.key));
+    setQuery("");
+  }
+
   // Friends/bookmarks drive the sort tiers (#178); lazily loaded, so ask once.
   useEffect(() => {
     void loadSocial(identityId);
   }, [identityId]);
 
+  const searching = query.trim() !== "";
   const groups = groupMembers({
-    members: channel.members,
+    members: searching
+      ? channel.members.filter((m) => matchesMemberQuery(m.character, query))
+      : channel.members,
     oplist: channel.oplist,
     friends: nameSet(social?.friends),
     bookmarks: nameSet(social?.bookmarks),
   });
 
+  // While a query is active the offline group auto-expands (spec §4);
+  // clearing it restores the remembered per-channel state.
+  const offlineOpen = searching || expanded;
+  const offline = useMemo(
+    () => (offlineOpen ? offlineRows(channel.seen, query) : []),
+    [offlineOpen, channel.seen, query],
+  );
+  const offlineTotal = channel.seen.length;
+  // While searching the group is always open, so the filtered rows above
+  // are exactly the matches.
+  const offlineMatches = searching ? offline.length : offlineTotal;
+
+  // Relative times are computed at render from one shared tick — no
+  // per-row timers (spec §5). The interval only runs while offline rows
+  // are actually on screen.
+  const [now, setNow] = useState(() => Date.now());
+  const ticking = offlineOpen && offline.length > 0;
+  useEffect(() => {
+    if (!ticking) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, SEEN_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [ticking]);
+
+  function toggleOffline() {
+    const next = !expanded;
+    setExpanded(next);
+    setOfflineExpanded(channel.key, next);
+    // The rows about to appear must not carry a stale clock.
+    if (next) {
+      setNow(Date.now());
+    }
+  }
+
   function openMenu(
     event: ReactMouseEvent,
     member: MemberDto,
     role: ChannelRole,
+    present: boolean,
   ) {
     event.preventDefault();
     setMenu({
       member,
       role,
+      present,
       position: {
         x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
         y: Math.min(event.clientY, window.innerHeight - 160),
@@ -86,6 +164,19 @@ export function MemberList({
         Members{" "}
         <span className={styles.membersCount}>{channel.members.length}</span>
       </div>
+      <input
+        className={styles.memberFilter}
+        type="search"
+        aria-label="Filter members"
+        placeholder="Filter members"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          // A query auto-expands the offline group — refresh the shared
+          // clock so newly revealed rows don't carry a stale time.
+          setNow(Date.now());
+        }}
+      />
       <div className={styles.membersScroll} role="list">
         {groups.map((group) => (
           <div key={group.key}>
@@ -96,12 +187,58 @@ export function MemberList({
                 member={member}
                 role={group.role}
                 onContextMenu={(event) => {
-                  openMenu(event, member, group.role);
+                  openMenu(event, member, group.role, true);
                 }}
               />
             ))}
           </div>
         ))}
+        {/* The group materializes the first time a member parts — an empty
+            labelled fold would read as broken (spec §6). */}
+        {offlineTotal > 0 && (
+          <div>
+            <button
+              type="button"
+              className={styles.offlineHeader}
+              aria-expanded={offlineOpen}
+              onClick={toggleOffline}
+            >
+              <span
+                className={`${styles.offlineChevron} ${offlineOpen ? (styles.offlineChevronOpen ?? "") : ""}`}
+                aria-hidden
+              >
+                ▸
+              </span>
+              <span className={styles.offlineLabel}>Seen recently</span>
+              <span className={styles.offlineCount}>
+                {searching
+                  ? `${String(offlineMatches)} of ${String(offlineTotal)}`
+                  : offlineTotal}
+              </span>
+            </button>
+            {offlineOpen &&
+              offline.map((entry) => (
+                <OfflineRow
+                  key={entry.character}
+                  member={entry}
+                  now={now}
+                  onContextMenu={(event) => {
+                    openMenu(
+                      event,
+                      {
+                        character: entry.character,
+                        gender: entry.gender,
+                        status: "",
+                        statusmsg: "",
+                      },
+                      null,
+                      false,
+                    );
+                  }}
+                />
+              ))}
+          </div>
+        )}
       </div>
       {menu && (
         <MemberContextMenu
@@ -113,6 +250,7 @@ export function MemberList({
           role={menu.role}
           viewerRole={viewerRole}
           viewerChatop={viewerChatop}
+          present={menu.present}
           position={menu.position}
           onClose={() => {
             setMenu(undefined);
@@ -183,6 +321,58 @@ function MemberRow({
             {status}
           </span>
         )}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * "Seen recently" row (#200): MemberRow geometry, but the name keeps its
+ * gender colour at full opacity and weight 400 (no role glyph — an absent
+ * member holds no live role), only the avatar fades, the dot is decorative
+ * `faint`, and the right-aligned meta is the relative last-seen time — the
+ * name ellipsizes before the time ever truncates.
+ */
+function OfflineRow({
+  member,
+  now,
+  onContextMenu,
+}: {
+  member: SeenMemberDto;
+  now: number;
+  onContextMenu: (event: ReactMouseEvent) => void;
+}) {
+  const genderColor = genderColorVar(member.gender);
+  return (
+    <button
+      type="button"
+      className={styles.memberRow}
+      role="listitem"
+      onClick={(event) => {
+        openCardFrom(event.currentTarget, member.character);
+      }}
+      onContextMenu={onContextMenu}
+    >
+      <span className={`${styles.memberAvatar} ${styles.offlineAvatar ?? ""}`}>
+        <Avatar name={member.character} size={30} />
+        <span
+          className={styles.memberDot}
+          style={{ background: DOT_COLOR.faint }}
+          data-dot="faint"
+        />
+      </span>
+      <span className={styles.memberBody}>
+        <span className={styles.memberNickLine}>
+          <span
+            className={styles.memberNick}
+            style={genderColor ? { color: genderColor } : undefined}
+          >
+            {member.character}
+          </span>
+        </span>
+      </span>
+      <span className={styles.seenTime}>
+        {relativeSeen(member.lastSeen, now)}
       </span>
     </button>
   );
