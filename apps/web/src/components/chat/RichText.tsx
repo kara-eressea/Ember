@@ -227,8 +227,9 @@ function ChannelChip({ name }: { name: string }) {
 }
 
 function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
-  const mode = useUserPrefs().linkPreviewMode;
-  const source = resolvePreview(href);
+  const prefs = useUserPrefs();
+  const mode = prefs.linkPreviewMode;
+  const source = resolvePreview(href, prefs.imagePreviewHosts);
   const active = useLinkPreviewStore((s) => s.preview?.href === href);
   const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {

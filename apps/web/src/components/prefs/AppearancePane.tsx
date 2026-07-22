@@ -4,7 +4,12 @@
 // via the prefs fan-out (decisions.md §10). The join/part/quit toggle joins
 // in M5 step 5, when those lines exist to hide.
 
-import { PREFS_DEFAULTS } from "@emberchat/protocol";
+import { useState, type FormEvent } from "react";
+import {
+  DEFAULT_IMAGE_PREVIEW_HOSTS,
+  IMAGE_PREVIEW_HOST,
+  PREFS_DEFAULTS,
+} from "@emberchat/protocol";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { ACCENTS, type AccentId } from "../../theme/tokens.js";
 import { FieldRow, GroupLabel, Segmented, Swatch, Toggle } from "./controls.js";
@@ -190,6 +195,12 @@ export function AppearancePane({ identityId }: { identityId: string }) {
           }}
         />
       </FieldRow>
+      <ImagePreviewHosts
+        hosts={prefs.imagePreviewHosts}
+        onChange={(imagePreviewHosts) => {
+          set({ imagePreviewHosts });
+        }}
+      />
 
       <GroupLabel>Timestamps</GroupLabel>
       <FieldRow label="Timestamp format">
@@ -216,5 +227,144 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
     </>
+  );
+}
+
+const MAX_PREVIEW_HOSTS = 100;
+
+/** Strip anything that isn't a bare hostname: scheme, path, query, port, and
+ * surrounding whitespace — so pasting a full URL still yields just its host. */
+function normalizeHostInput(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // scheme://
+    .replace(/[/?#].*$/, "") // path / query / fragment
+    .replace(/:\d+$/, ""); // :port
+}
+
+/**
+ * The image-preview allowlist editor (#215): a chip list of hosts, an add
+ * form with light hostname validation, and a reset-to-defaults affordance.
+ * The whole array is patched on every change (the prefs array convention).
+ */
+function ImagePreviewHosts({
+  hosts,
+  onChange,
+}: {
+  hosts: readonly string[];
+  onChange: (hosts: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string>();
+
+  const isDefault =
+    hosts.length === DEFAULT_IMAGE_PREVIEW_HOSTS.length &&
+    DEFAULT_IMAGE_PREVIEW_HOSTS.every((host, index) => hosts[index] === host);
+
+  function add(event: FormEvent) {
+    event.preventDefault();
+    const host = normalizeHostInput(draft);
+    if (host === "") {
+      return;
+    }
+    if (!IMAGE_PREVIEW_HOST.test(host)) {
+      setError("Enter a site address like imgur.com");
+      return;
+    }
+    if (hosts.includes(host)) {
+      setError("That site is already on the list");
+      return;
+    }
+    if (hosts.length >= MAX_PREVIEW_HOSTS) {
+      setError(`You can add up to ${String(MAX_PREVIEW_HOSTS)} sites`);
+      return;
+    }
+    onChange([...hosts, host]);
+    setDraft("");
+    setError(undefined);
+  }
+
+  return (
+    <div className={styles.rulesEditor}>
+      <div className={styles.fieldText}>
+        <div className={styles.fieldLabel}>
+          Show image previews from these sites
+        </div>
+        <div className={styles.fieldHelp}>
+          Previews load only for sites on this list — links from anywhere else
+          stay plain links you can open in a new tab.
+        </div>
+      </div>
+      <div className={styles.hostEditorBody}>
+        {hosts.length === 0 ? (
+          <p className={styles.rulesEmpty}>
+            No sites yet — add one below to see image previews.
+          </p>
+        ) : (
+          <ul className={styles.ruleList} aria-label="Allowed preview sites">
+            {hosts.map((host) => (
+              <li key={host} className={styles.ruleChip}>
+                <span className={styles.rulePattern}>{host}</span>
+                <button
+                  type="button"
+                  className={styles.ruleRemove}
+                  aria-label={`Remove ${host}`}
+                  onClick={() => {
+                    onChange(hosts.filter((entry) => entry !== host));
+                    setError(undefined);
+                  }}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form className={styles.ruleForm} onSubmit={add}>
+          <input
+            className={styles.textInput}
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setError(undefined);
+            }}
+            maxLength={253}
+            placeholder="imgur.com"
+            aria-label="Site address"
+          />
+          <button
+            type="submit"
+            className={styles.ruleAdd}
+            disabled={draft.trim() === "" || hosts.length >= MAX_PREVIEW_HOSTS}
+          >
+            Add
+          </button>
+        </form>
+        <p className={styles.rulesHint}>
+          Enter a site address only — no “https://” or path.
+          {!isDefault && (
+            <>
+              {" "}
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => {
+                  onChange([...DEFAULT_IMAGE_PREVIEW_HOSTS]);
+                  setError(undefined);
+                }}
+              >
+                Reset to defaults
+              </button>
+            </>
+          )}
+        </p>
+        {error !== undefined && (
+          <p className={styles.paneError} role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }

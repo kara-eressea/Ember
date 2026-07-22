@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { clientFrameSchema } from "./gateway.js";
 import {
+  DEFAULT_IMAGE_PREVIEW_HOSTS,
   PREFS_DEFAULTS,
   resolvePrefs,
   userPrefsPatchSchema,
@@ -34,6 +35,47 @@ describe("userPrefsPatchSchema", () => {
 
   it("strips unknown keys so they never reach the stored document", () => {
     expect(userPrefsPatchSchema.parse({ mystery: true })).toEqual({});
+  });
+});
+
+describe("imagePreviewHosts (#215)", () => {
+  it("defaults to the known-good allowlist", () => {
+    expect(PREFS_DEFAULTS.imagePreviewHosts).toEqual([
+      ...DEFAULT_IMAGE_PREVIEW_HOSTS,
+    ]);
+  });
+
+  it("accepts a list of bare hostnames", () => {
+    expect(
+      userPrefsPatchSchema.safeParse({
+        imagePreviewHosts: ["imgur.com", "i.gyazo.com", "static.f-list.net"],
+      }).success,
+    ).toBe(true);
+    // Empty list (user removed everything) is valid.
+    expect(
+      userPrefsPatchSchema.safeParse({ imagePreviewHosts: [] }).success,
+    ).toBe(true);
+  });
+
+  it("rejects entries carrying a scheme, path, or non-hostname text", () => {
+    for (const bad of [
+      "https://imgur.com",
+      "imgur.com/foo",
+      "imgur.com:443",
+      "not a host",
+      "localhost",
+    ]) {
+      expect(
+        userPrefsPatchSchema.safeParse({ imagePreviewHosts: [bad] }).success,
+        bad,
+      ).toBe(false);
+    }
+  });
+
+  it("resolves a stored garbage value back to the default list", () => {
+    expect(
+      resolvePrefs({ imagePreviewHosts: "nope" }).imagePreviewHosts,
+    ).toEqual([...DEFAULT_IMAGE_PREVIEW_HOSTS]);
   });
 });
 
