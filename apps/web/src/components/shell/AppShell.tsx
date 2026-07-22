@@ -26,6 +26,8 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { useRailStore } from "../../stores/rail.js";
+import { railHidden } from "../../lib/rail-visibility.js";
 import { adViewFor } from "../chat/ads.js";
 import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
@@ -75,6 +77,12 @@ export function AppShell() {
   const session = useSessionsStore((s) =>
     identityId === undefined ? undefined : s.sessions[identityId],
   );
+  // Identity-rail visibility (#346): the stored hide preference, overridden to
+  // visible whenever a second identity is connected so a newly-connected
+  // character is never lost. Read from the store (initialized synchronously
+  // from localStorage), so the shell's first render is already in final shape.
+  const railPref = useRailStore((s) => s.hidden);
+  const hideRail = railHidden(railPref, identities?.length ?? 0);
   const membersOpen = useUiStore((s) => s.membersOpen);
   const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
   const dmDrawerOpen = useUiStore((s) => s.dmDrawerOpen);
@@ -290,7 +298,7 @@ export function AppShell() {
   return (
     <div
       ref={shellRef}
-      className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")}`}
+      className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")} ${hideRail ? (styles.railHidden ?? "") : ""}`}
       style={{
         [WIDTH_VARS.left]: `${leftWidth}px`,
         [WIDTH_VARS.right]: `${rightWidth}px`,

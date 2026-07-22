@@ -39,6 +39,8 @@ import {
   type SocialCharacter,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { useRailStore } from "../../stores/rail.js";
+import { railHidden } from "../../lib/rail-visibility.js";
 import { Avatar } from "../common/Avatar.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
@@ -531,7 +533,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       )}
 
       <div className={styles.meBar}>
-        <Avatar name={session.character || "?"} size={30} />
+        <MeAvatarToggle character={session.character} />
         <MeStatus session={session} online={online} />
         <PowerButton session={session} />
         <button
@@ -587,6 +589,33 @@ function SectionHeader({
         {actions}
       </span>
     </div>
+  );
+}
+
+/**
+ * Your own avatar in the MeBar, doubling as the identity-rail toggle (#346):
+ * clicking it hides or shows the rail, a per-device choice. The label/pressed
+ * state reflect the effective visibility, so with a second identity connected
+ * (rail forced visible) the button honestly reads "Hide identity rail".
+ */
+function MeAvatarToggle({ character }: { character: string }) {
+  const railPref = useRailStore((s) => s.hidden);
+  const identityCount = useSessionsStore((s) => s.identities?.length ?? 0);
+  const hidden = railHidden(railPref, identityCount);
+  const label = hidden ? "Show identity rail" : "Hide identity rail";
+  return (
+    <button
+      type="button"
+      className={styles.meAvatar}
+      title={label}
+      aria-label={label}
+      aria-pressed={hidden}
+      onClick={() => {
+        useRailStore.getState().toggle();
+      }}
+    >
+      <Avatar name={character || "?"} size={30} />
+    </button>
   );
 }
 

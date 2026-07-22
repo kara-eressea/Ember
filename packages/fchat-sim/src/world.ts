@@ -245,6 +245,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Yarrow Dale", "Rowan Birch"],
     },
+    // Reserved for the #346 identity-rail-toggle E2E (same parallelism rule).
+    // Two characters on one account: the browser connects Tamarisk Ash alone,
+    // hides the rail via the avatar, then connects Marsh Willow from the
+    // picker — a second identity that forces the hidden rail back into view.
+    "tamarisk@example.test": {
+      password: "hunter2",
+      characters: ["Tamarisk Ash", "Marsh Willow"],
+    },
   },
   channels: [
     {

@@ -9,10 +9,10 @@
   /* Column widths are drag-resizable (#292): the left sidebar and the right
      column read a CSS variable set inline by AppShell, falling back to the
      design-system defaults (244 / 232px). */
-  grid-template-columns: 60px var(--eb-left-width, 244px) 1fr var(
-      --eb-right-width,
-      232px
-    );
+  grid-template-columns: var(--eb-rail-width, 60px) var(
+      --eb-left-width,
+      244px
+    ) 1fr var(--eb-right-width, 232px);
   /* The implicit row would auto-size to content, un-constraining every
      internal scroll region — pin it to the viewport instead. */
   grid-template-rows: minmax(0, 1fr);
@@ -21,7 +21,22 @@
 }
 
 .shell.membersClosed {
-  grid-template-columns: 60px var(--eb-left-width, 244px) 1fr;
+  grid-template-columns: var(--eb-rail-width, 60px) var(
+      --eb-left-width,
+      244px
+    ) 1fr;
+}
+
+/* Identity-rail hidden (#346): the avatar toggle collapses the rail track to
+   zero and removes the rail from the layout. The left resize handle offset
+   (--eb-rail-width, below) tracks the same variable so the sidebar stays
+   draggable against the window edge. */
+.shell.railHidden {
+  --eb-rail-width: 0px;
+}
+
+.shell.railHidden .rail {
+  display: none;
 }
 
 /* ── Column resize handles (#292) ────────────────────────────────────────
@@ -57,7 +72,7 @@
 }
 
 .resizeLeft {
-  left: calc(60px + var(--eb-left-width, 244px) - 3px);
+  left: calc(var(--eb-rail-width, 60px) + var(--eb-left-width, 244px) - 3px);
 }
 
 .resizeRight {
@@ -668,6 +683,19 @@
   padding: 10px 12px;
   border-top: 1px solid var(--eb-border);
   background: var(--eb-side2);
+}
+
+/* The own-avatar toggle for the identity rail (#346): a bare button wrapping
+   the Avatar, so the gesture is keyboard-reachable and carries the aria state.
+   No box of its own — just the focus ring the base sheet gives buttons. */
+.meAvatar {
+  display: flex;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: var(--eb-radius);
+  background: none;
+  cursor: pointer;
 }
 
 .meStatusButton {
