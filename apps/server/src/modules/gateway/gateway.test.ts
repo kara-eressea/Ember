@@ -575,20 +575,21 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
       "Frontpage",
     ]);
 
-    // Explicit leave unpins — the pin must not fight the leave by dragging
-    // the channel back on the next reconnect.
+    // Explicit leave removes the conversation row outright (#327): the
+    // sidebar loses it everywhere, and — having deleted the row — nothing
+    // in the resume set can drag the channel back on the next reconnect,
+    // subsuming the old unpin-on-leave.
     client.send({
       t: "cmd",
       id: 2,
       d: { identityId, action: "channel.leave", d: { key: "Frontpage" } },
     });
     expect((await client.nextOfType("ack")).d.ok).toBe(true);
-    await nextConversationUpdate<{
-      id: string;
-      lastReadMessageId: number | null;
-      pinned: boolean;
-    }>(client, (c) => c.id === frontpage!.convId && !c.pinned);
-    // Once the LCH echo drains through the sink, no seed resurrects it.
+    const removed = await client.nextEvent("conversation.removed");
+    expect(eventPayload<{ convId: string }>(removed).convId).toBe(
+      frontpage!.convId,
+    );
+    // Once the delete drains through the sink, no seed resurrects it.
     await vi.waitFor(async () => {
       await app.history.flush();
       expect(await app.history.channelsForResume(identityId)).toEqual([]);

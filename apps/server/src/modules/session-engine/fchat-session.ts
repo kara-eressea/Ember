@@ -329,8 +329,15 @@ export class FchatSession {
   leaveChannel(channel: string): void {
     this.#desiredChannels.delete(channel);
     this.#unconfirmedJoins.delete(channel);
+    // Only put an LCH on the wire when we're actually a live member. A dead
+    // or desynced key — e.g. a private room F-Chat destroyed while we were
+    // detached — would answer with a channel-gone ERR and no echo, so the
+    // round-trip is pointless: skip it rather than spam LCH on a key we
+    // can't leave. The persisted conversation row is closed by the gateway
+    // regardless (#327).
     if (
       this.#status === "online" &&
+      this.state.channels.has(channel) &&
       this.#send({ cmd: "LCH", payload: { channel } })
     ) {
       this.#pendingLeaves.set(

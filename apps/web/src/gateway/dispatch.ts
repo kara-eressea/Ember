@@ -167,6 +167,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "conversation.updated":
       sessions.applyConversation(identityId, event.d.conversation);
       return;
+    case "conversation.removed":
+      // Channel leave/close (#327): the row is gone server-side, so drop it
+      // from every attached tab — including the one that clicked.
+      sessions.removeConversation(identityId, event.d.convId);
+      return;
     case "member.join":
       // Synthesize the live-only join line before the set-add; delivery is
       // at-least-once, so a replay for someone already present logs nothing.

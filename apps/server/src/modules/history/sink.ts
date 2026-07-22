@@ -35,6 +35,8 @@ export interface HistoryEvents {
   message: { identityId: string; message: MessageRow };
   /** A conversation was created or updated (joined flag, read cursor). */
   conversation: { identityId: string; conversation: ConversationRow };
+  /** A conversation row was removed outright (channel close/leave, #327). */
+  conversationRemoved: { identityId: string; conversationId: string };
 }
 
 interface ConversationTarget {
@@ -321,6 +323,39 @@ export class HistorySink {
       this.events.emit("conversation", { identityId, conversation: row });
     }
     return row;
+  }
+
+  /**
+   * Close a channel conversation (gateway `channel.leave` / sidebar ✕): the
+   * row and its history are dropped so the sidebar loses it everywhere,
+   * unlike a kick (which only flips `joined` and keeps the row as a rejoin
+   * affordance). Deliberately removes rather than hides — an explicit leave
+   * is stronger than a PM's reversible "close". Enqueued on the identity's
+   * write queue so it serializes behind any joined-flag write still draining
+   * from the LCH echo, and the cache entry is dropped so a later rejoin mints
+   * a fresh row. Fans out `conversationRemoved` so every attached tab (and
+   * the one that clicked) drops the row (#327).
+   */
+  closeChannelConversation(identityId: string, channelKey: string): void {
+    this.#enqueue(identityId, async () => {
+      const [row] = await this.#db
+        .delete(conversations)
+        .where(
+          and(
+            eq(conversations.identityId, identityId),
+            eq(conversations.kind, "channel"),
+            eq(conversations.channelKey, channelKey),
+          ),
+        )
+        .returning();
+      this.#conversationIds.delete(`${identityId}:channel:${channelKey}`);
+      if (row) {
+        this.events.emit("conversationRemoved", {
+          identityId,
+          conversationId: row.id,
+        });
+      }
+    });
   }
 
   /**

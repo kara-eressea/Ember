@@ -549,6 +549,72 @@ describe("channels", () => {
       payload: { number: 49 },
     });
   });
+
+  it("destroys a private room when its last member leaves (#327)", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Amber's Room" } });
+    const created = parseServerCommand(await amber.waitFor("JCH"));
+    const room =
+      created.cmd === "JCH" ? created.payload.channel : "ADH-missing";
+    expect(room).toMatch(/^ADH-/);
+    await amber.waitFor("CDS"); // drain the rest of the join flow
+
+    // Sole occupant leaves — the room is reaped, so a rejoin fails ERR 26.
+    amber.send({ cmd: "LCH", payload: { channel: room } });
+    await amber.waitFor("LCH");
+    amber.send({ cmd: "JCH", payload: { channel: room } });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 26 },
+    });
+  });
+
+  it("destroys a private room when its last member disconnects (#327)", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Amber's Room" } });
+    const created = parseServerCommand(await amber.waitFor("JCH"));
+    const room =
+      created.cmd === "JCH" ? created.payload.channel : "ADH-missing";
+    await amber.waitFor("CDS");
+
+    // The sole occupant drops (the restart-detach case). The room is gone, so
+    // a fresh session that tries to rejoin it gets ERR 26.
+    amber.close();
+    await amber.closed;
+    const rejoin = await login(sim, "amber@example.test", "Amber Vale");
+    rejoin.send({ cmd: "JCH", payload: { channel: room } });
+    expect(parseServerCommand(await rejoin.waitFor("ERR"))).toMatchObject({
+      payload: { number: 26 },
+    });
+  });
+
+  it("keeps a private room alive while another member remains (#327)", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Shared Room" } });
+    const created = parseServerCommand(await amber.waitFor("JCH"));
+    const room =
+      created.cmd === "JCH" ? created.payload.channel : "ADH-missing";
+    await amber.waitFor("CDS");
+    // Invite a second member so the room has two occupants.
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: room, character: "Birch Rowan" },
+    });
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: room } });
+    await birch.waitFor("CDS");
+
+    // Amber leaves; Birch is still in, so the room survives and Amber can
+    // rejoin it.
+    amber.send({ cmd: "LCH", payload: { channel: room } });
+    await amber.waitFor("LCH");
+    amber.send({ cmd: "JCH", payload: { channel: room } });
+    expect(parseServerCommand(await amber.waitFor("JCH"))).toMatchObject({
+      payload: { channel: room, character: { identity: "Amber Vale" } },
+    });
+  });
 });
 
 describe("messages", () => {

@@ -1048,6 +1048,19 @@ export class FchatSim {
       payload: { channel: channel.name, character },
     });
     channel.members.delete(character);
+    this.#reapPrivateRoom(channel);
+  }
+
+  /**
+   * F-Chat destroys a private room once its last occupant leaves: a later
+   * JCH answers with ERR 26 (ChannelNotFound). Official channels persist.
+   * Modeled so the restart→dead-room repro (#327) is reproducible: the sole
+   * occupant disconnects, the room vanishes, and a rejoin fails.
+   */
+  #reapPrivateRoom(channel: ChannelState): void {
+    if (!channel.official && channel.members.size === 0) {
+      this.#channels.delete(channel.name);
+    }
   }
 
   #handleChannelMessage(
@@ -1688,8 +1701,12 @@ export class FchatSim {
       return;
     }
     this.#online.delete(character);
-    for (const channel of this.#channels.values()) {
-      channel.members.delete(character);
+    for (const channel of [...this.#channels.values()]) {
+      if (channel.members.delete(character)) {
+        // A private room whose last member just dropped is destroyed, exactly
+        // like the real server reaping empty ADH- rooms (#327).
+        this.#reapPrivateRoom(channel);
+      }
     }
     // FLN is "treated as a global LCH", so no per-channel LCH on disconnect.
     this.#broadcast({ cmd: "FLN", payload: { character } });

@@ -222,6 +222,7 @@ interface SessionsState {
     reason?: string,
   ): void;
   applyConversation(identityId: string, conversation: ConversationDto): void;
+  removeConversation(identityId: string, convId: string): void;
   applyMemberJoin(
     identityId: string,
     channelKey: string,
@@ -776,6 +777,28 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               newestMessageId: null,
             };
         return { ...session, dms: { ...session.dms, [conversation.id]: dm } };
+      });
+    },
+
+    removeConversation(identityId, convId) {
+      // A channel leave/close removes the row outright (#327). Channels are
+      // keyed by their channel key, so resolve convId → key first; DMs are
+      // keyed by convId directly. Idempotent: a row already gone is a no-op.
+      patch(identityId, (session) => {
+        const key = session.channelByConvId[convId];
+        if (key !== undefined && session.channels[key]) {
+          const channels = { ...session.channels };
+          delete channels[key];
+          const channelByConvId = { ...session.channelByConvId };
+          delete channelByConvId[convId];
+          return { ...session, channels, channelByConvId };
+        }
+        if (convId in session.dms) {
+          const dms = { ...session.dms };
+          delete dms[convId];
+          return { ...session, dms };
+        }
+        return session;
       });
     },
 
