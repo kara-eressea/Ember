@@ -9,6 +9,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -24,6 +25,7 @@ import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
+import { inviteTargets } from "./invite-targets.js";
 import { modPowers, roleTag, type ChannelRole } from "./member-roles.js";
 import styles from "./chat.module.css";
 
@@ -69,6 +71,7 @@ export function MemberContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const [reporting, setReporting] = useState(false);
   const [reportText, setReportText] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // Clamp against the *measured* menu — a full social+admin menu is 2–3×
   // the old fixed guess and could run off-screen (M6 audit). DOM write,
@@ -105,6 +108,13 @@ export function MemberContextMenu({
   // Relationship-aware social items (§10): the lists load lazily; until
   // they arrive the items simply don't render (right-click again).
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
+  // "Invite to →" (#316): private rooms this identity's character can invite
+  // the target into. Empty ⇒ the submenu is hidden entirely.
+  const channels = useSessionsStore((s) => s.sessions[identityId]?.channels);
+  const targets = useMemo(
+    () => (channels ? inviteTargets(channels, ownCharacter) : []),
+    [channels, ownCharacter],
+  );
   const lower = member.character.toLowerCase();
   const bookmarked =
     social?.bookmarks.some((row) => row.name.toLowerCase() === lower) ?? false;
@@ -128,6 +138,13 @@ export function MemberContextMenu({
   // closes the menu as usual. Either way the event is claimed by the shared
   // stack so MessageLog's jump/mark-read doesn't also fire.
   useEscapeToClose(() => {
+    // Escape closes one level: an open submenu first, then a drafting report,
+    // then the menu itself.
+    if (inviteOpen) {
+      setInviteOpen(false);
+      enabledItems(menuRef.current)[0]?.focus();
+      return;
+    }
     if (reporting) {
       setReporting(false);
       setReportText("");
@@ -273,6 +290,31 @@ export function MemberContextMenu({
       });
   }
 
+  /** Invite the target into one private room (CIU). One command per click.
+   * Success is confirmed by the server's SYS and a rejection by its ERR —
+   * both already surface as plain-language notices (cf. the report flow), so
+   * we only speak up when the send itself never left. */
+  function invite(key: string) {
+    onClose();
+    void gateway
+      .cmd({
+        identityId,
+        action: "channel.invite",
+        d: { key, character: member.character },
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              identityId,
+              "error",
+              ack.error ?? "Could not send the invite",
+            );
+        }
+      });
+  }
+
   function toggleIgnore() {
     onClose();
     void gateway
@@ -349,6 +391,66 @@ export function MemberContextMenu({
           Open on f-list.net{" "}
           <span className={styles.memberMenuHint}>↗ website</span>
         </a>
+        {!self && targets.length > 0 && (
+          <div
+            className={styles.memberMenuSub}
+            onMouseEnter={() => {
+              setInviteOpen(true);
+            }}
+            onMouseLeave={() => {
+              setInviteOpen(false);
+            }}
+          >
+            <button
+              className={styles.memberMenuItem}
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={inviteOpen}
+              onClick={() => {
+                setInviteOpen(!inviteOpen);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight" || event.key === "Enter") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setInviteOpen(true);
+                }
+              }}
+            >
+              Invite to
+              <span className={styles.memberMenuSubArrow} aria-hidden>
+                ▸
+              </span>
+            </button>
+            {inviteOpen && (
+              <div
+                className={styles.memberMenuSubPanel}
+                role="menu"
+                aria-label={`Invite ${member.character} to a channel`}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.stopPropagation();
+                    setInviteOpen(false);
+                    enabledItems(menuRef.current)[0]?.focus();
+                  }
+                }}
+              >
+                {targets.map((target) => (
+                  <button
+                    key={target.key}
+                    className={styles.memberMenuItem}
+                    role="menuitem"
+                    onClick={() => {
+                      invite(target.key);
+                    }}
+                  >
+                    {target.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {!self && social !== undefined && (
           <>
             <div className={styles.memberMenuDivider} />
