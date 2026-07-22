@@ -1,7 +1,8 @@
 // ChannelHeader (COMPONENTS.md §5). F-Chat channels carry one CDS
 // description — it fills the collapsed description row; the separate
 // editable TOPIC row has no wire counterpart and is omitted. For DMs the
-// header shows the partner with presence and the TPN typing state.
+// header shows the partner with presence; the TPN typing state now rests on
+// the message bar (#336), rendered by the composer's typingLine.
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -484,9 +485,8 @@ export function DmHeader({
         />
         <MuteChip identityId={identityId} convId={dm.convId} />
         <IgnoreChip identityId={identityId} character={dm.partner} />
-        {dm.typing === "typing" && (
-          <span className={styles.typing}>is typing…</span>
-        )}
+        {/* Typing status moved onto the message bar (#336) — see the composer's
+            typingLine. Showing it here too would duplicate the same info. */}
         <span className={styles.headerSpacer} />
         <button
           className={styles.headerButton}
