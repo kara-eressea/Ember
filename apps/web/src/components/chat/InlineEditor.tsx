@@ -7,7 +7,13 @@
 // so every existing composer-edit.ts transform and the toolbar's caret
 // reflection re-target it unchanged.
 
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type Ref,
+} from "react";
 import {
   defaultKeymap,
   history,
@@ -121,16 +127,59 @@ export interface InlineEditorProps {
    * the same stale-state contract the textarea path pins (#235 audit).
    * preventDefault() stops CodeMirror's own handling. */
   onKeyDown: (event: KeyboardEvent, liveText: string) => void;
-  handleRef: { current: ComposerInputHandle | null };
+  handleRef: Ref<ComposerInputHandle | null>;
   ariaLabel: string;
 }
 
 export function InlineEditor(props: InlineEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView>(null);
-  // Latest callbacks without rebuilding the editor.
-  const cbRef = useRef({ onChange: props.onChange, onKeyDown: props.onKeyDown });
-  cbRef.current = { onChange: props.onChange, onKeyDown: props.onKeyDown };
+  // Latest callbacks without rebuilding the editor — synced in an effect
+  // (react-compiler: refs are never touched during render).
+  const cbRef = useRef({
+    onChange: props.onChange,
+    onKeyDown: props.onKeyDown,
+  });
+  useEffect(() => {
+    cbRef.current = { onChange: props.onChange, onKeyDown: props.onKeyDown };
+  });
+
+  // The textarea-shaped handle dereferences the live view at call time, so
+  // it can be created once and outlive editor setup/teardown.
+  useImperativeHandle(
+    props.handleRef,
+    (): ComposerInputHandle => ({
+      get value() {
+        return viewRef.current?.state.doc.toString() ?? "";
+      },
+      get selectionStart() {
+        return viewRef.current?.state.selection.main.from ?? 0;
+      },
+      get selectionEnd() {
+        return viewRef.current?.state.selection.main.to ?? 0;
+      },
+      focus() {
+        viewRef.current?.focus();
+      },
+      setSelectionRange(start, end) {
+        const view = viewRef.current;
+        if (!view) {
+          return;
+        }
+        const max = view.state.doc.length;
+        view.dispatch({
+          selection: {
+            anchor: Math.min(start, max),
+            head: Math.min(end, max),
+          },
+        });
+      },
+      focused() {
+        return viewRef.current?.hasFocus ?? false;
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     const host = hostRef.current;
@@ -174,34 +223,8 @@ export function InlineEditor(props: InlineEditorProps) {
       }),
     });
     viewRef.current = view;
-    props.handleRef.current = {
-      get value() {
-        return view.state.doc.toString();
-      },
-      get selectionStart() {
-        return view.state.selection.main.from;
-      },
-      get selectionEnd() {
-        return view.state.selection.main.to;
-      },
-      focus() {
-        view.focus();
-      },
-      setSelectionRange(start, end) {
-        const max = view.state.doc.length;
-        view.dispatch({
-          selection: {
-            anchor: Math.min(start, max),
-            head: Math.min(end, max),
-          },
-        });
-      },
-      focused() {
-        return view.hasFocus;
-      },
-    };
     return () => {
-      props.handleRef.current = null;
+      viewRef.current = null;
       view.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- create once
@@ -251,5 +274,4 @@ export function textareaHandle(
 
 /** React-keyboard-event shim so one Composer.onKeyDown serves both paths. */
 export type AnyKeyEvent =
-  | KeyboardEvent
-  | ReactKeyboardEvent<HTMLTextAreaElement>;
+  KeyboardEvent | ReactKeyboardEvent<HTMLTextAreaElement>;

@@ -8,13 +8,7 @@
 // never drift.
 
 export type SpanType =
-  | "bold"
-  | "italic"
-  | "strike"
-  | "spoiler"
-  | "code"
-  | "eicon"
-  | "delim";
+  "bold" | "italic" | "strike" | "spoiler" | "code" | "eicon" | "delim";
 
 export interface MdSpan {
   from: number;
@@ -114,7 +108,11 @@ function scan(text: string, base: number, out: MdSpan[]): void {
       EICON.lastIndex = at;
       const m = EICON.exec(text);
       if (m && m.index === at) {
-        out.push({ from: base + at, to: base + at + m[0].length, type: "eicon" });
+        out.push({
+          from: base + at,
+          to: base + at + m[0].length,
+          type: "eicon",
+        });
         at += m[0].length;
         continue;
       }
