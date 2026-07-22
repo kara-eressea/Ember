@@ -111,11 +111,38 @@ describe("resolvePrefs", () => {
     expect(resolvePrefs(42)).toEqual(PREFS_DEFAULTS);
   });
 
-  it("defaults hideOfflineCharacters to on and honors a stored false", () => {
-    expect(resolvePrefs({}).hideOfflineCharacters).toBe(true);
-    expect(
-      resolvePrefs({ hideOfflineCharacters: false }).hideOfflineCharacters,
-    ).toBe(false);
+  it("defaults the three per-section show-offline prefs to hide (#329)", () => {
+    const resolved = resolvePrefs({});
+    expect(resolved.showOfflineFriends).toBe(false);
+    expect(resolved.showOfflineBookmarks).toBe(false);
+    expect(resolved.showOfflineDms).toBe(false);
+  });
+
+  it("seeds all three sections from the legacy hideOfflineCharacters (#329)", () => {
+    // A pre-#329 "show everyone" (hide === false) becomes show-offline in
+    // every section, so nobody's visible list changes on upgrade.
+    const shown = resolvePrefs({ hideOfflineCharacters: false });
+    expect(shown.showOfflineFriends).toBe(true);
+    expect(shown.showOfflineBookmarks).toBe(true);
+    expect(shown.showOfflineDms).toBe(true);
+
+    // The common legacy hide (true) matches the new per-section default.
+    const hidden = resolvePrefs({ hideOfflineCharacters: true });
+    expect(hidden.showOfflineFriends).toBe(false);
+    expect(hidden.showOfflineBookmarks).toBe(false);
+    expect(hidden.showOfflineDms).toBe(false);
+  });
+
+  it("lets a stored per-section key win over the legacy seed (#329)", () => {
+    // Once a client has written the new keys, migration must not clobber
+    // them — a section explicitly set wins regardless of the legacy value.
+    const resolved = resolvePrefs({
+      hideOfflineCharacters: false,
+      showOfflineBookmarks: false,
+    });
+    expect(resolved.showOfflineFriends).toBe(true);
+    expect(resolved.showOfflineBookmarks).toBe(false);
+    expect(resolved.showOfflineDms).toBe(true);
   });
 
   it("keeps stored values that are valid", () => {

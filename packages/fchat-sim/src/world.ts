@@ -211,6 +211,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Nettle Fen"],
     },
+    // Reserved for the #329 sidebar offline-filtering E2E (same parallelism
+    // rule). Two characters on one account so the partner is a raw SimClient
+    // whose presence (online → FLN offline) the browser identity observes,
+    // exactly like catchup.spec's Ember/Coal pair. Sorrel drives the
+    // header-toggle case, Bramble the detach → reattach unread case.
+    "sorrel@example.test": {
+      password: "hunter2",
+      characters: ["Sorrel Ash", "Dusk Wren"],
+    },
+    "bramble@example.test": {
+      password: "hunter2",
+      characters: ["Bramble Fen", "Moss Dell"],
+    },
   },
   channels: [
     {

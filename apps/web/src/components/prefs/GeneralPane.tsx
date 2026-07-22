@@ -35,14 +35,22 @@ export function GeneralPane({
     <>
       <GroupLabel>Channel list</GroupLabel>
       <FieldRow
-        label="Hide offline characters"
-        help="Friends and bookmarks who are offline stay out of the channel list. Turn this off to always show everyone."
+        label="Hide offline people"
+        help="Keeps offline friends, bookmarks, and direct-message partners out of the sidebar — though a pinned chat, one with unread messages, or the chat you have open always stays put. This sets all three sections at once; to show or hide offline people in just one, right-click that section's heading in the sidebar."
       >
         <Toggle
-          label="Hide offline characters"
-          checked={prefs.hideOfflineCharacters}
+          label="Hide offline people"
+          checked={
+            !prefs.showOfflineFriends &&
+            !prefs.showOfflineBookmarks &&
+            !prefs.showOfflineDms
+          }
           onChange={(hide) => {
-            void patchPrefs(identityId, { hideOfflineCharacters: hide });
+            void patchPrefs(identityId, {
+              showOfflineFriends: !hide,
+              showOfflineBookmarks: !hide,
+              showOfflineDms: !hide,
+            });
           }}
         />
       </FieldRow>
