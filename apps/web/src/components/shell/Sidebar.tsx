@@ -2,7 +2,8 @@
 // entry points, #196) · sections (Pinned, Channels, Direct Messages,
 // Friends, Bookmarks) · MeBar. Section headings collapse (#168, per-device
 // localStorage); friends/bookmarks sort online-first (#164) and offline
-// rows hide behind the hideOfflineCharacters pref (#165). The social
+// rows hide behind each section's own show-offline pref (#165, #329), with
+// pinned/unread/open conversations always shown. The social
 // sections load lazily (four upstream F-List calls) and refresh on demand;
 // incoming friend requests render as actionable rows like channel invites.
 
@@ -41,7 +42,13 @@ import { useUiStore } from "../../stores/ui.js";
 import { Avatar } from "../common/Avatar.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
+import { SectionOfflineMenu } from "../chat/SectionOfflineMenu.js";
 import { matchScore } from "./quick-switch.js";
+import {
+  keepRow,
+  showOfflineFor,
+  type OfflineSection,
+} from "./offline-filter.js";
 import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
 import {
   loadCollapsedSections,
@@ -153,6 +160,24 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     ? session.channels[channelMenu.key]
     : undefined;
 
+  // Right-click menu on a people-section header (#329) — a per-section
+  // "Show offline" toggle for Friends / Bookmarks / Direct messages.
+  const [sectionMenu, setSectionMenu] = useState<{
+    section: OfflineSection;
+    position: { x: number; y: number };
+  }>();
+  const openSectionMenu =
+    (section: OfflineSection) => (event: ReactMouseEvent) => {
+      event.preventDefault();
+      setSectionMenu({
+        section,
+        position: {
+          x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
+          y: Math.min(event.clientY, window.innerHeight - 160),
+        },
+      });
+    };
+
   // convId "" = volatile placeholder whose conversation row is still being
   // written; it becomes routable one event later.
   const bump = session.prefs.highlightBump;
@@ -179,9 +204,22 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   for (const dm of Object.values(session.dms)) {
     dmByPartner.set(dm.partner.toLowerCase(), dm);
   }
+  // Direct messages: partners who are neither friend nor bookmark, with
+  // offline hiding applied like the social sections (#329) — an offline,
+  // read, unpinned, unopened DM row hides unless the section shows offline.
+  const showOfflineDms = showOfflineFor(session.prefs, "dms");
   const allDms = orderRows(
     Object.values(session.dms).filter(
-      (dm) => matches(dm.partner) && !socialNames.has(dm.partner.toLowerCase()),
+      (dm) =>
+        matches(dm.partner) &&
+        !socialNames.has(dm.partner.toLowerCase()) &&
+        keepRow({
+          online: dm.online,
+          showOffline: showOfflineDms,
+          pinned: dm.pinned,
+          unread: dm.unread,
+          active: dm.convId === activeConvId,
+        }),
     ),
     (d) => d.partner,
     (d) => d.highlightedAt,
@@ -198,25 +236,36 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     ...allDms.filter((d) => !d.pinned),
   ];
 
-  // Friends/Bookmarks: online first (#164), offline hidden behind the
-  // synced pref (#165), then the toolbar filter like everything else. A row
-  // with an open DM stays visible regardless of the offline pref (#290) —
-  // otherwise the conversation would have no reachable row in the sidebar.
-  const hideOffline = session.prefs.hideOfflineCharacters;
-  const socialRows = (rows: readonly SocialCharacter[] | undefined) =>
-    orderSocial(
-      (rows ?? []).filter(
-        (row) =>
-          (row.online ||
-            !hideOffline ||
-            dmByPartner.has(row.name.toLowerCase())) &&
-          matches(row.name),
-      ),
+  // Friends/Bookmarks: online first (#164), offline hidden behind that
+  // section's own synced pref (#329), then the toolbar filter like everything
+  // else. Offline hiding now also covers a row carrying an open DM (#329) —
+  // it hides like any offline friend unless one of the always-show
+  // exemptions applies (pinned, unread, or the currently open conversation),
+  // so an opened DM no longer pins an offline partner into the list forever.
+  const socialRows = (
+    rows: readonly SocialCharacter[] | undefined,
+    section: OfflineSection,
+  ) => {
+    const showOffline = showOfflineFor(session.prefs, section);
+    return orderSocial(
+      (rows ?? []).filter((row) => {
+        const dm = dmByPartner.get(row.name.toLowerCase());
+        return (
+          keepRow({
+            online: row.online,
+            showOffline,
+            pinned: dm?.pinned,
+            unread: dm?.unread,
+            active: dm !== undefined && dm.convId === activeConvId,
+          }) && matches(row.name)
+        );
+      }),
       (row) => row.name,
       (row) => row.online,
     );
-  const friends = socialRows(session.social?.friends);
-  const bookmarks = socialRows(session.social?.bookmarks);
+  };
+  const friends = socialRows(session.social?.friends, "friends");
+  const bookmarks = socialRows(session.social?.bookmarks, "bookmarks");
 
   const nothingMatched =
     filtering &&
@@ -408,6 +457,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           onToggle={() => {
             toggleSection("dms");
           }}
+          onContextMenu={openSectionMenu("dms")}
         />
         {openSection("dms") && dms.map((dm) => dmRow(dm, dm.pinned))}
 
@@ -421,6 +471,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           openSection={openSection}
           onToggle={toggleSection}
           onRowContextMenu={openPersonMenu}
+          onSectionContextMenu={openSectionMenu}
         />
 
         {nothingMatched && (
@@ -468,6 +519,17 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         />
       )}
 
+      {sectionMenu && (
+        <SectionOfflineMenu
+          identityId={session.identityId}
+          section={sectionMenu.section}
+          position={sectionMenu.position}
+          onClose={() => {
+            setSectionMenu(undefined);
+          }}
+        />
+      )}
+
       <div className={styles.meBar}>
         <Avatar name={session.character || "?"} size={30} />
         <MeStatus session={session} online={online} />
@@ -496,15 +558,19 @@ function SectionHeader({
   collapsed,
   onToggle,
   actions,
+  onContextMenu,
 }: {
   label: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
   actions?: ReactNode;
+  /** Right-click the header (the people sections use it for the per-section
+   * "Show offline" menu, #329). */
+  onContextMenu?: (event: ReactMouseEvent) => void;
 }) {
   return (
-    <div className={styles.sectionHeader}>
+    <div className={styles.sectionHeader} onContextMenu={onContextMenu}>
       <button
         type="button"
         className={styles.sectionToggle}
@@ -968,6 +1034,7 @@ function SocialSections({
   openSection,
   onToggle,
   onRowContextMenu,
+  onSectionContextMenu,
 }: {
   session: IdentitySession;
   friends: SocialCharacter[];
@@ -984,6 +1051,9 @@ function SocialSections({
     statusmsg: string,
     markRead?: { convId: string; unread: number },
   ) => void;
+  onSectionContextMenu: (
+    section: OfflineSection,
+  ) => (event: ReactMouseEvent) => void;
 }) {
   const identityId = session.identityId;
   const social = session.social;
@@ -1072,6 +1142,7 @@ function SocialSections({
           onToggle("friends");
         }}
         actions={refresh}
+        onContextMenu={onSectionContextMenu("friends")}
       />
       {loadError !== undefined && (
         <div className={styles.socialEmpty} role="alert">
@@ -1120,6 +1191,7 @@ function SocialSections({
         onToggle={() => {
           onToggle("bookmarks");
         }}
+        onContextMenu={onSectionContextMenu("bookmarks")}
       />
       {openSection("bookmarks") &&
         bookmarks.map((bookmark) => row(bookmark, "⚑"))}

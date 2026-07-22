@@ -175,10 +175,15 @@ const prefsShape = {
    * chips in the status editor. Written on every successful non-empty STA;
    * patches replace the whole array (the recents convention). */
   statusMessageRecents: z.array(z.string().min(1).max(255)).max(20),
-  /** Hide offline friends/bookmarks in the channel list (default on).
-   * Older clients simply ignore the stored key (resolvePrefs drops
-   * unknowns) and keep showing offline rows. */
-  hideOfflineCharacters: z.boolean(),
+  /** Show offline people in each of the three sidebar people sections,
+   * independently (#329). Default off = offline rows hide (subject to the
+   * always-show exemptions the sidebar applies: pinned, unread, or the open
+   * conversation). Replaces the single global hideOfflineCharacters
+   * (default hide) — resolvePrefs seeds all three from that legacy key so an
+   * existing "show everyone" choice carries over unchanged. */
+  showOfflineFriends: z.boolean(),
+  showOfflineBookmarks: z.boolean(),
+  showOfflineDms: z.boolean(),
   /** Server-side: away after N minutes with zero gateway subscribers,
    * cleared on the next attach. Opt-in (decisions.md §10). */
   detachedAwayEnabled: z.boolean(),
@@ -236,6 +241,9 @@ const prefsShape = {
 /** The M6 shapes the M10 tri-state replaced — read once by resolvePrefs to
  * migrate stored documents; never written again. */
 const legacyHideAds = z.boolean();
+/** The single global hide-offline pref the per-section keys replaced (#329):
+ * read once to seed the three sections; never written again. */
+const legacyHideOfflineCharacters = z.boolean();
 const legacyChannelAdVisibility = z.record(
   z.string().min(1).max(128),
   z.enum(["show", "hide"]),
@@ -286,7 +294,9 @@ export const PREFS_DEFAULTS: UserPrefs = {
   autoAwayMessage: "",
   autoAwayClearOnReturn: true,
   statusMessageRecents: [],
-  hideOfflineCharacters: true,
+  showOfflineFriends: false,
+  showOfflineBookmarks: false,
+  showOfflineDms: false,
   detachedAwayEnabled: false,
   detachedAwayMinutes: 30,
   desktopNotifyMentions: false,
@@ -325,6 +335,26 @@ export function resolvePrefs(stored: unknown): UserPrefs {
     const legacy = legacyHideAds.safeParse(source["hideAds"]);
     if (legacy.success && legacy.data) {
       resolved["adViewDefault"] = "chat";
+    }
+  }
+  // #329 migration: the three per-section show-offline keys replaced the
+  // single global hideOfflineCharacters (default hide). Seed any section key
+  // a pre-#329 document never wrote from that legacy value so a stored "show
+  // everyone" (hide === false) carries over as show-offline everywhere; the
+  // common hide default already matches the new per-section default (false).
+  {
+    const legacy = legacyHideOfflineCharacters.safeParse(
+      source["hideOfflineCharacters"],
+    );
+    const seedShow = legacy.success ? !legacy.data : false;
+    for (const key of [
+      "showOfflineFriends",
+      "showOfflineBookmarks",
+      "showOfflineDms",
+    ] as const) {
+      if (source[key] === undefined) {
+        resolved[key] = seedShow;
+      }
     }
   }
   if (source["channelAdView"] === undefined) {
