@@ -388,6 +388,16 @@ function cursorClearsBadges(
   return newest === null || next >= newest;
 }
 
+/**
+ * Canonicalize a private-room id's prefix (mirrors the server's
+ * canonicalChannelKey). The server now normalizes keys at ingest, so live
+ * events already agree; this lets a reattach snapshot collapse a stray
+ * "adh-"-prefixed row left behind by a pre-fix session (issue #311).
+ */
+function canonicalChannelKey(key: string): string {
+  return /^adh-/i.test(key) ? `ADH-${key.slice(4)}` : key;
+}
+
 /** The seen roster without one nick (case-insensitive; unchanged input when
  * absent, so untouched channels keep their array identity). */
 function withoutSeen(
@@ -543,15 +553,24 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       const channels: Record<string, ChannelView> = {};
       const channelByConvId: Record<string, string> = {};
       for (const ch of d.channels) {
-        channels[ch.key] = {
+        const key = canonicalChannelKey(ch.key);
+        // A pre-fix session may carry both the real room and a stray
+        // raw-keyed duplicate that canonicalize to one key; the joined
+        // entry is the real room, so let it win the collision.
+        const existing = channels[key];
+        if (existing && existing.joined && !ch.joined) {
+          continue;
+        }
+        channels[key] = {
           ...ch,
+          key,
           oplist: [...ch.oplist],
           members: [...ch.members],
           seen: [...ch.seen],
           highlightedAt: 0,
           newestMessageId: null,
         };
-        channelByConvId[ch.convId] = ch.key;
+        channelByConvId[ch.convId] = key;
       }
       const dms: Record<string, DmView> = {};
       for (const dm of d.dms) {
@@ -964,6 +983,20 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     bumpUnread(identityId, convId, messageId, mention = false) {
       patch(identityId, (session) => {
+        // KNOWN LIMITATION (pre-existing, #269 item 5): a message.new whose
+        // convId has no channelByConvId mapping and no dms[] row yet is
+        // dropped by the final `return session` below. The mapping is only
+        // registered by the conversation.upsert action, which rides a
+        // separate gateway event; if a message.new for a conversation is
+        // dispatched before its upsert lands, this bump has nowhere to go.
+        // In practice the server orders the upsert (channel JCH / pm.open)
+        // ahead of any message, so the window is not observed. A real fix is
+        // structural — it needs a per-session buffer of pending (convId →
+        // {unread, mentions, newestMessageId}) bumps, flushed into the
+        // channel/DM row inside conversation.upsert when the mapping first
+        // registers — not a guard we can add here, since the target row does
+        // not exist. Deferred deliberately; captured so it is not rediscovered
+        // as a new bug.
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
           const channel = session.channels[key];
