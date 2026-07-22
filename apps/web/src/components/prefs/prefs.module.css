@@ -33,7 +33,7 @@
 
 .railTitle {
   padding: 2px 10px 10px;
-  font-size: 15px;
+  font-size: calc(15px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-heading);
 }
@@ -43,7 +43,7 @@
   gap: 9px;
   align-items: center;
   padding: 8px 10px;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--eb-font-ui-scale));
   color: var(--eb-dim);
   text-align: left;
   cursor: pointer;
@@ -77,7 +77,7 @@
 .railFoot {
   margin-top: auto;
   padding: 10px;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   line-height: 1.4;
   color: var(--eb-meta);
 }
@@ -114,14 +114,14 @@
 
 .paneTitle {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(16px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-heading);
 }
 
 .close {
   padding: 2px 8px;
-  font-size: 14px;
+  font-size: calc(14px * var(--eb-font-ui-scale));
   color: var(--eb-dim);
   cursor: pointer;
   background: none;
@@ -142,7 +142,7 @@
 
 .stub {
   margin: 0 0 10px;
-  font-size: 13px;
+  font-size: var(--eb-font-ui);
   line-height: 1.5;
   color: var(--eb-meta);
 }
@@ -203,7 +203,7 @@
 
 .segment {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   color: var(--eb-dim);
   cursor: pointer;
   background: none;
@@ -229,7 +229,7 @@
 .stepperButton {
   width: 26px;
   height: 24px;
-  font-size: 15px;
+  font-size: calc(15px * var(--eb-font-ui-scale));
   line-height: 1;
   color: var(--eb-dim);
   cursor: pointer;
@@ -250,7 +250,7 @@
 
 .stepperValue {
   min-width: 48px;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--eb-text);
@@ -271,14 +271,14 @@
 }
 
 .fieldLabel {
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--eb-font-ui-scale));
   font-weight: 600;
   color: var(--eb-text);
 }
 
 .fieldHelp {
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
@@ -288,7 +288,7 @@
 
 .groupLabel {
   margin: 18px 0 4px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-meta);
   text-transform: uppercase;
@@ -298,7 +298,7 @@
 .textInput {
   height: 34px;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: var(--eb-font-ui);
   color: var(--eb-text);
   background: var(--eb-bg);
   border: 1px solid var(--eb-border);
@@ -347,7 +347,7 @@
   gap: 7px;
   align-items: center;
   padding: 3px 4px 3px 9px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   color: var(--eb-text);
   background: var(--eb-bg);
   border: 1px solid var(--eb-border);
@@ -355,7 +355,7 @@
 }
 
 .ruleKind {
-  font-size: 10px;
+  font-size: calc(10px * var(--eb-font-ui-scale));
   font-weight: 700;
   color: var(--eb-accent);
   text-transform: uppercase;
@@ -372,7 +372,7 @@
 
 .ruleRemove {
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: var(--eb-font-ui-tiny);
   color: var(--eb-faint);
   cursor: pointer;
   background: none;
@@ -399,7 +399,7 @@
 .ruleAdd {
   height: 34px;
   padding: 0 14px;
-  font-size: 13px;
+  font-size: var(--eb-font-ui);
   font-weight: 600;
   color: var(--eb-bg);
   cursor: pointer;
@@ -415,19 +415,19 @@
 
 .rulesEmpty {
   margin: 0 0 10px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
 .rulesHint {
   margin: 8px 0 0;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
 
 .paneError {
   margin: 8px 0 0;
-  font-size: 12px;
+  font-size: var(--eb-font-ui-small);
   color: var(--eb-danger);
 }
 
@@ -452,7 +452,7 @@
 
 .paneNote {
   margin: 6px 0 12px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
   line-height: 1.5;
   color: var(--eb-dim);
 }

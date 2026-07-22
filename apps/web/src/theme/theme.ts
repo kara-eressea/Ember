@@ -215,31 +215,34 @@ export function hydrateTheme(prefs: {
   applyTheme(accent, baseTheme, colorblind);
 }
 
-// ── Interface font size + scale (issue #319) ───────────────────────────────
+// ── Interface font size + scale (issues #319, #328) ────────────────────────
 // Two Appearance prefs, applied on the root element alongside the palette:
 //
-//  • UI font size (S/M/L) → the root <html> font-size. The shell's chrome is
-//    px-heavy, but its interactive controls (buttons/inputs use `font:
-//    inherit`) and every element without an explicit size cascade from this
-//    base, so the ramp scales interface *type* without touching layout
-//    spacing or the #303 column clamps — the type-only knob, mirroring the
-//    message-body font pref's spirit.
+//  • UI font size (S/M/L) → the `--eb-font-ui-scale` multiplier on :root. The
+//    chrome's type ramp — --eb-font-ui / -small / -tiny and every converted
+//    chrome font-size — is expressed as `calc(<px> * var(--eb-font-ui-scale))`
+//    (base.css), so one variable retunes all interface type at once. #322
+//    wrote the root <html> font-size instead and assumed the chrome inherited
+//    it; the module CSS sets explicit px almost everywhere, which ignores the
+//    root, so nothing moved — this multiplier is what the px declarations
+//    actually read. M = 1 reproduces today's exact sizes; message text keeps
+//    its own separate pref and is deliberately excluded from the sweep.
 //  • UI scale (%) → root `zoom`, the browser-zoom equivalent. The layouts are
-//    px-based (a rem-basis rescale wouldn't bite), and `zoom` scales type and
-//    box together while keeping the #303 resizable-sidebar clamps
-//    proportional: the drag reads getBoundingClientRect and writes a px CSS
-//    var, both living inside the zoomed root, so the [180,400] bounds stay
-//    self-consistent at any scale.
+//    px-based, and `zoom` scales type and box together while keeping the #303
+//    resizable-sidebar clamps proportional: the drag reads
+//    getBoundingClientRect and writes a px CSS var, both living inside the
+//    zoomed root, so the [180,400] bounds stay self-consistent at any scale.
 //
-// They compose: `zoom` scales the font-size-derived type too, so UI-font L at
-// 125% is simply the larger type inside the larger shell.
+// They compose: `zoom` scales the multiplier-driven type too, so UI-font L at
+// 125% is simply the larger chrome type inside the larger shell.
 
-/** Root font-size (px) for each interface-type step. M = 13px, the historical
- * body base, so the default is a no-op. */
-export const UI_FONT_PX: Record<(typeof UI_FONT_SIZES)[number], number> = {
-  s: 12,
-  m: 13,
-  l: 15,
+/** The `--eb-font-ui-scale` multiplier for each interface-type step. M = 1 is
+ * a no-op (exact match to the pre-#328 look); S/L swing ±10–15% for a clearly
+ * visible change across the chrome ramp. */
+export const UI_FONT_SCALE: Record<(typeof UI_FONT_SIZES)[number], number> = {
+  s: 0.9,
+  m: 1,
+  l: 1.15,
 };
 
 const DEFAULT_UI_FONT = PREFS_DEFAULTS.uiFontSize;
@@ -259,14 +262,18 @@ function isUiFontSize(value: string): value is (typeof UI_FONT_SIZES)[number] {
   return (UI_FONT_SIZES as readonly string[]).includes(value);
 }
 
-/** Write the interface font-size + scale onto :root. Idempotent — safe to
- * call on every prefs fan-out. */
+/** Write the interface font multiplier + scale onto :root. Idempotent — safe
+ * to call on every prefs fan-out. */
 export function applyInterface(
   uiFontSize: (typeof UI_FONT_SIZES)[number],
   uiScale: number,
 ): void {
   const root = document.documentElement;
-  root.style.fontSize = `${String(UI_FONT_PX[uiFontSize])}px`;
+  // The chrome type ramp (base.css) reads this multiplier through calc().
+  root.style.setProperty(
+    "--eb-font-ui-scale",
+    String(UI_FONT_SCALE[uiFontSize]),
+  );
   // `zoom` takes a unitless factor; 1 = no scaling. Kept as a string so the
   // property is always written (some engines drop `zoom: 1` otherwise).
   root.style.zoom = String(uiScaleFactor(uiScale));
