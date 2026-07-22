@@ -275,6 +275,39 @@ export const ignores = pgTable(
   (t) => [primaryKey({ columns: [t.identityId, t.character] })],
 );
 
+// Per-channel "seen recently" roster (#200): members who departed a channel
+// this identity is in, so the member list can show them offline. Presence
+// history only — nick, cached gender, and when they were last seen leaving;
+// no activity, no messages. Rows are upserted on part, deleted on rejoin
+// (a nick is never both present and seen), aged out after ~a week, and
+// capped per channel with oldest-lastSeen eviction (seen-members/store.ts).
+export const seenMembers = pgTable(
+  "seen_members",
+  {
+    identityId: uuid()
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    /** F-Chat channel name or ADH- id. */
+    channelKey: text().notNull(),
+    /** F-Chat resolves names case-insensitively. */
+    characterLower: text().notNull(),
+    /** Display casing as last seen. */
+    character: text().notNull(),
+    /** Cached so the nick keeps its gender colour offline. */
+    gender: text().notNull().default(""),
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.identityId, t.channelKey, t.characterLower] }),
+    // Snapshot serve + cap eviction: a channel's rows, most recent first.
+    index("seen_members_recency_idx").on(
+      t.identityId,
+      t.channelKey,
+      t.lastSeenAt.desc(),
+    ),
+  ],
+);
+
 // ── Profile service (M8) ─────────────────────────────────────────────────────
 
 // Global character-data payload cache — one row per character, shared across

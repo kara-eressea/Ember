@@ -399,6 +399,19 @@ export interface MemberDto {
   statusmsg: string;
 }
 
+/**
+ * One previously-seen channel member (#200): departed from this channel
+ * within the retention window and not present now. Server-persisted; the
+ * client renders what it receives and never prunes locally.
+ */
+export interface SeenMemberDto {
+  character: string;
+  /** Cached at part time so the nick keeps its gender colour offline. */
+  gender: string;
+  /** Epoch ms, server-stamped at part time. */
+  lastSeen: number;
+}
+
 export interface ConversationDto {
   id: string;
   kind: "channel" | "pm";
@@ -484,6 +497,10 @@ export interface SnapshotChannel {
   oplist: string[];
   /** Empty while the session is not online. */
   members: MemberDto[];
+  /** Previously-seen members not present now (#200), newest lastSeen
+   * first. Live moves between this and `members` ride the existing
+   * member.join / member.leave flow — no dedicated event. */
+  seen: SeenMemberDto[];
   joined: boolean;
   pinned: boolean;
   unread: number;

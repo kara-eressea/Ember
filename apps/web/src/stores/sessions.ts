@@ -13,6 +13,7 @@ import type {
   ConversationDto,
   GatewaySessionStatus,
   MemberDto,
+  SeenMemberDto,
   SnapshotChannel,
   SnapshotDm,
   UserPrefs,
@@ -28,6 +29,10 @@ export interface ChannelView {
   oplist: string[];
   /** Set semantics — empty while we are not live in the channel. */
   members: MemberDto[];
+  /** Previously-seen members not present now (#200), newest lastSeen
+   * first. Server-persisted; retention/cap pruning is server-owned — the
+   * client only mirrors live moves (part adds, rejoin removes). */
+  seen: SeenMemberDto[];
   joined: boolean;
   pinned: boolean;
   unread: number;
@@ -348,6 +353,42 @@ function sameCharacter(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
+/** The seen roster without one nick (case-insensitive; unchanged input when
+ * absent, so untouched channels keep their array identity). */
+function withoutSeen(
+  seen: SeenMemberDto[],
+  character: string,
+): SeenMemberDto[] {
+  return seen.some((entry) => sameCharacter(entry.character, character))
+    ? seen.filter((entry) => !sameCharacter(entry.character, character))
+    : seen;
+}
+
+/** On part: drop the nick from members and upsert it into seen (newest
+ * first) with the gender the roster knew — a nick is never in both. */
+function moveMemberToSeen(
+  channel: ChannelView,
+  character: string,
+): ChannelView {
+  const member = channel.members.find((m) =>
+    sameCharacter(m.character, character),
+  );
+  return {
+    ...channel,
+    members: channel.members.filter(
+      (m) => !sameCharacter(m.character, character),
+    ),
+    seen: [
+      {
+        character: member?.character ?? character,
+        gender: member?.gender ?? "",
+        lastSeen: Date.now(),
+      },
+      ...withoutSeen(channel.seen, character),
+    ],
+  };
+}
+
 export const useSessionsStore = create<SessionsState>()((set, get) => {
   /** Immutable single-session update; creates the session if unknown. */
   function patch(
@@ -385,6 +426,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         mode: "both",
         oplist: [],
         members: [],
+        seen: [],
         joined: false,
         pinned: false,
         unread: 0,
@@ -469,6 +511,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           ...ch,
           oplist: [...ch.oplist],
           members: [...ch.members],
+          seen: [...ch.seen],
           highlightedAt: 0,
         };
         channelByConvId[ch.convId] = ch.key;
@@ -588,6 +631,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
                 mode: "both",
                 oplist: [],
                 members: [],
+                seen: [],
                 joined: conversation.joined,
                 pinned: conversation.pinned,
                 unread: 0,
@@ -672,25 +716,36 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         members: channel.members.some((m) => m.character === member.character)
           ? channel.members
           : [...channel.members, member],
+        // A rejoin moves the nick out of "Seen recently" — never in both.
+        seen: withoutSeen(channel.seen, member.character),
       }));
     },
 
     applyMemberLeave(identityId, channelKey, character) {
       const self = get().sessions[identityId]?.character ?? "";
-      patchChannel(identityId, channelKey, (channel) => ({
-        ...channel,
-        members: sameCharacter(character, self)
-          ? [] // our own leave — the whole live list is gone
-          : channel.members.filter((m) => m.character !== character),
-      }));
+      patchChannel(identityId, channelKey, (channel) =>
+        sameCharacter(character, self)
+          ? { ...channel, members: [] } // our own leave — the live list is gone
+          : moveMemberToSeen(channel, character),
+      );
     },
 
     applyChannelMembers(identityId, d) {
-      patchChannel(identityId, d.key, (channel) => ({
-        ...channel,
-        mode: d.mode,
-        members: [...d.members],
-      }));
+      patchChannel(identityId, d.key, (channel) => {
+        // Present members leave the seen roster (never in both) — covers
+        // rejoins folded into a full-state ICH overwrite.
+        const present = new Set(
+          d.members.map((m) => m.character.toLowerCase()),
+        );
+        return {
+          ...channel,
+          mode: d.mode,
+          members: [...d.members],
+          seen: channel.seen.filter(
+            (entry) => !present.has(entry.character.toLowerCase()),
+          ),
+        };
+      });
     },
 
     applyChannelInfo(identityId, d) {
@@ -712,12 +767,7 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             Object.entries(channels).map(([key, ch]) => [
               key,
               ch.members.some((m) => m.character === d.character)
-                ? {
-                    ...ch,
-                    members: ch.members.filter(
-                      (m) => m.character !== d.character,
-                    ),
-                  }
+                ? moveMemberToSeen(ch, d.character)
                 : ch,
             ]),
           );
