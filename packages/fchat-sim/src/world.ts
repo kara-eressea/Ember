@@ -224,6 +224,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Bramble Fen", "Moss Dell"],
     },
+    // Reserved for the #327 dead-private-room E2E (same parallelism rule).
+    // Cinder Ash is the browser user; Vault Keeper is a raw-SimClient owner
+    // who invites, kicks, then leaves an ADH- room she creates so it is
+    // reaped mid-test — reproducing the "room destroyed while we thought we
+    // held it" ghost without a bouncer restart.
+    "cinder@example.test": {
+      password: "hunter2",
+      characters: ["Cinder Ash"],
+    },
+    "vault@example.test": {
+      password: "hunter2",
+      characters: ["Vault Keeper"],
+    },
   },
   channels: [
     {

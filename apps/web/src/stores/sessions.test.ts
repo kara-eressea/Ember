@@ -384,32 +384,17 @@ describe("case-insensitive member-set moves (#265)", () => {
   });
 });
 
-const CHANNEL_KEY = "ADH-sim0001";
-
-function channelConversation(): ConversationDto {
-  return {
-    id: CONV,
-    kind: "channel",
-    channelKey: CHANNEL_KEY,
-    partnerCharacter: null,
-    title: "Amber's Room",
-    pinned: false,
-    joined: true,
-    lastReadMessageId: null,
-  };
-}
-
 describe("removeConversation (#327)", () => {
   it("drops a channel row and its convId mapping outright", () => {
     const store = useSessionsStore.getState();
-    store.applyConversation(IDENTITY, channelConversation());
+    store.applyConversation(IDENTITY, channelConversation(null));
     expect(
-      useSessionsStore.getState().sessions[IDENTITY]?.channels[CHANNEL_KEY],
+      useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
     ).toBeDefined();
 
     store.removeConversation(IDENTITY, CONV);
     const session = useSessionsStore.getState().sessions[IDENTITY];
-    expect(session?.channels[CHANNEL_KEY]).toBeUndefined();
+    expect(session?.channels[KEY]).toBeUndefined();
     expect(session?.channelByConvId[CONV]).toBeUndefined();
   });
 
@@ -428,10 +413,10 @@ describe("removeConversation (#327)", () => {
 
   it("is a no-op for an unknown conversation id", () => {
     const store = useSessionsStore.getState();
-    store.applyConversation(IDENTITY, channelConversation());
+    store.applyConversation(IDENTITY, channelConversation(null));
     store.removeConversation(IDENTITY, "99999999-9999-7999-8999-999999999999");
     expect(
-      useSessionsStore.getState().sessions[IDENTITY]?.channels[CHANNEL_KEY],
+      useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
     ).toBeDefined();
   });
 });

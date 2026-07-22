@@ -98,6 +98,10 @@ interface ChannelState {
   /** Character → timeout expiry (epoch ms). Expired entries are pruned on
    * the next join attempt. */
   readonly timeouts: Map<string, number>;
+  /** CCR-created rooms are reaped when their last member leaves/disconnects,
+   * like the real server destroying empty private rooms (#327). Seeded rooms
+   * are persistent test fixtures and are never reaped. */
+  readonly ephemeral: boolean;
 }
 
 interface CharacterState {
@@ -226,6 +230,7 @@ export class FchatSim {
         members: new Set(seed.npcs),
         banned: new Set(),
         timeouts: new Map(),
+        ephemeral: false,
       });
     }
     for (const npc of this.#world.npcs) {
@@ -955,6 +960,7 @@ export class FchatSim {
       members: new Set(),
       banned: new Set(),
       timeouts: new Map(),
+      ephemeral: true,
     });
     this.#handleJoin(connection, character, name);
   }
@@ -1058,7 +1064,7 @@ export class FchatSim {
    * occupant disconnects, the room vanishes, and a rejoin fails.
    */
   #reapPrivateRoom(channel: ChannelState): void {
-    if (!channel.official && channel.members.size === 0) {
+    if (channel.ephemeral && channel.members.size === 0) {
       this.#channels.delete(channel.name);
     }
   }
