@@ -334,6 +334,15 @@
   opacity: 0.6;
 }
 
+.headerStatus {
+  overflow: hidden;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--eb-faint);
+  overflow-wrap: anywhere;
+}
+
 .metaRow {
   display: flex;
   gap: 8px;
