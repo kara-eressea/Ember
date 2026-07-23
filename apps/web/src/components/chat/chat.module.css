@@ -112,6 +112,13 @@
   min-height: 0;
   overflow-y: auto;
   padding: 12px 0;
+  /* Disable browser scroll anchoring (#372): as the virtualizer's unmeasured
+     rows above the viewport re-measure taller on a fresh mount, the browser
+     would bump scrollTop to keep them in place — firing a spurious scroll that
+     trips the stick-release and strands a channel switch above the bottom. The
+     log manages its own scroll position (bottom-stick + the #266 prepend
+     re-pin), so anchoring only fights it. */
+  overflow-anchor: none;
 }
 
 /* "Jump to recent" pill (#231): floats over the bottom of the message area

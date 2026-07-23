@@ -14,6 +14,7 @@ import {
   formatTime,
   type TimeFormat,
 } from "../../lib/time.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import type { PresenceLine } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
@@ -167,6 +168,15 @@ export function MessageLog({
   const loadingRef = useRef(false);
   /** Handle for the in-flight prepend re-pin rAF, so a jump can cancel it. */
   const rePinRafRef = useRef<number>(0);
+  /** Handle for the in-flight settle-stick rAF loop (shared by the mount/switch
+   * bottom-stick and jump-to-recent), so a fresh call or cleanup supersedes it
+   * rather than two loops racing the scroll. */
+  const stickRafRef = useRef<number>(0);
+  /** The scrollTop at the previous scroll event, so onScroll can tell a real
+   * upward user scroll (scrollTop decreases) from a content-growth scroll event
+   * (scrollTop unchanged, the log grew around it) — only the former releases
+   * the bottom-stick (#372). */
+  const prevScrollTopRef = useRef(0);
   /** Anchor a history prepend: the id of the row to keep visually fixed and
    * its distance below the viewport top (in px) captured *before* the
    * prepend. We restore against measured offsets, not the 26px estimate, so
@@ -237,21 +247,16 @@ export function MessageLog({
     if (!stickBottomRef.current || detachedTail) {
       return;
     }
-    const toBottom = () => {
-      // Re-check the intent every frame: a deferred rAF must never clobber a
-      // scroll the user has since made away from the bottom (#266).
-      if (!stickBottomRef.current) {
-        return;
-      }
-      const el = scrollRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-    };
-    toBottom();
-    const raf = requestAnimationFrame(toBottom);
+    // Settle across a few frames, not just one: on a conversation switch the
+    // log remounts and this first stick writes scrollTop against the flat 26px
+    // row estimate; the variable-height rows then measure taller and a single
+    // write lands short, leaving the switch above the bottom with the jump pill
+    // showing (#372). This reuses the exact multi-frame re-stick jump-to-recent
+    // relies on — not a new controller — gated on stickBottomRef like every
+    // other bottom-directed write.
+    stickToBottomSettling();
     return () => {
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(stickRafRef.current);
     };
     // rows.length re-sticks after a prepend that grew the log while the
     // user sat at the bottom (the #254 auto-fill).
@@ -407,14 +412,33 @@ export function MessageLog({
   // Is the first unread row scrolled above the viewport top? That is the only
   // state where the "new messages" bar has somewhere to jump to; when the
   // unreads are all on screen the in-log divider says it on its own (#363).
+  //
+  // Measured against the REAL DOM, not virtualizer.getOffsetForIndex: that
+  // offset is built from the flat 26px estimate for the unmeasured read history
+  // above the divider, so it underestimated the divider's true position and
+  // reported it off-screen while it sat plainly on screen — the bar showing
+  // with nothing to jump to (#373). The rendered divider's own rect is exact;
+  // when it is not rendered at all we fall back to the rendered range (before
+  // the first virtual item ⇒ above the viewport).
   function updateNewBarVisibility() {
     const el = scrollRef.current;
     if (!el || newRowIndex < 0) {
       setFirstUnreadOffscreen(false);
       return;
     }
-    const offset = virtualizer.getOffsetForIndex(newRowIndex, "start")?.[0];
-    setFirstUnreadOffscreen(offset !== undefined && offset < el.scrollTop);
+    const rowEl = el.querySelector(`[data-index="${String(newRowIndex)}"]`);
+    if (rowEl) {
+      const rowTop = rowEl.getBoundingClientRect().top;
+      const viewportTop = el.getBoundingClientRect().top;
+      // A pixel of tolerance: a divider flush with the top edge still reads as
+      // on screen.
+      setFirstUnreadOffscreen(rowTop < viewportTop - 1);
+      return;
+    }
+    const firstRendered = virtualizer.getVirtualItems()[0]?.index;
+    setFirstUnreadOffscreen(
+      firstRendered !== undefined && newRowIndex < firstRendered,
+    );
   }
 
   // Recompute after the tail settles (open-at-bottom, new arrivals, a jump
@@ -437,21 +461,65 @@ export function MessageLog({
     updateNewBarVisibility();
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const bottom = distanceFromBottom <= AT_BOTTOM_SLACK_PX;
+    // Did the user actually scroll UP? A content-growth scroll event leaves
+    // scrollTop where it was (the log grew below/around it); only a genuine
+    // upward move means the user is leaving the bottom. Without this, a fresh
+    // mount whose rows measure taller after the first stick fires a
+    // growth-driven scroll at a large distance-from-bottom and releases the
+    // glue, stranding a channel switch above the bottom (#372).
+    const movedUp = el.scrollTop < prevScrollTopRef.current - 1;
+    prevScrollTopRef.current = el.scrollTop;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
-    // Update the stick-to-bottom intent with hysteresis: reaching the bottom
-    // engages it; only a scroll further than STICK_RELEASE_PX releases it. A
-    // few pixels of post-jump measurement growth (between the two thresholds)
-    // leaves it engaged, so the bottom-stick keeps closing the gap instead of
-    // the jump landing short.
+    // Hysteresis: reaching the bottom engages the stick; only an upward user
+    // scroll past STICK_RELEASE_PX releases it. Growth-driven distance (scrollTop
+    // unchanged) keeps it engaged, so the bottom-stick closes the gap instead of
+    // the view landing short.
     if (bottom) {
       stickBottomRef.current = true;
-    } else if (distanceFromBottom > STICK_RELEASE_PX) {
+    } else if (movedUp && distanceFromBottom > STICK_RELEASE_PX) {
       stickBottomRef.current = false;
     }
     if (el.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
       void loadOlder();
     }
+  }
+
+  // Re-stick to the bottom across a few frames while variable-height rows
+  // settle their measurements: one scrollTop write lands short because the rows
+  // below re-measure taller than the flat 26px estimate (#266/#372). Shared by
+  // the mount/switch bottom-stick and jump-to-recent so neither drives the
+  // scroll on its own timeline; gated on stickBottomRef like every
+  // bottom-directed write, and cancelable via stickRafRef so a fresh call or an
+  // effect cleanup supersedes an in-flight loop. Bails the instant the intent
+  // is released (a user scroll-up mid-settle).
+  function stickToBottomSettling() {
+    cancelAnimationFrame(stickRafRef.current);
+    // We are gluing to the bottom, so reflect it immediately: on the
+    // mount/switch path the final settle writes may be no-ops (already at the
+    // bottom) that fire no scroll event, leaving the atBottom mirror stuck at a
+    // stale `false` from an intermediate backfill measurement — the log sits at
+    // the bottom yet the jump pill lingers (#372). The loop still bails and
+    // onScroll re-derives the truth if the user scrolls away mid-settle.
+    atBottomRef.current = true;
+    setAtBottom(true);
+    let frames = 0;
+    const step = () => {
+      // Check the intent BEFORE writing: a stale in-flight frame must never
+      // clobber a scroll the user has since made away from the bottom (#266).
+      if (!stickBottomRef.current) {
+        return;
+      }
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+      frames += 1;
+      if (frames < SCROLL_SETTLE_FRAMES) {
+        stickRafRef.current = requestAnimationFrame(step);
+      }
+    };
+    step();
   }
 
   // Snap to the newest messages. When parked in the detached history view
@@ -483,30 +551,9 @@ export function MessageLog({
     anchorRef.current = undefined;
     cancelAnimationFrame(rePinRafRef.current);
     setAtBottom(true);
-    // Setting scrollTop once to the *estimated* scrollHeight can land short —
-    // rows below re-measure taller and the pill lingers. Re-stick across a
-    // few frames until the measurements settle (#266). Bail the instant the
-    // stick intent is released (a user scroll-up mid-settle).
-    let frames = 0;
-    const stick = () => {
-      // Check the intent BEFORE writing: if the user scrolled away since this
-      // frame was scheduled (stick released via onScroll's hysteresis), abandon
-      // rather than snap them back to the bottom. Writing first and only then
-      // checking let a stale in-flight frame clobber a fresh scroll-to-top,
-      // hiding the jump pill mid-click and hanging (#266).
-      if (!stickBottomRef.current) {
-        return;
-      }
-      const el = scrollRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-      frames += 1;
-      if (frames < SCROLL_SETTLE_FRAMES) {
-        requestAnimationFrame(stick);
-      }
-    };
-    stick();
+    // Re-stick across a few frames until the row measurements settle (#266) —
+    // the same shared loop the mount/switch path uses.
+    stickToBottomSettling();
   }
 
   // Click the "new messages" bar: scroll up to the first unread. Reuses the
@@ -529,10 +576,10 @@ export function MessageLog({
     virtualizer.scrollToIndex(newRowIndex, { align: "start" });
   }
 
-  // Esc on the bar: mark the conversation read (the #257/#326 read-cursor
-  // path) and hide the bar. We stay put at the live tail — no scroll — since
-  // open-at-bottom already put us there.
-  function dismissNewBar() {
+  // Esc "mark caught up" at the live tail: mark the conversation read (the
+  // #257/#326 read-cursor path), hide the bar, and drop the in-log "new since
+  // you left" divider. We stay put — open-at-bottom already put us there.
+  function markCaughtUp() {
     useSessionsStore.getState().clearUnread(identityId, convId);
     const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
     if (newest) {
@@ -542,6 +589,15 @@ export function MessageLog({
     // Fully caught up: drop the in-log divider too, not just the bar.
     setNewSinceId((cursor) => dividerCursorAfter("dismiss", cursor));
   }
+
+  // Route the Esc "mark caught up" through the shared Escape stack so a modal
+  // or popover above the log closes first (topmost wins). Enabled whenever we
+  // are parked at the tail with a divider to clear — NOT only while the bar is
+  // shown, so Esc clears the divider even when the few unreads all fit on
+  // screen and the bar stayed hidden (the live #373.2 miss: the old handler
+  // lived on the bar and never registered in that case). newRowIndex < 0 once
+  // the divider is gone, which disables it again.
+  useEscapeToClose(markCaughtUp, !detachedTail && atBottom && newRowIndex >= 0);
 
   // Whether there is a newer position to jump to. Detached tail always
   // qualifies; otherwise it is the "scrolled up past the slack" state.
@@ -662,7 +718,6 @@ export function MessageLog({
           detachedTail,
         })}
         onJump={jumpToFirstUnread}
-        onDismiss={dismissNewBar}
       />
       <div
         className={logClass}

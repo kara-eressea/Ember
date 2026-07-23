@@ -14,7 +14,6 @@ import {
   newMessagesBarHidden,
   type NewMessagesBarState,
 } from "./NewMessagesBar.js";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { buildRows } from "./log-rows.js";
 import type { MessageDto } from "@emberchat/protocol";
 
@@ -30,129 +29,38 @@ const SHOWING: NewMessagesBarState = {
 
 afterEach(cleanup);
 
-function pressEscape() {
-  fireEvent.keyDown(window, { key: "Escape" });
-}
-
+// The bar is presentational (#373): MessageLog owns Escape/mark-caught-up, so
+// these cover only rendering and the click-to-jump affordance. Escape clearing
+// the divider is exercised end-to-end in e2e/messagelog-tail.spec.ts, against
+// real gateway state and scroll geometry.
 describe("NewMessagesBar (#363)", () => {
   it("shows the unread count in plain language when unreads are off screen", () => {
-    render(
-      <NewMessagesBar
-        count={5}
-        hidden={false}
-        onJump={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    );
+    render(<NewMessagesBar count={5} hidden={false} onJump={vi.fn()} />);
     expect(
       screen.getByRole("button", { name: /5 new messages since you left/ }),
     ).toBeTruthy();
   });
 
   it("uses the singular for a single unread message", () => {
-    render(
-      <NewMessagesBar
-        count={1}
-        hidden={false}
-        onJump={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    );
+    render(<NewMessagesBar count={1} hidden={false} onJump={vi.fn()} />);
     expect(screen.getByText("1 new message since you left")).toBeTruthy();
   });
 
   it("renders nothing when the unreads are already visible on screen", () => {
-    render(
-      <NewMessagesBar
-        count={5}
-        hidden={true}
-        onJump={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    );
+    render(<NewMessagesBar count={5} hidden={true} onJump={vi.fn()} />);
     expect(screen.queryByTestId("new-messages-bar")).toBeNull();
   });
 
   it("renders nothing when there are no unread messages", () => {
-    render(
-      <NewMessagesBar
-        count={0}
-        hidden={false}
-        onJump={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    );
+    render(<NewMessagesBar count={0} hidden={false} onJump={vi.fn()} />);
     expect(screen.queryByTestId("new-messages-bar")).toBeNull();
   });
 
   it("jumps to the first unread on click", () => {
     const onJump = vi.fn();
-    render(
-      <NewMessagesBar
-        count={3}
-        hidden={false}
-        onJump={onJump}
-        onDismiss={vi.fn()}
-      />,
-    );
+    render(<NewMessagesBar count={3} hidden={false} onJump={onJump} />);
     fireEvent.click(screen.getByTestId("new-messages-bar"));
     expect(onJump).toHaveBeenCalledTimes(1);
-  });
-
-  it("dismisses (advancing the read cursor) on Escape", () => {
-    const onDismiss = vi.fn();
-    render(
-      <NewMessagesBar
-        count={3}
-        hidden={false}
-        onJump={vi.fn()}
-        onDismiss={onDismiss}
-      />,
-    );
-    pressEscape();
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not claim Escape while hidden", () => {
-    const onDismiss = vi.fn();
-    render(
-      <NewMessagesBar
-        count={3}
-        hidden={true}
-        onJump={vi.fn()}
-        onDismiss={onDismiss}
-      />,
-    );
-    pressEscape();
-    expect(onDismiss).not.toHaveBeenCalled();
-  });
-
-  it("lets a later-mounted overlay handle Escape first (topmost wins)", () => {
-    const onDismiss = vi.fn();
-    const overlayEsc = vi.fn();
-
-    // A modal mounted above the bar registers on the shared stack after it.
-    function Overlay() {
-      useEscapeToClose(overlayEsc);
-      return null;
-    }
-
-    render(
-      <>
-        <NewMessagesBar
-          count={3}
-          hidden={false}
-          onJump={vi.fn()}
-          onDismiss={onDismiss}
-        />
-        <Overlay />
-      </>,
-    );
-
-    // First Escape closes the topmost overlay only.
-    pressEscape();
-    expect(overlayEsc).toHaveBeenCalledTimes(1);
-    expect(onDismiss).not.toHaveBeenCalled();
   });
 });
 
