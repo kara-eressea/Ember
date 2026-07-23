@@ -242,6 +242,11 @@
    names ellipsize inside the column instead of pushing the body around. */
 .logAligned .messageLine .nick {
   width: 132px;
+  /* Right-side breathing room so an italic name's overhang — the slanted top
+     of a trailing letter like 'd' — isn't shaved off by the overflow clip at
+     the right edge of this right-aligned column (#386). It sits in the padding
+     box, which stays inside the clip region, so alignment is untouched. */
+  padding-right: 0.15em;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
@@ -356,7 +361,9 @@
   padding: 6px 16px;
   color: var(--eb-meta);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  /* Date labels sit in the message stream, so they track the message font
+     size like the timestamps they echo — not the interface scale (#380). */
+  font-size: var(--eb-msg-meta-font, 11px);
 }
 
 .dateDivider::before,
@@ -885,7 +892,9 @@
   padding: 6px 16px;
   color: var(--eb-accent-text);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: var(--eb-font-ui-tiny);
+  /* A divider between messages: scale it with the message font, not the
+     interface scale, so it stays proportionate to the log around it (#381). */
+  font-size: var(--eb-msg-meta-font, 11px);
   text-transform: uppercase;
   letter-spacing: 0.09em;
 }
@@ -1139,7 +1148,9 @@
 .pendingMeta {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(10.5px * var(--eb-font-ui-scale));
+  /* The countdown on a queued send is message-log meta, so it follows the
+     message font size like every other line's timestamp (#381). */
+  font-size: var(--eb-msg-meta-font, 10.5px);
   color: var(--eb-meta);
 }
 
