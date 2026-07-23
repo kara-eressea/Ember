@@ -26,6 +26,7 @@ import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
+import { NewMessagesBar } from "./NewMessagesBar.js";
 import { parseEmote } from "./rich-text.js";
 import { PlainNamesProvider, RichText } from "./RichText.js";
 import styles from "./chat.module.css";
@@ -103,6 +104,35 @@ export function MessageLog({
       }),
     [messages, newSinceId, ignores, prefs.groupConsecutive, view, presence],
   );
+
+  // The "new messages" bar (#363): the first unread's row index, and how many
+  // unread messages sit past the read cursor. Own sends never count (they
+  // match the in-log divider, which skips them), and the count reflects the
+  // same render-side ignore/view filtering as the rows.
+  const newRowIndex = useMemo(
+    () => rows.findIndex((row) => row.type === "new"),
+    [rows],
+  );
+  const newCount = useMemo(() => {
+    if (newSinceId === null) {
+      return 0;
+    }
+    return rows.reduce(
+      (n, row) =>
+        row.type === "message" &&
+        !row.message.sentByUs &&
+        row.message.id > newSinceId
+          ? n + 1
+          : n,
+      0,
+    );
+  }, [rows, newSinceId]);
+  // The first unread is scrolled off the top of the viewport (so the bar has
+  // somewhere to jump to). Recomputed on scroll and after the tail settles.
+  const [firstUnreadOffscreen, setFirstUnreadOffscreen] = useState(false);
+  // Esc/dismiss hides the bar for the rest of this visit; the component is
+  // keyed by convId so revisiting resets it.
+  const [newBarDismissed, setNewBarDismissed] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   /** The virtualizer's inner sizing div — observed so content growth the
@@ -364,11 +394,37 @@ export function MessageLog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.length, backfilled, hasMoreBefore, loadingOlder]);
 
+  // Is the first unread row scrolled above the viewport top? That is the only
+  // state where the "new messages" bar has somewhere to jump to; when the
+  // unreads are all on screen the in-log divider says it on its own (#363).
+  function updateNewBarVisibility() {
+    const el = scrollRef.current;
+    if (!el || newRowIndex < 0) {
+      setFirstUnreadOffscreen(false);
+      return;
+    }
+    const offset = virtualizer.getOffsetForIndex(newRowIndex, "start")?.[0];
+    setFirstUnreadOffscreen(offset !== undefined && offset < el.scrollTop);
+  }
+
+  // Recompute after the tail settles (open-at-bottom, new arrivals, a jump
+  // that put the divider back on screen). rAF lets the bottom-stick write
+  // scrollTop first so the measurement is taken against the final position.
+  useEffect(() => {
+    const raf = requestAnimationFrame(updateNewBarVisibility);
+    return () => {
+      cancelAnimationFrame(raf);
+    };
+    // updateNewBarVisibility reads fresh refs/virtualizer each call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastKey, rows.length, newRowIndex, detachedTail]);
+
   function onScroll() {
     const el = scrollRef.current;
     if (!el) {
       return;
     }
+    updateNewBarVisibility();
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const bottom = distanceFromBottom <= AT_BOTTOM_SLACK_PX;
     atBottomRef.current = bottom;
@@ -438,6 +494,35 @@ export function MessageLog({
       }
     };
     stick();
+  }
+
+  // Click the "new messages" bar: scroll up to the first unread. Reuses the
+  // virtualizer scroll and releases the bottom-stick the same way the search
+  // jump does, so the two scroll controllers never write in the same frame
+  // (#266). No mark-read here — catching up is deliberate; Esc or the
+  // back-to-present jump advances the cursor.
+  function jumpToFirstUnread() {
+    if (newRowIndex < 0) {
+      return;
+    }
+    atBottomRef.current = false;
+    stickBottomRef.current = false;
+    anchorRef.current = undefined;
+    cancelAnimationFrame(rePinRafRef.current);
+    setAtBottom(false);
+    virtualizer.scrollToIndex(newRowIndex, { align: "start" });
+  }
+
+  // Esc on the bar: mark the conversation read (the #257/#326 read-cursor
+  // path) and hide the bar. We stay put at the live tail — no scroll — since
+  // open-at-bottom already put us there.
+  function dismissNewBar() {
+    useSessionsStore.getState().clearUnread(identityId, convId);
+    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
+    if (newest) {
+      gateway.readAck(identityId, convId, newest.id);
+    }
+    setNewBarDismissed(true);
   }
 
   // Whether there is a newer position to jump to. Detached tail always
@@ -549,6 +634,12 @@ export function MessageLog({
 
   return (
     <div className={styles.logWrap}>
+      <NewMessagesBar
+        count={newCount}
+        hidden={!firstUnreadOffscreen || newBarDismissed || detachedTail}
+        onJump={jumpToFirstUnread}
+        onDismiss={dismissNewBar}
+      />
       <div
         className={logClass}
         style={styleVars}
