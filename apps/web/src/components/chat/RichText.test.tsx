@@ -13,12 +13,28 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RichText, ProfileLinkProvider } from "./RichText.js";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { useUiStore } from "../../stores/ui.js";
+
+// The `[session]`/`[channel]` invite links (#366) join over the gateway and
+// route via react-router; stub both so the click is observable without a real
+// socket or a Router provider.
+const { navigateMock, cmdMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  cmdMock: vi.fn().mockResolvedValue({ ok: true }),
+}));
+vi.mock("../../gateway/socket.js", () => ({ gateway: { cmd: cmdMock } }));
+vi.mock("react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-router")>()),
+  useNavigate: () => navigateMock,
+}));
 
 const initialSessions = useSessionsStore.getState().sessions;
 afterEach(() => {
   // useUserPrefs falls back to PREFS_DEFAULTS with no synced session; keep the
   // store clean between tests in case one seeds a session.
   useSessionsStore.setState({ sessions: initialSessions });
+  useUiStore.setState({ activeIdentityId: undefined });
+  vi.clearAllMocks();
 });
 
 describe("RichText spoiler (#205)", () => {
@@ -168,6 +184,66 @@ describe("RichText server-entity decode (#335 follow-up)", () => {
     // literal "&amp;" the user typed must survive verbatim.
     const { container } = render(<RichText bbcode={"Tom &amp; Jerry"} local />);
     expect(container.textContent).toBe("Tom &amp; Jerry");
+  });
+});
+
+describe("RichText [session]/[channel] invite links (#366)", () => {
+  function seedSession() {
+    useUiStore.setState({ activeIdentityId: "id-1" });
+    useSessionsStore.setState({
+      sessions: {
+        "id-1": {
+          character: "Amber Vale",
+          synced: true,
+        },
+      } as unknown as typeof initialSessions,
+    });
+  }
+
+  it("renders a [session] invite as its label, not raw tag text", () => {
+    const { container } = render(
+      <RichText bbcode="[session=Test Room]ADH-abc123[/session]" />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Test Room" }),
+    ).toBeInTheDocument();
+    expect(container.textContent).not.toContain("[session");
+    expect(container.textContent).not.toContain("ADH-abc123");
+  });
+
+  it("clicking a [session] link joins the ADH key and routes to it", async () => {
+    const user = userEvent.setup();
+    seedSession();
+    render(<RichText bbcode="[session=Test Room]ADH-abc123[/session]" />);
+    await user.click(screen.getByRole("button", { name: "Test Room" }));
+
+    expect(cmdMock).toHaveBeenCalledWith({
+      identityId: "id-1",
+      action: "channel.join",
+      d: { key: "ADH-abc123" },
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/app/Amber%20Vale/c/ADH-abc123");
+  });
+
+  it("clicking a [channel] link joins the public channel by name", async () => {
+    const user = userEvent.setup();
+    seedSession();
+    render(<RichText bbcode="[channel]Frontpage[/channel]" />);
+    await user.click(screen.getByRole("button", { name: "Frontpage" }));
+
+    expect(cmdMock).toHaveBeenCalledWith({
+      identityId: "id-1",
+      action: "channel.join",
+      d: { key: "Frontpage" },
+    });
+  });
+
+  it("is inert when no identity is active (no session to join under)", async () => {
+    const user = userEvent.setup();
+    render(<RichText bbcode="[channel]Frontpage[/channel]" />);
+    await user.click(screen.getByRole("button", { name: "Frontpage" }));
+    expect(cmdMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
 
