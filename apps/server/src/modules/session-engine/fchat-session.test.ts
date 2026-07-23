@@ -897,69 +897,76 @@ describe("FchatSession against fchat-sim", () => {
     expect(session.state.channels.has("Frontpage")).toBe(true);
   });
 
-  it("sets own status (STA) and restores it after a reconnect", async () => {
-    const sim = await startSim();
-    const session = makeSession(sim, {
-      backoffFloorMs: 200,
-      backoffCapMs: 400,
-    });
-    session.start();
-    await waitForStatus(session, "online");
-    // "online" fires at IDN — wait for our own NLN so the roster holds us
-    // before the synthetic STA tries to fold into it.
-    await waitForCommand(
-      session,
-      (c) => c.cmd === "NLN" && c.payload.identity === CHARACTER,
-    );
+  it(
+    "sets own status (STA) and restores it after a reconnect",
+    { timeout: 20_000 },
+    async () => {
+      const sim = await startSim();
+      const session = makeSession(sim, {
+        backoffFloorMs: 200,
+        backoffCapMs: 400,
+      });
+      session.start();
+      await waitForStatus(session, "online");
+      // "online" fires at IDN — wait for our own NLN so the roster holds us
+      // before the synthetic STA tries to fold into it.
+      await waitForCommand(
+        session,
+        (c) => c.cmd === "NLN" && c.payload.identity === CHARACTER,
+      );
 
-    // setStatus emits a synthetic self-STA so clients converge even if the
-    // server never echoes; the sim's broadcast is the idempotent duplicate.
-    const echo = waitForCommand(
-      session,
-      (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
-    );
-    await session.setStatus("away", "brb tea");
-    await echo;
-    // The synthetic echo also folds into the roster — member lists show the
-    // new status without waiting for the server's own broadcast.
-    expect(session.state.characters.get(CHARACTER)).toMatchObject({
-      status: "away",
-      statusmsg: "brb tea",
-    });
-    expect(session.ownStatus).toEqual({ status: "away", statusmsg: "brb tea" });
+      // setStatus emits a synthetic self-STA so clients converge even if the
+      // server never echoes; the sim's broadcast is the idempotent duplicate.
+      const echo = waitForCommand(
+        session,
+        (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
+      );
+      await session.setStatus("away", "brb tea");
+      await echo;
+      // The synthetic echo also folds into the roster — member lists show the
+      // new status without waiting for the server's own broadcast.
+      expect(session.state.characters.get(CHARACTER)).toMatchObject({
+        status: "away",
+        statusmsg: "brb tea",
+      });
+      expect(session.ownStatus).toEqual({
+        status: "away",
+        statusmsg: "brb tea",
+      });
 
-    // A fresh connection resets F-Chat to plain "online" — the session
-    // re-sends its chosen status right after identifying, and the sim's
-    // broadcast of that STA is the proof it went out. The listener attaches
-    // BEFORE waiting for online: the restore fires immediately after IDN,
-    // and on a starved runner its broadcast can land before an
-    // attach-after-online listener exists (CI flake, M9 step 4). Gated on
-    // the new connection's own NLN so a still-queued duplicate of the
-    // pre-disconnect STA can never satisfy it.
-    sim.disconnect(CHARACTER);
-    let reconnected = false;
-    const restoredEcho = waitForCommand(
-      session,
-      (c) => {
-        if (c.cmd === "NLN" && c.payload.identity === CHARACTER) {
-          reconnected = true;
-          return false;
-        }
-        return (
-          reconnected &&
-          c.cmd === "STA" &&
-          c.payload.character === CHARACTER &&
-          c.payload.status === "away"
-        );
-      },
-      15_000,
-    );
-    await waitForStatus(session, "online", { next: true });
-    const restored = await restoredEcho;
-    expect(restored.cmd === "STA" && restored.payload.statusmsg).toBe(
-      "brb tea",
-    );
-  });
+      // A fresh connection resets F-Chat to plain "online" — the session
+      // re-sends its chosen status right after identifying, and the sim's
+      // broadcast of that STA is the proof it went out. The listener attaches
+      // BEFORE waiting for online: the restore fires immediately after IDN,
+      // and on a starved runner its broadcast can land before an
+      // attach-after-online listener exists (CI flake, M9 step 4). Gated on
+      // the new connection's own NLN so a still-queued duplicate of the
+      // pre-disconnect STA can never satisfy it.
+      sim.disconnect(CHARACTER);
+      let reconnected = false;
+      const restoredEcho = waitForCommand(
+        session,
+        (c) => {
+          if (c.cmd === "NLN" && c.payload.identity === CHARACTER) {
+            reconnected = true;
+            return false;
+          }
+          return (
+            reconnected &&
+            c.cmd === "STA" &&
+            c.payload.character === CHARACTER &&
+            c.payload.status === "away"
+          );
+        },
+        15_000,
+      );
+      await waitForStatus(session, "online", { next: true });
+      const restored = await restoredEcho;
+      expect(restored.cmd === "STA" && restored.payload.statusmsg).toBe(
+        "brb tea",
+      );
+    },
+  );
 
   it("auto-notifies the server about an ignored PRI, which still reaches the bus", async () => {
     const sim = await startSim();
