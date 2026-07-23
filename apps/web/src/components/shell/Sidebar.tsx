@@ -4,7 +4,7 @@
 // localStorage); friends/bookmarks sort online-first (#164) and offline
 // rows hide behind each section's own show-offline pref (#165, #329), with
 // pinned/unread/open conversations always shown. The social
-// sections load lazily (four upstream F-List calls) and refresh on demand;
+// sections load lazily (four upstream F-List calls) and stay fresh via RTB;
 // incoming friend requests render as actionable rows like channel invites.
 
 import {
@@ -13,7 +13,6 @@ import {
   useState,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router";
 import {
@@ -554,20 +553,18 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 }
 
 /** Collapsible section heading (#168): the chevron + label toggle; the
- * right side keeps the count (and any trailing actions). */
+ * right side keeps the count. */
 function SectionHeader({
   label,
   count,
   collapsed,
   onToggle,
-  actions,
   onContextMenu,
 }: {
   label: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
-  actions?: ReactNode;
   /** Right-click the header (the people sections use it for the per-section
    * "Show offline" menu, #329). */
   onContextMenu?: (event: ReactMouseEvent) => void;
@@ -585,10 +582,7 @@ function SectionHeader({
         </span>
         {label}
       </button>
-      <span className={styles.sectionMeta}>
-        {count || ""}
-        {actions}
-      </span>
+      <span className={styles.sectionMeta}>{count || ""}</span>
     </div>
   );
 }
@@ -1120,25 +1114,6 @@ function SocialSections({
     }
   }
 
-  const refresh = (
-    <button
-      type="button"
-      className={styles.sectionAction}
-      title="Refresh friends and bookmarks"
-      aria-label="Refresh friends and bookmarks"
-      onClick={() => {
-        setLoadError(undefined);
-        loadSocial(identityId, true).catch((error: unknown) => {
-          setLoadError(
-            error instanceof Error ? error.message : "Couldn't load",
-          );
-        });
-      }}
-    >
-      ↻
-    </button>
-  );
-
   const row = (character: SocialCharacter, glyph: string) => {
     // #290: a friend/bookmark with an open DM carries the DM's unread badge
     // and active anchor onto its own row.
@@ -1173,12 +1148,11 @@ function SocialSections({
         onToggle={() => {
           onToggle("friends");
         }}
-        actions={refresh}
         onContextMenu={onSectionContextMenu("friends")}
       />
       {loadError !== undefined && (
         <div className={styles.socialEmpty} role="alert">
-          Couldn't load — {loadError}. Use ↻ to retry.
+          Couldn't load — {loadError}.
         </div>
       )}
       {social?.incoming.map((request) => (

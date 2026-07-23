@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { match } from "@emberchat/matcher";
+import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
@@ -26,6 +27,7 @@ import {
   type LoadedProfile,
 } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { RichText } from "../chat/RichText.js";
 import { Avatar } from "../common/Avatar.js";
 import { CHOICES } from "./choices.js";
 import {
@@ -39,6 +41,7 @@ import { GuestbookTab } from "./GuestbookTab.js";
 import { ImagesTab } from "./ImagesTab.js";
 import { DimChip, MatchPill } from "./MatchTier.js";
 import { matchedKinkIds, notableDimensions } from "./match-utils.js";
+import { findStatusMessage } from "./mini-status.js";
 import { ProfileBBCode } from "./ProfileBBCode.js";
 import { ago, dateLabel } from "./time.js";
 import styles from "./profile.module.css";
@@ -487,7 +490,7 @@ function MatchStrip({
 
 // ── Header (§3) + PrivateNote (§4) ───────────────────────────────────────────
 
-function Header({
+export function Header({
   identityId,
   profile,
   response,
@@ -499,6 +502,13 @@ function Header({
   loading: boolean;
 }) {
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
+  // Live STA status message from whichever session source knows it — the same
+  // data the mini card and member list render (#365). Rendered through the
+  // shared chat BBCode renderer, which owns its wire-text decode (decode
+  // exactly once, #348/#353); no line when nothing is set.
+  const statusMessage = useSessionsStore((s) =>
+    findStatusMessage(s.sessions[identityId], profile.name),
+  );
   const isFriend = social?.friends.some(
     (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
   );
@@ -568,6 +578,17 @@ function Header({
             ⚑
           </button>
         </div>
+        {statusMessage && (
+          // Render the chat BBCode subset the way the mini card does (#210):
+          // [url], [eicon], [color] must never show as raw tags. The title
+          // falls back to flattened plain text for the hover tooltip.
+          <div
+            className={styles.headerStatus}
+            title={bbcodeToText(statusMessage)}
+          >
+            <RichText bbcode={statusMessage} />
+          </div>
+        )}
         <div className={styles.metaRow}>
           fetched {ago(response.fetchedAt)}
           <span
