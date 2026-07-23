@@ -458,6 +458,9 @@
   gap: 10px;
   min-height: 46px;
   padding: 8px 14px;
+  /* The whole bar is click-to-type (#313/#317), so the whole bar shows the
+   * text I-beam on hover (#394) — not just the single-line input inside it. */
+  cursor: text;
 }
 
 .composerInput {
@@ -478,6 +481,13 @@
 
 .composerInput::placeholder {
   color: var(--eb-meta);
+}
+
+/* Hide the "Message #channel" hint the moment the composer takes focus (#393),
+ * matching the standard input behavior — not only once the first character is
+ * typed. (The inline CodeMirror editor mirrors this in its own theme.) */
+.composerInput:focus::placeholder {
+  color: transparent;
 }
 
 .composerFooter {
