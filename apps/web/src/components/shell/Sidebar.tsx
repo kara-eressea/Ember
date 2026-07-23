@@ -11,6 +11,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -52,6 +53,14 @@ import {
   type OfflineSection,
 } from "./offline-filter.js";
 import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
+import {
+  applyManualOrder,
+  loadSidebarOrders,
+  moveRow,
+  saveSectionOrder,
+  sectionOrder,
+  type SidebarOrderMap,
+} from "./sidebar-reorder.js";
 import {
   loadCollapsedSections,
   toggleCollapsedSection,
@@ -132,6 +141,72 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   };
   const openSection = (section: SidebarSection) =>
     filtering || collapsed[section] !== true;
+
+  // Drag-to-reorder (#391): a per-identity, per-device manual order kept in
+  // localStorage. Reordering is disabled while the toolbar filter is active —
+  // a filtered subset isn't the real section order. `drag` tracks the row
+  // being dragged and the current drop target/side so a subtle indicator can
+  // render; `orders` is the persisted map, held in state so a drop re-renders.
+  const [orders, setOrders] = useState<SidebarOrderMap>(loadSidebarOrders);
+  const [drag, setDrag] = useState<{
+    section: SidebarSection;
+    draggedId: string;
+    overId?: string;
+    position?: "before" | "after";
+  }>();
+  const reorderable = !filtering;
+  const rowDrag = (
+    section: SidebarSection,
+    id: string,
+    ids: readonly string[],
+  ): RowDrag | undefined => {
+    if (!reorderable) {
+      return undefined;
+    }
+    return {
+      onDragStart: () => {
+        setDrag({ section, draggedId: id });
+      },
+      onDragOver: (event) => {
+        if (!drag || drag.section !== section) {
+          return;
+        }
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const position =
+          event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+        setDrag((current) =>
+          current ? { ...current, overId: id, position } : current,
+        );
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        if (!drag || drag.section !== section) {
+          return;
+        }
+        const next = moveRow(
+          ids,
+          drag.draggedId,
+          id,
+          drag.position ?? "before",
+        );
+        setOrders((map) =>
+          saveSectionOrder(map, session.identityId, section, next),
+        );
+        setDrag(undefined);
+      },
+      onDragEnd: () => {
+        setDrag(undefined);
+      },
+      indicator:
+        drag &&
+        drag.section === section &&
+        drag.overId === id &&
+        drag.draggedId !== id
+          ? drag.position
+          : undefined,
+    };
+  };
 
   // Right-click identity menu on people rows (#167) — the same menu the
   // channel member list uses, minus the channel-only sections.
@@ -227,16 +302,30 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     (d) => d.highlightedAt,
     bump,
   );
-  // Pinned rows stay in their own type section, locked to the top (#169):
-  // pinned group first, unpinned after, each keeping orderRows's ordering.
+  // Manual reorder (#391) applies over the default sort: saved rows first in
+  // their dragged order, the rest stable after. Pinned rows still stay locked
+  // to the top (#169) — the manual order holds within the pinned and unpinned
+  // groups. applyManualOrder is stable, so the pinned filter keeps it.
+  const orderedChannels = applyManualOrder(
+    allChannels,
+    (c) => c.key,
+    sectionOrder(orders, session.identityId, "channels"),
+  );
+  const orderedDms = applyManualOrder(
+    allDms,
+    (d) => d.partner.toLowerCase(),
+    sectionOrder(orders, session.identityId, "dms"),
+  );
   const channels = [
-    ...allChannels.filter((c) => c.pinned),
-    ...allChannels.filter((c) => !c.pinned),
+    ...orderedChannels.filter((c) => c.pinned),
+    ...orderedChannels.filter((c) => !c.pinned),
   ];
   const dms = [
-    ...allDms.filter((d) => d.pinned),
-    ...allDms.filter((d) => !d.pinned),
+    ...orderedDms.filter((d) => d.pinned),
+    ...orderedDms.filter((d) => !d.pinned),
   ];
+  const channelIds = channels.map((c) => c.key);
+  const dmIds = dms.map((d) => d.partner.toLowerCase());
 
   // Friends/Bookmarks: online first (#164), offline hidden behind that
   // section's own synced pref (#329), then the toolbar filter like everything
@@ -266,8 +355,38 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       (row) => row.online,
     );
   };
-  const friends = socialRows(session.social?.friends, "friends");
-  const bookmarks = socialRows(session.social?.bookmarks, "bookmarks");
+  // Presence grouping (#164) stays the primary key for the people sections —
+  // a manual reorder (#391) holds within the online and offline groups, so a
+  // saved order never drags an offline row above the online ones.
+  const orderSocialRows = (
+    rows: SocialCharacter[],
+    section: SidebarSection,
+  ): SocialCharacter[] => {
+    const saved = sectionOrder(orders, session.identityId, section);
+    const byName = (r: SocialCharacter) => r.name.toLowerCase();
+    return [
+      ...applyManualOrder(
+        rows.filter((r) => r.online),
+        byName,
+        saved,
+      ),
+      ...applyManualOrder(
+        rows.filter((r) => !r.online),
+        byName,
+        saved,
+      ),
+    ];
+  };
+  const friends = orderSocialRows(
+    socialRows(session.social?.friends, "friends"),
+    "friends",
+  );
+  const bookmarks = orderSocialRows(
+    socialRows(session.social?.bookmarks, "bookmarks"),
+    "bookmarks",
+  );
+  const friendIds = friends.map((f) => f.name.toLowerCase());
+  const bookmarkIds = bookmarks.map((b) => b.name.toLowerCase());
 
   const nothingMatched =
     filtering &&
@@ -343,6 +462,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       pinned={pinned}
       glyph="#"
       label={decodeWireEntities(channel.title)}
+      drag={rowDrag("channels", channel.key, channelIds)}
       affordance={{
         label: `Leave ${decodeWireEntities(channel.title)}`,
         onActivate: () => {
@@ -371,6 +491,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       dot={presenceDot(dm.online, dm.status)}
       offline={!dm.online}
       label={dm.partner}
+      drag={rowDrag("dms", dm.partner.toLowerCase(), dmIds)}
       affordance={{
         label: `Close conversation with ${dm.partner}`,
         onActivate: () => {
@@ -474,6 +595,13 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           onToggle={toggleSection}
           onRowContextMenu={openPersonMenu}
           onSectionContextMenu={openSectionMenu}
+          rowDrag={(section, name) =>
+            rowDrag(
+              section,
+              name.toLowerCase(),
+              section === "friends" ? friendIds : bookmarkIds,
+            )
+          }
         />
 
         {nothingMatched && (
@@ -859,6 +987,38 @@ interface RowAffordance {
   onActivate: () => void;
 }
 
+/** Drag-to-reorder wiring for a sidebar row (#391). `indicator` renders the
+ * drop bar above/below the row when it is the current drop target. */
+export interface RowDrag {
+  onDragStart: (event: ReactDragEvent<HTMLElement>) => void;
+  onDragOver: (event: ReactDragEvent<HTMLElement>) => void;
+  onDrop: (event: ReactDragEvent<HTMLElement>) => void;
+  onDragEnd: (event: ReactDragEvent<HTMLElement>) => void;
+  indicator?: "before" | "after";
+}
+
+/** DOM props shared by every draggable row wrapper (the NavRow div and the
+ * SocialRow button), so both render the same affordance and drop indicator. */
+function dragWrapProps(drag: RowDrag | undefined) {
+  if (!drag) {
+    return {};
+  }
+  const indicatorClass =
+    drag.indicator === "before"
+      ? styles.dropBefore
+      : drag.indicator === "after"
+        ? styles.dropAfter
+        : undefined;
+  return {
+    draggable: true,
+    onDragStart: drag.onDragStart,
+    onDragOver: drag.onDragOver,
+    onDrop: drag.onDrop,
+    onDragEnd: drag.onDragEnd,
+    indicatorClass,
+  };
+}
+
 interface NavRowProps {
   to: string;
   active: boolean;
@@ -870,6 +1030,7 @@ interface NavRowProps {
   dot?: DotKind;
   offline?: boolean;
   affordance?: RowAffordance;
+  drag?: RowDrag;
   onContextMenu?: (event: ReactMouseEvent) => void;
 }
 
@@ -884,6 +1045,7 @@ function NavRow({
   dot,
   offline,
   affordance,
+  drag,
   onContextMenu,
 }: NavRowProps) {
   const classes = [styles.navItem];
@@ -896,13 +1058,25 @@ function NavRow({
   if (offline) {
     classes.push(styles.offlineRow);
   }
+  const { indicatorClass, ...dragProps } = dragWrapProps(drag);
+  const wrapClasses = [styles.navRowWrap];
+  if (indicatorClass) {
+    wrapClasses.push(indicatorClass);
+  }
   // The close/leave button (#291) is a sibling of the Link, not a child:
   // nesting interactive controls inside an <a> is invalid HTML and would fold
   // the X's label into the link's accessible name. A relatively-positioned
   // wrapper lets the X overlay the row's right edge on hover instead.
+  // The wrapper is the drag source (#391); the inner Link's own default anchor
+  // drag is turned off so it doesn't hijack the reorder gesture.
   return (
-    <div className={styles.navRowWrap}>
-      <Link className={classes.join(" ")} to={to} onContextMenu={onContextMenu}>
+    <div className={wrapClasses.join(" ")} {...dragProps}>
+      <Link
+        className={classes.join(" ")}
+        to={to}
+        draggable={false}
+        onContextMenu={onContextMenu}
+      >
         {glyph !== undefined && (
           <span className={styles.navGlyph}>{glyph}</span>
         )}
@@ -1061,6 +1235,7 @@ function SocialSections({
   onToggle,
   onRowContextMenu,
   onSectionContextMenu,
+  rowDrag,
 }: {
   session: IdentitySession;
   friends: SocialCharacter[];
@@ -1080,6 +1255,10 @@ function SocialSections({
   onSectionContextMenu: (
     section: OfflineSection,
   ) => (event: ReactMouseEvent) => void;
+  rowDrag: (
+    section: "friends" | "bookmarks",
+    name: string,
+  ) => RowDrag | undefined;
 }) {
   const identityId = session.identityId;
   const social = session.social;
@@ -1114,7 +1293,11 @@ function SocialSections({
     }
   }
 
-  const row = (character: SocialCharacter, glyph: string) => {
+  const row = (
+    character: SocialCharacter,
+    glyph: string,
+    section: "friends" | "bookmarks",
+  ) => {
     // #290: a friend/bookmark with an open DM carries the DM's unread badge
     // and active anchor onto its own row.
     const dm = dmByPartner.get(character.name.toLowerCase());
@@ -1126,6 +1309,7 @@ function SocialSections({
         glyph={glyph}
         unread={dm?.unread ?? 0}
         active={dm !== undefined && dm.convId === activeConvId}
+        drag={rowDrag(section, character.name)}
         onContextMenu={(event) => {
           onRowContextMenu(
             event,
@@ -1182,7 +1366,8 @@ function SocialSections({
           </button>
         </div>
       ))}
-      {openSection("friends") && friends.map((friend) => row(friend, "★"))}
+      {openSection("friends") &&
+        friends.map((friend) => row(friend, "★", "friends"))}
       {openSection("friends") &&
         !filtering &&
         social !== undefined &&
@@ -1200,7 +1385,7 @@ function SocialSections({
         onContextMenu={onSectionContextMenu("bookmarks")}
       />
       {openSection("bookmarks") &&
-        bookmarks.map((bookmark) => row(bookmark, "⚑"))}
+        bookmarks.map((bookmark) => row(bookmark, "⚑", "bookmarks"))}
       {openSection("bookmarks") &&
         !filtering &&
         social !== undefined &&
@@ -1220,6 +1405,7 @@ function SocialRow({
   glyph,
   unread,
   active,
+  drag,
   onContextMenu,
 }: {
   session: IdentitySession;
@@ -1227,6 +1413,7 @@ function SocialRow({
   glyph: string;
   unread: number;
   active: boolean;
+  drag?: RowDrag;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
   const navigate = useNavigate();
@@ -1265,10 +1452,15 @@ function SocialRow({
   if (!character.online) {
     classes.push(styles.offlineRow ?? "");
   }
+  const { indicatorClass, ...dragProps } = dragWrapProps(drag);
+  if (indicatorClass) {
+    classes.push(indicatorClass);
+  }
   return (
     <button
       type="button"
       className={classes.join(" ")}
+      {...dragProps}
       onClick={() => {
         void open();
       }}

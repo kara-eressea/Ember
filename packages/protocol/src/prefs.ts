@@ -68,6 +68,12 @@ export const DEFAULT_IMAGE_PREVIEW_HOSTS = [
   "cdn.discordapp.com",
   "media.discordapp.net",
   "xariah.net",
+  // x.com / twitter.com status links are rewritten to fixvx's direct-media
+  // host for the embed fetch (web link-preview.ts); d.fixvx.com redirects to
+  // the raw media on pbs.twimg.com (already listed above). fixvx.com is
+  // listed too so a directly-pasted fixvx share link clears the allowlist.
+  "fixvx.com",
+  "d.fixvx.com",
 ] as const;
 
 /** UTF-8 byte length without TextEncoder/Buffer — this package targets both

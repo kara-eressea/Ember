@@ -527,6 +527,35 @@
   position: relative;
 }
 
+/* Drag-to-reorder drop indicator (#391): a subtle accent bar on the edge the
+   dragged row would land against. Uses the wrapper's own box so it never
+   nudges the hover-✕ or the unread badge. The people-section rows are plain
+   buttons, so the indicator classes attach straight to .navItem too. */
+.dropBefore,
+.dropAfter {
+  position: relative;
+}
+
+.dropBefore::after,
+.dropAfter::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--eb-accent);
+  pointer-events: none;
+}
+
+.dropBefore::after {
+  top: -1px;
+}
+
+.dropAfter::after {
+  bottom: -1px;
+}
+
 /* Trailing slot of a nav row: holds the counter badge. Fixed minimum size so
    the X can overlay this spot instead of widening the row. */
 .navTrail {

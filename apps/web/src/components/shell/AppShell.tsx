@@ -58,6 +58,7 @@ import {
   savedColumnWidth,
   WIDTH_VARS,
 } from "../../lib/sidebar-resize.js";
+import { useUnreadIndicator } from "../../lib/use-unread-indicator.js";
 import styles from "./shell.module.css";
 
 export function AppShell() {
@@ -127,6 +128,9 @@ export function AppShell() {
       : undefined;
   const convId = conv?.convId;
   const convSuffix = conv?.suffix;
+
+  // Favicon badge + title count for backgrounded tabs (#390).
+  useUnreadIndicator();
 
   useEffect(() => {
     gateway.connect();

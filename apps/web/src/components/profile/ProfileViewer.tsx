@@ -131,6 +131,11 @@ export function ProfileViewer({
         ref={windowRef}
       >
         <div className={styles.windowControls}>
+          <FetchedControl
+            identityId={identityId}
+            name={viewing}
+            loaded={loaded}
+          />
           <button
             type="button"
             className={styles.windowControl}
@@ -309,12 +314,7 @@ function ViewerBody({
 
   return (
     <>
-      <Header
-        identityId={identityId}
-        profile={profile}
-        response={response}
-        loading={loaded?.state === "loading"}
-      />
+      <Header identityId={identityId} profile={profile} />
       {(response.stale || response.budgetExhausted) && (
         <div className={styles.staleBanner} role="status">
           <span aria-hidden>⚠</span>
@@ -493,13 +493,9 @@ function MatchStrip({
 export function Header({
   identityId,
   profile,
-  response,
-  loading,
 }: {
   identityId: string;
   profile: ProfileDto;
-  response: NonNullable<LoadedProfile["response"]>;
-  loading: boolean;
 }) {
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
   // Live STA status message from whichever session source knows it — the same
@@ -516,7 +512,6 @@ export function Header({
     social?.bookmarks.some(
       (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
     ) ?? false;
-  const [tooltip, setTooltip] = useState(false);
   // Optimistic bookmark state (#185): show the intended state instantly while
   // the request is in flight; clear the override afterwards so the refreshed
   // social lists (the same pathway the member menu uses) become the source of
@@ -589,36 +584,63 @@ export function Header({
             <RichText bbcode={statusMessage} />
           </div>
         )}
-        <div className={styles.metaRow}>
-          fetched {ago(response.fetchedAt)}
-          <span
-            onMouseEnter={() => {
-              setTooltip(true);
-            }}
-            onMouseLeave={() => {
-              setTooltip(false);
-            }}
-          >
-            <button
-              type="button"
-              className={styles.iconBtn}
-              aria-label="Refresh profile"
-              disabled={response.budgetExhausted || loading}
-              onClick={() => {
-                void loadProfile(identityId, profile.name, true);
-              }}
-            >
-              ⟳
-              {tooltip && response.budgetExhausted && (
-                <span className={styles.tooltip} role="tooltip">
-                  Hourly profile budget exhausted — showing cached copy.
-                </span>
-              )}
-            </button>
-          </span>
-        </div>
       </div>
     </header>
+  );
+}
+
+// ── FetchedControl (§3, #382) ────────────────────────────────────────────────
+
+/** The "fetched X ago" stamp + refresh button. Lives inline in the window's
+ * top-right control cluster, to the LEFT of the full-size/close buttons, so it
+ * no longer costs the header a whole row (#382). Renders nothing until a
+ * profile response exists (the loading/error chrome carries its own copy). */
+function FetchedControl({
+  identityId,
+  name,
+  loaded,
+}: {
+  identityId: string;
+  name: string;
+  loaded: LoadedProfile | undefined;
+}) {
+  const [tooltip, setTooltip] = useState(false);
+  const response = loaded?.response;
+  if (!response) {
+    return null;
+  }
+  const loading = loaded?.state === "loading";
+  return (
+    <div className={styles.fetchedControl}>
+      <span className={styles.fetchedLabel}>
+        fetched {ago(response.fetchedAt)}
+      </span>
+      <span
+        onMouseEnter={() => {
+          setTooltip(true);
+        }}
+        onMouseLeave={() => {
+          setTooltip(false);
+        }}
+      >
+        <button
+          type="button"
+          className={styles.windowControl}
+          aria-label="Refresh profile"
+          disabled={response.budgetExhausted || loading}
+          onClick={() => {
+            void loadProfile(identityId, name, true);
+          }}
+        >
+          ⟳
+          {tooltip && response.budgetExhausted && (
+            <span className={styles.tooltip} role="tooltip">
+              Hourly profile budget exhausted — showing cached copy.
+            </span>
+          )}
+        </button>
+      </span>
+    </div>
   );
 }
 

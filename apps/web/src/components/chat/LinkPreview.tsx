@@ -7,7 +7,7 @@
 // at a time (store).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { placeBeside } from "../profile/popover.js";
+import { placeBeside, POPOVER_MARGIN } from "../profile/popover.js";
 import { useLinkPreviewStore } from "../../stores/link-preview.js";
 import styles from "./chat.module.css";
 
@@ -17,7 +17,11 @@ export function LinkPreview() {
   const preview = useLinkPreviewStore((s) => s.preview);
   const close = useLinkPreviewStore((s) => s.close);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number }>();
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    maxHeight: number;
+  }>();
   // Which src has finished loading / failed — a new target is implicitly
   // "loading" until its own onLoad or onError fires, no reset effect needed.
   const [loadedSrc, setLoadedSrc] = useState<string>();
@@ -47,13 +51,20 @@ export function LinkPreview() {
     if (!element || !preview) {
       return;
     }
-    setPos(
-      placeBeside(
+    // Clamp the panel to the viewport (#385): a tall preview near the bottom
+    // edge would otherwise be pushed off-screen. Cap the height we hand the
+    // placement math (so `top` clamps against the *capped* box) and cap the
+    // panel itself, letting the media area scroll inside it.
+    const maxHeight = window.innerHeight - 2 * POPOVER_MARGIN;
+    const height = Math.min(element.offsetHeight, maxHeight);
+    setPos({
+      ...placeBeside(
         preview.anchor,
-        { width: PANEL_WIDTH, height: element.offsetHeight },
+        { width: PANEL_WIDTH, height },
         { width: window.innerWidth, height: window.innerHeight },
       ),
-    );
+      maxHeight,
+    });
   }, [preview, state]);
 
   if (!preview) {
@@ -81,7 +92,7 @@ export function LinkPreview() {
         aria-label={`Preview: ${source.path}`}
         style={
           pos
-            ? { top: pos.top, left: pos.left }
+            ? { top: pos.top, left: pos.left, maxHeight: pos.maxHeight }
             : {
                 top: preview.anchor.top,
                 left: preview.anchor.right + 6,

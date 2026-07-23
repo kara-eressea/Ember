@@ -38,6 +38,7 @@ import {
   type AnyKeyEvent,
   type ComposerInputHandle,
 } from "./composer-input.js";
+import { shouldRedirectToComposer } from "./composer-typeanywhere.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
 import { HelpPanel } from "./HelpPanel.js";
@@ -349,6 +350,51 @@ export function Composer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
   }, []);
+
+  // Type-anywhere (#395): a printable keystroke on the window — with nothing
+  // editable focused and no dialog/palette/prefs window capturing keys —
+  // focuses the composer and delivers that character, the same "just start
+  // typing" affordance the official client offers. The guard (all the
+  // exclusions: modifier combos, named keys, IME, an already-focused input,
+  // an open modal) lives in shouldRedirectToComposer so it stays testable.
+  // Ctrl+K / Escape and the message log's own keys carry modifiers or are
+  // named keys, so they never reach here. Complements click-to-focus (#317).
+  useEffect(() => {
+    function onWindowKeyDown(event: KeyboardEvent) {
+      if (!online) {
+        return;
+      }
+      const el = inputRef.current;
+      if (!el) {
+        return;
+      }
+      const modalOpen = document.querySelector('[aria-modal="true"]') !== null;
+      if (
+        !shouldRedirectToComposer(event, {
+          activeElement: document.activeElement,
+          modalOpen,
+        })
+      ) {
+        return;
+      }
+      // We deliver the character ourselves — stop the browser from also
+      // landing it somewhere (e.g. a "/" quick-find) as we move focus.
+      event.preventDefault();
+      const next = text + event.key;
+      el.focus();
+      onTextChange(next);
+      requestAnimationFrame(() => {
+        inputRef.current?.setSelectionRange(next.length, next.length);
+      });
+    }
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+    };
+    // onTextChange is a fresh closure each render; text/online are the inputs
+    // that matter for what gets appended and whether we act at all.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, online]);
 
   function toggleMarkdown() {
     const next = !markdown;
