@@ -22,7 +22,7 @@ import {
   openPreviewFrom,
   useLinkPreviewStore,
 } from "../../stores/link-preview.js";
-import { useNavigate } from "react-router";
+import { useNavigate, type NavigateFunction } from "react-router";
 import { gateway } from "../../gateway/socket.js";
 import { channelPath } from "../../lib/routes.js";
 import { openCardFrom } from "../../stores/profile.js";
@@ -152,6 +152,10 @@ function renderNode(
       ) : (
         <InlineIcon key={key} tag={node.tag} name={node.name} />
       );
+    case "channel":
+      // [session]/[channel] invite link (#366): a channel chip that joins and
+      // opens the referenced channel, shown with its human label.
+      return <ChannelLink key={key} channelKey={node.key} label={node.label} />;
     case "noparse":
       return (
         <span key={key} className={styles.bodyCode}>
@@ -292,25 +296,62 @@ function ChannelChip({ name }: { name: string }) {
       className={`${styles.bodyChannel} ${styles.nameButton}`}
       title={`Join #${name}`}
       onClick={() => {
-        const identityId = useUiStore.getState().activeIdentityId;
-        if (identityId === undefined) {
-          return;
-        }
-        const session = useSessionsStore.getState().sessions[identityId];
-        if (!session?.synced) {
-          return;
-        }
-        void gateway.cmd({
-          identityId,
-          action: "channel.join",
-          d: { key: name },
-        });
-        void navigate(channelPath(session.character, name));
+        joinAndOpen(name, navigate);
       }}
     >
       #{name}
     </button>
   );
+}
+
+/**
+ * A `[session]`/`[channel]` invite link (#366): the same channel chip as a
+ * `#Channel` token, but joining an arbitrary channel key (an `ADH-…` private
+ * id or a public name) under its human `label`. Rendered wherever RichText
+ * runs — messages, status lines, profiles — so an invite resolves everywhere
+ * instead of vanishing. Join-while-joined is a harmless no-op; the route
+ * canonicalizes the moment the JCH echo lands.
+ */
+function ChannelLink({
+  channelKey,
+  label,
+}: {
+  channelKey: string;
+  label: string;
+}) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      className={`${styles.bodyChannel} ${styles.nameButton}`}
+      title={`Join ${label}`}
+      onClick={() => {
+        joinAndOpen(channelKey, navigate);
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Join `channelKey` on the active identity and route to it. Shared by the
+ * `#Channel` token and the `[session]`/`[channel]` invite links. No-op when no
+ * identity is active or its session hasn't synced yet. */
+function joinAndOpen(channelKey: string, navigate: NavigateFunction): void {
+  const identityId = useUiStore.getState().activeIdentityId;
+  if (identityId === undefined) {
+    return;
+  }
+  const session = useSessionsStore.getState().sessions[identityId];
+  if (!session?.synced) {
+    return;
+  }
+  void gateway.cmd({
+    identityId,
+    action: "channel.join",
+    d: { key: channelKey },
+  });
+  void navigate(channelPath(session.character, channelKey));
 }
 
 function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
