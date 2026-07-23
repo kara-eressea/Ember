@@ -165,6 +165,63 @@ describe("parseBBCode", () => {
     expect(bbcodeToText(input)).toBe("the butler did it");
   });
 
+  it("parses [session]/[channel] invite links, body never markup (#366)", () => {
+    // Private-channel invite: label from the param, key (ADH id) from the body.
+    expect(
+      parseBBCode("[session=Test Room]ADH-c7fc4c15c858dd76d860[/session]"),
+    ).toEqual([
+      { type: "channel", key: "ADH-c7fc4c15c858dd76d860", label: "Test Room" },
+    ]);
+    // Public-channel link: the body is both the join key and the label.
+    expect(parseBBCode("[channel]Frontpage[/channel]")).toEqual([
+      { type: "channel", key: "Frontpage", label: "Frontpage" },
+    ]);
+    // The body is a raw channel key — inner tags are never markup.
+    expect(parseBBCode("[session=Room][b]x[/b][/session]")).toEqual([
+      { type: "channel", key: "[b]x[/b]", label: "Room" },
+    ]);
+    // Parsed in the profile dialect as well.
+    expect(
+      parseBBCode("[channel]Sex Driven LFRP[/channel]", "profile"),
+    ).toEqual([
+      { type: "channel", key: "Sex Driven LFRP", label: "Sex Driven LFRP" },
+    ]);
+  });
+
+  it("literalizes malformed [session]/[channel] and never leaks them outbound (#366)", () => {
+    // [session] with no label, empty label, empty body, or no closer → literal.
+    expect(
+      parseBBCode("[session]ADH-x[/session]").every((n) => n.type === "text"),
+    ).toBe(true);
+    expect(sanitizeBBCode("[session=]ADH-x[/session]")).toBe(
+      "[session=]ADH-x[/session]",
+    );
+    expect(sanitizeBBCode("[session=Room][/session]")).toBe(
+      "[session=Room][/session]",
+    );
+    expect(sanitizeBBCode("[session=Room]never closed")).toBe(
+      "[session=Room]never closed",
+    );
+    // [channel] with a param or empty body → literal.
+    expect(sanitizeBBCode("[channel=x]y[/channel]")).toBe(
+      "[channel=x]y[/channel]",
+    );
+    expect(sanitizeBBCode("[channel][/channel]")).toBe("[channel][/channel]");
+  });
+
+  it("round-trips [session]/[channel] and flattens to the label (#366)", () => {
+    const session = "[session=Test Room]ADH-abc[/session]";
+    expect(sanitizeBBCode(session)).toBe(session);
+    expect(parseBBCode(sanitizeBBCode(session))).toEqual(parseBBCode(session));
+    const channel = "[channel]Frontpage[/channel]";
+    expect(sanitizeBBCode(channel)).toBe(channel);
+    // Plain-text degradation keeps the label, drops the wrapper (#366).
+    expect(bbcodeToText("join [session=Test Room]ADH-abc[/session] now")).toBe(
+      "join Test Room now",
+    );
+    expect(bbcodeToText("[channel]Frontpage[/channel]")).toBe("Frontpage");
+  });
+
   it("never throws on hostile input", () => {
     fc.assert(
       fc.property(fc.string(), (input) => {
