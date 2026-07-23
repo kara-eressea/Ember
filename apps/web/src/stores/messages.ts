@@ -14,6 +14,15 @@ import { api } from "../lib/api.js";
 
 /** Keep at most this many rows per conversation; older rows re-load via REST. */
 export const BUFFER_WINDOW = 1500;
+/**
+ * Hard ceiling for a back-scrolled buffer. `loadOlder` prepends pages with no
+ * front-trim (the newest rows must stay live-appendable), so a deep scroll-back
+ * would otherwise inflate the array without bound — and every live append then
+ * re-renders the whole thing (#356). When a merged page crosses this, drop the
+ * newest rows (the ones the user has scrolled away from) and detach the tail so
+ * the existing "Back to present" affordance restores the live view.
+ */
+export const SCROLLBACK_CEILING = BUFFER_WINDOW * 4;
 /** REST page size for backfill and scroll-up. */
 export const PAGE_SIZE = 50;
 /** Keep at most this many join/part/quit lines per conversation. */
@@ -237,11 +246,23 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         if (epochOf(convId) !== epoch) {
           return 0; // the window this page extends no longer exists
         }
-        patch(convId, (current) => ({
-          ...current,
-          messages: merge(current.messages, page.messages ?? []),
-          hasMoreBefore: page.hasMore ?? false,
-        }));
+        patch(convId, (current) => {
+          let messages = merge(current.messages, page.messages ?? []);
+          let { detachedTail } = current;
+          if (messages.length > SCROLLBACK_CEILING) {
+            // Keep the oldest rows (where the reader is) and drop the newest —
+            // the live tail is now out of the buffer, so stop live appends and
+            // let Back to present rebuild the window.
+            messages = messages.slice(0, SCROLLBACK_CEILING);
+            detachedTail = true;
+          }
+          return {
+            ...current,
+            messages,
+            hasMoreBefore: page.hasMore ?? false,
+            detachedTail,
+          };
+        });
         return page.messages.length;
       } finally {
         patch(convId, (current) => ({ ...current, loadingOlder: false }));

@@ -371,7 +371,44 @@ function emptySession(identityId: string): IdentitySession {
   };
 }
 
-/** Applies one presence delta to social rows, case-insensitively (#218). */
+/**
+ * Map a record's values, preserving identity: the returned object is the
+ * exact same reference when `fn` left every value untouched, and each value
+ * keeps its reference unless `fn` replaced it. F-Chat's global presence stream
+ * fires ~14×/sec; rebuilding every channel/DM on each event makes every
+ * subscriber re-render forever (#355), so untouched entries must stay `===`.
+ */
+function mapValues<T>(
+  record: Record<string, T>,
+  fn: (value: T, key: string) => T,
+): Record<string, T> {
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const mapped = fn(value, key);
+    next[key] = mapped;
+    if (mapped !== value) {
+      changed = true;
+    }
+  }
+  return changed ? next : record;
+}
+
+/** Array counterpart of `mapValues`: same reference when nothing changed. */
+function mapPreserving<T>(array: T[], fn: (value: T) => T): T[] {
+  let changed = false;
+  const next = array.map((value) => {
+    const mapped = fn(value);
+    if (mapped !== value) {
+      changed = true;
+    }
+    return mapped;
+  });
+  return changed ? next : array;
+}
+
+/** Applies one presence delta to social rows, case-insensitively (#218).
+ * Identity-preserving: unchanged when no friend/bookmark row matched (#355). */
 function patchSocialPresence(
   social: SocialData,
   d: {
@@ -390,11 +427,11 @@ function patchSocialPresence(
           statusmsg: d.online ? (d.statusmsg ?? row.statusmsg) : "",
         }
       : row;
-  return {
-    ...social,
-    bookmarks: social.bookmarks.map(apply),
-    friends: social.friends.map(apply),
-  };
+  const bookmarks = mapPreserving(social.bookmarks, apply);
+  const friends = mapPreserving(social.friends, apply);
+  return bookmarks === social.bookmarks && friends === social.friends
+    ? social
+    : { ...social, bookmarks, friends };
 }
 
 /** LIS batches are partial: presence in the batch marks a row online;
@@ -908,49 +945,43 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyPresence(identityId, d) {
       patch(identityId, (session) => {
-        let channels = session.channels;
-        if (!d.online) {
-          // FLN is a global leave: the character drops out of every channel.
-          channels = Object.fromEntries(
-            Object.entries(channels).map(([key, ch]) => [
-              key,
-              ch.members.some((m) => sameCharacter(m.character, d.character))
-                ? moveMemberToSeen(ch, d.character)
-                : ch,
-            ]),
-          );
-        } else {
-          channels = Object.fromEntries(
-            Object.entries(channels).map(([key, ch]) => [
-              key,
-              {
-                ...ch,
-                members: ch.members.map((m) =>
-                  sameCharacter(m.character, d.character)
-                    ? {
-                        ...m,
-                        gender: d.gender ?? m.gender,
-                        status: d.status ?? m.status,
-                        statusmsg: d.statusmsg ?? m.statusmsg,
-                      }
-                    : m,
-                ),
-              },
-            ]),
-          );
-        }
-        const dms = Object.fromEntries(
-          Object.entries(session.dms).map(([convId, dm]) => [
-            convId,
-            sameCharacter(dm.partner, d.character)
-              ? {
-                  ...dm,
-                  online: d.online,
-                  status: d.online ? (d.status ?? dm.status) : "",
-                  statusmsg: d.online ? (d.statusmsg ?? dm.statusmsg) : "",
-                }
-              : dm,
-          ]),
+        // Presence is a global stream; a character sits in only a handful of
+        // the viewer's channels/DMs. Touch only those, leaving every other
+        // channel/DM/member object at its old reference so subscribers of an
+        // unaffected view don't re-render (#355).
+        const channels = mapValues(session.channels, (ch) => {
+          if (
+            !ch.members.some((m) => sameCharacter(m.character, d.character))
+          ) {
+            return ch;
+          }
+          if (!d.online) {
+            // FLN is a global leave: the character drops out of the channel.
+            return moveMemberToSeen(ch, d.character);
+          }
+          return {
+            ...ch,
+            members: ch.members.map((m) =>
+              sameCharacter(m.character, d.character)
+                ? {
+                    ...m,
+                    gender: d.gender ?? m.gender,
+                    status: d.status ?? m.status,
+                    statusmsg: d.statusmsg ?? m.statusmsg,
+                  }
+                : m,
+            ),
+          };
+        });
+        const dms = mapValues(session.dms, (dm) =>
+          sameCharacter(dm.partner, d.character)
+            ? {
+                ...dm,
+                online: d.online,
+                status: d.online ? (d.status ?? dm.status) : "",
+                statusmsg: d.online ? (d.statusmsg ?? dm.statusmsg) : "",
+              }
+            : dm,
         );
         // Our own STA (set from any tab, or restored after a reconnect)
         // converges the MeBar/rail status everywhere.
@@ -984,33 +1015,30 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             { gender, status, statusmsg },
           ]),
         );
-        const dms = Object.fromEntries(
-          Object.entries(session.dms).map(([convId, dm]) => {
-            const presence = byLower.get(dm.partner.toLowerCase());
-            return [
-              convId,
-              presence
-                ? {
-                    ...dm,
-                    online: true,
-                    status: presence.status,
-                    statusmsg: presence.statusmsg,
-                  }
-                : dm,
-            ];
-          }),
-        );
-        const social = session.social
-          ? {
-              ...session.social,
-              bookmarks: session.social.bookmarks.map((row) =>
-                bulkRow(row, byLower),
-              ),
-              friends: session.social.friends.map((row) =>
-                bulkRow(row, byLower),
-              ),
-            }
-          : undefined;
+        const dms = mapValues(session.dms, (dm) => {
+          const presence = byLower.get(dm.partner.toLowerCase());
+          return presence
+            ? {
+                ...dm,
+                online: true,
+                status: presence.status,
+                statusmsg: presence.statusmsg,
+              }
+            : dm;
+        });
+        let social = session.social;
+        if (social) {
+          const bookmarks = mapPreserving(social.bookmarks, (row) =>
+            bulkRow(row, byLower),
+          );
+          const friends = mapPreserving(social.friends, (row) =>
+            bulkRow(row, byLower),
+          );
+          social =
+            bookmarks === social.bookmarks && friends === social.friends
+              ? social
+              : { ...social, bookmarks, friends };
+        }
         return { ...session, dms, ...(social ? { social } : {}) };
       });
     },

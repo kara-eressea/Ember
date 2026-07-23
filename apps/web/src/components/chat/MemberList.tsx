@@ -8,6 +8,8 @@
 // query matches every group, offline included.
 
 import {
+  memo,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -92,14 +94,29 @@ export function MemberList({
   }, [identityId]);
 
   const searching = query.trim() !== "";
-  const groups = groupMembers({
-    members: searching
-      ? channel.members.filter((m) => matchesMemberQuery(m.character, query))
-      : channel.members,
-    oplist: channel.oplist,
-    friends: nameSet(social?.friends),
-    bookmarks: nameSet(social?.bookmarks),
-  });
+  // The global presence stream re-renders this list ~14×/sec (#355); the
+  // grouped localeCompare sort over a large roster is the single largest JS
+  // cost in the profile. Recompute the name sets and the sort only when their
+  // inputs actually change, not on every unrelated render.
+  const friends = useMemo(() => nameSet(social?.friends), [social?.friends]);
+  const bookmarks = useMemo(
+    () => nameSet(social?.bookmarks),
+    [social?.bookmarks],
+  );
+  const groups = useMemo(
+    () =>
+      groupMembers({
+        members: searching
+          ? channel.members.filter((m) =>
+              matchesMemberQuery(m.character, query),
+            )
+          : channel.members,
+        oplist: channel.oplist,
+        friends,
+        bookmarks,
+      }),
+    [searching, channel.members, channel.oplist, friends, bookmarks, query],
+  );
 
   // While a query is active the offline group auto-expands (spec §4);
   // clearing it restores the remembered per-channel state.
@@ -140,23 +157,28 @@ export function MemberList({
     }
   }
 
-  function openMenu(
-    event: ReactMouseEvent,
-    member: MemberDto,
-    role: ChannelRole,
-    present: boolean,
-  ) {
-    event.preventDefault();
-    setMenu({
-      member,
-      role,
-      present,
-      position: {
-        x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
-        y: Math.min(event.clientY, window.innerHeight - 160),
-      },
-    });
-  }
+  // Stable so the memoized rows below don't see a fresh handler prop on every
+  // render (#355) — setMenu is referentially stable, so this has no deps.
+  const openMenu = useCallback(
+    (
+      event: ReactMouseEvent,
+      member: MemberDto,
+      role: ChannelRole,
+      present: boolean,
+    ) => {
+      event.preventDefault();
+      setMenu({
+        member,
+        role,
+        present,
+        position: {
+          x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
+          y: Math.min(event.clientY, window.innerHeight - 160),
+        },
+      });
+    },
+    [],
+  );
 
   return (
     <aside className={styles.members} aria-label="Members">
@@ -186,9 +208,7 @@ export function MemberList({
                 key={member.character}
                 member={member}
                 role={group.role}
-                onContextMenu={(event) => {
-                  openMenu(event, member, group.role, true);
-                }}
+                onOpenMenu={openMenu}
               />
             ))}
           </div>
@@ -222,19 +242,7 @@ export function MemberList({
                   key={entry.character}
                   member={entry}
                   now={now}
-                  onContextMenu={(event) => {
-                    openMenu(
-                      event,
-                      {
-                        character: entry.character,
-                        gender: entry.gender,
-                        status: "",
-                        statusmsg: "",
-                      },
-                      null,
-                      false,
-                    );
-                  }}
+                  onOpenMenu={openMenu}
                 />
               ))}
           </div>
@@ -261,14 +269,24 @@ export function MemberList({
   );
 }
 
-function MemberRow({
+type OpenMenu = (
+  event: ReactMouseEvent,
+  member: MemberDto,
+  role: ChannelRole,
+  present: boolean,
+) => void;
+
+// Memoized: with a stable `onOpenMenu` and store-preserved `member` identity
+// (#355), a presence event that doesn't touch this member skips the row
+// entirely — no re-render, no re-run of bbcodeToText on the status line.
+const MemberRow = memo(function MemberRow({
   member,
   role,
-  onContextMenu,
+  onOpenMenu,
 }: {
   member: MemberDto;
   role: ChannelRole;
-  onContextMenu: (event: ReactMouseEvent) => void;
+  onOpenMenu: OpenMenu;
 }) {
   const dot = presenceDot(true, member.status);
   // Status shows on a second line under the name (#217). BBCode is stripped to
@@ -287,7 +305,9 @@ function MemberRow({
       onClick={(event) => {
         openCardFrom(event.currentTarget, member.character);
       }}
-      onContextMenu={onContextMenu}
+      onContextMenu={(event) => {
+        onOpenMenu(event, member, role, true);
+      }}
     >
       <span className={styles.memberAvatar}>
         <Avatar name={member.character} size={30} />
@@ -324,7 +344,7 @@ function MemberRow({
       </span>
     </button>
   );
-}
+});
 
 /**
  * "Seen recently" row (#200): MemberRow geometry, but the name keeps its
@@ -333,14 +353,14 @@ function MemberRow({
  * `faint`, and the right-aligned meta is the relative last-seen time — the
  * name ellipsizes before the time ever truncates.
  */
-function OfflineRow({
+const OfflineRow = memo(function OfflineRow({
   member,
   now,
-  onContextMenu,
+  onOpenMenu,
 }: {
   member: SeenMemberDto;
   now: number;
-  onContextMenu: (event: ReactMouseEvent) => void;
+  onOpenMenu: OpenMenu;
 }) {
   const genderColor = genderColorVar(member.gender);
   return (
@@ -351,7 +371,20 @@ function OfflineRow({
       onClick={(event) => {
         openCardFrom(event.currentTarget, member.character);
       }}
-      onContextMenu={onContextMenu}
+      onContextMenu={(event) => {
+        // An absent member holds no live role — always the null/false form.
+        onOpenMenu(
+          event,
+          {
+            character: member.character,
+            gender: member.gender,
+            status: "",
+            statusmsg: "",
+          },
+          null,
+          false,
+        );
+      }}
     >
       <span className={`${styles.memberAvatar} ${styles.offlineAvatar ?? ""}`}>
         <Avatar name={member.character} size={30} />
@@ -376,4 +409,4 @@ function OfflineRow({
       </span>
     </button>
   );
-}
+});

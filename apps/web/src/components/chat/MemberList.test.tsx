@@ -9,11 +9,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemberList } from "./MemberList.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
+import { presenceDot } from "../../lib/presence.js";
 import type { MemberDto } from "@emberchat/protocol";
 
 // The member-list mount lazily loads friends/bookmarks; stub it so no relative
 // fetch escapes into jsdom (the sort tiers are irrelevant to this test).
 vi.mock("../../lib/social.js", () => ({ loadSocial: vi.fn() }));
+
+// presenceDot runs once per member-row render — a clean render-count probe for
+// the #355 memoization work.
+vi.mock("../../lib/presence.js", () => ({ presenceDot: vi.fn(() => "ok") }));
 
 const initialSessions = useSessionsStore.getState().sessions;
 afterEach(() => {
@@ -60,5 +65,40 @@ describe("MemberList status entity decode (#350)", () => {
       screen.getByText("Other canons & Summer Vibes!"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/&amp;/)).not.toBeInTheDocument();
+  });
+});
+
+describe("MemberList memoization (#355)", () => {
+  it("does not re-render member rows when the channel reference is unchanged", () => {
+    const members: MemberDto[] = [
+      {
+        character: "Amber Vale",
+        gender: "Female",
+        status: "online",
+        statusmsg: "",
+      },
+      {
+        character: "Nyx Firemane",
+        gender: "Female",
+        status: "online",
+        statusmsg: "",
+      },
+    ];
+    const channel = channelWith(members);
+    const element = (
+      <MemberList
+        identityId="id1"
+        ownCharacter="Moss Tinker"
+        channel={channel}
+      />
+    );
+    const { rerender } = render(element);
+    const afterMount = vi.mocked(presenceDot).mock.calls.length;
+    expect(afterMount).toBeGreaterThanOrEqual(members.length);
+
+    // A parent re-render with the identical channel object (the common case
+    // once presence updates preserve identity) must not re-run any row.
+    rerender(element);
+    expect(vi.mocked(presenceDot).mock.calls.length).toBe(afterMount);
   });
 });
