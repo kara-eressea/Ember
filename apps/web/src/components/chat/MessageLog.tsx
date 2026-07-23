@@ -26,7 +26,7 @@ import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
-import { NewMessagesBar } from "./NewMessagesBar.js";
+import { NewMessagesBar, newMessagesBarHidden } from "./NewMessagesBar.js";
 import { parseEmote } from "./rich-text.js";
 import { PlainNamesProvider, RichText } from "./RichText.js";
 import styles from "./chat.module.css";
@@ -130,9 +130,12 @@ export function MessageLog({
   // The first unread is scrolled off the top of the viewport (so the bar has
   // somewhere to jump to). Recomputed on scroll and after the tail settles.
   const [firstUnreadOffscreen, setFirstUnreadOffscreen] = useState(false);
-  // Esc/dismiss hides the bar for the rest of this visit; the component is
-  // keyed by convId so revisiting resets it.
-  const [newBarDismissed, setNewBarDismissed] = useState(false);
+  // Set once the user engages the catch-up flow this visit — clicking the bar
+  // to jump up, jumping back to the tail, or Esc-dismissing. It stays hidden
+  // afterwards so returning to the tail never re-prompts (#363 follow-up); the
+  // in-log divider keeps its place regardless. The component is keyed by convId
+  // so revisiting resets it.
+  const [newBarAcknowledged, setNewBarAcknowledged] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   /** The virtualizer's inner sizing div — observed so content growth the
@@ -450,6 +453,9 @@ export function MessageLog({
   // also marks the conversation read (#254): catching up is over, so the
   // read cursor advances to the newest message.
   function jumpToRecent() {
+    // Back at the tail means caught up — the "since you left" bar has done its
+    // job and must not re-show (#363 follow-up).
+    setNewBarAcknowledged(true);
     useSessionsStore.getState().clearUnread(identityId, convId);
     if (detachedTail) {
       // The newest *buffered* id here is an old message — never ack it.
@@ -505,6 +511,9 @@ export function MessageLog({
     if (newRowIndex < 0) {
       return;
     }
+    // Clicking the bar acknowledges it: the user is now reading the backlog, so
+    // returning to the tail afterwards must not re-prompt (#363 follow-up).
+    setNewBarAcknowledged(true);
     atBottomRef.current = false;
     stickBottomRef.current = false;
     anchorRef.current = undefined;
@@ -522,7 +531,7 @@ export function MessageLog({
     if (newest) {
       gateway.readAck(identityId, convId, newest.id);
     }
-    setNewBarDismissed(true);
+    setNewBarAcknowledged(true);
   }
 
   // Whether there is a newer position to jump to. Detached tail always
@@ -636,13 +645,13 @@ export function MessageLog({
     <div className={styles.logWrap}>
       <NewMessagesBar
         count={newCount}
-        hidden={
-          // Tail-only affordance: the bar shows while parked at the live tail
-          // with unread messages above the fold. Once the user scrolls up
-          // (to read the backlog or to the first unread itself) it hides, and
-          // Escape belongs to the existing back-to-present handler instead.
-          !atBottom || !firstUnreadOffscreen || newBarDismissed || detachedTail
-        }
+        hidden={newMessagesBarHidden({
+          count: newCount,
+          atBottom,
+          firstUnreadOffscreen,
+          acknowledged: newBarAcknowledged,
+          detachedTail,
+        })}
         onJump={jumpToFirstUnread}
         onDismiss={dismissNewBar}
       />

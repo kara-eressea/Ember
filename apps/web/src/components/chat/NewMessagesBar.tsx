@@ -15,6 +15,41 @@
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./chat.module.css";
 
+export interface NewMessagesBarState {
+  /** Unread messages accrued while away — a snapshot frozen at attach (the
+   * read cursor advances on open via the shell's auto-ack, so this count does
+   * NOT shrink as the conversation is marked read; only `acknowledged` hides
+   * the bar). */
+  count: number;
+  /** Parked at the live tail. */
+  atBottom: boolean;
+  /** The first unread sits above the viewport — the bar has somewhere to jump
+   * to; when all unreads are on screen the in-log divider suffices. */
+  firstUnreadOffscreen: boolean;
+  /** The user has engaged the catch-up flow this visit (clicked the bar,
+   * jumped back to the tail, or Esc-dismissed). Once true the bar stays gone —
+   * returning to the tail must not re-prompt (#363 follow-up). */
+  acknowledged: boolean;
+  /** Viewing detached history — the tail affordances are all suppressed. */
+  detachedTail: boolean;
+}
+
+/**
+ * Whether the new-messages bar should be hidden. Pure so the show/re-show
+ * rules are testable without the scroll geometry. The bar is a tail-only
+ * prompt: it shows only while parked at the tail with off-screen unreads that
+ * the user has not yet acknowledged.
+ */
+export function newMessagesBarHidden(state: NewMessagesBarState): boolean {
+  return (
+    state.count <= 0 ||
+    !state.atBottom ||
+    !state.firstUnreadOffscreen ||
+    state.acknowledged ||
+    state.detachedTail
+  );
+}
+
 export interface NewMessagesBarProps {
   /** Unread messages accrued while away (own sends excluded, matching the
    * in-log divider). */
