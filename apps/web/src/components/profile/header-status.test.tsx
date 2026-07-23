@@ -33,23 +33,11 @@ function seedSession(name: string, statusmsg: string) {
 }
 
 const profile = { name: "Ada Lovelace" } as never;
-const response = {
-  fetchedAt: Date.now(),
-  stale: false,
-  budgetExhausted: false,
-} as never;
 
 describe("full profile header status line (#365)", () => {
   it("renders the status message under the name when one is set", () => {
     seedSession("Ada Lovelace", "[b]Looking[/b] for adventures");
-    render(
-      <Header
-        identityId="id1"
-        profile={profile}
-        response={response}
-        loading={false}
-      />,
-    );
+    render(<Header identityId="id1" profile={profile} />);
     // RichText renders the BBCode, not the raw tag text.
     expect(screen.getByText(/Looking/)).toBeInTheDocument();
     expect(screen.queryByText(/\[b\]/)).not.toBeInTheDocument();
@@ -57,14 +45,7 @@ describe("full profile header status line (#365)", () => {
 
   it("renders no status line when the message is empty (offline)", () => {
     seedSession("Ada Lovelace", "");
-    const { container } = render(
-      <Header
-        identityId="id1"
-        profile={profile}
-        response={response}
-        loading={false}
-      />,
-    );
+    const { container } = render(<Header identityId="id1" profile={profile} />);
     expect(container.textContent).not.toContain("Looking");
     // The name still renders — only the status line is absent.
     expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
