@@ -8,7 +8,12 @@ import { PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
 const cmdMock = vi.hoisted(() => vi.fn());
 vi.mock("../gateway/socket.js", () => ({ gateway: { cmd: cmdMock } }));
 import { useSessionsStore } from "../stores/sessions.js";
-import { checkIdle, noteActivity, resetAutoAwayForTest } from "./auto-away.js";
+import {
+  checkIdle,
+  isAutoStatusInFlight,
+  noteActivity,
+  resetAutoAwayForTest,
+} from "./auto-away.js";
 
 const A = "11111111-1111-7111-8111-111111111111";
 const B = "22222222-2222-7222-8222-222222222222";
@@ -184,5 +189,83 @@ describe("noteActivity", () => {
     expect(cmdMock).not.toHaveBeenCalled();
     checkIdle(19 * MIN);
     expect(cmdMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("in-flight guard (#358)", () => {
+  const COOLDOWN = 16_000;
+
+  it("sends exactly one restore STA while the echo is pending", () => {
+    seedSession(A, { statusmsg: "tea" });
+    checkIdle(10 * MIN); // away goes out; that send is now in flight
+    cmdMock.mockClear();
+
+    // The away echo landed — the slice shows our away.
+    seedSession(A, { status: "away", statusmsg: "brb — idle" });
+    noteActivity(10 * MIN + 1_000); // restores online; that send is in flight
+    noteActivity(10 * MIN + 1_500); // throttled (sub-second, nothing applied)
+    // The restore echo has NOT landed yet — the slice still shows away.
+    seedSession(A, { status: "away", statusmsg: "brb — idle" });
+    noteActivity(10 * MIN + 2_500); // past the throttle, but the send is in flight
+
+    expect(cmdMock).toHaveBeenCalledTimes(1);
+    expect(cmdMock.mock.calls[0]?.[0]).toEqual({
+      identityId: A,
+      action: "status.set",
+      d: { status: "online", statusmsg: "tea" },
+    });
+  });
+
+  it("resends only after the echo lands or the cooldown elapses", () => {
+    seedSession(A, { statusmsg: "tea" });
+    checkIdle(10 * MIN);
+    cmdMock.mockClear();
+
+    seedSession(A, { status: "away", statusmsg: "brb — idle" });
+    noteActivity(10 * MIN + 1_000); // restore #1
+    expect(cmdMock).toHaveBeenCalledTimes(1);
+
+    // Still inside the cooldown, echo not yet in: no second send.
+    noteActivity(10 * MIN + 5_000);
+    expect(cmdMock).toHaveBeenCalledTimes(1);
+
+    // The cooldown has elapsed and the slice still shows our away — retry.
+    noteActivity(10 * MIN + 1_000 + COOLDOWN + 1);
+    expect(cmdMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores even after the away message pref is edited mid-away", () => {
+    seedSession(A, { statusmsg: "tea" });
+    checkIdle(10 * MIN); // away set with "brb — idle"
+    cmdMock.mockClear();
+
+    // The user edits the pref while away; the wire still holds the old message.
+    const edited: UserPrefs = { ...PREFS_ON, autoAwayMessage: "afk now" };
+    seedSession(A, { status: "away", statusmsg: "brb — idle", prefs: edited });
+    noteActivity(11 * MIN);
+
+    expect(cmdMock.mock.calls).toEqual([
+      [
+        {
+          identityId: A,
+          action: "status.set",
+          d: { status: "online", statusmsg: "tea" },
+        },
+      ],
+    ]);
+  });
+
+  it("flags only our own automatic STA as in flight (manual errors still show)", () => {
+    seedSession(A);
+    // Nothing sent — a manual status change would leave no guard, so its
+    // ERR surfaces as usual.
+    expect(isAutoStatusInFlight(A, 10 * MIN)).toBe(false);
+
+    checkIdle(10 * MIN); // our away goes out
+    expect(isAutoStatusInFlight(A, 10 * MIN)).toBe(true);
+    expect(isAutoStatusInFlight(B, 10 * MIN)).toBe(false);
+
+    // Past the cooldown the send is no longer ours to answer for.
+    expect(isAutoStatusInFlight(A, 10 * MIN + COOLDOWN)).toBe(false);
   });
 });
