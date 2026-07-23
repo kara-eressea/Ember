@@ -102,16 +102,22 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   ).toContainText("Fenwick Sprout went offline", { timeout: 10_000 });
 
   // ── #294 regression: a prefs input keeps focus across a shell re-render ─
-  // The image-preview host field (an Appearance pane text input) used to be
-  // yanked back to the dialog whenever anything re-rendered AppShell — the
-  // window's focus effect re-ran on every parent render because its onClose
-  // dep was a fresh arrow each time. Focus the field, type half an entry,
-  // let a live presence event re-render the shell underneath it, then finish
-  // typing: every keystroke must still land in the field, and it must keep
-  // focus. (Any store update — the prefs-sync round trip, presence — hits
-  // the same path; presence is the deterministic, awaitable trigger here.)
+  // The image-preview host field (a General pane text input — the Link
+  // previews group moved here in #392) used to be yanked back to the dialog
+  // whenever anything re-rendered AppShell — the window's focus effect re-ran
+  // on every parent render because its onClose dep was a fresh arrow each
+  // time. Focus the field, type half an entry, let a live presence event
+  // re-render the shell underneath it, then finish typing: every keystroke
+  // must still land in the field, and it must keep focus. (Any store update —
+  // the prefs-sync round trip, presence — hits the same path; presence is the
+  // deterministic, awaitable trigger here.)
   await page.getByRole("button", { name: "Preferences" }).click();
-  await dialog.getByRole("button", { name: "Appearance" }).click();
+  await dialog.getByRole("button", { name: "General" }).click();
+  // #392: the Link previews group (mode selector + host allowlist) lives on
+  // the General pane now — its mode control renders here alongside the editor.
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Media link previews" }),
+  ).toBeVisible();
   const hostField = dialog.getByRole("textbox", { name: "Site address" });
   await hostField.click();
   await hostField.pressSequentially("exam");
