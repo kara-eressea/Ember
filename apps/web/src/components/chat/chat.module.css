@@ -1798,6 +1798,43 @@
   border-radius: var(--eb-radius);
 }
 
+/* "New messages" bar (#363): rides the top of the log when unread messages
+   sit above the fold. A full-width accent strip — click to jump to the first
+   unread, Esc to mark read. */
+.newMessagesBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 16px;
+  font-size: var(--eb-font-ui-small);
+  font-weight: 500;
+  color: var(--eb-accent-text);
+  text-align: left;
+  cursor: pointer;
+  background: var(--eb-accent);
+  border: none;
+  border-bottom: 1px solid var(--eb-accent-med);
+  box-shadow: 0 8px 24px -14px rgb(0 0 0 / 55%);
+}
+
+.newMessagesBar:hover {
+  background: var(--eb-accent-hi, var(--eb-accent));
+}
+
+.newMessagesBarHint {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--eb-font-ui-tiny);
+  font-weight: 400;
+  opacity: 0.85;
+}
+
 @keyframes jump-flash {
   0% {
     background: var(--eb-accent-soft);
