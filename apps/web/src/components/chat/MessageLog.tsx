@@ -636,7 +636,13 @@ export function MessageLog({
     <div className={styles.logWrap}>
       <NewMessagesBar
         count={newCount}
-        hidden={!firstUnreadOffscreen || newBarDismissed || detachedTail}
+        hidden={
+          // Tail-only affordance: the bar shows while parked at the live tail
+          // with unread messages above the fold. Once the user scrolls up
+          // (to read the backlog or to the first unread itself) it hides, and
+          // Escape belongs to the existing back-to-present handler instead.
+          !atBottom || !firstUnreadOffscreen || newBarDismissed || detachedTail
+        }
         onJump={jumpToFirstUnread}
         onDismiss={dismissNewBar}
       />
