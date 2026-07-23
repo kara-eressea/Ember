@@ -95,7 +95,7 @@ export function loadSidebarOrders(): SidebarOrderMap {
     for (const section of SIDEBAR_SECTIONS) {
       const list = (value as Record<string, unknown>)[section];
       if (Array.isArray(list) && list.every((x) => typeof x === "string")) {
-        sections[section] = list as string[];
+        sections[section] = list;
       }
     }
     map[identityId] = sections;
