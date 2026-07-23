@@ -26,7 +26,11 @@ import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
-import { NewMessagesBar, newMessagesBarHidden } from "./NewMessagesBar.js";
+import {
+  NewMessagesBar,
+  dividerCursorAfter,
+  newMessagesBarHidden,
+} from "./NewMessagesBar.js";
 import { parseEmote } from "./rich-text.js";
 import { PlainNamesProvider, RichText } from "./RichText.js";
 import styles from "./chat.module.css";
@@ -77,7 +81,10 @@ export function MessageLog({
   convId,
   readCursorAtAttach,
 }: MessageLogProps) {
-  const [newSinceId] = useState(readCursorAtAttach);
+  // Frozen at attach so the divider holds while the live cursor advances
+  // underneath. Esc/dismiss clears it (→ null) so the "new since you left"
+  // divider disappears together with the bar — fully caught up (#363 follow-up).
+  const [newSinceId, setNewSinceId] = useState(readCursorAtAttach);
   const buffer = useMessagesStore((s) => s.buffers[convId]);
   const messages = buffer?.messages ?? EMPTY;
   const ignores = useSessionsStore(
@@ -532,6 +539,8 @@ export function MessageLog({
       gateway.readAck(identityId, convId, newest.id);
     }
     setNewBarAcknowledged(true);
+    // Fully caught up: drop the in-log divider too, not just the bar.
+    setNewSinceId((cursor) => dividerCursorAfter("dismiss", cursor));
   }
 
   // Whether there is a newer position to jump to. Detached tail always

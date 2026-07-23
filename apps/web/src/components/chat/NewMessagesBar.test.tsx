@@ -10,10 +10,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import {
   NewMessagesBar,
+  dividerCursorAfter,
   newMessagesBarHidden,
   type NewMessagesBarState,
 } from "./NewMessagesBar.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { buildRows } from "./log-rows.js";
+import type { MessageDto } from "@emberchat/protocol";
 
 /** Parked at the live tail with off-screen unreads the user has not yet
  * acknowledged — the one state where the bar shows. */
@@ -184,5 +187,48 @@ describe("newMessagesBarHidden (#363 follow-up)", () => {
 
   it("stays hidden in the detached history view", () => {
     expect(newMessagesBarHidden({ ...SHOWING, detachedTail: true })).toBe(true);
+  });
+});
+
+describe("dividerCursorAfter — Esc clears the in-log divider (#363 follow-up)", () => {
+  const msgs: MessageDto[] = [
+    {
+      id: 1,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "read one",
+      sentByUs: false,
+      mention: false,
+      createdAt: "2026-07-23T12:00:00.000Z",
+    },
+    {
+      id: 2,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "new one",
+      sentByUs: false,
+      mention: false,
+      createdAt: "2026-07-23T12:01:00.000Z",
+    },
+  ];
+  const cursor = 1; // read up to message 1; message 2 is "new".
+
+  const hasDivider = (c: number | null) =>
+    buildRows(msgs, c).some((row) => row.type === "new");
+
+  it("shows the divider before any catch-up gesture", () => {
+    expect(hasDivider(cursor)).toBe(true);
+  });
+
+  it("Esc (dismiss) clears the cursor, removing the divider — fully caught up", () => {
+    const after = dividerCursorAfter("dismiss", cursor);
+    expect(after).toBeNull();
+    expect(hasDivider(after)).toBe(false);
+  });
+
+  it("a bar-click jump keeps the cursor and the divider (reading up toward it)", () => {
+    const after = dividerCursorAfter("jumpToUnread", cursor);
+    expect(after).toBe(cursor);
+    expect(hasDivider(after)).toBe(true);
   });
 });

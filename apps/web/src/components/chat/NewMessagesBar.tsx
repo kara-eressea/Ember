@@ -34,6 +34,25 @@ export interface NewMessagesBarState {
   detachedTail: boolean;
 }
 
+/** A catch-up gesture on a conversation with unreads accrued while away. */
+export type CatchUpAction = "jumpToUnread" | "dismiss";
+
+/**
+ * The read-cursor a catch-up action leaves for the in-log "new since you left"
+ * divider (fed to buildRows: a null cursor renders no divider).
+ *
+ * Esc (`dismiss`) means fully caught up — clear the cursor so the divider
+ * disappears along with the bar. A bar-click (`jumpToUnread`) keeps it: the
+ * user is scrolling up to read toward the divider, so it stays a useful marker
+ * (#363 follow-up).
+ */
+export function dividerCursorAfter(
+  action: CatchUpAction,
+  cursor: number | null,
+): number | null {
+  return action === "dismiss" ? null : cursor;
+}
+
 /**
  * Whether the new-messages bar should be hidden. Pure so the show/re-show
  * rules are testable without the scroll geometry. The bar is a tail-only
