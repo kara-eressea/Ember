@@ -18,9 +18,12 @@
   /* Fill the viewport height with pleasant padding (#183) rather than the
      old fixed 640px, so tall profiles use the space they have before the
      content region scrolls. */
-  height: calc(100vh - 56px);
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 32px);
+  /* Divide viewport units by the UI-scale zoom factor (#388): the root's
+     `zoom` scales `vw`/`vh` too, so without this the window overruns the
+     visual viewport — clipping its right/bottom edge — at higher UI scales. */
+  height: calc(100vh / var(--eb-ui-zoom, 1) - 56px);
+  max-width: calc(100vw / var(--eb-ui-zoom, 1) - 32px);
+  max-height: calc(100vh / var(--eb-ui-zoom, 1) - 32px);
   overflow: hidden;
   background: var(--eb-side);
   border: 1px solid var(--eb-border);
@@ -32,8 +35,8 @@
 /* Fullscreen toggle (#213): widen to fill the viewport, keeping padding so
    the app stays partly visible behind the dimmed overlay. */
 .windowFull {
-  width: calc(100vw - 56px);
-  height: calc(100vh - 56px);
+  width: calc(100vw / var(--eb-ui-zoom, 1) - 56px);
+  height: calc(100vh / var(--eb-ui-zoom, 1) - 56px);
 }
 
 .main {
@@ -52,6 +55,23 @@
   z-index: 5;
   display: flex;
   gap: 2px;
+  align-items: center;
+}
+
+/* The "fetched X ago" stamp + refresh, inline to the left of the window
+   controls (#382) — reclaims the header row it used to occupy. */
+.fetchedControl {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.fetchedLabel {
+  font-family: var(--eb-mono, monospace);
+  font-size: 11px;
+  color: var(--eb-meta);
+  white-space: nowrap;
 }
 
 .windowControl {

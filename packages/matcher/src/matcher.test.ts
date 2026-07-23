@@ -9,6 +9,7 @@ import {
   INFOTAG_IDS,
   kinkTier,
   match,
+  oppositeKinkNames,
   TIER_FRACTION,
 } from "./matcher.js";
 
@@ -343,5 +344,76 @@ describe("invariants", () => {
       weakMismatch: 0.25,
       mismatch: 0,
     });
+  });
+});
+
+describe("orientation-paired kink pairing (#383)", () => {
+  it("swaps the directional qualifier both ways", () => {
+    expect(oppositeKinkNames("Giving Oral")).toContain("receiving Oral");
+    expect(oppositeKinkNames("Receiving Oral")).toContain("giving Oral");
+    // Case-insensitive, word-boundary only — never inside another word.
+    expect(oppositeKinkNames("Caregiving")).toEqual([]);
+    expect(oppositeKinkNames("Cuddling")).toEqual([]);
+  });
+
+  it("swaps the self-vs-other framing", () => {
+    expect(oppositeKinkNames("Being spanked")).toContain("spanked others");
+    expect(oppositeKinkNames("Spanking others")).toContain("being Spanking");
+  });
+
+  it("cross-matches giving against receiving instead of same-direction", () => {
+    // You love giving oral and merely tolerate receiving it; they are the
+    // mirror. The correct read is two matches (your giving × their receiving,
+    // your receiving × their giving), NOT giving×giving / receiving×receiving.
+    const report = match(
+      profile({
+        kinks: [
+          { id: 10, name: "Giving Oral", choice: "fave" },
+          { id: 11, name: "Receiving Oral", choice: "maybe" },
+        ],
+      }),
+      profile({
+        kinks: [
+          { id: 10, name: "Giving Oral", choice: "maybe" },
+          { id: 11, name: "Receiving Oral", choice: "fave" },
+        ],
+      }),
+    );
+    const giving = report.kinks.find((kink) => kink.name === "Giving Oral")!;
+    expect(giving.crossed).toBe(true);
+    expect(giving.theirName).toBe("Receiving Oral");
+    expect(giving.theirChoice).toBe("fave"); // their RECEIVING choice
+    expect(giving.tier).toBe("match"); // fave × fave, not fave × maybe
+    const receiving = report.kinks.find(
+      (kink) => kink.name === "Receiving Oral",
+    )!;
+    expect(receiving.crossed).toBe(true);
+    expect(receiving.theirName).toBe("Giving Oral");
+    expect(receiving.theirChoice).toBe("maybe");
+  });
+
+  it("falls back to the same kink when the opposite variant is absent", () => {
+    // They only list the giving side; keep the row (same-kink), do not drop.
+    const report = match(
+      profile({ kinks: [{ id: 10, name: "Giving Oral", choice: "yes" }] }),
+      profile({ kinks: [{ id: 10, name: "Giving Oral", choice: "no" }] }),
+    );
+    expect(report.kinks).toHaveLength(1);
+    const row = report.kinks[0]!;
+    expect(row.crossed).toBeUndefined();
+    expect(row.theirChoice).toBe("no");
+  });
+
+  it("leaves non-directional kinks matched by id", () => {
+    const report = match(
+      profile({
+        kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }],
+      }),
+      profile({
+        kinks: [{ id: 501, name: "Campfire Stories", choice: "fave" }],
+      }),
+    );
+    expect(report.kinks[0]?.crossed).toBeUndefined();
+    expect(report.kinks[0]?.tier).toBe("match");
   });
 });
