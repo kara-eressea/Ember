@@ -1814,7 +1814,10 @@
   padding: 6px 16px;
   font-size: var(--eb-font-ui-small);
   font-weight: 500;
-  color: var(--eb-accent-text);
+  /* On-accent foreground: the page bg reads against the accent fill, the same
+     pairing primary buttons use. --eb-accent-text is accent-TINTED text for
+     normal surfaces and would vanish on the accent fill (#363 follow-up). */
+  color: var(--eb-bg);
   text-align: left;
   cursor: pointer;
   background: var(--eb-accent);

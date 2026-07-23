@@ -8,8 +8,25 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { NewMessagesBar } from "./NewMessagesBar.js";
+import {
+  NewMessagesBar,
+  dividerCursorAfter,
+  newMessagesBarHidden,
+  type NewMessagesBarState,
+} from "./NewMessagesBar.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { buildRows } from "./log-rows.js";
+import type { MessageDto } from "@emberchat/protocol";
+
+/** Parked at the live tail with off-screen unreads the user has not yet
+ * acknowledged — the one state where the bar shows. */
+const SHOWING: NewMessagesBarState = {
+  count: 5,
+  atBottom: true,
+  firstUnreadOffscreen: true,
+  acknowledged: false,
+  detachedTail: false,
+};
 
 afterEach(cleanup);
 
@@ -136,5 +153,82 @@ describe("NewMessagesBar (#363)", () => {
     pressEscape();
     expect(overlayEsc).toHaveBeenCalledTimes(1);
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+});
+
+describe("newMessagesBarHidden (#363 follow-up)", () => {
+  it("shows only while parked at the tail with off-screen unacknowledged unreads", () => {
+    expect(newMessagesBarHidden(SHOWING)).toBe(false);
+  });
+
+  it("hides once the unreads are on screen or there are none", () => {
+    expect(
+      newMessagesBarHidden({ ...SHOWING, firstUnreadOffscreen: false }),
+    ).toBe(true);
+    expect(newMessagesBarHidden({ ...SHOWING, count: 0 })).toBe(true);
+  });
+
+  it("hides while scrolled up (Escape belongs to back-to-present there)", () => {
+    expect(newMessagesBarHidden({ ...SHOWING, atBottom: false })).toBe(true);
+  });
+
+  it("does not re-show after the jump-up-then-return cycle", () => {
+    // Shown at the tail…
+    expect(newMessagesBarHidden(SHOWING)).toBe(false);
+    // …click the bar → jump up (no longer at the tail) → hidden, and the click
+    // marks it acknowledged.
+    const jumpedUp = { ...SHOWING, atBottom: false, acknowledged: true };
+    expect(newMessagesBarHidden(jumpedUp)).toBe(true);
+    // …return to the tail via the pill: the tail-with-off-screen-unreads state
+    // recurs, but acknowledged keeps the bar down — no loop.
+    const returned = { ...SHOWING, acknowledged: true };
+    expect(newMessagesBarHidden(returned)).toBe(true);
+  });
+
+  it("stays hidden in the detached history view", () => {
+    expect(newMessagesBarHidden({ ...SHOWING, detachedTail: true })).toBe(true);
+  });
+});
+
+describe("dividerCursorAfter — Esc clears the in-log divider (#363 follow-up)", () => {
+  const msgs: MessageDto[] = [
+    {
+      id: 1,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "read one",
+      sentByUs: false,
+      mention: false,
+      createdAt: "2026-07-23T12:00:00.000Z",
+    },
+    {
+      id: 2,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "new one",
+      sentByUs: false,
+      mention: false,
+      createdAt: "2026-07-23T12:01:00.000Z",
+    },
+  ];
+  const cursor = 1; // read up to message 1; message 2 is "new".
+
+  const hasDivider = (c: number | null) =>
+    buildRows(msgs, c).some((row) => row.type === "new");
+
+  it("shows the divider before any catch-up gesture", () => {
+    expect(hasDivider(cursor)).toBe(true);
+  });
+
+  it("Esc (dismiss) clears the cursor, removing the divider — fully caught up", () => {
+    const after = dividerCursorAfter("dismiss", cursor);
+    expect(after).toBeNull();
+    expect(hasDivider(after)).toBe(false);
+  });
+
+  it("a bar-click jump keeps the cursor and the divider (reading up toward it)", () => {
+    const after = dividerCursorAfter("jumpToUnread", cursor);
+    expect(after).toBe(cursor);
+    expect(hasDivider(after)).toBe(true);
   });
 });
