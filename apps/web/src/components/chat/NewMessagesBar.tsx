@@ -2,17 +2,15 @@
 // the live tail; when unread messages sit above the fold this bar rides the
 // top of the log, reads "N new messages since you left" in plain language, and
 // clicking it jumps to the first unread (the existing jump machinery in
-// MessageLog). Escape dismisses it AND marks the conversation read — routed
-// through the shared Escape stack (useEscapeToClose) so a modal or popover
-// above it closes first, and the bar only answers Escape when it is the
-// topmost UI.
+// MessageLog).
 //
-// The bar renders nothing when there is nothing to jump to: no unread messages
-// (`count <= 0`) or the unreads are already visible on screen (`hidden`). In
-// both cases the in-log "new since you left" divider carries the marker on its
-// own.
+// The bar is purely presentational: MessageLog owns the Escape handling (mark
+// caught up + clear the divider), so Escape works whether or not the bar is
+// shown — the #373 fix. The bar renders nothing when there is nothing to jump
+// to: no unread messages (`count <= 0`) or the unreads are already visible on
+// screen (`hidden`). In both cases the in-log "new since you left" divider
+// carries the marker on its own.
 
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./chat.module.css";
 
 export interface NewMessagesBarState {
@@ -78,22 +76,10 @@ export interface NewMessagesBarProps {
   hidden: boolean;
   /** Scroll up to the first unread (MessageLog's jump machinery). */
   onJump: () => void;
-  /** Mark the conversation read and dismiss the bar (the read-cursor path). */
-  onDismiss: () => void;
 }
 
-export function NewMessagesBar({
-  count,
-  hidden,
-  onJump,
-  onDismiss,
-}: NewMessagesBarProps) {
-  const visible = count > 0 && !hidden;
-  // Only claim Escape while actually shown; the stack keeps a later-mounted
-  // overlay (modal, popover) topmost, so those close first.
-  useEscapeToClose(onDismiss, visible);
-
-  if (!visible) {
+export function NewMessagesBar({ count, hidden, onJump }: NewMessagesBarProps) {
+  if (count <= 0 || hidden) {
     return null;
   }
 

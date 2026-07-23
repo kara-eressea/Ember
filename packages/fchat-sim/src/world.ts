@@ -83,6 +83,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Peat Hollow", "Reed Hollow"],
     },
+    // Reserved for the message-log tail/unread-marker E2E (#372/#373): the
+    // browser reads channels and a DM while Wick Marsh (a raw SimClient) pumps
+    // variable-height history in. Own account so parallel specs never share a
+    // ticket manager.
+    "quill@example.test": {
+      password: "hunter2",
+      characters: ["Quill Marsh", "Wick Marsh"],
+    },
     // Reserved for the auth E2E (account-add/identity CRUD flows).
     "aspen@example.test": {
       password: "hunter2",
@@ -395,6 +403,27 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Warm light through old glass.",
       oplist: ["Wren Salloway"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #372 message-log tail E2E (messagelog-tail.spec): Quill
+    // Marsh switches between two fully-read rooms while Wick Marsh pumps
+    // variable-height history in. Hidden and NPC-free for isolation.
+    {
+      name: "ADH-372taila11bb22cc33",
+      title: "Tail Room A",
+      mode: "chat",
+      description: "First of the switch pair.",
+      oplist: ["Wick Marsh"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-372tailb44dd55ee66",
+      title: "Tail Room B",
+      mode: "chat",
+      description: "Second of the switch pair.",
+      oplist: ["Wick Marsh"],
       npcs: [],
       listed: false,
     },
