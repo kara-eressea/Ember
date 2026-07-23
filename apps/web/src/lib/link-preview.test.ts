@@ -79,6 +79,47 @@ describe("resolvePreview", () => {
     ).toBeUndefined();
   });
 
+  it("rewrites x.com / twitter.com status links to the fixvx direct-media host (#384)", () => {
+    expect(
+      resolvePreview("https://x.com/someone/status/1234567890"),
+    ).toMatchObject({
+      src: "https://d.fixvx.com/someone/status/1234567890",
+      kind: "image",
+      host: "x.com",
+    });
+    // twitter.com and the vx/fixup mirrors resolve the same way; trailing
+    // /photo/1-style segments are tolerated.
+    expect(
+      resolvePreview("https://twitter.com/a_user/status/42/photo/1"),
+    ).toMatchObject({ src: "https://d.fixvx.com/a_user/status/42" });
+    // Non-status pages (profiles, home) have no derivable media.
+    expect(resolvePreview("https://x.com/someone")).toBeUndefined();
+    expect(resolvePreview("https://x.com/home")).toBeUndefined();
+  });
+
+  it("gates the fixvx rewrite on the effective direct-media host (#384)", () => {
+    // The gate is on d.fixvx.com (the rewrite target), not x.com.
+    expect(
+      resolvePreview("https://x.com/u/status/1", ["d.fixvx.com"]),
+    ).toMatchObject({ src: "https://d.fixvx.com/u/status/1" });
+    expect(
+      resolvePreview("https://x.com/u/status/1", ["x.com"]),
+    ).toBeUndefined();
+  });
+
+  it("previews a direct-media host with no file extension (#384)", () => {
+    // d.fixvx.com serves media at an extensionless path — the extension test
+    // is waived for hosts on the direct-media table.
+    expect(
+      resolvePreview("https://d.fixvx.com/u/status/9", ["d.fixvx.com"]),
+    ).toMatchObject({ kind: "image", host: "d.fixvx.com" });
+    // Still gated: an extensionless direct-media URL off the allowlist stays
+    // a plain link.
+    expect(
+      resolvePreview("https://d.fixvx.com/u/status/9", ["imgur.com"]),
+    ).toBeUndefined();
+  });
+
   it("previews cdn.discordapp.com images with signed query params intact", () => {
     // The path already ends in .png; the signed ex/is/hm query must survive
     // verbatim onto the src or the CDN 403s.

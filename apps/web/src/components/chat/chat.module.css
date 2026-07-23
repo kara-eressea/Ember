@@ -1559,10 +1559,14 @@
 
 .previewMedia {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   min-height: 60px;
   max-height: 300px;
+  /* When the viewport clamp (#385) shrinks the panel below the media's
+     natural size, the media area scrolls instead of the foot being clipped. */
+  overflow: auto;
   background: var(--eb-head);
 }
 
@@ -1614,6 +1618,7 @@
 
 .previewFoot {
   display: flex;
+  flex: none;
   gap: 8px;
   align-items: center;
   padding: 6px 8px 6px 10px;
