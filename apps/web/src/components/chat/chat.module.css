@@ -242,6 +242,11 @@
    names ellipsize inside the column instead of pushing the body around. */
 .logAligned .messageLine .nick {
   width: 132px;
+  /* Right-side breathing room so an italic name's overhang — the slanted top
+     of a trailing letter like 'd' — isn't shaved off by the overflow clip at
+     the right edge of this right-aligned column (#386). It sits in the padding
+     box, which stays inside the clip region, so alignment is untouched. */
+  padding-right: 0.15em;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
@@ -356,7 +361,9 @@
   padding: 6px 16px;
   color: var(--eb-meta);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  /* Date labels sit in the message stream, so they track the message font
+     size like the timestamps they echo — not the interface scale (#380). */
+  font-size: var(--eb-msg-meta-font, 11px);
 }
 
 .dateDivider::before,
@@ -479,6 +486,9 @@
   gap: 10px;
   min-height: 46px;
   padding: 8px 14px;
+  /* The whole bar is click-to-type (#313/#317), so the whole bar shows the
+   * text I-beam on hover (#394) — not just the single-line input inside it. */
+  cursor: text;
 }
 
 .composerInput {
@@ -499,6 +509,13 @@
 
 .composerInput::placeholder {
   color: var(--eb-meta);
+}
+
+/* Hide the "Message #channel" hint the moment the composer takes focus (#393),
+ * matching the standard input behavior — not only once the first character is
+ * typed. (The inline CodeMirror editor mirrors this in its own theme.) */
+.composerInput:focus::placeholder {
+  color: transparent;
 }
 
 .composerFooter {
@@ -906,7 +923,9 @@
   padding: 6px 16px;
   color: var(--eb-accent-text);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: var(--eb-font-ui-tiny);
+  /* A divider between messages: scale it with the message font, not the
+     interface scale, so it stays proportionate to the log around it (#381). */
+  font-size: var(--eb-msg-meta-font, 11px);
   text-transform: uppercase;
   letter-spacing: 0.09em;
 }
@@ -1160,7 +1179,9 @@
 .pendingMeta {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(10.5px * var(--eb-font-ui-scale));
+  /* The countdown on a queued send is message-log meta, so it follows the
+     message font size like every other line's timestamp (#381). */
+  font-size: var(--eb-msg-meta-font, 10.5px);
   color: var(--eb-meta);
 }
 
@@ -1570,10 +1591,14 @@
 
 .previewMedia {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   min-height: 60px;
   max-height: 300px;
+  /* When the viewport clamp (#385) shrinks the panel below the media's
+     natural size, the media area scrolls instead of the foot being clipped. */
+  overflow: auto;
   background: var(--eb-head);
 }
 
@@ -1625,6 +1650,7 @@
 
 .previewFoot {
   display: flex;
+  flex: none;
   gap: 8px;
   align-items: center;
   padding: 6px 8px 6px 10px;

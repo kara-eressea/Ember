@@ -276,7 +276,13 @@ export function applyInterface(
   );
   // `zoom` takes a unitless factor; 1 = no scaling. Kept as a string so the
   // property is always written (some engines drop `zoom: 1` otherwise).
-  root.style.zoom = String(uiScaleFactor(uiScale));
+  const factor = uiScaleFactor(uiScale);
+  root.style.zoom = String(factor);
+  // Mirror the same factor into a custom property (#388). A zoomed root scales
+  // viewport units too, so surfaces that must fill the ACTUAL visual viewport
+  // (the full-size profile window) divide their `vw`/`vh` by this to undo the
+  // zoom and stop overflowing off the right/bottom edge at higher UI scales.
+  root.style.setProperty("--eb-ui-zoom", String(factor));
 }
 
 export function savedUiFontSize(): (typeof UI_FONT_SIZES)[number] {

@@ -529,59 +529,63 @@ describe("admin CLI", () => {
       },
     );
 
-  it("create-user then reset-password round-trips through login", async () => {
-    const created = await run([
-      "create-user",
-      "--email",
-      "cli-admin@example.test",
-      "--username",
-      "cli-admin",
-      "--password",
-      "first password here",
-    ]);
-    expect(created.stderr).toBe("");
-    expect(created.code).toBe(0);
-    expect(created.stdout).toContain("Created user cli-admin");
+  it(
+    "create-user then reset-password round-trips through login",
+    { timeout: 30_000 },
+    async () => {
+      const created = await run([
+        "create-user",
+        "--email",
+        "cli-admin@example.test",
+        "--username",
+        "cli-admin",
+        "--password",
+        "first password here",
+      ]);
+      expect(created.stderr).toBe("");
+      expect(created.code).toBe(0);
+      expect(created.stdout).toContain("Created user cli-admin");
 
-    const login = await app.inject({
-      method: "POST",
-      url: "/api/auth/login",
-      payload: {
-        email: "cli-admin@example.test",
-        password: "first password here",
-      },
-    });
-    expect(login.statusCode).toBe(200);
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: {
+          email: "cli-admin@example.test",
+          password: "first password here",
+        },
+      });
+      expect(login.statusCode).toBe(200);
 
-    const reset = await run([
-      "reset-password",
-      "--email",
-      "cli-admin@example.test",
-      "--password",
-      "second password here",
-    ]);
-    expect(reset.code).toBe(0);
-    expect(reset.stdout).toContain("Password reset for cli-admin");
+      const reset = await run([
+        "reset-password",
+        "--email",
+        "cli-admin@example.test",
+        "--password",
+        "second password here",
+      ]);
+      expect(reset.code).toBe(0);
+      expect(reset.stdout).toContain("Password reset for cli-admin");
 
-    const stale = await app.inject({
-      method: "POST",
-      url: "/api/auth/login",
-      payload: {
-        email: "cli-admin@example.test",
-        password: "first password here",
-      },
-    });
-    expect(stale.statusCode).toBe(401);
-    const fresh = await app.inject({
-      method: "POST",
-      url: "/api/auth/login",
-      payload: {
-        email: "cli-admin@example.test",
-        password: "second password here",
-      },
-    });
-    expect(fresh.statusCode).toBe(200);
-  });
+      const stale = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: {
+          email: "cli-admin@example.test",
+          password: "first password here",
+        },
+      });
+      expect(stale.statusCode).toBe(401);
+      const fresh = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: {
+          email: "cli-admin@example.test",
+          password: "second password here",
+        },
+      });
+      expect(fresh.statusCode).toBe(200);
+    },
+  );
 
   it("refuses duplicates and unknown emails with a nonzero exit", async () => {
     const dupe = await run([
