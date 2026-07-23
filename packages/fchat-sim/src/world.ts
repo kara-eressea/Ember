@@ -275,6 +275,15 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Sedge Fen", "Rush Fen"],
     },
+    // Reserved for the #405 history-autofill E2E (same parallelism rule).
+    // Moss Fen reads a channel the raw-SimClient partner Reed Marsh has pumped
+    // deep history into; the spec opens it in a very tall viewport the latest
+    // page underfills and asserts the log keeps paging older history in until
+    // it overflows, with no user scroll.
+    "moss@example.test": {
+      password: "hunter2",
+      characters: ["Moss Fen", "Reed Marsh"],
+    },
   },
   channels: [
     {
@@ -479,6 +488,19 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "A deep spool paged in from the server.",
       oplist: ["Sedge Fen"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #405 history-autofill E2E (history-autofill.spec): Moss
+    // Fen resumes a fully-read channel Reed Marsh has pumped a deep history
+    // into, opened in a tall viewport the latest page underfills. Hidden and
+    // NPC-free for isolation.
+    {
+      name: "ADH-405historyautofillcc33dd44",
+      title: "Moss History Autofill",
+      mode: "chat",
+      description: "A deep spool that must auto-fill a tall window.",
+      oplist: ["Moss Fen"],
       npcs: [],
       listed: false,
     },

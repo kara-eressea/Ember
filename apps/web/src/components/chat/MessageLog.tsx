@@ -166,6 +166,15 @@ export function MessageLog({
   // frame and flickering the jump pill until an e2e click timed out.
   const stickBottomRef = useRef(true);
   const loadingRef = useRef(false);
+  /** Bumped when a loadOlder call fully settles (loadingRef cleared), so the
+   * auto-fill effect re-evaluates AFTER the in-flight guard has released. The
+   * store's loadingOlder flag flips back to false inside store.loadOlder's own
+   * finally — one microtask before this component's finally clears loadingRef —
+   * so the effect run that flip triggers still sees loadingRef held and bails.
+   * Without a reactive re-arm, that stale-guard bail is terminal: a log that
+   * exactly fills its viewport (scrollHeight === clientHeight, no scrollbar)
+   * stops auto-filling one page short and strands the older backlog (#405). */
+  const [fillNonce, setFillNonce] = useState(0);
   /** Handle for the in-flight prepend re-pin rAF, so a jump can cancel it. */
   const rePinRafRef = useRef<number>(0);
   /** Handle for the in-flight settle-stick rAF loop (shared by the mount/switch
@@ -418,8 +427,11 @@ export function MessageLog({
     }
     void loadOlder();
     // loadOlder is re-created per render but reads only fresh store state.
+    // fillNonce re-arms the loop after each page settles past the loadingRef
+    // guard (see its declaration) — without it the fill stops a page short of
+    // overflow on a log that exactly fills its viewport (#405).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length, backfilled, hasMoreBefore, loadingOlder]);
+  }, [rows.length, backfilled, hasMoreBefore, loadingOlder, fillNonce]);
 
   // Is the first unread row scrolled above the viewport top? That is the only
   // state where the "new messages" bar has somewhere to jump to; when the
@@ -720,6 +732,11 @@ export function MessageLog({
       console.error("history page failed", error);
     } finally {
       loadingRef.current = false;
+      // Re-arm the auto-fill effect now that the in-flight guard has released.
+      // The effect run triggered by the store clearing loadingOlder fired while
+      // loadingRef was still held (see fillNonce) and bailed; this bump gives it
+      // a fresh, guard-clear pass so a still-underflowing log keeps paging (#405).
+      setFillNonce((n) => n + 1);
     }
   }
 
