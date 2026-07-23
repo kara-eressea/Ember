@@ -77,6 +77,12 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Amber Vale", "Cindral"],
     },
+    // Reserved for the scrollback rubberband E2E (#360): a channel the
+    // browser character reads while a raw-SimClient partner pumps history in.
+    "peat@example.test": {
+      password: "hunter2",
+      characters: ["Peat Hollow", "Reed Hollow"],
+    },
     // Reserved for the auth E2E (account-add/identity CRUD flows).
     "aspen@example.test": {
       password: "hunter2",
@@ -412,6 +418,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Where the waves catch up.",
       oplist: ["Ember Hollis"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #360 scrollback rubberband E2E (scrollback.spec): Peat
+    // Hollis reads while Reed Hollow pumps a long history in. Hidden and
+    // NPC-free for isolation.
+    {
+      name: "ADH-360scrollbackaa11bb22cc33",
+      title: "Peat Scrollback",
+      mode: "chat",
+      description: "A deep spool of history.",
+      oplist: ["Peat Hollow"],
       npcs: [],
       listed: false,
     },

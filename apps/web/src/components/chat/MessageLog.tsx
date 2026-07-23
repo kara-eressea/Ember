@@ -4,7 +4,7 @@
 // layer in M4. Scrolling up past the buffer start pages older history in via
 // REST; the log sticks to the bottom while the user is there.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
@@ -253,7 +253,21 @@ export function MessageLog({
   // and jumped once ads/grouped rows/dividers re-measured. Instead we pin the
   // anchor against its *measured* offset and re-apply the correction across a
   // few frames while the newly rendered rows above it settle (#266).
-  useEffect(() => {
+  //
+  // This runs in useLayoutEffect, not useEffect, so the initial correction is
+  // written *before* the browser paints the prepended rows — the compensated
+  // position paints atomically with the insert, instead of the log rendering
+  // shoved down for one frame and snapping back the next (the #360
+  // rubberband). The settle pass that follows applies only the INCREMENTAL
+  // change to the anchor's offset as a relative delta, never an absolute
+  // re-set: as the variable-height rows above measure taller over a few
+  // frames, we add exactly that growth to scrollTop. A delta rides along with
+  // any scroll the user is making at the same instant — it never clobbers
+  // live input — so an actively wheel-scrolling user is neither snapped nor
+  // abandoned mid-page (#360). The old absolute pin bailed the moment the
+  // user's own scroll moved scrollTop off the last value it wrote, dropping
+  // the compensation and letting the content drift.
+  useLayoutEffect(() => {
     const anchor = anchorRef.current;
     if (anchor === undefined) {
       return;
@@ -270,39 +284,44 @@ export function MessageLog({
     if (index < 0) {
       return;
     }
+    // The anchor's measured offset (top of the row within the scroll content)
+    // the last time we accounted for it. Its growth between frames is the
+    // re-measure we compensate; the user's own scroll never appears here.
+    let prevOffset = virtualizer.getOffsetForIndex(index, "start")?.[0];
+    const el = scrollRef.current;
+    if (el && prevOffset !== undefined) {
+      // Synchronous first correction — paints atomically with the prepend.
+      el.scrollTop = prevOffset - anchor.gap;
+    }
     let frames = 0;
-    // The last scrollTop we wrote (read back, so a browser clamp/round is
-    // accounted for). If the container's scrollTop no longer matches it at the
-    // top of a frame, something else moved it — an active scroll-to-top page,
-    // or the user dragging — and we must stop pinning rather than fight it.
-    let lastSet: number | undefined;
-    const pin = () => {
+    const settle = () => {
       const el = scrollRef.current;
       // Yield the instant a jump takes over (stick intent flips on): the two
       // must never write the scroll position in the same frame (#266).
       if (!el || stickBottomRef.current) {
         return;
       }
-      if (lastSet !== undefined && el.scrollTop !== lastSet) {
-        return; // external scroll wins — stop pinning.
+      const offset = virtualizer.getOffsetForIndex(index, "start")?.[0];
+      const settled = offset === prevOffset;
+      if (
+        offset !== undefined &&
+        prevOffset !== undefined &&
+        offset !== prevOffset
+      ) {
+        // Add only the row-measurement growth above the anchor — a relative
+        // delta that keeps the anchor put without overwriting a concurrent
+        // user scroll.
+        el.scrollTop += offset - prevOffset;
       }
-      // Measured offset that aligns the anchor row to the top — reflects the
-      // real heights of every row now rendered above it, not the estimate.
-      const measured = virtualizer.getOffsetForIndex(index, "start")?.[0];
-      const target = measured !== undefined ? measured - anchor.gap : undefined;
-      const settled = target !== undefined && lastSet === target;
-      if (target !== undefined) {
-        el.scrollTop = target;
-        lastSet = el.scrollTop;
-      }
+      prevOffset = offset;
       frames += 1;
       // Stop once the anchor offset stops moving (rows measured) or the frame
       // budget runs out — never keep looping under a slow CI render.
       if (!settled && frames < SCROLL_SETTLE_FRAMES) {
-        rePinRafRef.current = requestAnimationFrame(pin);
+        rePinRafRef.current = requestAnimationFrame(settle);
       }
     };
-    pin();
+    rePinRafRef.current = requestAnimationFrame(settle);
     return () => {
       cancelAnimationFrame(rePinRafRef.current);
     };
