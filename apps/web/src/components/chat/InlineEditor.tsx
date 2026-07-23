@@ -144,6 +144,9 @@ const theme = EditorView.theme({
     overflowY: "auto",
   },
   ".cm-placeholder": { color: "var(--eb-meta)" },
+  // Hide the placeholder on focus (#393), mirroring the textarea path so the
+  // hint disappears the moment the editor is focused, not on first keystroke.
+  "&.cm-focused .cm-placeholder": { color: "transparent" },
   ".emb-b": { fontWeight: "700" },
   ".emb-i": { fontStyle: "italic" },
   ".emb-s": { textDecoration: "line-through" },
