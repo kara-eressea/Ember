@@ -336,7 +336,19 @@ export function MessageLog({
     const el = scrollRef.current;
     if (el && prevOffset !== undefined) {
       // Synchronous first correction — paints atomically with the prepend.
-      el.scrollTop = prevOffset - anchor.gap;
+      // getOffsetForIndex is in the virtualizer's own coordinate space, which
+      // starts at the top of the sizing div (innerRef); anchor.gap was measured
+      // against the real viewport. The sizing div sits below the scroll
+      // container's top padding (`.log` has padding-top), so pin against that
+      // measured offset too — otherwise every page settled the held row a
+      // padding's-worth (~12px) low (#387).
+      const inner = innerRef.current;
+      const contentOffset = inner
+        ? inner.getBoundingClientRect().top -
+          el.getBoundingClientRect().top +
+          el.scrollTop
+        : 0;
+      el.scrollTop = prevOffset + contentOffset - anchor.gap;
     }
     let frames = 0;
     const settle = () => {
@@ -627,30 +639,60 @@ export function MessageLog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canJumpToRecent, detachedTail, identityId, convId]);
 
-  /** Snapshot the anchor row's on-screen position before a prepend: its id
-   * plus the pixel gap between its top and the viewport top. Returns
-   * undefined when stuck to the bottom (no anchor — the bottom stick wins)
-   * or when the row isn't currently rendered. */
-  function captureAnchor(
-    id: number | undefined,
-  ): { id: number; gap: number } | undefined {
+  /** Snapshot the anchor row before a prepend: the id of the topmost message
+   * row at the viewport top plus the pixel gap between its top and that edge.
+   * Returns undefined when stuck to the bottom (no anchor — the bottom stick
+   * wins) or when no message row sits at/after the top.
+   *
+   * Everything is read from the virtualizer's measurement cache and its FRESH
+   * scroll offset — never the painted DOM. A scroll-up fires this synchronously
+   * from onScroll, one render BEFORE the virtualizer repaints its window at the
+   * new position, so the painted rows are briefly stale: a fast wheel or a jump
+   * to the top leaves the old, far-off window on screen. Reading the DOM then
+   * anchored a row hundreds of px away (or missed it and fell back to gap 0),
+   * and the re-pin lurched the reader's line up a row or two every server page
+   * (#387). The virtualizer tracks scrollOffset synchronously and keeps sizes
+   * for rows it isn't currently painting, so it answers correctly regardless. */
+  function captureAnchor(): { id: number; gap: number } | undefined {
     const el = scrollRef.current;
+    const inner = innerRef.current;
     // While the stick intent is engaged the bottom-stick owns the scroll —
     // capturing an anchor here would let the re-pin fight it (#266).
-    if (stickBottomRef.current || el == null || id === undefined) {
+    if (stickBottomRef.current || el == null || inner == null) {
       return undefined;
     }
-    const index = rows.findIndex(
-      (row) => row.type === "message" && row.message.id === id,
-    );
-    if (index < 0) {
+    // The virtualizer's coordinate space starts at the sizing div (innerRef);
+    // its scroll offset is measured from the scroll container's top, which
+    // sits a top-padding above. Convert so both agree.
+    const contentOffset =
+      inner.getBoundingClientRect().top -
+      el.getBoundingClientRect().top +
+      el.scrollTop;
+    // The container's own scrollTop is fresh (the browser applied it before
+    // this scroll event ran); the virtualizer's scrollOffset lags a render, so
+    // use the real value. Only the SIZE queries below go through the
+    // virtualizer's measurement cache, which is position-independent and never
+    // stale — that is what makes this robust to the unpainted window.
+    const scrollTop = el.scrollTop;
+    const viewportOffset = Math.max(0, scrollTop - contentOffset);
+    const top = virtualizer.getVirtualItemForOffset(viewportOffset);
+    if (top === undefined) {
       return undefined;
     }
-    const rowEl = el.querySelector(`[data-index="${String(index)}"]`);
-    const gap = rowEl
-      ? rowEl.getBoundingClientRect().top - el.getBoundingClientRect().top
-      : 0;
-    return { id, gap };
+    // The first message row at or after the viewport top (skip a leading date
+    // divider). gap is that row's distance below the top edge, in real px.
+    for (let index = top.index; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (row?.type !== "message") {
+        continue;
+      }
+      const start = virtualizer.getOffsetForIndex(index, "start")?.[0];
+      if (start === undefined) {
+        return undefined;
+      }
+      return { id: row.message.id, gap: start + contentOffset - scrollTop };
+    }
+    return undefined;
   }
 
   async function loadOlder() {
@@ -665,13 +707,13 @@ export function MessageLog({
     }
     loadingRef.current = true;
     try {
-      // Hold the previous top row in place after the prepend — except while
-      // stuck to the bottom (the auto-fill of a too-short log, #254), where
-      // anchoring an old top row would drag the view away from the newest
+      // Hold the on-screen anchor row in place after the prepend — except
+      // while stuck to the bottom (the auto-fill of a too-short log, #254),
+      // where anchoring an old row would drag the view away from the newest
       // messages; the bottom stick wins there. Capture the anchor's distance
       // below the viewport top *now*, against measured DOM, so the restore
       // can pin it back exactly regardless of how the prepended rows measure.
-      anchorRef.current = captureAnchor(current.messages[0]?.id);
+      anchorRef.current = captureAnchor();
       await useMessagesStore.getState().loadOlder(identityId, convId);
     } catch (error) {
       anchorRef.current = undefined;
@@ -708,6 +750,20 @@ export function MessageLog({
 
   return (
     <div className={styles.logWrap}>
+      {/* The scroll-up loading indicator floats OVER the log rather than
+          rendering as a flow sibling above the virtualized rows: with
+          `overflow-anchor: none` on the scroll container, a static-flow note
+          inserted the instant loadOlder begins (synchronously, before the
+          async page even lands) would shove every row down by its own height
+          for the whole fetch and snap back on arrival — a rubberband on the
+          server-fetch path the paint-atomic prepend re-pin never saw (#387).
+          As an absolutely positioned overlay it consumes no layout, so the
+          reading position holds steady while the page is in flight. */}
+      {buffer?.loadingOlder && (
+        <div className={styles.loadingOlderNote} role="status">
+          Loading older messages…
+        </div>
+      )}
       <NewMessagesBar
         count={newCount}
         hidden={newMessagesBarHidden({
@@ -741,9 +797,6 @@ export function MessageLog({
               Back to present
             </button>
           </div>
-        )}
-        {buffer?.loadingOlder && (
-          <div className={styles.logNote}>Loading older messages…</div>
         )}
         {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
         {buffer?.backfilled && rows.length === 0 && (

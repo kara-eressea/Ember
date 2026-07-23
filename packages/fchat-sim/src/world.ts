@@ -267,6 +267,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Tamarisk Ash", "Marsh Willow"],
     },
+    // Reserved for the #387 history-load-jump E2E (same parallelism rule).
+    // Sedge Fen reads a channel the raw-SimClient partner Rush Fen has pumped
+    // deep history into; the spec scrolls up across a server page boundary and
+    // asserts the reading position never lurches while the page is in flight.
+    "sedge@example.test": {
+      password: "hunter2",
+      characters: ["Sedge Fen", "Rush Fen"],
+    },
   },
   channels: [
     {
@@ -459,6 +467,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "A deep spool of history.",
       oplist: ["Peat Hollow"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #387 history-load-jump E2E (history-load-jump.spec):
+    // Sedge Fen reads while Rush Fen pumps a deep history in, then scrolls up
+    // across a server page boundary. Hidden and NPC-free for isolation.
+    {
+      name: "ADH-387historyloadjumpaa11bb22",
+      title: "Sedge History Load",
+      mode: "chat",
+      description: "A deep spool paged in from the server.",
+      oplist: ["Sedge Fen"],
       npcs: [],
       listed: false,
     },

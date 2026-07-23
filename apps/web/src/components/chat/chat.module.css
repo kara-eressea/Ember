@@ -373,6 +373,27 @@
   text-align: center;
 }
 
+/* Scroll-up loading indicator (#387): a floating pill over the top of the log,
+   NOT a flow sibling above the virtualized rows. Anchored to logWrap so it
+   never enters the scroll container's layout — inserting it the moment
+   loadOlder begins must not shift the reader's row (the log sets
+   `overflow-anchor: none`, so the browser would not compensate). */
+.loadingOlderNote {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  color: var(--eb-meta);
+  font-size: var(--eb-msg-meta-font, 11.5px);
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: 999px;
+  box-shadow: 0 14px 40px -12px rgb(0 0 0 / 55%); /* popover shadow */
+  pointer-events: none;
+}
+
 /* ── Composer ────────────────────────────────────────────────────────── */
 
 .composer {
