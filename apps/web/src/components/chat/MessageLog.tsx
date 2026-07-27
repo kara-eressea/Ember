@@ -492,6 +492,12 @@ export function MessageLog({
     // growth-driven scroll at a large distance-from-bottom and releases the
     // glue, stranding a channel switch above the bottom (#372).
     const movedUp = el.scrollTop < prevScrollTopRef.current - 1;
+    // The mirror image: a genuine downward user scroll. Our own bottom-directed
+    // writes all happen while the stick intent is HELD, so pairing this with a
+    // released intent isolates "the user scrolled down here themselves" from
+    // every programmatic landing (#415).
+    const movedDown = el.scrollTop > prevScrollTopRef.current + 1;
+    const userReachedTail = bottom && movedDown && !stickBottomRef.current;
     prevScrollTopRef.current = el.scrollTop;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
@@ -501,6 +507,13 @@ export function MessageLog({
     // the view landing short.
     if (bottom) {
       stickBottomRef.current = true;
+      // Scrolling down to the newest messages under your own steam IS catching
+      // up — the same conclusion the "Jump to newest" pill and Esc draw, so it
+      // must clear the unread state the same way instead of leaving the bar to
+      // pop back the moment the tail is reached (#415).
+      if (userReachedTail) {
+        acknowledgeTail();
+      }
     } else if (movedUp && distanceFromBottom > STICK_RELEASE_PX) {
       stickBottomRef.current = false;
     }
@@ -551,20 +564,31 @@ export function MessageLog({
   // a plain scroll to the bottom of the loaded buffer. Either way the jump
   // also marks the conversation read (#254): catching up is over, so the
   // read cursor advances to the newest message.
-  function jumpToRecent() {
-    // Back at the tail means caught up — the "since you left" bar has done its
-    // job and must not re-show (#363 follow-up).
+  /** Parked at the live tail with nothing newer to reach: the catch-up is over.
+   * Hides the "new messages" bar for the rest of the visit and advances the
+   * read cursor to the newest buffered message. Shared by every way of arriving
+   * there — the jump pill, Esc, and the user's own scroll (#415) — so they
+   * cannot drift apart. The in-log "new since you left" divider deliberately
+   * stays: it is a place marker, and only the explicit Esc dismissal clears it
+   * (dividerCursorAfter). */
+  function acknowledgeTail() {
     setNewBarAcknowledged(true);
     useSessionsStore.getState().clearUnread(identityId, convId);
+    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
+    if (newest !== undefined && !detachedTail) {
+      gateway.readAck(identityId, convId, newest.id);
+    }
+  }
+
+  function jumpToRecent() {
+    // Back at the tail means caught up — the "since you left" bar has done its
+    // job and must not re-show (#363 follow-up). In the detached history view
+    // the newest *buffered* id is an old message, so acknowledgeTail skips the
+    // read-ack there; back at the live tail the shell's auto-ack advances it.
+    acknowledgeTail();
     if (detachedTail) {
-      // The newest *buffered* id here is an old message — never ack it.
-      // Back at the live tail, the shell's auto-ack advances the cursor.
       void useMessagesStore.getState().backToPresent(identityId, convId);
       return;
-    }
-    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
-    if (newest) {
-      gateway.readAck(identityId, convId, newest.id);
     }
     // Take exclusive scroll ownership: engage the stick intent and abandon any
     // in-flight prepend anchor + its re-pin rAF, so the "hold the top row" and
@@ -604,12 +628,7 @@ export function MessageLog({
   // #257/#326 read-cursor path), hide the bar, and drop the in-log "new since
   // you left" divider. We stay put — open-at-bottom already put us there.
   function markCaughtUp() {
-    useSessionsStore.getState().clearUnread(identityId, convId);
-    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
-    if (newest) {
-      gateway.readAck(identityId, convId, newest.id);
-    }
-    setNewBarAcknowledged(true);
+    acknowledgeTail();
     // Fully caught up: drop the in-log divider too, not just the bar.
     setNewSinceId((cursor) => dividerCursorAfter("dismiss", cursor));
   }
