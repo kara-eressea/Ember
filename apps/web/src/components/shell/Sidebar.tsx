@@ -55,11 +55,11 @@ import {
 import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
 import {
   applyManualOrder,
-  loadSidebarOrders,
+  clearLegacySidebarOrders,
+  legacySidebarOrders,
   moveRow,
-  saveSectionOrder,
   sectionOrder,
-  type SidebarOrderMap,
+  withSectionOrder,
 } from "./sidebar-reorder.js";
 import {
   loadCollapsedSections,
@@ -142,12 +142,34 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   const openSection = (section: SidebarSection) =>
     filtering || collapsed[section] !== true;
 
-  // Drag-to-reorder (#391): a per-identity, per-device manual order kept in
-  // localStorage. Reordering is disabled while the toolbar filter is active —
-  // a filtered subset isn't the real section order. `drag` tracks the row
-  // being dragged and the current drop target/side so a subtle indicator can
-  // render; `orders` is the persisted map, held in state so a drop re-renders.
-  const [orders, setOrders] = useState<SidebarOrderMap>(loadSidebarOrders);
+  // Drag-to-reorder (#391): a per-identity manual order, synced through the
+  // `sidebarOrder` pref (#412) so every attached browser agrees and a drop
+  // lands live on the other clients' `prefs.updated`. Reordering is disabled
+  // while the toolbar filter is active — a filtered subset isn't the real
+  // section order. `drag` tracks the row being dragged and the current drop
+  // target/side so a subtle indicator can render. One pref write per drop.
+  const orders = session.prefs.sidebarOrder;
+  // One-shot migration off the pre-#412 localStorage key: if this browser
+  // still holds a drag order and the synced pref has none, push it up once
+  // and drop the key. After that the pref is the only source of truth, so a
+  // stale copy on another device can never resurrect an old order.
+  const identityId = session.identityId;
+  const hasSyncedOrder = Object.keys(orders).length > 0;
+  useEffect(() => {
+    const legacy = legacySidebarOrders();
+    if (Object.keys(legacy).length === 0) {
+      return;
+    }
+    if (hasSyncedOrder) {
+      clearLegacySidebarOrders();
+      return;
+    }
+    void patchPrefs(identityId, { sidebarOrder: legacy }).then((ok) => {
+      if (ok) {
+        clearLegacySidebarOrders();
+      }
+    });
+  }, [identityId, hasSyncedOrder]);
   const [drag, setDrag] = useState<{
     section: SidebarSection;
     draggedId: string;
@@ -190,9 +212,14 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           id,
           drag.position ?? "before",
         );
-        setOrders((map) =>
-          saveSectionOrder(map, session.identityId, section, next),
-        );
+        void patchPrefs(session.identityId, {
+          sidebarOrder: withSectionOrder(
+            orders,
+            session.identityId,
+            section,
+            next,
+          ),
+        });
         setDrag(undefined);
       },
       onDragEnd: () => {
