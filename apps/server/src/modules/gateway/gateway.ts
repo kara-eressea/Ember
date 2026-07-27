@@ -119,6 +119,12 @@ export class GatewayHub {
     }
   }
 
+  /** How many browsers are attached to the identity (multi-device fan-out
+   * width; the heartbeat must prune zombies from this count). */
+  subscriberCount(identityId: string): number {
+    return this.#subscribers.get(identityId)?.size ?? 0;
+  }
+
   /** True while at least one browser is attached to the identity. */
   hasSubscribers(identityId: string): boolean {
     return (this.#subscribers.get(identityId)?.size ?? 0) > 0;
@@ -402,6 +408,8 @@ export interface GatewayRoutesOptions {
    * what stops a hostile page from riding a victim's network position.
    */
   allowedOrigins: readonly string[];
+  /** Heartbeat period for gateway sockets; test-only knob (HEARTBEAT_MS). */
+  heartbeatMs?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -420,6 +428,7 @@ export async function gatewayRoutes(
     campaigns,
     social,
     allowedOrigins,
+    heartbeatMs,
   } = options;
   const originAllowList = new Set(
     allowedOrigins.map((origin) => origin.toLowerCase()),
@@ -495,6 +504,7 @@ export async function gatewayRoutes(
       verifyToken,
       sessionAlive,
       helloBudget,
+      ...(heartbeatMs !== undefined ? { heartbeatMs } : {}),
       log: instance.log,
     });
   });
