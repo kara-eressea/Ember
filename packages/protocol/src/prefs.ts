@@ -113,6 +113,10 @@ const prefsShape = {
    * ok/warn/danger move to an Okabe–Ito-derived set and the away/offline
    * dots gain distinct shapes so hue is never the only signal. */
   colorblindMode: z.boolean(),
+  /** Small round avatars (people) and # tokens (channels) on the sidebar
+   * rows (#416). Off restores the denser text-only rows; the status dot and
+   * colouring on the row itself stay either way. */
+  sidebarAvatars: z.boolean(),
   /** Timestamp rendering in the log. */
   timestampFormat: z.enum(TIMESTAMP_FORMATS),
   use24HourClock: z.boolean(),
@@ -277,6 +281,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   uiFontSize: "m",
   uiScale: 100,
   colorblindMode: false,
+  sidebarAvatars: true,
   timestampFormat: "time",
   use24HourClock: true,
   groupConsecutive: false,
