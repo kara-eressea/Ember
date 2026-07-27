@@ -30,6 +30,8 @@ const ROOM_A = "ADH-372taila11bb22cc33";
 const ROOM_A_TITLE = "Tail Room A";
 const ROOM_B = "ADH-372tailb44dd55ee66";
 const ROOM_B_TITLE = "Tail Room B";
+/** An official sim channel — this spec only needs somewhere to switch to. */
+const ROOM_C_TITLE = "Terrarium";
 
 /** A spread of lengths so rows measure much taller than the 26px estimate —
  * the exact condition that made the mount stick land short (#372). */
