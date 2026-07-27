@@ -1,12 +1,16 @@
 // Manual drag-to-reorder of sidebar rows (#391), within a section only.
 //
-// Order is a per-identity, per-device concern — it keys off channel keys and
-// character names that differ per identity, so it persists in localStorage
-// keyed by identityId, next to the collapsed-section state (sidebar-sections
-// .ts) rather than in the synced user prefs. Each section holds an ordered
-// list of row ids; a row absent from that list (a channel joined or a
-// bookmark added after the last drag) sorts stably after the ordered ones,
-// so new rows append at the end and the saved order is otherwise preserved.
+// The order lives in the synced user prefs (`sidebarOrder`, #412) so every
+// attached browser agrees and a drop propagates over the `prefs.updated`
+// fan-out; it is keyed by identityId because row ids (channel keys, character
+// names) differ per identity. Each section holds an ordered list of row ids;
+// a row absent from that list (a channel joined or a bookmark added after the
+// last drag) sorts stably after the ordered ones, so new rows append at the
+// end and the saved order is otherwise preserved.
+//
+// It used to live in localStorage under `emberchat.sidebarOrder`;
+// `legacySidebarOrders` reads that key once so an existing order seeds the
+// pref on first load (see Sidebar.tsx), after which prefs are the only truth.
 
 import { SIDEBAR_SECTIONS, type SidebarSection } from "./sidebar-sections.js";
 
@@ -14,7 +18,7 @@ export type SidebarOrders = Partial<Record<SidebarSection, string[]>>;
 /** identityId → per-section ordered row-id lists. */
 export type SidebarOrderMap = Record<string, SidebarOrders>;
 
-const STORAGE_KEY = "emberchat.sidebarOrder";
+const LEGACY_STORAGE_KEY = "emberchat.sidebarOrder";
 
 /**
  * Reorder `rows` by the saved id list: ids present in `order` come first in
@@ -69,11 +73,14 @@ export function moveRow(
   return without;
 }
 
-/** Read the persisted order map; anything malformed resolves to empty. */
-export function loadSidebarOrders(): SidebarOrderMap {
+/**
+ * Read the pre-#412 localStorage order map; anything malformed resolves to
+ * empty. Only used to seed the synced pref once, then the key is dropped.
+ */
+export function legacySidebarOrders(): SidebarOrderMap {
   let parsed: unknown;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (raw === null) {
       return {};
     }
@@ -113,25 +120,26 @@ export function sectionOrder(
 }
 
 /**
- * Return a new map with one identity's section order replaced, and persist it.
- * Pure aside from the write — returns the next map so callers drive React
- * state from it.
+ * Return a new map with one identity's section order replaced — pure; the
+ * caller patches it onto the `sidebarOrder` pref (one write per drop).
  */
-export function saveSectionOrder(
+export function withSectionOrder(
   map: SidebarOrderMap,
   identityId: string,
   section: SidebarSection,
   ids: readonly string[],
 ): SidebarOrderMap {
-  const next: SidebarOrderMap = {
+  return {
     ...map,
     [identityId]: { ...map[identityId], [section]: [...ids] },
   };
+}
+
+/** Drop the pre-#412 localStorage key once its contents have been synced. */
+export function clearLegacySidebarOrders(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch {
-    // Storage may be unavailable (private mode) — the reorder still holds for
-    // this tab's lifetime via the returned map.
+    // Storage may be unavailable (private mode) — nothing to clean up then.
   }
-  return next;
 }
