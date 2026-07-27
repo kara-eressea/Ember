@@ -44,6 +44,7 @@ import { useRailStore } from "../../stores/rail.js";
 import { railHidden } from "../../lib/rail-visibility.js";
 import { Avatar } from "../common/Avatar.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
+import { isPrivateRoom } from "../chat/invite-targets.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
 import { SectionOfflineMenu } from "../chat/SectionOfflineMenu.js";
 import { matchScore } from "./quick-switch.js";
@@ -55,11 +56,11 @@ import {
 import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
 import {
   applyManualOrder,
-  loadSidebarOrders,
+  clearLegacySidebarOrders,
+  legacySidebarOrders,
   moveRow,
-  saveSectionOrder,
   sectionOrder,
-  type SidebarOrderMap,
+  withSectionOrder,
 } from "./sidebar-reorder.js";
 import {
   loadCollapsedSections,
@@ -142,12 +143,34 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   const openSection = (section: SidebarSection) =>
     filtering || collapsed[section] !== true;
 
-  // Drag-to-reorder (#391): a per-identity, per-device manual order kept in
-  // localStorage. Reordering is disabled while the toolbar filter is active —
-  // a filtered subset isn't the real section order. `drag` tracks the row
-  // being dragged and the current drop target/side so a subtle indicator can
-  // render; `orders` is the persisted map, held in state so a drop re-renders.
-  const [orders, setOrders] = useState<SidebarOrderMap>(loadSidebarOrders);
+  // Drag-to-reorder (#391): a per-identity manual order, synced through the
+  // `sidebarOrder` pref (#412) so every attached browser agrees and a drop
+  // lands live on the other clients' `prefs.updated`. Reordering is disabled
+  // while the toolbar filter is active — a filtered subset isn't the real
+  // section order. `drag` tracks the row being dragged and the current drop
+  // target/side so a subtle indicator can render. One pref write per drop.
+  const orders = session.prefs.sidebarOrder;
+  // One-shot migration off the pre-#412 localStorage key: if this browser
+  // still holds a drag order and the synced pref has none, push it up once
+  // and drop the key. After that the pref is the only source of truth, so a
+  // stale copy on another device can never resurrect an old order.
+  const identityId = session.identityId;
+  const hasSyncedOrder = Object.keys(orders).length > 0;
+  useEffect(() => {
+    const legacy = legacySidebarOrders();
+    if (Object.keys(legacy).length === 0) {
+      return;
+    }
+    if (hasSyncedOrder) {
+      clearLegacySidebarOrders();
+      return;
+    }
+    void patchPrefs(identityId, { sidebarOrder: legacy }).then((ok) => {
+      if (ok) {
+        clearLegacySidebarOrders();
+      }
+    });
+  }, [identityId, hasSyncedOrder]);
   const [drag, setDrag] = useState<{
     section: SidebarSection;
     draggedId: string;
@@ -190,9 +213,14 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           id,
           drag.position ?? "before",
         );
-        setOrders((map) =>
-          saveSectionOrder(map, session.identityId, section, next),
-        );
+        void patchPrefs(session.identityId, {
+          sidebarOrder: withSectionOrder(
+            orders,
+            session.identityId,
+            section,
+            next,
+          ),
+        });
         setDrag(undefined);
       },
       onDragEnd: () => {
@@ -452,6 +480,10 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       });
   };
 
+  // Sidebar avatars/tokens (#416) — on by default, off restores the denser
+  // text-only rows. The row's own dot and colouring are unaffected either way.
+  const avatars = session.prefs.sidebarAvatars;
+
   const channelRow = (channel: ChannelView, pinned: boolean) => (
     <NavRow
       key={`c:${channel.key}`}
@@ -461,6 +493,8 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       mentions={channel.mentions}
       pinned={pinned}
       glyph="#"
+      avatars={avatars}
+      token={isPrivateRoom(channel.key) ? "private" : "official"}
       label={decodeWireEntities(channel.title)}
       drag={rowDrag("channels", channel.key, channelIds)}
       affordance={{
@@ -490,6 +524,8 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       pinned={pinned}
       dot={presenceDot(dm.online, dm.status)}
       offline={!dm.online}
+      avatars={avatars}
+      avatarName={dm.partner}
       label={dm.partner}
       drag={rowDrag("dms", dm.partner.toLowerCase(), dmIds)}
       affordance={{
@@ -1019,6 +1055,41 @@ function dragWrapProps(drag: RowDrag | undefined) {
   };
 }
 
+/** Sidebar row avatar (#416): the same F-List image the member list uses, at
+ * 20px, with the member-list status dot overlaid bottom-right. Decorative —
+ * the row's own dot, colouring and label carry the meaning. */
+const SIDEBAR_AVATAR_SIZE = 20;
+
+function RowAvatar({ name, dot }: { name: string; dot?: DotKind }) {
+  return (
+    <span className={styles.navAvatar} data-testid="sidebar-avatar">
+      <Avatar name={name} size={SIDEBAR_AVATAR_SIZE} />
+      {dot !== undefined && (
+        <span className={`${styles.navAvatarDot} ${DOT_CLASS[dot]}`} />
+      )}
+    </span>
+  );
+}
+
+/** Channel counterpart of the row avatar: a round accent-tinted token with a
+ * # glyph, a lighter tint for private (ADH-) rooms than official channels. */
+function ChannelToken({ kind }: { kind: "official" | "private" }) {
+  const classes = [styles.navToken];
+  if (kind === "private") {
+    classes.push(styles.navTokenPrivate ?? "");
+  }
+  return (
+    <span
+      className={classes.join(" ")}
+      data-testid="sidebar-token"
+      data-kind={kind}
+      aria-hidden
+    >
+      #
+    </span>
+  );
+}
+
 interface NavRowProps {
   to: string;
   active: boolean;
@@ -1029,6 +1100,13 @@ interface NavRowProps {
   glyph?: string;
   dot?: DotKind;
   offline?: boolean;
+  /** Sidebar avatars/tokens pref (#416). Off = the text-only row. */
+  avatars?: boolean;
+  /** Character whose avatar leads the row (DM rows). */
+  avatarName?: string;
+  /** Channel rows get a round # token instead of the bare glyph, tinted by
+   * room kind: official public channels vs private (ADH-) rooms. */
+  token?: "official" | "private";
   affordance?: RowAffordance;
   drag?: RowDrag;
   onContextMenu?: (event: ReactMouseEvent) => void;
@@ -1044,6 +1122,9 @@ function NavRow({
   glyph,
   dot,
   offline,
+  avatars = false,
+  avatarName,
+  token,
   affordance,
   drag,
   onContextMenu,
@@ -1077,8 +1158,15 @@ function NavRow({
         draggable={false}
         onContextMenu={onContextMenu}
       >
-        {glyph !== undefined && (
-          <span className={styles.navGlyph}>{glyph}</span>
+        {avatars && token !== undefined ? (
+          <ChannelToken kind={token} />
+        ) : (
+          glyph !== undefined && (
+            <span className={styles.navGlyph}>{glyph}</span>
+          )
+        )}
+        {avatars && avatarName !== undefined && (
+          <RowAvatar name={avatarName} dot={dot} />
         )}
         {dot !== undefined && (
           <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
@@ -1471,6 +1559,12 @@ function SocialRow({
           : "offline"
       }
     >
+      {session.prefs.sidebarAvatars && (
+        <RowAvatar
+          name={character.name}
+          dot={presenceDot(character.online, character.status)}
+        />
+      )}
       <span
         className={`${styles.navDot} ${DOT_CLASS[presenceDot(character.online, character.status)]}`}
       />

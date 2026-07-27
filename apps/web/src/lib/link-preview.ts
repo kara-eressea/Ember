@@ -3,7 +3,11 @@
 // data-driven — a direct-media extension test; a small set of hosts that
 // serve direct media at *any* path (no extension in the URL, #384); and a
 // per-host rewrite table for page URLs whose direct-media form is derivable
-// client-side. Everything else is a plain link; there is no server proxy
+// client-side. As a final step, a URL on the user's own image-preview
+// allowlist is hotlinked as an image even without an extension (#410) —
+// many CDNs (cdn.bsky.app) never carry one, and the allowlist is exactly
+// the user saying "images live here". Everything else is a plain link;
+// there is no server proxy
 // and no oEmbed — a preview is only ever a plain image/video request from
 // the viewer's browser to the host.
 
@@ -149,6 +153,21 @@ export function resolvePreview(
             break;
           }
         }
+      }
+      if (
+        source === undefined &&
+        allowHosts !== undefined &&
+        hostAllowed(url.host, allowHosts)
+      ) {
+        // A host the user put on their own preview allowlist (or one of the
+        // shipped defaults): plenty of image CDNs serve extensionless URLs —
+        // Bluesky's `cdn.bsky.app/img/feed_fullsize/plain/<did>/<cid>` is the
+        // reported case (#410). Rather than chase per-host path grammars, we
+        // trust the allowlist: the user said "images live here", so hotlink
+        // the URL as an image. If it turns out not to be one the panel's
+        // quiet not-found state (#193) keeps the raw link clickable. Hosts
+        // *not* on the allowlist are unaffected — still plain links.
+        source = { src: href, kind: "image", host: url.host, path };
       }
     }
   }

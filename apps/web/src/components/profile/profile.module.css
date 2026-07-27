@@ -74,9 +74,18 @@
   white-space: nowrap;
 }
 
+/* One fixed square box per control (#413) so refresh, full-size and close
+   present at the same size and share one hit target — the glyphs differ in
+   advance width, which used to make the buttons (and the icons) look uneven. */
 .windowControl {
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
   font-size: 14px;
+  line-height: 1;
   color: var(--eb-dim);
   cursor: pointer;
   background: none;
@@ -1092,7 +1101,8 @@
 }
 
 .bbCollapseChevron {
-  font-size: 10px;
+  /* Matches the collapse chevrons elsewhere in the app (#414). */
+  font-size: 11px;
   color: var(--eb-accent);
   transition: transform 0.12s;
 }

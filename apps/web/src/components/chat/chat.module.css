@@ -269,7 +269,11 @@
   align-items: baseline;
   padding: 2px 16px;
   color: var(--eb-dim);
-  font-size: var(--eb-msg-font, 12.5px);
+  /* Same type ramp as a chat body (#409): size *and* line-height, with the
+     same fallback, so a system line never reads a step off the messages
+     around it. Only the colour and the italic set it apart. */
+  font-size: var(--eb-msg-font, 13px);
+  line-height: 1.5;
   font-style: italic;
 }
 
@@ -310,7 +314,7 @@
 }
 
 .adBlockBody {
-  font-size: var(--eb-msg-font, 12.5px);
+  font-size: var(--eb-msg-font, 13px);
   line-height: 1.5;
 }
 
@@ -333,7 +337,16 @@
   align-items: baseline;
   padding: 2px 16px;
   color: var(--eb-dim);
-  font-size: var(--eb-msg-font, 12.5px);
+  font-size: var(--eb-msg-font, 13px);
+  line-height: 1.5;
+}
+
+/* The roller name sits mid-sentence inside the die line, so it takes the
+   body's sans face rather than the mono of a gutter sender name (#409): mono
+   and sans at one px size read as two different sizes inline. Colour and
+   weight still mark it as a name (#337/#338). */
+.rollLine .nick {
+  font-family: inherit;
 }
 
 /* Name-only eicon display: chip + hover preview (M5, decisions.md §8). */
@@ -485,7 +498,8 @@
   align-items: center;
   gap: 10px;
   min-height: 46px;
-  padding: 8px 14px;
+  /* 12px + the input's own 2px inset = the 14px optical gutter (#408). */
+  padding: 8px 12px;
   /* The whole bar is click-to-type (#313/#317), so the whole bar shows the
    * text I-beam on hover (#394) — not just the single-line input inside it. */
   cursor: text;
@@ -502,7 +516,15 @@
   background: none;
   color: var(--eb-text);
   font-size: 13.5px;
-  line-height: 1.5;
+  /* Whole pixels: a fractional line box (13.5 × 1.5 = 20.25px) leaves the
+     caret taller than the rounded content box, which clips it (#408). */
+  line-height: 20px;
+  /* Inset so the scroll box never clips the caret against its own edges —
+     the caret is drawn half a pixel outside the text origin on the first
+     column, and one line-box short at the bottom. Padding is inside the
+     autogrow measurement (scrollHeight includes it, box-sizing is
+     border-box), so the input still sizes exactly to its content. */
+  padding: 1px 2px;
   resize: none;
   outline: none;
 }
@@ -628,11 +650,13 @@
   background: var(--eb-hover);
 }
 
+/* Same treatment as the sidebar section chevron (#414): legible size, meta
+   tone — a state marker, not decoration. The mono face is dropped; it renders
+   the triangle thinner than the UI face at the same size. */
 .offlineChevron {
   flex: none;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(9px * var(--eb-font-ui-scale));
-  color: var(--eb-faint);
+  font-size: calc(11px * var(--eb-font-ui-scale));
+  color: var(--eb-meta);
   transition: transform 0.15s;
 }
 

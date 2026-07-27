@@ -23,6 +23,14 @@ import { dispatchFrame } from "./dispatch.js";
 const ACK_TIMEOUT_MS = 15_000;
 /** Well under MAX_FRAMES_PER_MINUTE; detects dead sockets behind NATs. */
 const PING_INTERVAL_MS = 30_000;
+/**
+ * A socket whose ping went unanswered for this long is dead in a way the
+ * browser never reports (sleep/resume, a NAT or proxy dropping an idle
+ * tunnel): it stays readyState OPEN while nothing arrives, so the tab shows
+ * "online" and quietly stops updating. Close it and reconnect — the hello's
+ * resume cursors replay whatever was missed (#407).
+ */
+const PONG_TIMEOUT_MS = 10_000;
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 
@@ -56,6 +64,7 @@ export class GatewayClient {
    * really is signed out and the auth store redirect takes over. */
   #authRetried = false;
   #pingTimer: ReturnType<typeof setInterval> | undefined;
+  #pongTimer: ReturnType<typeof setTimeout> | undefined;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Idempotent: safe to call from every AppShell mount. */
@@ -157,6 +166,12 @@ export class GatewayClient {
       }
       this.#pingTimer = setInterval(() => {
         this.#sendFrame({ t: "ping" });
+        this.#pongTimer ??= setTimeout(() => {
+          this.#pongTimer = undefined;
+          if (this.#ws === ws) {
+            ws.close(1000, "no pong");
+          }
+        }, PONG_TIMEOUT_MS);
       }, PING_INTERVAL_MS);
     };
 
@@ -171,6 +186,11 @@ export class GatewayClient {
         this.#backoffMs = RECONNECT_MIN_MS;
         this.#authRetried = false;
         useUiStore.getState().setGatewayStatus("online");
+      }
+      // Any frame proves the socket is alive, not just the pong itself.
+      if (this.#pongTimer) {
+        clearTimeout(this.#pongTimer);
+        this.#pongTimer = undefined;
       }
       if (frame.t === "ack") {
         const pending = this.#pending.get(frame.id);
@@ -242,6 +262,10 @@ export class GatewayClient {
     if (this.#pingTimer) {
       clearInterval(this.#pingTimer);
       this.#pingTimer = undefined;
+    }
+    if (this.#pongTimer) {
+      clearTimeout(this.#pongTimer);
+      this.#pongTimer = undefined;
     }
     for (const [, pending] of this.#pending) {
       clearTimeout(pending.timer);

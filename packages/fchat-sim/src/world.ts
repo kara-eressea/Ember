@@ -284,6 +284,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Moss Fen", "Reed Marsh"],
     },
+    // Reserved for the #407 multi-attach E2E (same parallelism rule). Cedar
+    // Vale is the browser identity two devices attach to; Bark Wren is the
+    // raw-SimClient partner whose channel messages must keep reaching the
+    // first device after the second one attaches.
+    "cedar@example.test": {
+      password: "hunter2",
+      characters: ["Cedar Vale", "Bark Wren"],
+    },
   },
   channels: [
     {

@@ -43,6 +43,17 @@ export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
  * plain links. */
 export const LINK_PREVIEW_MODES = ["off", "hover", "click"] as const;
 
+/** The sidebar's four reorderable/collapsible sections. Lives here because
+ * the manual drag order (#391) is a synced pref keyed by section (#412);
+ * the web sidebar re-exports this list. */
+export const SIDEBAR_SECTIONS = [
+  "channels",
+  "dms",
+  "friends",
+  "bookmarks",
+] as const;
+export type SidebarSection = (typeof SIDEBAR_SECTIONS)[number];
+
 /** Matches the eicon-name charset the URL builder accepts (web avatar.ts). */
 export const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
 
@@ -68,6 +79,9 @@ export const DEFAULT_IMAGE_PREVIEW_HOSTS = [
   "cdn.discordapp.com",
   "media.discordapp.net",
   "xariah.net",
+  // Bluesky's image CDN: /img/feed_fullsize/plain/<did>/<cid>@jpeg — direct
+  // images with no file extension in the path (#410).
+  "cdn.bsky.app",
   // x.com / twitter.com status links are rewritten to fixvx's direct-media
   // host for the embed fetch (web link-preview.ts); d.fixvx.com redirects to
   // the raw media on pbs.twimg.com (already listed above). fixvx.com is
@@ -113,6 +127,10 @@ const prefsShape = {
    * ok/warn/danger move to an Okabe–Ito-derived set and the away/offline
    * dots gain distinct shapes so hue is never the only signal. */
   colorblindMode: z.boolean(),
+  /** Small round avatars (people) and # tokens (channels) on the sidebar
+   * rows (#416). Off restores the denser text-only rows; the status dot and
+   * colouring on the row itself stay either way. */
+  sidebarAvatars: z.boolean(),
   /** Timestamp rendering in the log. */
   timestampFormat: z.enum(TIMESTAMP_FORMATS),
   use24HourClock: z.boolean(),
@@ -228,6 +246,23 @@ const prefsShape = {
       }),
     )
     .max(12),
+  /** Manual sidebar drag order (#391), synced so every attached browser
+   * agrees (#412). Keyed identityId → section → ordered row ids (channel
+   * keys, lowercased character names); a row absent from a list sorts after
+   * the ordered ones. Pins (#169) and presence grouping (#164) still sort
+   * first — this order applies within those groups. Patches replace the
+   * whole record (same convention as channelAdView). */
+  sidebarOrder: z
+    .record(
+      z.string().min(1).max(64),
+      z.partialRecord(
+        z.enum(SIDEBAR_SECTIONS),
+        z.array(z.string().min(1).max(128)).max(500),
+      ),
+    )
+    .refine((value) => Object.keys(value).length <= 50, {
+      message: "too many identities in the sidebar order",
+    }),
   /** Channel view default (M10, replaces M6's hideAds boolean): what a
    * channel shows unless overridden — "both" everything, "chat" hides ad
    * rows, "ads" hides chat rows. Ads never count toward unread regardless
@@ -277,6 +312,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   uiFontSize: "m",
   uiScale: 100,
   colorblindMode: false,
+  sidebarAvatars: true,
   timestampFormat: "time",
   use24HourClock: true,
   groupConsecutive: false,
@@ -312,6 +348,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   mutedIdentityIds: [],
   mutedConvIds: [],
   savedSearches: [],
+  sidebarOrder: {},
   adViewDefault: "both",
   channelAdView: {},
 };

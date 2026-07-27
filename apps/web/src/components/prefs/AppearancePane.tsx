@@ -114,6 +114,19 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
 
+      <FieldRow
+        label="Show avatars in the sidebar"
+        help="Off makes the channel and people rows shorter, with names only"
+      >
+        <Toggle
+          label="Show avatars in the sidebar"
+          checked={prefs.sidebarAvatars}
+          onChange={(sidebarAvatars) => {
+            set({ sidebarAvatars });
+          }}
+        />
+      </FieldRow>
+
       <GroupLabel>Messages</GroupLabel>
       <FieldRow label="Message density">
         <Segmented

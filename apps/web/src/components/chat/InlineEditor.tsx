@@ -128,10 +128,12 @@ const theme = EditorView.theme({
     minWidth: "0",
     color: "var(--eb-text)",
     fontSize: "13.5px",
-    lineHeight: "1.5",
+    // Whole-pixel line box + a 1px/2px inset, exactly like the textarea, so
+    // the caret is never clipped against the scroller edge (#408).
+    lineHeight: "20px",
   },
   ".cm-content": {
-    padding: "0",
+    padding: "1px 2px",
     fontFamily: "inherit",
     caretColor: "var(--eb-text)",
   },

@@ -63,6 +63,7 @@ declare module "fastify" {
     detachedAway: DetachedAway;
     directory: ChannelDirectory;
     imagePreviewHosts: ImagePreviewHostRegistry;
+    gatewayHub: GatewayHub;
   }
 }
 
@@ -76,6 +77,8 @@ export interface BuildAppOptions {
   sessionTuning?: SessionTuning;
   /** Test-only clock for the detached-away sweep. */
   detachedAwayNow?: () => number;
+  /** Gateway heartbeat period (test-only; production uses HEARTBEAT_MS). */
+  gatewayHeartbeatMs?: number;
   /** Test-only directory cooldown/timeout knobs. */
   directoryTuning?: ChannelDirectoryOptions;
   /** Injectable for tests (drain/inspect the profile budget). */
@@ -89,6 +92,7 @@ export async function buildApp({
   flistApiClient,
   sessionTuning,
   detachedAwayNow,
+  gatewayHeartbeatMs,
   directoryTuning,
   characterDataBudget,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -222,6 +226,7 @@ export async function buildApp({
   detachedAway.start();
   app.decorate("detachedAway", detachedAway);
   app.decorate("imagePreviewHosts", imagePreviewHosts);
+  app.decorate("gatewayHub", hub);
   const sessionJanitor = new SessionJanitor({ db, logger: app.log });
   sessionJanitor.start();
   const updates = new UpdateChecker({
@@ -382,6 +387,9 @@ export async function buildApp({
     imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
+    ...(process.env.NODE_ENV === "test" && gatewayHeartbeatMs !== undefined
+      ? { heartbeatMs: gatewayHeartbeatMs }
+      : {}),
     // Browsers may open the gateway from the app's own origin or any
     // configured CORS origin; anything else is a hostile page. The two
     // loopback spellings are treated as one so a local `docker compose up`

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolvePrefs, userPrefsPatchSchema } from "@emberchat/protocol";
 import {
   applyManualOrder,
-  loadSidebarOrders,
+  clearLegacySidebarOrders,
+  legacySidebarOrders,
   moveRow,
-  saveSectionOrder,
   sectionOrder,
+  withSectionOrder,
   type SidebarOrderMap,
 } from "./sidebar-reorder.js";
 
@@ -99,7 +101,44 @@ describe("moveRow", () => {
   });
 });
 
-describe("persistence", () => {
+describe("withSectionOrder", () => {
+  it("round-trips a section order per identity", () => {
+    const map = withSectionOrder({}, "id-1", "channels", ["c", "a", "b"]);
+    expect(sectionOrder(map, "id-1", "channels")).toEqual(["c", "a", "b"]);
+  });
+
+  it("keeps identities and sections independent", () => {
+    let map: SidebarOrderMap = withSectionOrder({}, "id-1", "channels", ["a"]);
+    map = withSectionOrder(map, "id-1", "dms", ["x", "y"]);
+    map = withSectionOrder(map, "id-2", "channels", ["b"]);
+    expect(sectionOrder(map, "id-1", "channels")).toEqual(["a"]);
+    expect(sectionOrder(map, "id-1", "dms")).toEqual(["x", "y"]);
+    expect(sectionOrder(map, "id-2", "channels")).toEqual(["b"]);
+    expect(sectionOrder(map, "id-2", "dms")).toBeUndefined();
+  });
+
+  it("does not mutate the input map", () => {
+    const map: SidebarOrderMap = { "id-1": { channels: ["a"] } };
+    withSectionOrder(map, "id-1", "channels", ["b"]);
+    expect(map).toEqual({ "id-1": { channels: ["a"] } });
+  });
+
+  it("produces a value the synced prefs schema accepts", () => {
+    const map = withSectionOrder({}, "id-1", "friends", ["ann", "bo"]);
+    const parsed = userPrefsPatchSchema.safeParse({ sidebarOrder: map });
+    expect(parsed.success).toBe(true);
+    expect(resolvePrefs({ sidebarOrder: map }).sidebarOrder).toEqual(map);
+  });
+
+  it("rejects an unknown section in the synced pref", () => {
+    const parsed = userPrefsPatchSchema.safeParse({
+      sidebarOrder: { "id-1": { nope: ["a"] } },
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("legacy localStorage migration", () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -108,29 +147,22 @@ describe("persistence", () => {
     vi.restoreAllMocks();
   });
 
-  it("round-trips a saved section order per identity", () => {
-    const map = saveSectionOrder({}, "id-1", "channels", ["c", "a", "b"]);
-    expect(sectionOrder(map, "id-1", "channels")).toEqual(["c", "a", "b"]);
-    // Reload from storage sees the same thing.
-    const reloaded = loadSidebarOrders();
-    expect(sectionOrder(reloaded, "id-1", "channels")).toEqual(["c", "a", "b"]);
-  });
-
-  it("keeps identities and sections independent", () => {
-    let map: SidebarOrderMap = saveSectionOrder({}, "id-1", "channels", ["a"]);
-    map = saveSectionOrder(map, "id-1", "dms", ["x", "y"]);
-    map = saveSectionOrder(map, "id-2", "channels", ["b"]);
-    expect(sectionOrder(map, "id-1", "channels")).toEqual(["a"]);
-    expect(sectionOrder(map, "id-1", "dms")).toEqual(["x", "y"]);
-    expect(sectionOrder(map, "id-2", "channels")).toEqual(["b"]);
-    expect(sectionOrder(map, "id-2", "dms")).toBeUndefined();
+  it("reads the pre-#412 key so it can seed the pref", () => {
+    localStorage.setItem(
+      "emberchat.sidebarOrder",
+      JSON.stringify({ "id-1": { channels: ["c", "a"] } }),
+    );
+    const map = legacySidebarOrders();
+    expect(sectionOrder(map, "id-1", "channels")).toEqual(["c", "a"]);
+    // What it yields must survive the round-trip through the prefs schema.
+    expect(resolvePrefs({ sidebarOrder: map }).sidebarOrder).toEqual(map);
   });
 
   it("resolves malformed storage to an empty map", () => {
     localStorage.setItem("emberchat.sidebarOrder", "{not json");
-    expect(loadSidebarOrders()).toEqual({});
+    expect(legacySidebarOrders()).toEqual({});
     localStorage.setItem("emberchat.sidebarOrder", "[]");
-    expect(loadSidebarOrders()).toEqual({});
+    expect(legacySidebarOrders()).toEqual({});
   });
 
   it("drops non-string and non-array entries when loading", () => {
@@ -141,19 +173,23 @@ describe("persistence", () => {
         bad: 5,
       }),
     );
-    const map = loadSidebarOrders();
+    const map = legacySidebarOrders();
     expect(sectionOrder(map, "id-1", "channels")).toBeUndefined();
     expect(sectionOrder(map, "id-1", "dms")).toBeUndefined();
     expect(sectionOrder(map, "id-1", "friends")).toEqual(["ok"]);
     expect(map["bad"]).toBeUndefined();
   });
 
+  it("clears the legacy key once migrated", () => {
+    localStorage.setItem("emberchat.sidebarOrder", JSON.stringify({}));
+    clearLegacySidebarOrders();
+    expect(localStorage.getItem("emberchat.sidebarOrder")).toBeNull();
+  });
+
   it("survives an unavailable localStorage without throwing", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
       throw new Error("denied");
     });
-    const map = saveSectionOrder({}, "id-1", "channels", ["a"]);
-    // The in-memory map still reflects the change for this tab's lifetime.
-    expect(sectionOrder(map, "id-1", "channels")).toEqual(["a"]);
+    expect(() => clearLegacySidebarOrders()).not.toThrow();
   });
 });
