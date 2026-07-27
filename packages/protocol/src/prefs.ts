@@ -79,6 +79,9 @@ export const DEFAULT_IMAGE_PREVIEW_HOSTS = [
   "cdn.discordapp.com",
   "media.discordapp.net",
   "xariah.net",
+  // Bluesky's image CDN: /img/feed_fullsize/plain/<did>/<cid>@jpeg — direct
+  // images with no file extension in the path (#410).
+  "cdn.bsky.app",
   // x.com / twitter.com status links are rewritten to fixvx's direct-media
   // host for the embed fetch (web link-preview.ts); d.fixvx.com redirects to
   // the raw media on pbs.twimg.com (already listed above). fixvx.com is

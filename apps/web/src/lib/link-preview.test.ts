@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_IMAGE_PREVIEW_HOSTS } from "@emberchat/protocol";
 import {
   chipHost,
   chipLabel,
@@ -189,6 +190,70 @@ describe("resolvePreview allowlist gating (#215)", () => {
     expect(resolvePreview("https://cdn.example.com/pic.png")).toMatchObject({
       kind: "image",
     });
+  });
+});
+
+describe("extensionless URLs on allowlisted hosts (#410)", () => {
+  it("previews a Bluesky CDN image with no extension in the path", () => {
+    const href =
+      "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:abc123/bafkreiabc123@jpeg";
+    expect(
+      resolvePreview(href, [...DEFAULT_IMAGE_PREVIEW_HOSTS]),
+    ).toMatchObject({ kind: "image", src: href, host: "cdn.bsky.app" });
+  });
+
+  it("ships cdn.bsky.app on the default allowlist", () => {
+    expect(DEFAULT_IMAGE_PREVIEW_HOSTS).toContain("cdn.bsky.app");
+  });
+
+  it("previews any extensionless path on a user-added host", () => {
+    expect(
+      resolvePreview("https://media.example.com/asset/9f8e7d", [
+        "media.example.com",
+      ]),
+    ).toMatchObject({
+      kind: "image",
+      src: "https://media.example.com/asset/9f8e7d",
+    });
+    // Subdomain matching still applies.
+    expect(
+      resolvePreview("https://img.example.com/asset/9f8e7d", ["example.com"]),
+    ).toMatchObject({ kind: "image" });
+  });
+
+  it("leaves non-allowlisted hosts as plain links", () => {
+    expect(
+      resolvePreview("https://cdn.example.com/asset/9f8e7d", [
+        "static.f-list.net",
+      ]),
+    ).toBeUndefined();
+    // And with no allowlist at all the extension requirement still holds.
+    expect(
+      resolvePreview("https://cdn.example.com/asset/9f8e7d"),
+    ).toBeUndefined();
+  });
+
+  it("still prefers a page→direct rewrite over the raw URL", () => {
+    expect(
+      resolvePreview("https://gyazo.com/0123456789abcdef01234567", [
+        "gyazo.com",
+        "i.gyazo.com",
+      ]),
+    ).toMatchObject({
+      src: "https://i.gyazo.com/0123456789abcdef01234567.png",
+    });
+  });
+
+  it("keeps video extensions classified as video on allowlisted hosts", () => {
+    expect(
+      resolvePreview("https://media.example.com/clip.mp4", [
+        "media.example.com",
+      ]),
+    ).toMatchObject({ kind: "video" });
+  });
+
+  it("unchanged: a bare extensionless host page is a plain link off-list", () => {
+    expect(resolvePreview("https://example.com/some/page")).toBeUndefined();
   });
 });
 

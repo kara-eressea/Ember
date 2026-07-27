@@ -281,6 +281,23 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await delay(300);
   await expect(panel).not.toBeVisible();
 
+  // An extensionless URL on an allowlisted host previews too (#410): CDNs
+  // like cdn.bsky.app never carry a file extension, so the allowlist alone
+  // makes the link embeddable. (static.f-list.net stands in here — the
+  // intercept serves the fixture PNG for any path.)
+  await input.fill("https://static.f-list.net/img/plain/bafkrei123");
+  await input.press("Enter");
+  const extensionless = log.getByRole("link", { name: /bafkrei123/ });
+  await expect(extensionless).toBeVisible({ timeout: 10_000 });
+  await expect(extensionless).toContainText("▣");
+  await extensionless.click();
+  const extPanel = page.getByRole("dialog", {
+    name: /Preview: static\.f-list\.net\/img\/plain\/bafkrei123/,
+  });
+  await expect(extPanel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(extPanel).not.toBeVisible();
+
   // ── Delayed send: Timer popover + pending affordance + recall ─────────
   // The Timer button (toolbar, #205) owns the send delay now: arming it
   // flips the button to the accent-filled treatment with the delay label.
