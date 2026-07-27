@@ -149,7 +149,9 @@ export function ProfileViewer({
               });
             }}
           >
-            {fullscreen ? "⤡" : "⛶"}
+            {/* Arrow-family glyphs, not ⛶ (#413): the geometric-shapes box
+                renders a step larger than the ✕ beside it in every UI face. */}
+            {fullscreen ? "⤡" : "⤢"}
           </button>
           <button
             type="button"
@@ -632,7 +634,9 @@ function FetchedControl({
             void loadProfile(identityId, name, true);
           }}
         >
-          ⟳
+          {/* ↻ (arrows block) matches the close/fullscreen glyph size (#413);
+              ⟳ from supplemental-arrows-A renders oversized. */}
+          ↻
           {tooltip && response.budgetExhausted && (
             <span className={styles.tooltip} role="tooltip">
               Hourly profile budget exhausted — showing cached copy.
