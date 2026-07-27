@@ -439,6 +439,23 @@ describe("presence", () => {
     expect(session().prefs.accent).toBe("moss");
   });
 
+  it("a sidebar reorder on another client lands over prefs.updated (#412)", () => {
+    dispatchFrame(snapshot());
+    expect(session().prefs.sidebarOrder).toEqual({});
+    // Another attached browser drops a row; the server fans the merged
+    // document back out and this client's sidebar order follows.
+    const sidebarOrder = {
+      [IDENTITY]: { channels: ["b", "a"], friends: ["zoe"] },
+    };
+    dispatchFrame(
+      event("prefs.updated", {
+        sendDelaySeconds: 0,
+        prefs: { ...PREFS_DEFAULTS, sidebarOrder },
+      }),
+    );
+    expect(session().prefs.sidebarOrder).toEqual(sidebarOrder);
+  });
+
   it("synthesizes live-only join/part/quit lines, idempotently", () => {
     dispatchFrame(snapshot());
     const lines = () =>

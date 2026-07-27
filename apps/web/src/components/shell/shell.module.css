@@ -395,10 +395,13 @@
   color: var(--eb-text);
 }
 
+/* Collapse/expand chevron (#414): the triangles were set at the decorative
+   floor (9px, --eb-faint) and read as smudges. They carry real state — open
+   vs collapsed — so they take a legible size and the readable meta tone. */
 .sectionChevron {
-  width: 10px;
-  font-size: calc(9px * var(--eb-font-ui-scale));
-  color: var(--eb-faint);
+  width: 12px;
+  font-size: calc(11px * var(--eb-font-ui-scale));
+  color: var(--eb-meta);
 }
 
 /* Actionable channel-invite row (inbound CIU). */
@@ -512,6 +515,51 @@
   height: 7px;
   border-radius: 50%;
   flex: none;
+}
+
+/* Sidebar avatars (#416): a 20px round avatar with the member-list status dot
+   overlaid bottom-right. Sits alongside the row's own dot, never replacing it.
+   Rows carrying one grow a little to fit. */
+.navAvatar {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+.navAvatarDot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 2px solid var(--eb-side);
+}
+
+/* Channel counterpart of the avatar: a round accent-tinted token with a #
+   glyph. Private (ADH-) rooms take the quieter tint. */
+.navToken {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--eb-accent-med);
+  color: var(--eb-text);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: calc(11px * var(--eb-font-ui-scale));
+}
+
+.navTokenPrivate {
+  background: var(--eb-accent-soft);
+  color: var(--eb-faint);
+}
+
+.navItem:has(.navAvatar),
+.navItem:has(.navToken) {
+  padding-block: 4px;
 }
 
 .navLabel {
