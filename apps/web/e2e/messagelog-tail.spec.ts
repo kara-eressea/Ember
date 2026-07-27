@@ -183,6 +183,83 @@ test("new-messages bar hides when unreads fit on screen; Esc clears the divider 
   }
 });
 
+test("scrolling down to the newest messages clears the unread bar (#415)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "quill@example.test", "Quill Marsh");
+
+  const reed = await SimClient.connect(
+    "quill@example.test",
+    "hunter2",
+    "Wick Marsh",
+  );
+  try {
+    const nav = page.getByRole("navigation");
+    const log = page.getByTestId("message-log");
+    const bar = page.getByTestId("new-messages-bar");
+
+    // Read a baseline, then detach and let a large backlog pile up, so the
+    // first unread sits well above the viewport at the tail and the bar has
+    // somewhere to jump to.
+    reed.send("PRI", { recipient: "Quill Marsh", message: "baseline hello" });
+    await nav.getByRole("link", { name: /Wick Marsh/ }).click();
+    await expect(log.getByText("baseline hello")).toBeVisible();
+
+    await page.goto("about:blank");
+    for (let i = 1; i <= 40; i += 1) {
+      reed.send("PRI", {
+        recipient: "Quill Marsh",
+        message: `away ${seedLine(i)}`,
+      });
+      await delay(70);
+    }
+
+    await page.goto("/identities");
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\//);
+    await nav.getByRole("link", { name: /Wick Marsh/ }).click();
+    await expect(log.getByText("away A#40", { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect
+      .poll(() => distanceFromBottom(page), { timeout: 10_000 })
+      .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
+    await expect(bar).toBeVisible();
+
+    // Read the backlog the way a user actually does: wheel UP past the
+    // stick-release hysteresis, so the tail affordances go away…
+    await log.hover();
+    await page.mouse.wheel(0, -1200);
+    await expect(page.getByTestId("jump-to-recent")).toBeVisible();
+    await expect(bar).not.toBeVisible();
+
+    // …then wheel back DOWN to the newest messages under their own steam. No
+    // pill click, no Esc — reaching the tail this way is just as much "I am
+    // caught up", so the bar must not pop back (#415).
+    for (let i = 0; i < 12; i += 1) {
+      if ((await distanceFromBottom(page)) <= AT_BOTTOM_SLACK_PX) {
+        break;
+      }
+      await page.mouse.wheel(0, 600);
+      await delay(150);
+    }
+    await expect
+      .poll(() => distanceFromBottom(page), { timeout: 10_000 })
+      .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
+    await expect(page.getByTestId("jump-to-recent")).not.toBeVisible();
+    await expect(bar).not.toBeVisible();
+    // It stays gone: the acknowledgement is for the whole visit, exactly like
+    // the pill/Esc paths.
+    await delay(1500);
+    await expect(bar).not.toBeVisible();
+  } finally {
+    reed.close();
+  }
+});
+
 test("new-messages bar shows and jumps when the unreads are off screen (#363/#373)", async ({
   page,
 }) => {
