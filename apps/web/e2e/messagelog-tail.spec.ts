@@ -30,6 +30,8 @@ const ROOM_A = "ADH-372taila11bb22cc33";
 const ROOM_A_TITLE = "Tail Room A";
 const ROOM_B = "ADH-372tailb44dd55ee66";
 const ROOM_B_TITLE = "Tail Room B";
+/** An official sim channel — this spec only needs somewhere to switch to. */
+const ROOM_C_TITLE = "Terrarium";
 
 /** A spread of lengths so rows measure much taller than the 26px estimate —
  * the exact condition that made the mount stick land short (#372). */
@@ -320,6 +322,104 @@ test("new-messages bar shows and jumps when the unreads are off screen (#363/#37
       .poll(() => distanceFromBottom(page), { timeout: 10_000 })
       .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
     await expect(bar).not.toBeVisible();
+  } finally {
+    reed.close();
+  }
+});
+
+test("re-opening a conversation left in a search-jump view lands at the tail (#411)", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "quill@example.test", "Quill Marsh");
+  // Somewhere to switch away to — any second conversation will do.
+  await page.getByRole("button", { name: "Browse channels" }).click();
+  const browser = page.getByRole("dialog", { name: "Browse channels" });
+  await browser.getByRole("button", { name: `Join ${ROOM_C_TITLE}` }).click();
+  await expect(
+    page.getByRole("navigation").getByRole("link", { name: ROOM_C_TITLE }),
+  ).toBeVisible({ timeout: 15_000 });
+  await browser.getByRole("button", { name: "Close channel browser" }).click();
+
+  const reed = await SimClient.connect(
+    "quill@example.test",
+    "hunter2",
+    "Wick Marsh",
+  );
+  try {
+    const nav = page.getByRole("navigation");
+    const log = page.getByTestId("message-log");
+    const dmRow = nav.getByRole("link", { name: /Wick Marsh/ });
+
+    // A searchable needle at the very start, then a tall backlog on top of
+    // it, so a jump to the needle lands far from the live tail.
+    reed.send("PRI", {
+      recipient: "Quill Marsh",
+      message: "strandmark anchor",
+    });
+    await delay(120);
+    await dmRow.click();
+    await expect(log.getByText("strandmark anchor")).toBeVisible({
+      timeout: 15_000,
+    });
+    for (let i = 1; i <= 40; i += 1) {
+      reed.send("PRI", {
+        recipient: "Quill Marsh",
+        message: `filler ${seedLine(i)}`,
+      });
+      await delay(70);
+    }
+    await expect(log.getByText("filler A#40", { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Jump to the needle via the log search: the buffer detaches and the log
+    // parks on the old page (the legitimate flow — it must still work).
+    await page.getByRole("button", { name: "Search log" }).first().click();
+    const search = page.getByRole("dialog", { name: "Search log" });
+    await search
+      .getByRole("textbox", { name: "Search messages" })
+      .fill("strandmark");
+    await search
+      .getByRole("textbox", { name: "Search messages" })
+      .press("Enter");
+    await search
+      .getByRole("button")
+      .filter({ hasText: "strandmark anchor" })
+      .first()
+      .click();
+    await expect(log.getByText("strandmark anchor")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("jump-to-recent")).toBeVisible();
+    await search.getByRole("button", { name: "Close search" }).click();
+
+    // Leave for another conversation, then take a few unreads — the exact
+    // "channel with a couple of unreads" shape from #411.
+    await nav.getByRole("link", { name: ROOM_C_TITLE }).click();
+    await expect(
+      page.getByRole("heading", { name: ROOM_C_TITLE }),
+    ).toBeVisible();
+    for (let i = 1; i <= 3; i += 1) {
+      reed.send("PRI", {
+        recipient: "Quill Marsh",
+        message: `fresh #${String(i)}`,
+      });
+      await delay(120);
+    }
+
+    // Re-opening must land at the latest message — not re-run the old jump
+    // and not resume the stale detached window.
+    await dmRow.click();
+    await expect(log.getByText("fresh #3", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect
+      .poll(() => distanceFromBottom(page), { timeout: 10_000 })
+      .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
+    await expect(page.getByTestId("jump-to-recent")).not.toBeVisible();
   } finally {
     reed.close();
   }

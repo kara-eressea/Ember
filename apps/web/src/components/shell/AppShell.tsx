@@ -180,6 +180,23 @@ export function AppShell() {
     }
   }, [identityIdsKey]);
 
+  // Release the conversation we are leaving from any search-jump view it was
+  // left in (#411): a detached buffer plus a stale jumpTarget survive the
+  // switch and strand the NEXT open of that conversation in old history.
+  // Only a switch BETWEEN two real conversations releases — never the
+  // teardown to undefined, which also runs on React's dev double-mount and
+  // would undo the jump we just made.
+  const prevConvIdRef = useRef<string>(undefined);
+  useEffect(() => {
+    const previous = prevConvIdRef.current;
+    if (convId !== undefined && previous !== undefined && previous !== convId) {
+      useMessagesStore.getState().leaveConversation(previous);
+    }
+    if (convId !== undefined) {
+      prevConvIdRef.current = convId;
+    }
+  }, [convId]);
+
   useEffect(() => {
     useUiStore.getState().setActive(identityId, convId);
     if (identityId !== undefined) {

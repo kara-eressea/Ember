@@ -83,6 +83,17 @@ interface MessagesState {
   jumpTo(identityId: string, convId: string, messageId: number): Promise<void>;
   /** Leave the detached history view: reload the live tail. */
   backToPresent(identityId: string, convId: string): Promise<void>;
+  /**
+   * The user navigated away from this conversation (#411). A search jump
+   * leaves the buffer detached with a `jumpTarget` still set — both are
+   * *view* state for a reading position the user has now left. Kept, they
+   * strand the NEXT open of this conversation in old history: the log
+   * remounts with a fresh scrolled-target ref and re-runs the old jump, and
+   * the stale `detachedTail` disables the open-at-tail bottom-stick, so a
+   * channel with a couple of unreads opens nowhere near its latest message.
+   * Dropping the detached window makes the next open backfill the live tail.
+   */
+  leaveConversation(convId: string): void;
   reset(): void;
 }
 
@@ -309,6 +320,26 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       }));
       set({ jumpTarget: undefined });
       await get().backfill(identityId, convId);
+    },
+
+    leaveConversation(convId) {
+      if (get().jumpTarget?.convId === convId) {
+        set({ jumpTarget: undefined });
+      }
+      if (get().buffers[convId]?.detachedTail !== true) {
+        return;
+      }
+      // Same shape as backToPresent, minus the fetch: the next mount's
+      // backfill effect loads the live tail. Bumping the epoch retires any
+      // page still in flight for the abandoned window.
+      bumpEpoch(convId);
+      patch(convId, (buffer) => ({
+        ...buffer,
+        messages: [],
+        hasMoreBefore: false,
+        backfilled: false,
+        detachedTail: false,
+      }));
     },
 
     reset() {
