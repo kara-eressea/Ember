@@ -2,13 +2,12 @@
 // ergonomics, not a synced preference — it persists in localStorage like
 // the saved-search run stamps (search-logic.ts) and the theme boot cache.
 
-export const SIDEBAR_SECTIONS = [
-  "channels",
-  "dms",
-  "friends",
-  "bookmarks",
-] as const;
-export type SidebarSection = (typeof SIDEBAR_SECTIONS)[number];
+// The section list itself lives in @emberchat/protocol: the manual drag
+// order (#412) is a synced pref keyed by section, so the schema and the UI
+// must agree on the names. Re-exported here so sidebar code keeps one import.
+export { SIDEBAR_SECTIONS, type SidebarSection } from "@emberchat/protocol";
+import { SIDEBAR_SECTIONS } from "@emberchat/protocol";
+import type { SidebarSection } from "@emberchat/protocol";
 
 export type CollapsedSections = Partial<Record<SidebarSection, boolean>>;
 

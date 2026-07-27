@@ -395,10 +395,13 @@
   color: var(--eb-text);
 }
 
+/* Collapse/expand chevron (#414): the triangles were set at the decorative
+   floor (9px, --eb-faint) and read as smudges. They carry real state — open
+   vs collapsed — so they take a legible size and the readable meta tone. */
 .sectionChevron {
-  width: 10px;
-  font-size: calc(9px * var(--eb-font-ui-scale));
-  color: var(--eb-faint);
+  width: 12px;
+  font-size: calc(11px * var(--eb-font-ui-scale));
+  color: var(--eb-meta);
 }
 
 /* Actionable channel-invite row (inbound CIU). */
