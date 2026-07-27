@@ -1071,10 +1071,12 @@ describe("gateway fan-out", () => {
       a.nextEvent("message.new"),
       b.nextEvent("message.new"),
     ]);
-    expect(eventPayload<{ message: { bbcode: string } }>(fromA).message.bbcode)
-      .toBe("after");
-    expect(eventPayload<{ message: { bbcode: string } }>(fromB).message.bbcode)
-      .toBe("after");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(fromA).message.bbcode,
+    ).toBe("after");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(fromB).message.bbcode,
+    ).toBe("after");
   });
 
   it("keeps an already-attached client receiving across a session restart driven by a second device (#407)", async () => {
