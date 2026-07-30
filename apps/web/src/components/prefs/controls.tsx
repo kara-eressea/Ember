@@ -68,6 +68,61 @@ export function Segmented<T extends string>({
   );
 }
 
+/** Stepped value control: − / value / +, stepping through a fixed list of
+ * options. `format` renders the current value (e.g. "125%"). Buttons disable
+ * at the ends so the value can never leave the supported set. */
+export function Stepper<T extends number | string>({
+  options,
+  value,
+  onChange,
+  format,
+  label,
+}: {
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+  format: (value: T) => string;
+  label: string;
+}) {
+  const index = options.indexOf(value);
+  const current = index === -1 ? 0 : index;
+  const atMin = current <= 0;
+  const atMax = current >= options.length - 1;
+  return (
+    <div className={styles.stepper} role="group" aria-label={label}>
+      <button
+        type="button"
+        className={styles.stepperButton}
+        aria-label={`Decrease ${label}`}
+        disabled={atMin}
+        onClick={() => {
+          if (!atMin) {
+            onChange(options[current - 1] as T);
+          }
+        }}
+      >
+        −
+      </button>
+      <span className={styles.stepperValue} aria-label={label} role="status">
+        {format(options[current] as T)}
+      </span>
+      <button
+        type="button"
+        className={styles.stepperButton}
+        aria-label={`Increase ${label}`}
+        disabled={atMax}
+        onClick={() => {
+          if (!atMax) {
+            onChange(options[current + 1] as T);
+          }
+        }}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 /** Label (+ optional help) on the left, the control on the right. */
 export function FieldRow({
   label,

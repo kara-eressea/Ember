@@ -4,7 +4,7 @@
 // layer in M4. Scrolling up past the buffer start pages older history in via
 // REST; the log sticks to the bottom while the user is there.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
@@ -14,10 +14,11 @@ import {
   formatTime,
   type TimeFormat,
 } from "../../lib/time.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import type { PresenceLine } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
-import { useSessionsStore } from "../../stores/sessions.js";
+import { useGenderColorVar, useSessionsStore } from "../../stores/sessions.js";
 import { CachedMatchChip } from "../profile/CachedMatchChip.js";
 import { RateEditor } from "../ratings/RateEditor.js";
 import { StarRow } from "../ratings/StarRating.js";
@@ -26,17 +27,24 @@ import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { buildRows } from "./log-rows.js";
+import {
+  NewMessagesBar,
+  dividerCursorAfter,
+  newMessagesBarHidden,
+} from "./NewMessagesBar.js";
 import { parseEmote } from "./rich-text.js";
-import { RichText } from "./RichText.js";
+import { PlainNamesProvider, RichText } from "./RichText.js";
 import styles from "./chat.module.css";
 
 /** Message-log type ramp (Appearance pref, issue #188): body plus the
- * proportional secondary sizes — timestamp/mono meta and the nick column.
- * S preserves the pre-#188 density; the default is M (prefs schema). */
+ * proportional mono meta size (timestamps). The sender name tracks the body
+ * size directly (#338) — a name and the message it labels read as one line at
+ * one size — so the ramp no longer carries a separate nick step. S preserves
+ * the pre-#188 density; the default is M (prefs schema). */
 const FONT_RAMP_PX = {
-  s: { body: 13, meta: 11.5, nick: 12.5 },
-  m: { body: 14, meta: 12, nick: 13 },
-  l: { body: 15, meta: 13, nick: 14 },
+  s: { body: 13, meta: 11.5 },
+  m: { body: 14, meta: 12 },
+  l: { body: 15, meta: 13 },
 } as const;
 
 const EMPTY: MessageDto[] = [];
@@ -74,7 +82,10 @@ export function MessageLog({
   convId,
   readCursorAtAttach,
 }: MessageLogProps) {
-  const [newSinceId] = useState(readCursorAtAttach);
+  // Frozen at attach so the divider holds while the live cursor advances
+  // underneath. Esc/dismiss clears it (→ null) so the "new since you left"
+  // divider disappears together with the bar — fully caught up (#363 follow-up).
+  const [newSinceId, setNewSinceId] = useState(readCursorAtAttach);
   const buffer = useMessagesStore((s) => s.buffers[convId]);
   const messages = buffer?.messages ?? EMPTY;
   const ignores = useSessionsStore(
@@ -102,6 +113,38 @@ export function MessageLog({
     [messages, newSinceId, ignores, prefs.groupConsecutive, view, presence],
   );
 
+  // The "new messages" bar (#363): the first unread's row index, and how many
+  // unread messages sit past the read cursor. Own sends never count (they
+  // match the in-log divider, which skips them), and the count reflects the
+  // same render-side ignore/view filtering as the rows.
+  const newRowIndex = useMemo(
+    () => rows.findIndex((row) => row.type === "new"),
+    [rows],
+  );
+  const newCount = useMemo(() => {
+    if (newSinceId === null) {
+      return 0;
+    }
+    return rows.reduce(
+      (n, row) =>
+        row.type === "message" &&
+        !row.message.sentByUs &&
+        row.message.id > newSinceId
+          ? n + 1
+          : n,
+      0,
+    );
+  }, [rows, newSinceId]);
+  // The first unread is scrolled off the top of the viewport (so the bar has
+  // somewhere to jump to). Recomputed on scroll and after the tail settles.
+  const [firstUnreadOffscreen, setFirstUnreadOffscreen] = useState(false);
+  // Set once the user engages the catch-up flow this visit — clicking the bar
+  // to jump up, jumping back to the tail, or Esc-dismissing. It stays hidden
+  // afterwards so returning to the tail never re-prompts (#363 follow-up); the
+  // in-log divider keeps its place regardless. The component is keyed by convId
+  // so revisiting resets it.
+  const [newBarAcknowledged, setNewBarAcknowledged] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   /** The virtualizer's inner sizing div — observed so content growth the
    * message-keyed effects never see (late row re-measures, image loads,
@@ -123,8 +166,26 @@ export function MessageLog({
   // frame and flickering the jump pill until an e2e click timed out.
   const stickBottomRef = useRef(true);
   const loadingRef = useRef(false);
+  /** Bumped when a loadOlder call fully settles (loadingRef cleared), so the
+   * auto-fill effect re-evaluates AFTER the in-flight guard has released. The
+   * store's loadingOlder flag flips back to false inside store.loadOlder's own
+   * finally — one microtask before this component's finally clears loadingRef —
+   * so the effect run that flip triggers still sees loadingRef held and bails.
+   * Without a reactive re-arm, that stale-guard bail is terminal: a log that
+   * exactly fills its viewport (scrollHeight === clientHeight, no scrollbar)
+   * stops auto-filling one page short and strands the older backlog (#405). */
+  const [fillNonce, setFillNonce] = useState(0);
   /** Handle for the in-flight prepend re-pin rAF, so a jump can cancel it. */
   const rePinRafRef = useRef<number>(0);
+  /** Handle for the in-flight settle-stick rAF loop (shared by the mount/switch
+   * bottom-stick and jump-to-recent), so a fresh call or cleanup supersedes it
+   * rather than two loops racing the scroll. */
+  const stickRafRef = useRef<number>(0);
+  /** The scrollTop at the previous scroll event, so onScroll can tell a real
+   * upward user scroll (scrollTop decreases) from a content-growth scroll event
+   * (scrollTop unchanged, the log grew around it) — only the former releases
+   * the bottom-stick (#372). */
+  const prevScrollTopRef = useRef(0);
   /** Anchor a history prepend: the id of the row to keep visually fixed and
    * its distance below the viewport top (in px) captured *before* the
    * prepend. We restore against measured offsets, not the 26px estimate, so
@@ -195,21 +256,16 @@ export function MessageLog({
     if (!stickBottomRef.current || detachedTail) {
       return;
     }
-    const toBottom = () => {
-      // Re-check the intent every frame: a deferred rAF must never clobber a
-      // scroll the user has since made away from the bottom (#266).
-      if (!stickBottomRef.current) {
-        return;
-      }
-      const el = scrollRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-    };
-    toBottom();
-    const raf = requestAnimationFrame(toBottom);
+    // Settle across a few frames, not just one: on a conversation switch the
+    // log remounts and this first stick writes scrollTop against the flat 26px
+    // row estimate; the variable-height rows then measure taller and a single
+    // write lands short, leaving the switch above the bottom with the jump pill
+    // showing (#372). This reuses the exact multi-frame re-stick jump-to-recent
+    // relies on — not a new controller — gated on stickBottomRef like every
+    // other bottom-directed write.
+    stickToBottomSettling();
     return () => {
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(stickRafRef.current);
     };
     // rows.length re-sticks after a prepend that grew the log while the
     // user sat at the bottom (the #254 auto-fill).
@@ -251,7 +307,21 @@ export function MessageLog({
   // and jumped once ads/grouped rows/dividers re-measured. Instead we pin the
   // anchor against its *measured* offset and re-apply the correction across a
   // few frames while the newly rendered rows above it settle (#266).
-  useEffect(() => {
+  //
+  // This runs in useLayoutEffect, not useEffect, so the initial correction is
+  // written *before* the browser paints the prepended rows — the compensated
+  // position paints atomically with the insert, instead of the log rendering
+  // shoved down for one frame and snapping back the next (the #360
+  // rubberband). The settle pass that follows applies only the INCREMENTAL
+  // change to the anchor's offset as a relative delta, never an absolute
+  // re-set: as the variable-height rows above measure taller over a few
+  // frames, we add exactly that growth to scrollTop. A delta rides along with
+  // any scroll the user is making at the same instant — it never clobbers
+  // live input — so an actively wheel-scrolling user is neither snapped nor
+  // abandoned mid-page (#360). The old absolute pin bailed the moment the
+  // user's own scroll moved scrollTop off the last value it wrote, dropping
+  // the compensation and letting the content drift.
+  useLayoutEffect(() => {
     const anchor = anchorRef.current;
     if (anchor === undefined) {
       return;
@@ -268,39 +338,56 @@ export function MessageLog({
     if (index < 0) {
       return;
     }
+    // The anchor's measured offset (top of the row within the scroll content)
+    // the last time we accounted for it. Its growth between frames is the
+    // re-measure we compensate; the user's own scroll never appears here.
+    let prevOffset = virtualizer.getOffsetForIndex(index, "start")?.[0];
+    const el = scrollRef.current;
+    if (el && prevOffset !== undefined) {
+      // Synchronous first correction — paints atomically with the prepend.
+      // getOffsetForIndex is in the virtualizer's own coordinate space, which
+      // starts at the top of the sizing div (innerRef); anchor.gap was measured
+      // against the real viewport. The sizing div sits below the scroll
+      // container's top padding (`.log` has padding-top), so pin against that
+      // measured offset too — otherwise every page settled the held row a
+      // padding's-worth (~12px) low (#387).
+      const inner = innerRef.current;
+      const contentOffset = inner
+        ? inner.getBoundingClientRect().top -
+          el.getBoundingClientRect().top +
+          el.scrollTop
+        : 0;
+      el.scrollTop = prevOffset + contentOffset - anchor.gap;
+    }
     let frames = 0;
-    // The last scrollTop we wrote (read back, so a browser clamp/round is
-    // accounted for). If the container's scrollTop no longer matches it at the
-    // top of a frame, something else moved it — an active scroll-to-top page,
-    // or the user dragging — and we must stop pinning rather than fight it.
-    let lastSet: number | undefined;
-    const pin = () => {
+    const settle = () => {
       const el = scrollRef.current;
       // Yield the instant a jump takes over (stick intent flips on): the two
       // must never write the scroll position in the same frame (#266).
       if (!el || stickBottomRef.current) {
         return;
       }
-      if (lastSet !== undefined && el.scrollTop !== lastSet) {
-        return; // external scroll wins — stop pinning.
+      const offset = virtualizer.getOffsetForIndex(index, "start")?.[0];
+      const settled = offset === prevOffset;
+      if (
+        offset !== undefined &&
+        prevOffset !== undefined &&
+        offset !== prevOffset
+      ) {
+        // Add only the row-measurement growth above the anchor — a relative
+        // delta that keeps the anchor put without overwriting a concurrent
+        // user scroll.
+        el.scrollTop += offset - prevOffset;
       }
-      // Measured offset that aligns the anchor row to the top — reflects the
-      // real heights of every row now rendered above it, not the estimate.
-      const measured = virtualizer.getOffsetForIndex(index, "start")?.[0];
-      const target = measured !== undefined ? measured - anchor.gap : undefined;
-      const settled = target !== undefined && lastSet === target;
-      if (target !== undefined) {
-        el.scrollTop = target;
-        lastSet = el.scrollTop;
-      }
+      prevOffset = offset;
       frames += 1;
       // Stop once the anchor offset stops moving (rows measured) or the frame
       // budget runs out — never keep looping under a slow CI render.
       if (!settled && frames < SCROLL_SETTLE_FRAMES) {
-        rePinRafRef.current = requestAnimationFrame(pin);
+        rePinRafRef.current = requestAnimationFrame(settle);
       }
     };
-    pin();
+    rePinRafRef.current = requestAnimationFrame(settle);
     return () => {
       cancelAnimationFrame(rePinRafRef.current);
     };
@@ -340,26 +427,94 @@ export function MessageLog({
     }
     void loadOlder();
     // loadOlder is re-created per render but reads only fresh store state.
+    // fillNonce re-arms the loop after each page settles past the loadingRef
+    // guard (see its declaration) — without it the fill stops a page short of
+    // overflow on a log that exactly fills its viewport (#405).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length, backfilled, hasMoreBefore, loadingOlder]);
+  }, [rows.length, backfilled, hasMoreBefore, loadingOlder, fillNonce]);
+
+  // Is the first unread row scrolled above the viewport top? That is the only
+  // state where the "new messages" bar has somewhere to jump to; when the
+  // unreads are all on screen the in-log divider says it on its own (#363).
+  //
+  // Measured against the REAL DOM, not virtualizer.getOffsetForIndex: that
+  // offset is built from the flat 26px estimate for the unmeasured read history
+  // above the divider, so it underestimated the divider's true position and
+  // reported it off-screen while it sat plainly on screen — the bar showing
+  // with nothing to jump to (#373). The rendered divider's own rect is exact;
+  // when it is not rendered at all we fall back to the rendered range (before
+  // the first virtual item ⇒ above the viewport).
+  function updateNewBarVisibility() {
+    const el = scrollRef.current;
+    if (!el || newRowIndex < 0) {
+      setFirstUnreadOffscreen(false);
+      return;
+    }
+    const rowEl = el.querySelector(`[data-index="${String(newRowIndex)}"]`);
+    if (rowEl) {
+      const rowTop = rowEl.getBoundingClientRect().top;
+      const viewportTop = el.getBoundingClientRect().top;
+      // A pixel of tolerance: a divider flush with the top edge still reads as
+      // on screen.
+      setFirstUnreadOffscreen(rowTop < viewportTop - 1);
+      return;
+    }
+    const firstRendered = virtualizer.getVirtualItems()[0]?.index;
+    setFirstUnreadOffscreen(
+      firstRendered !== undefined && newRowIndex < firstRendered,
+    );
+  }
+
+  // Recompute after the tail settles (open-at-bottom, new arrivals, a jump
+  // that put the divider back on screen). rAF lets the bottom-stick write
+  // scrollTop first so the measurement is taken against the final position.
+  useEffect(() => {
+    const raf = requestAnimationFrame(updateNewBarVisibility);
+    return () => {
+      cancelAnimationFrame(raf);
+    };
+    // updateNewBarVisibility reads fresh refs/virtualizer each call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastKey, rows.length, newRowIndex, detachedTail]);
 
   function onScroll() {
     const el = scrollRef.current;
     if (!el) {
       return;
     }
+    updateNewBarVisibility();
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const bottom = distanceFromBottom <= AT_BOTTOM_SLACK_PX;
+    // Did the user actually scroll UP? A content-growth scroll event leaves
+    // scrollTop where it was (the log grew below/around it); only a genuine
+    // upward move means the user is leaving the bottom. Without this, a fresh
+    // mount whose rows measure taller after the first stick fires a
+    // growth-driven scroll at a large distance-from-bottom and releases the
+    // glue, stranding a channel switch above the bottom (#372).
+    const movedUp = el.scrollTop < prevScrollTopRef.current - 1;
+    // The mirror image: a genuine downward user scroll. Our own bottom-directed
+    // writes all happen while the stick intent is HELD, so pairing this with a
+    // released intent isolates "the user scrolled down here themselves" from
+    // every programmatic landing (#415).
+    const movedDown = el.scrollTop > prevScrollTopRef.current + 1;
+    const userReachedTail = bottom && movedDown && !stickBottomRef.current;
+    prevScrollTopRef.current = el.scrollTop;
     atBottomRef.current = bottom;
     setAtBottom(bottom);
-    // Update the stick-to-bottom intent with hysteresis: reaching the bottom
-    // engages it; only a scroll further than STICK_RELEASE_PX releases it. A
-    // few pixels of post-jump measurement growth (between the two thresholds)
-    // leaves it engaged, so the bottom-stick keeps closing the gap instead of
-    // the jump landing short.
+    // Hysteresis: reaching the bottom engages the stick; only an upward user
+    // scroll past STICK_RELEASE_PX releases it. Growth-driven distance (scrollTop
+    // unchanged) keeps it engaged, so the bottom-stick closes the gap instead of
+    // the view landing short.
     if (bottom) {
       stickBottomRef.current = true;
-    } else if (distanceFromBottom > STICK_RELEASE_PX) {
+      // Scrolling down to the newest messages under your own steam IS catching
+      // up — the same conclusion the "Jump to newest" pill and Esc draw, so it
+      // must clear the unread state the same way instead of leaving the bar to
+      // pop back the moment the tail is reached (#415).
+      if (userReachedTail) {
+        acknowledgeTail();
+      }
+    } else if (movedUp && distanceFromBottom > STICK_RELEASE_PX) {
       stickBottomRef.current = false;
     }
     if (el.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
@@ -367,22 +522,73 @@ export function MessageLog({
     }
   }
 
+  // Re-stick to the bottom across a few frames while variable-height rows
+  // settle their measurements: one scrollTop write lands short because the rows
+  // below re-measure taller than the flat 26px estimate (#266/#372). Shared by
+  // the mount/switch bottom-stick and jump-to-recent so neither drives the
+  // scroll on its own timeline; gated on stickBottomRef like every
+  // bottom-directed write, and cancelable via stickRafRef so a fresh call or an
+  // effect cleanup supersedes an in-flight loop. Bails the instant the intent
+  // is released (a user scroll-up mid-settle).
+  function stickToBottomSettling() {
+    cancelAnimationFrame(stickRafRef.current);
+    // We are gluing to the bottom, so reflect it immediately: on the
+    // mount/switch path the final settle writes may be no-ops (already at the
+    // bottom) that fire no scroll event, leaving the atBottom mirror stuck at a
+    // stale `false` from an intermediate backfill measurement — the log sits at
+    // the bottom yet the jump pill lingers (#372). The loop still bails and
+    // onScroll re-derives the truth if the user scrolls away mid-settle.
+    atBottomRef.current = true;
+    setAtBottom(true);
+    let frames = 0;
+    const step = () => {
+      // Check the intent BEFORE writing: a stale in-flight frame must never
+      // clobber a scroll the user has since made away from the bottom (#266).
+      if (!stickBottomRef.current) {
+        return;
+      }
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+      frames += 1;
+      if (frames < SCROLL_SETTLE_FRAMES) {
+        stickRafRef.current = requestAnimationFrame(step);
+      }
+    };
+    step();
+  }
+
   // Snap to the newest messages. When parked in the detached history view
   // that means "take me back to now" (drop the frozen tail); otherwise it is
   // a plain scroll to the bottom of the loaded buffer. Either way the jump
   // also marks the conversation read (#254): catching up is over, so the
   // read cursor advances to the newest message.
-  function jumpToRecent() {
+  /** Parked at the live tail with nothing newer to reach: the catch-up is over.
+   * Hides the "new messages" bar for the rest of the visit and advances the
+   * read cursor to the newest buffered message. Shared by every way of arriving
+   * there — the jump pill, Esc, and the user's own scroll (#415) — so they
+   * cannot drift apart. The in-log "new since you left" divider deliberately
+   * stays: it is a place marker, and only the explicit Esc dismissal clears it
+   * (dividerCursorAfter). */
+  function acknowledgeTail() {
+    setNewBarAcknowledged(true);
     useSessionsStore.getState().clearUnread(identityId, convId);
+    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
+    if (newest !== undefined && !detachedTail) {
+      gateway.readAck(identityId, convId, newest.id);
+    }
+  }
+
+  function jumpToRecent() {
+    // Back at the tail means caught up — the "since you left" bar has done its
+    // job and must not re-show (#363 follow-up). In the detached history view
+    // the newest *buffered* id is an old message, so acknowledgeTail skips the
+    // read-ack there; back at the live tail the shell's auto-ack advances it.
+    acknowledgeTail();
     if (detachedTail) {
-      // The newest *buffered* id here is an old message — never ack it.
-      // Back at the live tail, the shell's auto-ack advances the cursor.
       void useMessagesStore.getState().backToPresent(identityId, convId);
       return;
-    }
-    const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
-    if (newest) {
-      gateway.readAck(identityId, convId, newest.id);
     }
     // Take exclusive scroll ownership: engage the stick intent and abandon any
     // in-flight prepend anchor + its re-pin rAF, so the "hold the top row" and
@@ -393,31 +599,48 @@ export function MessageLog({
     anchorRef.current = undefined;
     cancelAnimationFrame(rePinRafRef.current);
     setAtBottom(true);
-    // Setting scrollTop once to the *estimated* scrollHeight can land short —
-    // rows below re-measure taller and the pill lingers. Re-stick across a
-    // few frames until the measurements settle (#266). Bail the instant the
-    // stick intent is released (a user scroll-up mid-settle).
-    let frames = 0;
-    const stick = () => {
-      // Check the intent BEFORE writing: if the user scrolled away since this
-      // frame was scheduled (stick released via onScroll's hysteresis), abandon
-      // rather than snap them back to the bottom. Writing first and only then
-      // checking let a stale in-flight frame clobber a fresh scroll-to-top,
-      // hiding the jump pill mid-click and hanging (#266).
-      if (!stickBottomRef.current) {
-        return;
-      }
-      const el = scrollRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-      frames += 1;
-      if (frames < SCROLL_SETTLE_FRAMES) {
-        requestAnimationFrame(stick);
-      }
-    };
-    stick();
+    // Re-stick across a few frames until the row measurements settle (#266) —
+    // the same shared loop the mount/switch path uses.
+    stickToBottomSettling();
   }
+
+  // Click the "new messages" bar: scroll up to the first unread. Reuses the
+  // virtualizer scroll and releases the bottom-stick the same way the search
+  // jump does, so the two scroll controllers never write in the same frame
+  // (#266). No mark-read here — catching up is deliberate; Esc or the
+  // back-to-present jump advances the cursor.
+  function jumpToFirstUnread() {
+    if (newRowIndex < 0) {
+      return;
+    }
+    // Clicking the bar acknowledges it: the user is now reading the backlog, so
+    // returning to the tail afterwards must not re-prompt (#363 follow-up).
+    setNewBarAcknowledged(true);
+    atBottomRef.current = false;
+    stickBottomRef.current = false;
+    anchorRef.current = undefined;
+    cancelAnimationFrame(rePinRafRef.current);
+    setAtBottom(false);
+    virtualizer.scrollToIndex(newRowIndex, { align: "start" });
+  }
+
+  // Esc "mark caught up" at the live tail: mark the conversation read (the
+  // #257/#326 read-cursor path), hide the bar, and drop the in-log "new since
+  // you left" divider. We stay put — open-at-bottom already put us there.
+  function markCaughtUp() {
+    acknowledgeTail();
+    // Fully caught up: drop the in-log divider too, not just the bar.
+    setNewSinceId((cursor) => dividerCursorAfter("dismiss", cursor));
+  }
+
+  // Route the Esc "mark caught up" through the shared Escape stack so a modal
+  // or popover above the log closes first (topmost wins). Enabled whenever we
+  // are parked at the tail with a divider to clear — NOT only while the bar is
+  // shown, so Esc clears the divider even when the few unreads all fit on
+  // screen and the bar stayed hidden (the live #373.2 miss: the old handler
+  // lived on the bar and never registered in that case). newRowIndex < 0 once
+  // the divider is gone, which disables it again.
+  useEscapeToClose(markCaughtUp, !detachedTail && atBottom && newRowIndex >= 0);
 
   // Whether there is a newer position to jump to. Detached tail always
   // qualifies; otherwise it is the "scrolled up past the slack" state.
@@ -447,30 +670,60 @@ export function MessageLog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canJumpToRecent, detachedTail, identityId, convId]);
 
-  /** Snapshot the anchor row's on-screen position before a prepend: its id
-   * plus the pixel gap between its top and the viewport top. Returns
-   * undefined when stuck to the bottom (no anchor — the bottom stick wins)
-   * or when the row isn't currently rendered. */
-  function captureAnchor(
-    id: number | undefined,
-  ): { id: number; gap: number } | undefined {
+  /** Snapshot the anchor row before a prepend: the id of the topmost message
+   * row at the viewport top plus the pixel gap between its top and that edge.
+   * Returns undefined when stuck to the bottom (no anchor — the bottom stick
+   * wins) or when no message row sits at/after the top.
+   *
+   * Everything is read from the virtualizer's measurement cache and its FRESH
+   * scroll offset — never the painted DOM. A scroll-up fires this synchronously
+   * from onScroll, one render BEFORE the virtualizer repaints its window at the
+   * new position, so the painted rows are briefly stale: a fast wheel or a jump
+   * to the top leaves the old, far-off window on screen. Reading the DOM then
+   * anchored a row hundreds of px away (or missed it and fell back to gap 0),
+   * and the re-pin lurched the reader's line up a row or two every server page
+   * (#387). The virtualizer tracks scrollOffset synchronously and keeps sizes
+   * for rows it isn't currently painting, so it answers correctly regardless. */
+  function captureAnchor(): { id: number; gap: number } | undefined {
     const el = scrollRef.current;
+    const inner = innerRef.current;
     // While the stick intent is engaged the bottom-stick owns the scroll —
     // capturing an anchor here would let the re-pin fight it (#266).
-    if (stickBottomRef.current || el == null || id === undefined) {
+    if (stickBottomRef.current || el == null || inner == null) {
       return undefined;
     }
-    const index = rows.findIndex(
-      (row) => row.type === "message" && row.message.id === id,
-    );
-    if (index < 0) {
+    // The virtualizer's coordinate space starts at the sizing div (innerRef);
+    // its scroll offset is measured from the scroll container's top, which
+    // sits a top-padding above. Convert so both agree.
+    const contentOffset =
+      inner.getBoundingClientRect().top -
+      el.getBoundingClientRect().top +
+      el.scrollTop;
+    // The container's own scrollTop is fresh (the browser applied it before
+    // this scroll event ran); the virtualizer's scrollOffset lags a render, so
+    // use the real value. Only the SIZE queries below go through the
+    // virtualizer's measurement cache, which is position-independent and never
+    // stale — that is what makes this robust to the unpainted window.
+    const scrollTop = el.scrollTop;
+    const viewportOffset = Math.max(0, scrollTop - contentOffset);
+    const top = virtualizer.getVirtualItemForOffset(viewportOffset);
+    if (top === undefined) {
       return undefined;
     }
-    const rowEl = el.querySelector(`[data-index="${String(index)}"]`);
-    const gap = rowEl
-      ? rowEl.getBoundingClientRect().top - el.getBoundingClientRect().top
-      : 0;
-    return { id, gap };
+    // The first message row at or after the viewport top (skip a leading date
+    // divider). gap is that row's distance below the top edge, in real px.
+    for (let index = top.index; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (row?.type !== "message") {
+        continue;
+      }
+      const start = virtualizer.getOffsetForIndex(index, "start")?.[0];
+      if (start === undefined) {
+        return undefined;
+      }
+      return { id: row.message.id, gap: start + contentOffset - scrollTop };
+    }
+    return undefined;
   }
 
   async function loadOlder() {
@@ -485,19 +738,24 @@ export function MessageLog({
     }
     loadingRef.current = true;
     try {
-      // Hold the previous top row in place after the prepend — except while
-      // stuck to the bottom (the auto-fill of a too-short log, #254), where
-      // anchoring an old top row would drag the view away from the newest
+      // Hold the on-screen anchor row in place after the prepend — except
+      // while stuck to the bottom (the auto-fill of a too-short log, #254),
+      // where anchoring an old row would drag the view away from the newest
       // messages; the bottom stick wins there. Capture the anchor's distance
       // below the viewport top *now*, against measured DOM, so the restore
       // can pin it back exactly regardless of how the prepended rows measure.
-      anchorRef.current = captureAnchor(current.messages[0]?.id);
+      anchorRef.current = captureAnchor();
       await useMessagesStore.getState().loadOlder(identityId, convId);
     } catch (error) {
       anchorRef.current = undefined;
       console.error("history page failed", error);
     } finally {
       loadingRef.current = false;
+      // Re-arm the auto-fill effect now that the in-flight guard has released.
+      // The effect run triggered by the store clearing loadingOlder fired while
+      // loadingRef was still held (see fillNonce) and bailed; this bump gives it
+      // a fresh, guard-clear pass so a still-underflowing log keeps paging (#405).
+      setFillNonce((n) => n + 1);
     }
   }
 
@@ -516,7 +774,6 @@ export function MessageLog({
   const styleVars: Record<string, string> = {
     "--eb-msg-font": `${String(ramp.body)}px`,
     "--eb-msg-meta-font": `${String(ramp.meta)}px`,
-    "--eb-msg-nick-font": `${String(ramp.nick)}px`,
   };
   if (prefs.highlightTint !== "accent") {
     styleVars["--eb-hl"] = ACCENTS[prefs.highlightTint].hex;
@@ -529,6 +786,31 @@ export function MessageLog({
 
   return (
     <div className={styles.logWrap}>
+      {/* The scroll-up loading indicator floats OVER the log rather than
+          rendering as a flow sibling above the virtualized rows: with
+          `overflow-anchor: none` on the scroll container, a static-flow note
+          inserted the instant loadOlder begins (synchronously, before the
+          async page even lands) would shove every row down by its own height
+          for the whole fetch and snap back on arrival — a rubberband on the
+          server-fetch path the paint-atomic prepend re-pin never saw (#387).
+          As an absolutely positioned overlay it consumes no layout, so the
+          reading position holds steady while the page is in flight. */}
+      {buffer?.loadingOlder && (
+        <div className={styles.loadingOlderNote} role="status">
+          Loading older messages…
+        </div>
+      )}
+      <NewMessagesBar
+        count={newCount}
+        hidden={newMessagesBarHidden({
+          count: newCount,
+          atBottom,
+          firstUnreadOffscreen,
+          acknowledged: newBarAcknowledged,
+          detachedTail,
+        })}
+        onJump={jumpToFirstUnread}
+      />
       <div
         className={logClass}
         style={styleVars}
@@ -551,9 +833,6 @@ export function MessageLog({
               Back to present
             </button>
           </div>
-        )}
-        {buffer?.loadingOlder && (
-          <div className={styles.logNote}>Loading older messages…</div>
         )}
         {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
         {buffer?.backfilled && rows.length === 0 && (
@@ -590,7 +869,11 @@ export function MessageLog({
                 ) : row.message.kind === "sys" ? (
                   <SystemLine message={row.message} prefs={prefs} />
                 ) : row.message.kind === "rll" ? (
-                  <RollLine message={row.message} prefs={prefs} />
+                  <RollLine
+                    message={row.message}
+                    prefs={prefs}
+                    identityId={identityId}
+                  />
                 ) : row.message.kind === "lrp" ? (
                   <AdLine message={row.message} prefs={prefs} />
                 ) : (
@@ -598,6 +881,7 @@ export function MessageLog({
                     message={row.message}
                     prefs={prefs}
                     grouped={row.grouped === true}
+                    identityId={identityId}
                   />
                 )}
               </div>
@@ -807,13 +1091,20 @@ function MessageLine({
   message,
   prefs,
   grouped,
+  identityId,
 }: {
   message: MessageDto;
   prefs: UserPrefs;
   grouped: boolean;
+  identityId: string;
 }) {
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
+  // Sender names carry the member list's gender colour (#338) — the same
+  // token, resolved from the same roster, so a character reads identically in
+  // the list and in the log. Unknown gender → default text colour, as in the
+  // list.
+  const nameColor = useGenderColorVar(identityId, message.senderCharacter);
   return (
     <div
       className={`${styles.messageLine} ${
@@ -836,7 +1127,7 @@ function MessageLine({
           className={`${styles.nick} ${styles.nickGrouped ?? ""} ${
             emote ? (styles.emoteNick ?? "") : ""
           }`}
-          style={{ color: nickColor(message.senderCharacter) }}
+          style={nameColor ? { color: nameColor } : undefined}
           aria-hidden
         >
           {message.senderCharacter}
@@ -847,7 +1138,7 @@ function MessageLine({
           className={`${styles.nick} ${styles.nameButton ?? ""} ${
             emote ? (styles.emoteNick ?? "") : ""
           }`}
-          style={{ color: nickColor(message.senderCharacter) }}
+          style={nameColor ? { color: nameColor } : undefined}
           onClick={(event) => {
             openCardFrom(event.currentTarget, message.senderCharacter);
           }}
@@ -874,13 +1165,19 @@ function MessageLine({
 }
 
 /** A dice roll / bottle spin: the server-rendered BBCode already names the
- * roller, so it reads like a system line with a die glyph. */
+ * roller (and, for a bottle spin, the target) in `[user]` tags, so it reads
+ * like a system line with a die glyph. Those names render as plain inline
+ * sender names — not the mid-sentence mention chip — carrying the member-list
+ * gender colour like any other name, so the die line reads as a normal chat
+ * line rather than a badge (#337). */
 function RollLine({
   message,
   prefs,
+  identityId,
 }: {
   message: MessageDto;
   prefs: UserPrefs;
+  identityId: string;
 }) {
   const time = formatTime(message.createdAt, timeFormat(prefs));
   return (
@@ -893,9 +1190,14 @@ function RollLine({
           {time}
         </span>
       )}
-      <span aria-hidden>🎲</span>
+      {/* Text die-face glyph (U+2684, default text presentation) — the
+          design system allows only SVG/text glyphs, never system emoji
+          like 🎲 (COMPONENTS.md §8, #269 item 4). */}
+      <span aria-hidden>⚄</span>
       <span>
-        <RichText bbcode={message.bbcode} />
+        <PlainNamesProvider value={{ plain: true, identityId }}>
+          <RichText bbcode={message.bbcode} />
+        </PlainNamesProvider>
       </span>
     </div>
   );

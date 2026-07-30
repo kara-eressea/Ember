@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_IMAGE_PREVIEW_HOSTS } from "@emberchat/protocol";
 import {
   chipHost,
   chipLabel,
@@ -79,6 +80,47 @@ describe("resolvePreview", () => {
     ).toBeUndefined();
   });
 
+  it("rewrites x.com / twitter.com status links to the fixvx direct-media host (#384)", () => {
+    expect(
+      resolvePreview("https://x.com/someone/status/1234567890"),
+    ).toMatchObject({
+      src: "https://d.fixvx.com/someone/status/1234567890",
+      kind: "image",
+      host: "x.com",
+    });
+    // twitter.com and the vx/fixup mirrors resolve the same way; trailing
+    // /photo/1-style segments are tolerated.
+    expect(
+      resolvePreview("https://twitter.com/a_user/status/42/photo/1"),
+    ).toMatchObject({ src: "https://d.fixvx.com/a_user/status/42" });
+    // Non-status pages (profiles, home) have no derivable media.
+    expect(resolvePreview("https://x.com/someone")).toBeUndefined();
+    expect(resolvePreview("https://x.com/home")).toBeUndefined();
+  });
+
+  it("gates the fixvx rewrite on the effective direct-media host (#384)", () => {
+    // The gate is on d.fixvx.com (the rewrite target), not x.com.
+    expect(
+      resolvePreview("https://x.com/u/status/1", ["d.fixvx.com"]),
+    ).toMatchObject({ src: "https://d.fixvx.com/u/status/1" });
+    expect(
+      resolvePreview("https://x.com/u/status/1", ["x.com"]),
+    ).toBeUndefined();
+  });
+
+  it("previews a direct-media host with no file extension (#384)", () => {
+    // d.fixvx.com serves media at an extensionless path — the extension test
+    // is waived for hosts on the direct-media table.
+    expect(
+      resolvePreview("https://d.fixvx.com/u/status/9", ["d.fixvx.com"]),
+    ).toMatchObject({ kind: "image", host: "d.fixvx.com" });
+    // Still gated: an extensionless direct-media URL off the allowlist stays
+    // a plain link.
+    expect(
+      resolvePreview("https://d.fixvx.com/u/status/9", ["imgur.com"]),
+    ).toBeUndefined();
+  });
+
   it("previews cdn.discordapp.com images with signed query params intact", () => {
     // The path already ends in .png; the signed ex/is/hm query must survive
     // verbatim onto the src or the CDN 403s.
@@ -148,6 +190,70 @@ describe("resolvePreview allowlist gating (#215)", () => {
     expect(resolvePreview("https://cdn.example.com/pic.png")).toMatchObject({
       kind: "image",
     });
+  });
+});
+
+describe("extensionless URLs on allowlisted hosts (#410)", () => {
+  it("previews a Bluesky CDN image with no extension in the path", () => {
+    const href =
+      "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:abc123/bafkreiabc123@jpeg";
+    expect(
+      resolvePreview(href, [...DEFAULT_IMAGE_PREVIEW_HOSTS]),
+    ).toMatchObject({ kind: "image", src: href, host: "cdn.bsky.app" });
+  });
+
+  it("ships cdn.bsky.app on the default allowlist", () => {
+    expect(DEFAULT_IMAGE_PREVIEW_HOSTS).toContain("cdn.bsky.app");
+  });
+
+  it("previews any extensionless path on a user-added host", () => {
+    expect(
+      resolvePreview("https://media.example.com/asset/9f8e7d", [
+        "media.example.com",
+      ]),
+    ).toMatchObject({
+      kind: "image",
+      src: "https://media.example.com/asset/9f8e7d",
+    });
+    // Subdomain matching still applies.
+    expect(
+      resolvePreview("https://img.example.com/asset/9f8e7d", ["example.com"]),
+    ).toMatchObject({ kind: "image" });
+  });
+
+  it("leaves non-allowlisted hosts as plain links", () => {
+    expect(
+      resolvePreview("https://cdn.example.com/asset/9f8e7d", [
+        "static.f-list.net",
+      ]),
+    ).toBeUndefined();
+    // And with no allowlist at all the extension requirement still holds.
+    expect(
+      resolvePreview("https://cdn.example.com/asset/9f8e7d"),
+    ).toBeUndefined();
+  });
+
+  it("still prefers a page→direct rewrite over the raw URL", () => {
+    expect(
+      resolvePreview("https://gyazo.com/0123456789abcdef01234567", [
+        "gyazo.com",
+        "i.gyazo.com",
+      ]),
+    ).toMatchObject({
+      src: "https://i.gyazo.com/0123456789abcdef01234567.png",
+    });
+  });
+
+  it("keeps video extensions classified as video on allowlisted hosts", () => {
+    expect(
+      resolvePreview("https://media.example.com/clip.mp4", [
+        "media.example.com",
+      ]),
+    ).toMatchObject({ kind: "video" });
+  });
+
+  it("unchanged: a bare extensionless host page is a plain link off-list", () => {
+    expect(resolvePreview("https://example.com/some/page")).toBeUndefined();
   });
 });
 

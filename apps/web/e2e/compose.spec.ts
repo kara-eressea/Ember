@@ -77,6 +77,21 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await expect(log).not.toContainText("line one", { timeout: 1000 });
   await input.fill("");
 
+  // ── Click-to-focus: the whole input bar is a focus surface (#313) ─────
+  // The bar is ~46px tall but the textarea is one line; clicking its inert
+  // chrome (top-left padding, above the line) used to land on dead space.
+  // Now it focuses the composer and typing goes straight in.
+  await input.evaluate((el) => {
+    el.blur();
+  });
+  await expect(input).not.toBeFocused();
+  const inputBar = page.getByTitle("Attachments arrive later").locator("..");
+  await inputBar.click({ position: { x: 4, y: 4 } });
+  await expect(input).toBeFocused();
+  await page.keyboard.type("bar padding focuses");
+  await expect(input).toHaveValue("bar padding focuses");
+  await input.fill("");
+
   // ── Formatting toolbar + /help (#205) ─────────────────────────────────
   // Every promoted action sits on the MessageBox toolbar now. Bold is
   // Markdown-aware; Underline (BBCode-only) works with Markdown on because
@@ -265,6 +280,23 @@ test("markdown compose: preview = render, eicons, delayed send + recall", async 
   await mediaChip.click({ modifiers: ["ControlOrMeta"] });
   await delay(300);
   await expect(panel).not.toBeVisible();
+
+  // An extensionless URL on an allowlisted host previews too (#410): CDNs
+  // like cdn.bsky.app never carry a file extension, so the allowlist alone
+  // makes the link embeddable. (static.f-list.net stands in here — the
+  // intercept serves the fixture PNG for any path.)
+  await input.fill("https://static.f-list.net/img/plain/bafkrei123");
+  await input.press("Enter");
+  const extensionless = log.getByRole("link", { name: /bafkrei123/ });
+  await expect(extensionless).toBeVisible({ timeout: 10_000 });
+  await expect(extensionless).toContainText("▣");
+  await extensionless.click();
+  const extPanel = page.getByRole("dialog", {
+    name: /Preview: static\.f-list\.net\/img\/plain\/bafkrei123/,
+  });
+  await expect(extPanel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(extPanel).not.toBeVisible();
 
   // ── Delayed send: Timer popover + pending affordance + recall ─────────
   // The Timer button (toolbar, #205) owns the send delay now: arming it

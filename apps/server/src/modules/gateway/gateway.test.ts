@@ -89,6 +89,8 @@ beforeAll(async () => {
     }),
     // The reconnect scenario can't wait out the 10s policy floor.
     sessionTuning: { backoffFloorMs: 200, backoffCapMs: 400 },
+    // The dead-socket test can't wait out the 30s production heartbeat.
+    gatewayHeartbeatMs: 300,
   });
   const address = await app.listen({ port: 0, host: "127.0.0.1" });
   gatewayUrl = `${address.replace(/^http/, "ws")}/gateway`;
@@ -223,6 +225,13 @@ class TestClient {
 
   close(): void {
     this.#socket.close();
+  }
+
+  /** Stops reading the socket: the ws client can no longer answer the
+   * server's pings, which is what a slept laptop or a dropped NAT tunnel
+   * looks like from the server side. */
+  goSilent(): void {
+    this.#socket.pause();
   }
 
   get bufferedFrames(): readonly ServerFrame[] {
@@ -575,25 +584,32 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
       "Frontpage",
     ]);
 
-    // Explicit leave unpins — the pin must not fight the leave by dragging
-    // the channel back on the next reconnect.
+    // Explicit leave takes the conversation row out of the sidebar
+    // everywhere (#327) and drops it from the resume set, so nothing drags
+    // the channel back on the next reconnect — subsuming the old
+    // unpin-on-leave. The row is hidden, not deleted: its kept history stays.
     client.send({
       t: "cmd",
       id: 2,
       d: { identityId, action: "channel.leave", d: { key: "Frontpage" } },
     });
     expect((await client.nextOfType("ack")).d.ok).toBe(true);
-    await nextConversationUpdate<{
-      id: string;
-      lastReadMessageId: number | null;
-      pinned: boolean;
-    }>(client, (c) => c.id === frontpage!.convId && !c.pinned);
-    // Once the LCH echo drains through the sink, no seed resurrects it.
+    const removed = await client.nextEvent("conversation.removed");
+    expect(eventPayload<{ convId: string }>(removed).convId).toBe(
+      frontpage!.convId,
+    );
+    // Once the hide drains through the sink, no seed resurrects it…
     await vi.waitFor(async () => {
       await app.history.flush();
       expect(await app.history.channelsForResume(identityId)).toEqual([]);
     });
     expect(await app.history.pinnedChannelKeys(identityId)).toEqual([]);
+    // …yet the row itself survives, marked hidden — history is never deleted.
+    const [left] = await db
+      .select({ hidden: conversations.hidden, joined: conversations.joined })
+      .from(conversations)
+      .where(eq(conversations.id, frontpage!.convId));
+    expect(left).toEqual({ hidden: true, joined: false });
   });
 
   it("recovers an F-Chat drop with no user interaction: re-tickets from the vault, rejoins channels (M2 verification)", async () => {
@@ -1009,6 +1025,144 @@ describe("gateway fan-out", () => {
       kind: "pm",
       bbcode: "psst",
     });
+  });
+
+  it("keeps an already-attached client receiving after a second device attaches (#407)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    const a = await connectClient();
+    await a.hello(token);
+    await a.subscribe(identityId);
+
+    await inject(session, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: "before",
+        channel: "Frontpage",
+      },
+    });
+    await a.nextEvent("message.new");
+
+    // A second browser attaches to the same identity, mid-life of the first:
+    // hello with resume cursors, sub, and the shell's connect-on-visit.
+    const b = await connectClient();
+    await b.hello(token, { [identityId]: { convCursors: {} } });
+    await b.subscribe(identityId);
+    b.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.connect" },
+    });
+    await b.nextOfType("ack");
+
+    await inject(session, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: "after",
+        channel: "Frontpage",
+      },
+    });
+
+    const [fromA, fromB] = await Promise.all([
+      a.nextEvent("message.new"),
+      b.nextEvent("message.new"),
+    ]);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(fromA).message.bbcode,
+    ).toBe("after");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(fromB).message.bbcode,
+    ).toBe("after");
+  });
+
+  it("keeps an already-attached client receiving across a session restart driven by a second device (#407)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    const a = await connectClient();
+    await a.hello(token);
+    await a.subscribe(identityId);
+
+    // The session goes down (user disconnect / detached ceiling) …
+    app.sessions.stop(identityId, "test restart");
+    await a.nextEvent("session.status");
+
+    // … and a newly attached browser brings it back (connect-on-visit).
+    const b = await connectClient();
+    await b.hello(token);
+    await b.subscribe(identityId);
+    b.send({ t: "cmd", id: 1, d: { identityId, action: "session.connect" } });
+    await b.nextOfType("ack");
+    const restarted = app.sessions.get(identityId)!;
+    await waitForOnline(restarted);
+    await joinAndSettle(restarted, "Frontpage");
+
+    await inject(restarted, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: "after restart",
+        channel: "Frontpage",
+      },
+    });
+
+    const [fromA, fromB] = await Promise.all([
+      a.nextEvent("message.new"),
+      b.nextEvent("message.new"),
+    ]);
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(fromA).message.bbcode,
+    ).toBe("after restart");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(fromB).message.bbcode,
+    ).toBe("after restart");
+  });
+
+  it("drops a socket that stopped answering the heartbeat, and keeps the others fed (#407)", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+
+    const dead = await connectClient();
+    const alive = await connectClient();
+    await dead.hello(token);
+    await alive.hello(token);
+    await dead.subscribe(identityId);
+    await alive.subscribe(identityId);
+
+    // The first device vanishes without a close frame (sleep / NAT drop):
+    // the heartbeat finds its ping unanswered and terminates the socket
+    // instead of leaving a zombie in the fan-out set.
+    expect(app.gatewayHub.subscriberCount(identityId)).toBe(2);
+    dead.goSilent();
+    const deadline = Date.now() + 10_000;
+    while (
+      app.gatewayHub.subscriberCount(identityId) > 1 &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(app.gatewayHub.subscriberCount(identityId)).toBe(1);
+
+    // The still-live device keeps receiving, undisturbed.
+    await inject(session, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: "still flowing",
+        channel: "Frontpage",
+      },
+    });
+    const event = await alive.nextEvent("message.new");
+    expect(
+      eventPayload<{ message: { bbcode: string } }>(event).message.bbcode,
+    ).toBe("still flowing");
+    expect(app.gatewayHub.hasSubscribers(identityId)).toBe(true);
   });
 
   it("snapshots live channel state with unread and mention counts", async () => {

@@ -12,7 +12,7 @@ import {
   serializeClientCommand,
   type ClientCommand,
 } from "@emberchat/fchat-protocol";
-import { FchatSim, rawDataToString } from "./sim-server.js";
+import { FchatSim, escapeWireText, rawDataToString } from "./sim-server.js";
 
 class TestClient {
   readonly closed: Promise<void>;
@@ -133,6 +133,15 @@ async function login(
   client.send(idn(account, sim.issueTicketFor(account), character));
   await client.waitFor("NLN");
   return client;
+}
+
+/** The ADH- id the sim minted for a CCR, read off its JCH echo. */
+function mintedRoom(raw: string): string {
+  const command = parseServerCommand(raw);
+  if (command.cmd === "JCH" && "payload" in command) {
+    return command.payload.channel;
+  }
+  throw new Error(`expected a JCH echo, got ${command.cmd}`);
 }
 
 describe("getApiTicket.php", () => {
@@ -547,6 +556,66 @@ describe("channels", () => {
     client.send({ cmd: "LCH", payload: { channel: "Frontpage" } });
     expect(parseServerCommand(await client.waitFor("ERR"))).toMatchObject({
       payload: { number: 49 },
+    });
+  });
+
+  it("destroys a private room when its last member leaves (#327)", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Amber's Room" } });
+    const room = mintedRoom(await amber.waitFor("JCH"));
+    expect(room).toMatch(/^ADH-/);
+    await amber.waitFor("CDS"); // drain the rest of the join flow
+
+    // Sole occupant leaves — the room is reaped, so a rejoin fails ERR 26.
+    amber.send({ cmd: "LCH", payload: { channel: room } });
+    await amber.waitFor("LCH");
+    amber.send({ cmd: "JCH", payload: { channel: room } });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 26 },
+    });
+  });
+
+  it("destroys a private room when its last member disconnects (#327)", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Amber's Room" } });
+    const room = mintedRoom(await amber.waitFor("JCH"));
+    await amber.waitFor("CDS");
+
+    // The sole occupant drops (the restart-detach case). The room is gone, so
+    // a fresh session that tries to rejoin it gets ERR 26.
+    amber.close();
+    await amber.closed;
+    const rejoin = await login(sim, "amber@example.test", "Amber Vale");
+    rejoin.send({ cmd: "JCH", payload: { channel: room } });
+    expect(parseServerCommand(await rejoin.waitFor("ERR"))).toMatchObject({
+      payload: { number: 26 },
+    });
+  });
+
+  it("keeps a private room alive while another member remains (#327)", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "CCR", payload: { channel: "Shared Room" } });
+    const room = mintedRoom(await amber.waitFor("JCH"));
+    await amber.waitFor("CDS");
+    // Invite a second member so the room has two occupants.
+    amber.send({
+      cmd: "CIU",
+      payload: { channel: room, character: "Birch Rowan" },
+    });
+    const birch = await login(sim, "birch@example.test", "Birch Rowan");
+    birch.send({ cmd: "JCH", payload: { channel: room } });
+    await birch.waitFor("CDS");
+
+    // Amber leaves; Birch is still in, so the room survives and Amber can
+    // rejoin it.
+    amber.send({ cmd: "LCH", payload: { channel: room } });
+    await amber.waitFor("LCH");
+    amber.send({ cmd: "JCH", payload: { channel: room } });
+    expect(parseServerCommand(await amber.waitFor("JCH"))).toMatchObject({
+      payload: { channel: room, character: { identity: "Amber Vale" } },
     });
   });
 });
@@ -1825,5 +1894,35 @@ describe("character JSON API + eicon index (M8 step 3)", () => {
     const deltaLines = delta.split("\n").filter((line) => line !== "");
     expect(deltaLines[0]).toBe("# As Of: 1752000900");
     expect(deltaLines.slice(1)).toEqual(["-\tteacup"]);
+  });
+});
+
+describe("escapeWireText (#335 follow-up)", () => {
+  // The sim mirrors the real F-Chat server: it entity-escapes & < > on
+  // outbound MSG/LRP so e2e sees the same escaped wire the live server emits
+  // (a signed CDN URL's '&' arriving as '&amp;'), exercising the client decode.
+  it("escapes the three entities the live server injects", () => {
+    expect(escapeWireText("Tom & Jerry")).toBe("Tom &amp; Jerry");
+    expect(escapeWireText("<3")).toBe("&lt;3");
+    expect(escapeWireText("a > b")).toBe("a &gt; b");
+  });
+
+  it("turns a signed twimg URL into the escaped wire shape", () => {
+    expect(
+      escapeWireText("https://pbs.twimg.com/media/AbC?format=jpg&name=large"),
+    ).toBe("https://pbs.twimg.com/media/AbC?format=jpg&amp;name=large");
+  });
+
+  it("escapes '&' first, so it is the exact inverse of the client decode", () => {
+    // escape(text) then the client's &amp;-last decode returns the original —
+    // the round-trip is the identity for any input.
+    const decode = (s: string): string =>
+      s
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&");
+    for (const original of ["a & b", "<b>&amp;</b>", "x & y < z > w"]) {
+      expect(decode(escapeWireText(original))).toBe(original);
+    }
   });
 });

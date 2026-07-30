@@ -35,6 +35,11 @@ import {
 import { markdownSpans, type MdSpanType } from "@emberchat/markdown-bbcode";
 import { eiconUrl } from "../../lib/avatar.js";
 import type { ComposerInputHandle } from "./composer-input.js";
+import {
+  externalEdit,
+  fullDocReplace,
+  isProgrammatic,
+} from "./inline-editor-edit.js";
 
 const SPAN_CLASS: Record<MdSpanType, string> = {
   bold: "emb-b",
@@ -123,10 +128,12 @@ const theme = EditorView.theme({
     minWidth: "0",
     color: "var(--eb-text)",
     fontSize: "13.5px",
-    lineHeight: "1.5",
+    // Whole-pixel line box + a 1px/2px inset, exactly like the textarea, so
+    // the caret is never clipped against the scroller edge (#408).
+    lineHeight: "20px",
   },
   ".cm-content": {
-    padding: "0",
+    padding: "1px 2px",
     fontFamily: "inherit",
     caretColor: "var(--eb-text)",
   },
@@ -139,6 +146,9 @@ const theme = EditorView.theme({
     overflowY: "auto",
   },
   ".cm-placeholder": { color: "var(--eb-meta)" },
+  // Hide the placeholder on focus (#393), mirroring the textarea path so the
+  // hint disappears the moment the editor is focused, not on first keystroke.
+  "&.cm-focused .cm-placeholder": { color: "transparent" },
   ".emb-b": { fontWeight: "700" },
   ".emb-i": { fontStyle: "italic" },
   ".emb-s": { textDecoration: "line-through" },
@@ -224,6 +234,16 @@ export default function InlineEditor(props: InlineEditorProps) {
       focused() {
         return viewRef.current?.hasFocus ?? false;
       },
+      focusAtCoords(clientX, clientY) {
+        const view = viewRef.current;
+        if (!view) {
+          return;
+        }
+        view.focus();
+        const pos =
+          view.posAtCoords({ x: clientX, y: clientY }) ?? view.state.doc.length;
+        view.dispatch({ selection: { anchor: pos } });
+      },
       applyEdit(text, selStart, selEnd) {
         const view = viewRef.current;
         if (!view) {
@@ -236,6 +256,10 @@ export default function InlineEditor(props: InlineEditorProps) {
             anchor: Math.min(selStart, text.length),
             head: Math.min(selEnd, text.length),
           },
+          // Programmatic edit: the caller (toolbar/eicon/slash) already owns
+          // React `text` state, so this must not re-fire onChange (no TPN, no
+          // slash reset) — matching the textarea path (#269 item 1).
+          annotations: externalEdit.of(true),
         });
       },
     }),
@@ -273,7 +297,12 @@ export default function InlineEditor(props: InlineEditorProps) {
           inlineDecorations,
           theme,
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
+            // Only user keystrokes propagate to onChange. Programmatic edits
+            // (controlled-value sync, toolbar/eicon/slash applyEdit) carry the
+            // externalEdit annotation and stay silent, so they never emit a
+            // typing TPN or reset slash state — the textarea path never fires
+            // onChange for React-driven setText either (#269 item 1).
+            if (update.docChanged && !isProgrammatic(update.transactions)) {
               cbRef.current.onChange(update.state.doc.toString());
             }
           }),
@@ -310,9 +339,11 @@ export default function InlineEditor(props: InlineEditorProps) {
   useEffect(() => {
     const view = viewRef.current;
     if (view && view.state.doc.toString() !== props.value) {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: props.value },
-      });
+      // fullDocReplace carries the caret to the end of the restored text
+      // (a bare replace collapses the selection to 0 on pref flip / draft
+      // recall, #269 item 2) and marks the edit programmatic so onChange
+      // stays silent (#269 item 1).
+      view.dispatch(fullDocReplace(view.state.doc.length, props.value));
     }
   }, [props.value]);
 

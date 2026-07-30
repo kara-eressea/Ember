@@ -11,6 +11,8 @@ import {
   validatorCompiler,
 } from "fastify-type-provider-zod";
 import { trustProxyValue, type AppConfig } from "./config.js";
+import { contentSecurityDirectives } from "./security/csp.js";
+import { ImagePreviewHostRegistry } from "./security/image-preview-hosts.js";
 import type { Db } from "./db/index.js";
 import { adsRoutes } from "./modules/ads/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
@@ -60,6 +62,8 @@ declare module "fastify" {
     outbox: Outbox;
     detachedAway: DetachedAway;
     directory: ChannelDirectory;
+    imagePreviewHosts: ImagePreviewHostRegistry;
+    gatewayHub: GatewayHub;
   }
 }
 
@@ -73,6 +77,8 @@ export interface BuildAppOptions {
   sessionTuning?: SessionTuning;
   /** Test-only clock for the detached-away sweep. */
   detachedAwayNow?: () => number;
+  /** Gateway heartbeat period (test-only; production uses HEARTBEAT_MS). */
+  gatewayHeartbeatMs?: number;
   /** Test-only directory cooldown/timeout knobs. */
   directoryTuning?: ChannelDirectoryOptions;
   /** Injectable for tests (drain/inspect the profile budget). */
@@ -86,6 +92,7 @@ export async function buildApp({
   flistApiClient,
   sessionTuning,
   detachedAwayNow,
+  gatewayHeartbeatMs,
   directoryTuning,
   characterDataBudget,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -112,6 +119,11 @@ export async function buildApp({
     });
   const tickets = new TicketManagerRegistry(flistApi, vault);
   const highlights = new HighlightMatcher(db, app.log);
+  // Live union of every user's image-preview allowlist, folded into the CSP so
+  // a host a user adds in Preferences is actually fetchable (#342). Loaded once
+  // here and refreshed whenever a user's imagePreviewHosts pref changes.
+  const imagePreviewHosts = ImagePreviewHostRegistry.fromDb(db, app.log);
+  await imagePreviewHosts.refresh();
   // Late-bound: the session registry's start callback needs it, but the
   // scheduler itself needs the hub/history built below.
   // Assigned once below; the session-start callback must close over it.
@@ -213,6 +225,8 @@ export async function buildApp({
   };
   detachedAway.start();
   app.decorate("detachedAway", detachedAway);
+  app.decorate("imagePreviewHosts", imagePreviewHosts);
+  app.decorate("gatewayHub", hub);
   const sessionJanitor = new SessionJanitor({ db, logger: app.log });
   sessionJanitor.start();
   const updates = new UpdateChecker({
@@ -260,20 +274,12 @@ export async function buildApp({
     contentSecurityPolicy:
       config.WEB_DIST !== undefined
         ? {
-            directives: {
-              "default-src": ["'self'"],
-              "script-src": ["'self'"],
-              // React style attributes need inline styles allowed.
-              "style-src": ["'self'", "'unsafe-inline'"],
-              // Avatars/eicons hotlink from F-List's static host (§6/§8).
-              "img-src": ["'self'", "data:", "https://static.f-list.net"],
-              "connect-src": ["'self'"],
-              "font-src": ["'self'"],
-              "object-src": ["'none'"],
-              "frame-ancestors": ["'none'"],
-              "base-uri": ["'self'"],
-              "form-action": ["'self'"],
-            },
+            // The extra-hosts source is a function helmet evaluates per
+            // response, so a pref update (which calls registry.refresh())
+            // widens the policy without a restart or a per-request DB read.
+            directives: contentSecurityDirectives(() =>
+              imagePreviewHosts.mediaSourceString(),
+            ),
           }
         : false,
     // F-List's static host serves images without CORP headers; embedder
@@ -378,8 +384,12 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
+    ...(process.env.NODE_ENV === "test" && gatewayHeartbeatMs !== undefined
+      ? { heartbeatMs: gatewayHeartbeatMs }
+      : {}),
     // Browsers may open the gateway from the app's own origin or any
     // configured CORS origin; anything else is a hostile page. The two
     // loopback spellings are treated as one so a local `docker compose up`

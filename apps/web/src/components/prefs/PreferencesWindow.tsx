@@ -4,7 +4,8 @@
 // pane persists goes through the gateway `prefs.set` patch — per app
 // account, synced across every device (decisions.md §10).
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { ModalWindow } from "../shell/ModalWindow.js";
 import { AppearancePane } from "./AppearancePane.js";
 import { AwayLogsPane } from "./AwayLogsPane.js";
 import { GeneralPane } from "./GeneralPane.js";
@@ -32,94 +33,63 @@ export function PreferencesWindow({
   onClose: () => void;
 }) {
   const [pane, setPane] = useState<PaneId>("general");
-  const windowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    windowRef.current?.focus();
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
 
   const active = PANES.find((entry) => entry.id === pane) ?? PANES[0];
 
   return (
-    <div
-      className={styles.overlay}
-      onPointerDown={(event) => {
-        // Backdrop only — clicks inside the window must not close it.
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+    <ModalWindow
+      ariaLabel="Preferences"
+      windowClassName={styles.window}
+      onClose={onClose}
     >
-      <div
-        className={styles.window}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Preferences"
-        tabIndex={-1}
-        ref={windowRef}
-      >
-        <nav className={styles.rail} aria-label="Preference sections">
-          <div className={styles.railTitle}>Preferences</div>
-          {PANES.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`${styles.railItem} ${
-                entry.id === pane ? styles.railItemActive : ""
-              }`}
-              aria-current={entry.id === pane ? "page" : undefined}
-              onClick={() => {
-                setPane(entry.id);
-              }}
-            >
-              <span className={styles.railGlyph} aria-hidden>
-                {entry.glyph}
-              </span>
-              {entry.label}
-            </button>
-          ))}
-          <div className={styles.railFoot}>
-            <a
-              className={styles.railFootLink}
-              href="https://www.f-list.net/account_settings.php"
-              target="_blank"
-              rel="noopener"
-            >
-              F-List account ↗
-            </a>
-          </div>
-        </nav>
-        <section className={styles.pane}>
-          <header className={styles.paneHead}>
-            <h2 className={styles.paneTitle}>{active.label}</h2>
-            <button
-              type="button"
-              className={styles.close}
-              aria-label="Close preferences"
-              onClick={onClose}
-            >
-              ✕
-            </button>
-          </header>
-          <div className={styles.paneBody}>
-            <PaneContent
-              pane={pane}
-              identityId={identityId}
-              onClose={onClose}
-            />
-          </div>
-        </section>
-      </div>
-    </div>
+      <nav className={styles.rail} aria-label="Preference sections">
+        <div className={styles.railTitle}>Preferences</div>
+        {PANES.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            className={`${styles.railItem} ${
+              entry.id === pane ? styles.railItemActive : ""
+            }`}
+            aria-current={entry.id === pane ? "page" : undefined}
+            onClick={() => {
+              setPane(entry.id);
+            }}
+          >
+            <span className={styles.railGlyph} aria-hidden>
+              {entry.glyph}
+            </span>
+            {entry.label}
+          </button>
+        ))}
+        <div className={styles.railFoot}>
+          <a
+            className={styles.railFootLink}
+            href="https://www.f-list.net/account_settings.php"
+            target="_blank"
+            rel="noopener"
+          >
+            F-List account ↗
+          </a>
+        </div>
+      </nav>
+      <section className={styles.pane}>
+        <header className={styles.paneHead}>
+          <h2 className={styles.paneTitle}>{active.label}</h2>
+          <button
+            type="button"
+            className={styles.close}
+            aria-label="Close preferences"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </header>
+        <div className={styles.paneBody}>
+          <PaneContent pane={pane} identityId={identityId} onClose={onClose} />
+        </div>
+      </section>
+    </ModalWindow>
   );
 }
 

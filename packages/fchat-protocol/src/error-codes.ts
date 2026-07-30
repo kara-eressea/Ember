@@ -61,6 +61,22 @@ export const FchatErrorCode = {
 export type FchatErrorCode =
   (typeof FchatErrorCode)[keyof typeof FchatErrorCode];
 
+/**
+ * The "channel gone / not-in-channel" family: the server telling us a
+ * channel we referenced no longer holds us — a private room destroyed while
+ * we were detached (F-Chat reaps empty ADH- rooms), or a join/leave against
+ * a key we're not actually in. For a leave these mean the leave is already
+ * effectively done; for a join they mean the room can't be joined. Treated
+ * as a completed/settled leave rather than a surfaced dead-end error (#327).
+ */
+export function isChannelGoneError(code: number): boolean {
+  return (
+    code === FchatErrorCode.ChannelNotFound || // 26
+    code === FchatErrorCode.NotInChannel || // 45
+    code === FchatErrorCode.CharacterNotInChannel // 49
+  );
+}
+
 export const FCHAT_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   0: "Operation completed successfully.",
   1: "Syntax error.",

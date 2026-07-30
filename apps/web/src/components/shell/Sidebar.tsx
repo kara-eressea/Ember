@@ -2,17 +2,18 @@
 // entry points, #196) · sections (Pinned, Channels, Direct Messages,
 // Friends, Bookmarks) · MeBar. Section headings collapse (#168, per-device
 // localStorage); friends/bookmarks sort online-first (#164) and offline
-// rows hide behind the hideOfflineCharacters pref (#165). The social
-// sections load lazily (four upstream F-List calls) and refresh on demand;
+// rows hide behind each section's own show-offline pref (#165, #329), with
+// pinned/unread/open conversations always shown. The social
+// sections load lazily (four upstream F-List calls) and stay fresh via RTB;
 // incoming friend requests render as actionable rows like channel invites.
 
 import {
   useEffect,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router";
 import {
@@ -25,8 +26,9 @@ import { api } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
-import { channelPath, dmPath } from "../../lib/routes.js";
+import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
 import {
@@ -38,11 +40,28 @@ import {
   type SocialCharacter,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { useRailStore } from "../../stores/rail.js";
+import { railHidden } from "../../lib/rail-visibility.js";
 import { Avatar } from "../common/Avatar.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
+import { isPrivateRoom } from "../chat/invite-targets.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
+import { SectionOfflineMenu } from "../chat/SectionOfflineMenu.js";
 import { matchScore } from "./quick-switch.js";
-import { openDmPartnerSet, orderRows, orderSocial } from "./sidebar-order.js";
+import {
+  keepRow,
+  showOfflineFor,
+  type OfflineSection,
+} from "./offline-filter.js";
+import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
+import {
+  applyManualOrder,
+  clearLegacySidebarOrders,
+  legacySidebarOrders,
+  moveRow,
+  sectionOrder,
+  withSectionOrder,
+} from "./sidebar-reorder.js";
 import {
   loadCollapsedSections,
   toggleCollapsedSection,
@@ -74,6 +93,9 @@ const MENU_WIDTH = 216;
 /** Right-click target of a sidebar people row (DM / friend / bookmark). */
 interface PersonMenuState {
   member: MemberDto;
+  /** Present when the row carries an open DM (#315): lets the identity menu
+   * offer "Mark as read" for that conversation. */
+  markRead?: { convId: string; unread: number };
   position: { x: number; y: number };
 }
 
@@ -89,6 +111,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar({ session, activeConvId }: SidebarProps) {
+  const navigate = useNavigate();
   const gatewayStatus = useUiStore((s) => s.gatewayStatus);
   const online = session.sessionStatus === "online";
   const headDot: DotKind =
@@ -120,6 +143,99 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   const openSection = (section: SidebarSection) =>
     filtering || collapsed[section] !== true;
 
+  // Drag-to-reorder (#391): a per-identity manual order, synced through the
+  // `sidebarOrder` pref (#412) so every attached browser agrees and a drop
+  // lands live on the other clients' `prefs.updated`. Reordering is disabled
+  // while the toolbar filter is active — a filtered subset isn't the real
+  // section order. `drag` tracks the row being dragged and the current drop
+  // target/side so a subtle indicator can render. One pref write per drop.
+  const orders = session.prefs.sidebarOrder;
+  // One-shot migration off the pre-#412 localStorage key: if this browser
+  // still holds a drag order and the synced pref has none, push it up once
+  // and drop the key. After that the pref is the only source of truth, so a
+  // stale copy on another device can never resurrect an old order.
+  const identityId = session.identityId;
+  const hasSyncedOrder = Object.keys(orders).length > 0;
+  useEffect(() => {
+    const legacy = legacySidebarOrders();
+    if (Object.keys(legacy).length === 0) {
+      return;
+    }
+    if (hasSyncedOrder) {
+      clearLegacySidebarOrders();
+      return;
+    }
+    void patchPrefs(identityId, { sidebarOrder: legacy }).then((ok) => {
+      if (ok) {
+        clearLegacySidebarOrders();
+      }
+    });
+  }, [identityId, hasSyncedOrder]);
+  const [drag, setDrag] = useState<{
+    section: SidebarSection;
+    draggedId: string;
+    overId?: string;
+    position?: "before" | "after";
+  }>();
+  const reorderable = !filtering;
+  const rowDrag = (
+    section: SidebarSection,
+    id: string,
+    ids: readonly string[],
+  ): RowDrag | undefined => {
+    if (!reorderable) {
+      return undefined;
+    }
+    return {
+      onDragStart: () => {
+        setDrag({ section, draggedId: id });
+      },
+      onDragOver: (event) => {
+        if (!drag || drag.section !== section) {
+          return;
+        }
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const position =
+          event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+        setDrag((current) =>
+          current ? { ...current, overId: id, position } : current,
+        );
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        if (!drag || drag.section !== section) {
+          return;
+        }
+        const next = moveRow(
+          ids,
+          drag.draggedId,
+          id,
+          drag.position ?? "before",
+        );
+        void patchPrefs(session.identityId, {
+          sidebarOrder: withSectionOrder(
+            orders,
+            session.identityId,
+            section,
+            next,
+          ),
+        });
+        setDrag(undefined);
+      },
+      onDragEnd: () => {
+        setDrag(undefined);
+      },
+      indicator:
+        drag &&
+        drag.section === section &&
+        drag.overId === id &&
+        drag.draggedId !== id
+          ? drag.position
+          : undefined,
+    };
+  };
+
   // Right-click identity menu on people rows (#167) — the same menu the
   // channel member list uses, minus the channel-only sections.
   const [personMenu, setPersonMenu] = useState<PersonMenuState>();
@@ -128,10 +244,12 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     character: string,
     status: string,
     statusmsg: string,
+    markRead?: { convId: string; unread: number },
   ) => {
     event.preventDefault();
     setPersonMenu({
       member: { character, gender: "", status, statusmsg },
+      markRead,
       position: {
         x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
         y: Math.min(event.clientY, window.innerHeight - 160),
@@ -147,6 +265,24 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     ? session.channels[channelMenu.key]
     : undefined;
 
+  // Right-click menu on a people-section header (#329) — a per-section
+  // "Show offline" toggle for Friends / Bookmarks / Direct messages.
+  const [sectionMenu, setSectionMenu] = useState<{
+    section: OfflineSection;
+    position: { x: number; y: number };
+  }>();
+  const openSectionMenu =
+    (section: OfflineSection) => (event: ReactMouseEvent) => {
+      event.preventDefault();
+      setSectionMenu({
+        section,
+        position: {
+          x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
+          y: Math.min(event.clientY, window.innerHeight - 160),
+        },
+      });
+    };
+
   // convId "" = volatile placeholder whose conversation row is still being
   // written; it becomes routable one event later.
   const bump = session.prefs.highlightBump;
@@ -158,52 +294,195 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     (c) => c.highlightedAt,
     bump,
   );
+  // One row per character (#290): a friend/bookmark keeps their home row in
+  // Friends/Bookmarks even with an open DM — that social row carries the DM's
+  // unread badge, active anchor, and open-on-click (see socialNames below).
+  // So the Direct Messages section omits any partner who is a friend or
+  // bookmark, listing only conversation partners who are neither. F-Chat
+  // resolves names case-insensitively, so compare lowercased.
+  const socialNames = socialNameSet([
+    ...(session.social?.friends ?? []).map((f) => f.name),
+    ...(session.social?.bookmarks ?? []).map((b) => b.name),
+  ]);
+  // Lowercased partner → DmView, so a social row can find and carry its DM.
+  const dmByPartner = new Map<string, DmView>();
+  for (const dm of Object.values(session.dms)) {
+    dmByPartner.set(dm.partner.toLowerCase(), dm);
+  }
+  // Direct messages: partners who are neither friend nor bookmark, with
+  // offline hiding applied like the social sections (#329) — an offline,
+  // read, unpinned, unopened DM row hides unless the section shows offline.
+  const showOfflineDms = showOfflineFor(session.prefs, "dms");
   const allDms = orderRows(
-    Object.values(session.dms).filter((dm) => matches(dm.partner)),
+    Object.values(session.dms).filter(
+      (dm) =>
+        matches(dm.partner) &&
+        !socialNames.has(dm.partner.toLowerCase()) &&
+        keepRow({
+          online: dm.online,
+          showOffline: showOfflineDms,
+          pinned: dm.pinned,
+          unread: dm.unread,
+          active: dm.convId === activeConvId,
+        }),
+    ),
     (d) => d.partner,
     (d) => d.highlightedAt,
     bump,
   );
-  // Pinned rows stay in their own type section, locked to the top (#169):
-  // pinned group first, unpinned after, each keeping orderRows's ordering.
+  // Manual reorder (#391) applies over the default sort: saved rows first in
+  // their dragged order, the rest stable after. Pinned rows still stay locked
+  // to the top (#169) — the manual order holds within the pinned and unpinned
+  // groups. applyManualOrder is stable, so the pinned filter keeps it.
+  const orderedChannels = applyManualOrder(
+    allChannels,
+    (c) => c.key,
+    sectionOrder(orders, session.identityId, "channels"),
+  );
+  const orderedDms = applyManualOrder(
+    allDms,
+    (d) => d.partner.toLowerCase(),
+    sectionOrder(orders, session.identityId, "dms"),
+  );
   const channels = [
-    ...allChannels.filter((c) => c.pinned),
-    ...allChannels.filter((c) => !c.pinned),
+    ...orderedChannels.filter((c) => c.pinned),
+    ...orderedChannels.filter((c) => !c.pinned),
   ];
   const dms = [
-    ...allDms.filter((d) => d.pinned),
-    ...allDms.filter((d) => !d.pinned),
+    ...orderedDms.filter((d) => d.pinned),
+    ...orderedDms.filter((d) => !d.pinned),
   ];
+  const channelIds = channels.map((c) => c.key);
+  const dmIds = dms.map((d) => d.partner.toLowerCase());
 
-  // One row per character (#227): a friend/bookmark with an open DM shows
-  // only as its DM row — which already carries presence (#229), unread, and
-  // the active anchor — so suppress the duplicate social row while the DM is
-  // open. F-Chat resolves names case-insensitively, so compare lowercased.
-  const openDmPartners = openDmPartnerSet(
-    Object.values(session.dms).map((dm) => dm.partner),
-  );
-
-  // Friends/Bookmarks: online first (#164), offline hidden behind the
-  // synced pref (#165), then the toolbar filter like everything else.
-  const hideOffline = session.prefs.hideOfflineCharacters;
-  const socialRows = (rows: readonly SocialCharacter[] | undefined) =>
-    orderSocial(
-      (rows ?? []).filter(
-        (row) =>
-          (row.online || !hideOffline) &&
-          matches(row.name) &&
-          !openDmPartners.has(row.name.toLowerCase()),
-      ),
+  // Friends/Bookmarks: online first (#164), offline hidden behind that
+  // section's own synced pref (#329), then the toolbar filter like everything
+  // else. Offline hiding now also covers a row carrying an open DM (#329) —
+  // it hides like any offline friend unless one of the always-show
+  // exemptions applies (pinned, unread, or the currently open conversation),
+  // so an opened DM no longer pins an offline partner into the list forever.
+  const socialRows = (
+    rows: readonly SocialCharacter[] | undefined,
+    section: OfflineSection,
+  ) => {
+    const showOffline = showOfflineFor(session.prefs, section);
+    return orderSocial(
+      (rows ?? []).filter((row) => {
+        const dm = dmByPartner.get(row.name.toLowerCase());
+        return (
+          keepRow({
+            online: row.online,
+            showOffline,
+            pinned: dm?.pinned,
+            unread: dm?.unread,
+            active: dm !== undefined && dm.convId === activeConvId,
+          }) && matches(row.name)
+        );
+      }),
       (row) => row.name,
       (row) => row.online,
     );
-  const friends = socialRows(session.social?.friends);
-  const bookmarks = socialRows(session.social?.bookmarks);
+  };
+  // Presence grouping (#164) stays the primary key for the people sections —
+  // a manual reorder (#391) holds within the online and offline groups, so a
+  // saved order never drags an offline row above the online ones.
+  const orderSocialRows = (
+    rows: SocialCharacter[],
+    section: SidebarSection,
+  ): SocialCharacter[] => {
+    const saved = sectionOrder(orders, session.identityId, section);
+    const byName = (r: SocialCharacter) => r.name.toLowerCase();
+    return [
+      ...applyManualOrder(
+        rows.filter((r) => r.online),
+        byName,
+        saved,
+      ),
+      ...applyManualOrder(
+        rows.filter((r) => !r.online),
+        byName,
+        saved,
+      ),
+    ];
+  };
+  const friends = orderSocialRows(
+    socialRows(session.social?.friends, "friends"),
+    "friends",
+  );
+  const bookmarks = orderSocialRows(
+    socialRows(session.social?.bookmarks, "bookmarks"),
+    "bookmarks",
+  );
+  const friendIds = friends.map((f) => f.name.toLowerCase());
+  const bookmarkIds = bookmarks.map((b) => b.name.toLowerCase());
 
   const nothingMatched =
     filtering &&
     allChannels.length + allDms.length + friends.length + bookmarks.length ===
       0;
+
+  // Leave a channel (#291): the same action as the channel menu's Leave —
+  // the server unpins on explicit leave (#223) so the pin can't drag it back.
+  // Navigate away first when it's on screen: the fan-out drops the row and
+  // would otherwise strand the route.
+  const leaveChannel = (channel: ChannelView) => {
+    if (channel.convId === activeConvId) {
+      void navigate(identityPath(session.character));
+    }
+    void gateway
+      .cmd({
+        identityId: session.identityId,
+        action: "channel.leave",
+        d: { key: channel.key },
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              session.identityId,
+              "error",
+              ack.error ?? "Could not leave",
+            );
+        }
+      });
+  };
+
+  // Close a DM (#291): the same gateway pm.close the DM header uses — history
+  // is kept, the row and window go away, and the conversation reopens on the
+  // next pm.open or inbound message. Navigate away first when it's active.
+  const closeDm = (dm: DmView) => {
+    if (dm.convId === activeConvId) {
+      void navigate(identityPath(session.character));
+    }
+    void gateway
+      .cmd({
+        identityId: session.identityId,
+        action: "pm.close",
+        d: { convId: dm.convId },
+      })
+      .then((ack) => {
+        if (!ack.ok) {
+          useSessionsStore
+            .getState()
+            .applyNotice(
+              session.identityId,
+              "error",
+              ack.error ?? "Could not close the conversation",
+            );
+          return;
+        }
+        if (ack.conversation) {
+          useSessionsStore
+            .getState()
+            .applyConversation(session.identityId, ack.conversation);
+        }
+      });
+  };
+
+  // Sidebar avatars/tokens (#416) — on by default, off restores the denser
+  // text-only rows. The row's own dot and colouring are unaffected either way.
+  const avatars = session.prefs.sidebarAvatars;
 
   const channelRow = (channel: ChannelView, pinned: boolean) => (
     <NavRow
@@ -214,7 +493,16 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       mentions={channel.mentions}
       pinned={pinned}
       glyph="#"
-      label={channel.title}
+      avatars={avatars}
+      token={isPrivateRoom(channel.key) ? "private" : "official"}
+      label={decodeWireEntities(channel.title)}
+      drag={rowDrag("channels", channel.key, channelIds)}
+      affordance={{
+        label: `Leave ${decodeWireEntities(channel.title)}`,
+        onActivate: () => {
+          leaveChannel(channel);
+        },
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         setChannelMenu({
@@ -236,9 +524,21 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       pinned={pinned}
       dot={presenceDot(dm.online, dm.status)}
       offline={!dm.online}
+      avatars={avatars}
+      avatarName={dm.partner}
       label={dm.partner}
+      drag={rowDrag("dms", dm.partner.toLowerCase(), dmIds)}
+      affordance={{
+        label: `Close conversation with ${dm.partner}`,
+        onActivate: () => {
+          closeDm(dm);
+        },
+      }}
       onContextMenu={(event) => {
-        openPersonMenu(event, dm.partner, dm.status, dm.statusmsg);
+        openPersonMenu(event, dm.partner, dm.status, dm.statusmsg, {
+          convId: dm.convId,
+          unread: dm.unread,
+        });
       }}
     />
   );
@@ -316,6 +616,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           onToggle={() => {
             toggleSection("dms");
           }}
+          onContextMenu={openSectionMenu("dms")}
         />
         {openSection("dms") && dms.map((dm) => dmRow(dm, dm.pinned))}
 
@@ -324,9 +625,19 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           friends={friends}
           bookmarks={bookmarks}
           filtering={filtering}
+          dmByPartner={dmByPartner}
+          activeConvId={activeConvId}
           openSection={openSection}
           onToggle={toggleSection}
           onRowContextMenu={openPersonMenu}
+          onSectionContextMenu={openSectionMenu}
+          rowDrag={(section, name) =>
+            rowDrag(
+              section,
+              name.toLowerCase(),
+              section === "friends" ? friendIds : bookmarkIds,
+            )
+          }
         />
 
         {nothingMatched && (
@@ -366,6 +677,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           ownCharacter={session.character}
           channelTitle={`Conversation with ${personMenu.member.character}`}
           member={personMenu.member}
+          markRead={personMenu.markRead}
           position={personMenu.position}
           onClose={() => {
             setPersonMenu(undefined);
@@ -373,8 +685,19 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         />
       )}
 
+      {sectionMenu && (
+        <SectionOfflineMenu
+          identityId={session.identityId}
+          section={sectionMenu.section}
+          position={sectionMenu.position}
+          onClose={() => {
+            setSectionMenu(undefined);
+          }}
+        />
+      )}
+
       <div className={styles.meBar}>
-        <Avatar name={session.character || "?"} size={30} />
+        <MeAvatarToggle character={session.character} />
         <MeStatus session={session} online={online} />
         <PowerButton session={session} />
         <button
@@ -394,22 +717,24 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 }
 
 /** Collapsible section heading (#168): the chevron + label toggle; the
- * right side keeps the count (and any trailing actions). */
+ * right side keeps the count. */
 function SectionHeader({
   label,
   count,
   collapsed,
   onToggle,
-  actions,
+  onContextMenu,
 }: {
   label: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
-  actions?: ReactNode;
+  /** Right-click the header (the people sections use it for the per-section
+   * "Show offline" menu, #329). */
+  onContextMenu?: (event: ReactMouseEvent) => void;
 }) {
   return (
-    <div className={styles.sectionHeader}>
+    <div className={styles.sectionHeader} onContextMenu={onContextMenu}>
       <button
         type="button"
         className={styles.sectionToggle}
@@ -421,11 +746,35 @@ function SectionHeader({
         </span>
         {label}
       </button>
-      <span className={styles.sectionMeta}>
-        {count || ""}
-        {actions}
-      </span>
+      <span className={styles.sectionMeta}>{count || ""}</span>
     </div>
+  );
+}
+
+/**
+ * Your own avatar in the MeBar, doubling as the identity-rail toggle (#346):
+ * clicking it hides or shows the rail, a per-device choice. The label/pressed
+ * state reflect the effective visibility, so with a second identity connected
+ * (rail forced visible) the button honestly reads "Hide identity rail".
+ */
+function MeAvatarToggle({ character }: { character: string }) {
+  const railPref = useRailStore((s) => s.hidden);
+  const identityCount = useSessionsStore((s) => s.identities?.length ?? 0);
+  const hidden = railHidden(railPref, identityCount);
+  const label = hidden ? "Show identity rail" : "Hide identity rail";
+  return (
+    <button
+      type="button"
+      className={styles.meAvatar}
+      title={label}
+      aria-label={label}
+      aria-pressed={hidden}
+      onClick={() => {
+        useRailStore.getState().toggle();
+      }}
+    >
+      <Avatar name={character || "?"} size={30} />
+    </button>
   );
 }
 
@@ -666,6 +1015,81 @@ function sessionStatusLabel(session: IdentitySession): string {
   return session.sessionStatus.replace("_", " ");
 }
 
+/** Hover/focus affordance on the right of a row (#291): closes a DM or
+ * leaves a channel. The counter badge swaps for this X on hover (CSS), and
+ * it stays keyboard-reachable (focusable, aria-labelled). */
+interface RowAffordance {
+  label: string;
+  onActivate: () => void;
+}
+
+/** Drag-to-reorder wiring for a sidebar row (#391). `indicator` renders the
+ * drop bar above/below the row when it is the current drop target. */
+export interface RowDrag {
+  onDragStart: (event: ReactDragEvent<HTMLElement>) => void;
+  onDragOver: (event: ReactDragEvent<HTMLElement>) => void;
+  onDrop: (event: ReactDragEvent<HTMLElement>) => void;
+  onDragEnd: (event: ReactDragEvent<HTMLElement>) => void;
+  indicator?: "before" | "after";
+}
+
+/** DOM props shared by every draggable row wrapper (the NavRow div and the
+ * SocialRow button), so both render the same affordance and drop indicator. */
+function dragWrapProps(drag: RowDrag | undefined) {
+  if (!drag) {
+    return {};
+  }
+  const indicatorClass =
+    drag.indicator === "before"
+      ? styles.dropBefore
+      : drag.indicator === "after"
+        ? styles.dropAfter
+        : undefined;
+  return {
+    draggable: true,
+    onDragStart: drag.onDragStart,
+    onDragOver: drag.onDragOver,
+    onDrop: drag.onDrop,
+    onDragEnd: drag.onDragEnd,
+    indicatorClass,
+  };
+}
+
+/** Sidebar row avatar (#416): the same F-List image the member list uses, at
+ * 20px, with the member-list status dot overlaid bottom-right. Decorative —
+ * the row's own dot, colouring and label carry the meaning. */
+const SIDEBAR_AVATAR_SIZE = 20;
+
+function RowAvatar({ name, dot }: { name: string; dot?: DotKind }) {
+  return (
+    <span className={styles.navAvatar} data-testid="sidebar-avatar">
+      <Avatar name={name} size={SIDEBAR_AVATAR_SIZE} />
+      {dot !== undefined && (
+        <span className={`${styles.navAvatarDot} ${DOT_CLASS[dot]}`} />
+      )}
+    </span>
+  );
+}
+
+/** Channel counterpart of the row avatar: a round accent-tinted token with a
+ * # glyph, a lighter tint for private (ADH-) rooms than official channels. */
+function ChannelToken({ kind }: { kind: "official" | "private" }) {
+  const classes = [styles.navToken];
+  if (kind === "private") {
+    classes.push(styles.navTokenPrivate ?? "");
+  }
+  return (
+    <span
+      className={classes.join(" ")}
+      data-testid="sidebar-token"
+      data-kind={kind}
+      aria-hidden
+    >
+      #
+    </span>
+  );
+}
+
 interface NavRowProps {
   to: string;
   active: boolean;
@@ -676,6 +1100,15 @@ interface NavRowProps {
   glyph?: string;
   dot?: DotKind;
   offline?: boolean;
+  /** Sidebar avatars/tokens pref (#416). Off = the text-only row. */
+  avatars?: boolean;
+  /** Character whose avatar leads the row (DM rows). */
+  avatarName?: string;
+  /** Channel rows get a round # token instead of the bare glyph, tinted by
+   * room kind: official public channels vs private (ADH-) rooms. */
+  token?: "official" | "private";
+  affordance?: RowAffordance;
+  drag?: RowDrag;
   onContextMenu?: (event: ReactMouseEvent) => void;
 }
 
@@ -689,6 +1122,11 @@ function NavRow({
   glyph,
   dot,
   offline,
+  avatars = false,
+  avatarName,
+  token,
+  affordance,
+  drag,
   onContextMenu,
 }: NavRowProps) {
   const classes = [styles.navItem];
@@ -701,29 +1139,76 @@ function NavRow({
   if (offline) {
     classes.push(styles.offlineRow);
   }
+  const { indicatorClass, ...dragProps } = dragWrapProps(drag);
+  const wrapClasses = [styles.navRowWrap];
+  if (indicatorClass) {
+    wrapClasses.push(indicatorClass);
+  }
+  // The close/leave button (#291) is a sibling of the Link, not a child:
+  // nesting interactive controls inside an <a> is invalid HTML and would fold
+  // the X's label into the link's accessible name. A relatively-positioned
+  // wrapper lets the X overlay the row's right edge on hover instead.
+  // The wrapper is the drag source (#391); the inner Link's own default anchor
+  // drag is turned off so it doesn't hijack the reorder gesture.
   return (
-    <Link className={classes.join(" ")} to={to} onContextMenu={onContextMenu}>
-      {glyph !== undefined && <span className={styles.navGlyph}>{glyph}</span>}
-      {dot !== undefined && (
-        <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
-      )}
-      <span className={styles.navLabel}>{label}</span>
-      {pinned && <span className={styles.navPin}>⚲</span>}
-      {mentions > 0 ? (
-        <span
-          className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}
-          data-testid="nav-badge"
-        >
-          @{clampBadge(mentions)}
+    <div className={wrapClasses.join(" ")} {...dragProps}>
+      <Link
+        className={classes.join(" ")}
+        to={to}
+        draggable={false}
+        onContextMenu={onContextMenu}
+      >
+        {avatars && token !== undefined ? (
+          <ChannelToken kind={token} />
+        ) : (
+          glyph !== undefined && (
+            <span className={styles.navGlyph}>{glyph}</span>
+          )
+        )}
+        {avatars && avatarName !== undefined && (
+          <RowAvatar name={avatarName} dot={dot} />
+        )}
+        {dot !== undefined && (
+          <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
+        )}
+        <span className={styles.navLabel}>{label}</span>
+        {pinned && <span className={styles.navPin}>⚲</span>}
+        <span className={styles.navTrail}>
+          {mentions > 0 ? (
+            <span
+              className={`${styles.navBadge} ${styles.navBadgeMention ?? ""} ${styles.navTrailBadge ?? ""}`}
+              data-testid="nav-badge"
+            >
+              @{clampBadge(mentions)}
+            </span>
+          ) : (
+            unread > 0 && (
+              <span
+                className={`${styles.navBadge} ${styles.navTrailBadge ?? ""}`}
+                data-testid="nav-badge"
+              >
+                {clampBadge(unread)}
+              </span>
+            )
+          )}
         </span>
-      ) : (
-        unread > 0 && (
-          <span className={styles.navBadge} data-testid="nav-badge">
-            {clampBadge(unread)}
-          </span>
-        )
+      </Link>
+      {affordance && (
+        <button
+          type="button"
+          className={styles.navClose}
+          aria-label={affordance.label}
+          title={affordance.label}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            affordance.onActivate();
+          }}
+        >
+          ✕
+        </button>
       )}
-    </Link>
+    </div>
   );
 }
 
@@ -781,14 +1266,16 @@ function InviteRow({
     }
   }
 
+  // Invite room titles are wire text the server entity-escapes (#350).
+  const inviteTitle = decodeWireEntities(invite.title);
   return (
     <div className={styles.inviteRow}>
       <span
         className={styles.inviteText}
-        title={`${invite.title} (${invite.key})`}
+        title={`${inviteTitle} (${invite.key})`}
       >
         ✉ <strong>{invite.sender}</strong> invited you to{" "}
-        <strong>{invite.title}</strong>
+        <strong>{inviteTitle}</strong>
       </span>
       <button
         type="button"
@@ -830,14 +1317,20 @@ function SocialSections({
   friends,
   bookmarks,
   filtering,
+  dmByPartner,
+  activeConvId,
   openSection,
   onToggle,
   onRowContextMenu,
+  onSectionContextMenu,
+  rowDrag,
 }: {
   session: IdentitySession;
   friends: SocialCharacter[];
   bookmarks: SocialCharacter[];
   filtering: boolean;
+  dmByPartner: Map<string, DmView>;
+  activeConvId: string | undefined;
   openSection: (section: SidebarSection) => boolean;
   onToggle: (section: SidebarSection) => void;
   onRowContextMenu: (
@@ -845,7 +1338,15 @@ function SocialSections({
     character: string,
     status: string,
     statusmsg: string,
+    markRead?: { convId: string; unread: number },
   ) => void;
+  onSectionContextMenu: (
+    section: OfflineSection,
+  ) => (event: ReactMouseEvent) => void;
+  rowDrag: (
+    section: "friends" | "bookmarks",
+    name: string,
+  ) => RowDrag | undefined;
 }) {
   const identityId = session.identityId;
   const social = session.social;
@@ -880,41 +1381,35 @@ function SocialSections({
     }
   }
 
-  const refresh = (
-    <button
-      type="button"
-      className={styles.sectionAction}
-      title="Refresh friends and bookmarks"
-      aria-label="Refresh friends and bookmarks"
-      onClick={() => {
-        setLoadError(undefined);
-        loadSocial(identityId, true).catch((error: unknown) => {
-          setLoadError(
-            error instanceof Error ? error.message : "Couldn't load",
+  const row = (
+    character: SocialCharacter,
+    glyph: string,
+    section: "friends" | "bookmarks",
+  ) => {
+    // #290: a friend/bookmark with an open DM carries the DM's unread badge
+    // and active anchor onto its own row.
+    const dm = dmByPartner.get(character.name.toLowerCase());
+    return (
+      <SocialRow
+        key={character.name}
+        session={session}
+        character={character}
+        glyph={glyph}
+        unread={dm?.unread ?? 0}
+        active={dm !== undefined && dm.convId === activeConvId}
+        drag={rowDrag(section, character.name)}
+        onContextMenu={(event) => {
+          onRowContextMenu(
+            event,
+            character.name,
+            character.status,
+            character.statusmsg,
+            dm ? { convId: dm.convId, unread: dm.unread } : undefined,
           );
-        });
-      }}
-    >
-      ↻
-    </button>
-  );
-
-  const row = (character: SocialCharacter, glyph: string) => (
-    <SocialRow
-      key={character.name}
-      session={session}
-      character={character}
-      glyph={glyph}
-      onContextMenu={(event) => {
-        onRowContextMenu(
-          event,
-          character.name,
-          character.status,
-          character.statusmsg,
-        );
-      }}
-    />
-  );
+        }}
+      />
+    );
+  };
 
   return (
     <>
@@ -925,11 +1420,11 @@ function SocialSections({
         onToggle={() => {
           onToggle("friends");
         }}
-        actions={refresh}
+        onContextMenu={onSectionContextMenu("friends")}
       />
       {loadError !== undefined && (
         <div className={styles.socialEmpty} role="alert">
-          Couldn't load — {loadError}. Use ↻ to retry.
+          Couldn't load — {loadError}.
         </div>
       )}
       {social?.incoming.map((request) => (
@@ -959,7 +1454,8 @@ function SocialSections({
           </button>
         </div>
       ))}
-      {openSection("friends") && friends.map((friend) => row(friend, "★"))}
+      {openSection("friends") &&
+        friends.map((friend) => row(friend, "★", "friends"))}
       {openSection("friends") &&
         !filtering &&
         social !== undefined &&
@@ -974,9 +1470,10 @@ function SocialSections({
         onToggle={() => {
           onToggle("bookmarks");
         }}
+        onContextMenu={onSectionContextMenu("bookmarks")}
       />
       {openSection("bookmarks") &&
-        bookmarks.map((bookmark) => row(bookmark, "⚑"))}
+        bookmarks.map((bookmark) => row(bookmark, "⚑", "bookmarks"))}
       {openSection("bookmarks") &&
         !filtering &&
         social !== undefined &&
@@ -994,11 +1491,17 @@ function SocialRow({
   session,
   character,
   glyph,
+  unread,
+  active,
+  drag,
   onContextMenu,
 }: {
   session: IdentitySession;
   character: SocialCharacter;
   glyph: string;
+  unread: number;
+  active: boolean;
+  drag?: RowDrag;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
   const navigate = useNavigate();
@@ -1027,20 +1530,41 @@ function SocialRow({
     );
   }
 
+  const classes = [styles.navItem, styles.socialRow ?? ""];
+  if (active) {
+    classes.push(styles.active ?? "");
+  }
+  if (unread > 0) {
+    classes.push(styles.unread ?? "");
+  }
+  if (!character.online) {
+    classes.push(styles.offlineRow ?? "");
+  }
+  const { indicatorClass, ...dragProps } = dragWrapProps(drag);
+  if (indicatorClass) {
+    classes.push(indicatorClass);
+  }
   return (
     <button
       type="button"
-      className={`${styles.navItem} ${styles.socialRow ?? ""} ${character.online ? "" : (styles.offlineRow ?? "")}`}
+      className={classes.join(" ")}
+      {...dragProps}
       onClick={() => {
         void open();
       }}
       onContextMenu={onContextMenu}
       title={
         character.online
-          ? `${character.status}${character.statusmsg ? ` — ${character.statusmsg}` : ""}`
+          ? `${character.status}${character.statusmsg ? ` — ${decodeWireEntities(character.statusmsg)}` : ""}`
           : "offline"
       }
     >
+      {session.prefs.sidebarAvatars && (
+        <RowAvatar
+          name={character.name}
+          dot={presenceDot(character.online, character.status)}
+        />
+      )}
       <span
         className={`${styles.navDot} ${DOT_CLASS[presenceDot(character.online, character.status)]}`}
       />
@@ -1048,6 +1572,16 @@ function SocialRow({
         {glyph}
       </span>
       <span className={styles.navLabel}>{character.name}</span>
+      {unread > 0 && (
+        <span className={styles.navTrail}>
+          <span
+            className={`${styles.navBadge} ${styles.navTrailBadge ?? ""}`}
+            data-testid="nav-badge"
+          >
+            {clampBadge(unread)}
+          </span>
+        </span>
+      )}
     </button>
   );
 }

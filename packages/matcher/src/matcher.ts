@@ -50,6 +50,13 @@ export interface KinkAlignment {
   yourChoice: KinkChoice;
   theirChoice: KinkChoice;
   tier: MatchTier;
+  /** Set when this row was CROSS-matched against the opposite direction of a
+   * paired kink (your "giving" vs their "receiving") rather than the same
+   * kink id — see `oppositeKinkNames`. Absent for a plain same-kink row. */
+  crossed?: boolean;
+  /** The name of the kink on THEIR list that supplied `theirChoice` when it
+   * differs from `name` (i.e. a cross-matched pairing). Absent otherwise. */
+  theirName?: string;
 }
 
 export interface MatchReport {
@@ -351,6 +358,60 @@ function scoreSubDom(you: ProfileDto, them: ProfileDto): DimensionResult {
 
 // ── Kink alignment ───────────────────────────────────────────────────────────
 
+// F-List models an orientation-paired kink as TWO separate standard kinks
+// whose names differ only by a giving/receiving-style qualifier — e.g.
+// "Receiving Oral" and "Giving Oral", or the self-vs-other framing
+// "Being <verb>ed" and "<verb>ing others". Comparing the same qualifier on
+// both profiles (their "receiving" against your "receiving") is nonsense: a
+// pairing is only meaningful when the two sides CROSS. `oppositeKinkNames`
+// turns a kink name into the candidate name(s) of its opposite direction so
+// the matcher can line your giving up against their receiving (#383).
+
+/** Whole-word, case-insensitive antonym swaps for the directional qualifier.
+ * Each entry rewrites the FIRST token into the SECOND; the reverse direction
+ * has its own entry so a name is transformed regardless of which side it is. */
+const DIRECTION_SWAPS: readonly (readonly [from: string, to: string])[] = [
+  ["giving", "receiving"],
+  ["receiving", "giving"],
+  ["giving", "getting"],
+  ["getting", "giving"],
+  ["giver", "receiver"],
+  ["receiver", "giver"],
+];
+
+/** The candidate names of a kink's opposite direction, or `[]` when the name
+ * carries no directional qualifier. Case is not preserved (callers match
+ * case-insensitively). Never includes the input name itself. */
+export function oppositeKinkNames(name: string): string[] {
+  const out: string[] = [];
+  const push = (candidate: string) => {
+    const trimmed = candidate.replace(/\s+/g, " ").trim();
+    if (
+      trimmed &&
+      trimmed.toLowerCase() !== name.toLowerCase() &&
+      !out.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      out.push(trimmed);
+    }
+  };
+  for (const [from, to] of DIRECTION_SWAPS) {
+    const boundary = new RegExp(`\\b${from}\\b`, "gi");
+    if (boundary.test(name)) {
+      push(name.replace(new RegExp(`\\b${from}\\b`, "gi"), to));
+    }
+  }
+  // Self-vs-other framing: "Being spanked" ↔ "Spanking others".
+  const being = /^being\s+(.+)$/i.exec(name);
+  if (being) {
+    push(`${being[1]} others`);
+  }
+  const others = /^(.+?)\s+others$/i.exec(name);
+  if (others) {
+    push(`being ${others[1]}`);
+  }
+  return out;
+}
+
 /** Tier for one shared kink. Symmetric. Shared enthusiasm scales with the
  * weaker side; a 'no' against interest scales with how strong the interest
  * was; shared 'no' is compatibility, not conflict. */
@@ -438,20 +499,43 @@ export function match(you: ProfileDto, them: ProfileDto): MatchReport {
     scoreSubDom(you, them),
   ];
 
-  const theirKinks = new Map(them.kinks.map((kink) => [kink.id, kink]));
+  const theirById = new Map(them.kinks.map((kink) => [kink.id, kink]));
+  const theirByName = new Map(
+    them.kinks.map((kink) => [kink.name.toLowerCase(), kink]),
+  );
   const kinks: KinkAlignment[] = [];
   for (const kink of you.kinks) {
-    const theirs = theirKinks.get(kink.id);
+    // Prefer a cross-match against the opposite direction of a paired kink
+    // (your "giving" vs their "receiving", #383); fall back to the same kink
+    // by id when the profile lists no opposite variant.
+    let theirs: (typeof them.kinks)[number] | undefined;
+    let crossed = false;
+    for (const opposite of oppositeKinkNames(kink.name)) {
+      const found = theirByName.get(opposite.toLowerCase());
+      if (found) {
+        theirs = found;
+        crossed = true;
+        break;
+      }
+    }
+    if (!theirs) {
+      theirs = theirById.get(kink.id);
+    }
     if (!theirs) {
       continue;
     }
-    kinks.push({
+    const alignment: KinkAlignment = {
       id: kink.id,
       name: kink.name,
       yourChoice: kink.choice,
       theirChoice: theirs.choice,
       tier: kinkTier(kink.choice, theirs.choice),
-    });
+    };
+    if (crossed) {
+      alignment.crossed = true;
+      alignment.theirName = theirs.name;
+    }
+    kinks.push(alignment);
   }
   kinks.sort(
     (a, b) =>

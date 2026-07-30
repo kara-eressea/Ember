@@ -4,18 +4,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MessageDto } from "@emberchat/protocol";
 import { gateway } from "../gateway/socket.js";
+import { api } from "../lib/api.js";
 import {
   BUFFER_WINDOW,
   PAGE_SIZE,
   resumeCursorsFor,
+  SCROLLBACK_CEILING,
   useMessagesStore,
 } from "./messages.js";
 
 vi.mock("../gateway/socket.js", () => ({
   gateway: { cmd: vi.fn() },
 }));
+vi.mock("../lib/api.js", () => ({
+  api: { listMessages: vi.fn() },
+}));
 // eslint-disable-next-line @typescript-eslint/unbound-method -- vitest mock fn, never reads `this`
 const cmd = vi.mocked(gateway.cmd);
+// eslint-disable-next-line @typescript-eslint/unbound-method -- vitest mock fn, never reads `this`
+const listMessages = vi.mocked(api.listMessages);
 
 const CONV = "22222222-2222-7222-8222-222222222222";
 
@@ -34,6 +41,7 @@ function message(id: number): MessageDto {
 beforeEach(() => {
   useMessagesStore.getState().reset();
   cmd.mockReset();
+  listMessages.mockReset();
 });
 
 describe("message buffers", () => {
@@ -118,5 +126,103 @@ describe("scroll-back paging (history.page, #254)", () => {
     expect(buffer?.messages.map((m) => m.id)).toEqual([10]);
     expect(buffer?.loadingOlder).toBe(false);
     expect(buffer?.hasMoreBefore).toBe(true);
+  });
+
+  it("caps the buffer under a deep back-scroll and detaches the tail (#356)", async () => {
+    const store = useMessagesStore.getState();
+    // Seed a full live window; ids ascending, newest at the tail.
+    store.resetTo(
+      CONV,
+      Array.from({ length: BUFFER_WINDOW }, (_, i) => message(10_000 + i)),
+    );
+    let oldest =
+      useMessagesStore.getState().buffers[CONV]?.messages[0]?.id ?? 0;
+    // Page backwards far past the ceiling.
+    for (let step = 0; step < 200; step += 1) {
+      const page = Array.from({ length: PAGE_SIZE }, (_, i) =>
+        message(oldest - PAGE_SIZE + i),
+      );
+      cmd.mockResolvedValueOnce({ ok: true, messages: page, hasMore: true });
+      await store.loadOlder(IDENTITY, CONV);
+      const buffer = useMessagesStore.getState().buffers[CONV];
+      expect(buffer?.messages.length).toBeLessThanOrEqual(SCROLLBACK_CEILING);
+      oldest = buffer?.messages[0]?.id ?? oldest;
+    }
+    const buffer = useMessagesStore.getState().buffers[CONV];
+    expect(buffer?.messages).toHaveLength(SCROLLBACK_CEILING);
+    // Trim keeps the oldest rows (where the reader is) and detaches the tail.
+    expect(buffer?.detachedTail).toBe(true);
+    // A live append is dropped while detached — no unreachable hole.
+    store.appendLive(CONV, message(99_999));
+    expect(
+      useMessagesStore
+        .getState()
+        .buffers[CONV]?.messages.some((m) => m.id === 99_999),
+    ).toBe(false);
+  });
+
+  it("leaves the live view untouched for a normal back-scroll", async () => {
+    const store = useMessagesStore.getState();
+    store.resetTo(CONV, [message(101), message(102)]);
+    cmd.mockResolvedValueOnce({
+      ok: true,
+      messages: [message(99), message(100)],
+      hasMore: true,
+    });
+    await store.loadOlder(IDENTITY, CONV);
+    expect(useMessagesStore.getState().buffers[CONV]?.detachedTail).toBe(false);
+  });
+
+  it("leaving a jumped conversation drops the detached window and target (#411)", async () => {
+    const store = useMessagesStore.getState();
+    listMessages.mockResolvedValueOnce({
+      messages: [message(1), message(2)],
+      hasMore: false,
+    });
+    await store.jumpTo(IDENTITY, CONV, 2);
+    expect(useMessagesStore.getState().jumpTarget?.messageId).toBe(2);
+    expect(useMessagesStore.getState().buffers[CONV]?.detachedTail).toBe(true);
+
+    store.leaveConversation(CONV);
+    const buffer = useMessagesStore.getState().buffers[CONV];
+    // Nothing left to strand the next open: no jump to re-run, no detached
+    // buffer suppressing the open-at-tail stick, and backfilled=false so the
+    // next mount fetches the live tail.
+    expect(useMessagesStore.getState().jumpTarget).toBeUndefined();
+    expect(buffer?.detachedTail).toBe(false);
+    expect(buffer?.backfilled).toBe(false);
+    expect(buffer?.messages).toEqual([]);
+  });
+
+  it("leaving an ordinary conversation keeps its buffer", () => {
+    const store = useMessagesStore.getState();
+    store.resetTo(CONV, [message(1), message(2)]);
+    store.leaveConversation(CONV);
+    expect(useMessagesStore.getState().buffers[CONV]?.messages).toHaveLength(2);
+  });
+
+  it("back-to-present lands on the live tail after a capped scroll-back", async () => {
+    const store = useMessagesStore.getState();
+    store.resetTo(
+      CONV,
+      Array.from({ length: BUFFER_WINDOW }, (_, i) => message(10_000 + i)),
+    );
+    let oldest =
+      useMessagesStore.getState().buffers[CONV]?.messages[0]?.id ?? 0;
+    for (let step = 0; step < 200; step += 1) {
+      const page = Array.from({ length: PAGE_SIZE }, (_, i) =>
+        message(oldest - PAGE_SIZE + i),
+      );
+      cmd.mockResolvedValueOnce({ ok: true, messages: page, hasMore: true });
+      await store.loadOlder(IDENTITY, CONV);
+      oldest = useMessagesStore.getState().buffers[CONV]?.messages[0]?.id ?? 0;
+    }
+    expect(useMessagesStore.getState().buffers[CONV]?.detachedTail).toBe(true);
+    const tail = [message(11_498), message(11_499)];
+    listMessages.mockResolvedValueOnce({ messages: tail, hasMore: true });
+    await store.backToPresent(IDENTITY, CONV);
+    const buffer = useMessagesStore.getState().buffers[CONV];
+    expect(buffer?.detachedTail).toBe(false);
+    expect(buffer?.messages.map((m) => m.id)).toEqual([11_498, 11_499]);
   });
 });

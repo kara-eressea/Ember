@@ -101,6 +101,67 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     page.getByTestId("presence-line").filter({ hasText: "went offline" }),
   ).toContainText("Fenwick Sprout went offline", { timeout: 10_000 });
 
+  // ── #294 regression: a prefs input keeps focus across a shell re-render ─
+  // The image-preview host field (a General pane text input — the Link
+  // previews group moved here in #392) used to be yanked back to the dialog
+  // whenever anything re-rendered AppShell — the window's focus effect re-ran
+  // on every parent render because its onClose dep was a fresh arrow each
+  // time. Focus the field, type half an entry, let a live presence event
+  // re-render the shell underneath it, then finish typing: every keystroke
+  // must still land in the field, and it must keep focus. (Any store update —
+  // the prefs-sync round trip, presence — hits the same path; presence is the
+  // deterministic, awaitable trigger here.)
+  await page.getByRole("button", { name: "Preferences" }).click();
+  await dialog.getByRole("button", { name: "General" }).click();
+  // #392: the Link previews group (mode selector + host allowlist) lives on
+  // the General pane now — its mode control renders here alongside the editor.
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Media link previews" }),
+  ).toBeVisible();
+  const hostField = dialog.getByRole("textbox", { name: "Site address" });
+  await hostField.click();
+  await hostField.pressSequentially("exam");
+  const linesBefore = await page.getByTestId("presence-line").count();
+  const sproutFocus = await SimClient.connect(
+    "hazel@example.test",
+    "hunter2",
+    "Fenwick Sprout",
+  );
+  try {
+    sproutFocus.send("JCH", { channel: "Terrarium" });
+    // A fresh presence line proves the store updated and the shell
+    // re-rendered under the open, focused input.
+    await expect
+      .poll(() => page.getByTestId("presence-line").count(), {
+        timeout: 10_000,
+      })
+      .toBeGreaterThan(linesBefore);
+  } finally {
+    sproutFocus.close();
+  }
+  await hostField.pressSequentially("ple.com");
+  await expect(hostField).toBeFocused();
+  await expect(hostField).toHaveValue("example.com");
+
+  // ── Allowlist editing (#215): submit adds a chip, ✕ removes it ─────────
+  const allowlist = dialog.getByRole("list", {
+    name: "Allowed preview sites",
+  });
+  await expect(
+    allowlist.getByRole("listitem").filter({ hasText: "example.com" }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Add" }).click();
+  const exampleChip = allowlist
+    .getByRole("listitem")
+    .filter({ hasText: "example.com" });
+  await expect(exampleChip).toBeVisible();
+  // The add form clears for the next entry.
+  await expect(hostField).toHaveValue("");
+  // Remove it again — the chip disappears, leaving the defaults intact.
+  await exampleChip.getByRole("button", { name: "Remove example.com" }).click();
+  await expect(exampleChip).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
   // Toggling the pref off hides the lines — they are render-gated.
   await page.getByRole("button", { name: "Preferences" }).click();
   await dialog.getByRole("button", { name: "Appearance" }).click();
@@ -145,6 +206,52 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     .getByRole("switch", { name: "Colorblind-friendly status colors" })
     .click();
   await dialog.getByRole("radio", { name: "Slate" }).click();
+
+  // ── Interface font size (#319, #328): the pref must resize real chrome ──
+  // Measure the *computed* font-size of a real chrome element (a Preferences
+  // field label — prefs is in-scope chrome), not just the root style: #328 was
+  // that the root font-size ramp never reached the px-based chrome. Do this
+  // while scale is still 100% so `zoom` never perturbs the reading.
+  const uiFontRadios = dialog.getByRole("radiogroup", {
+    name: "Interface font size",
+  });
+  const chromeLabel = dialog.getByText("Interface font size", { exact: true });
+  const chromeFontPx = () =>
+    chromeLabel.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  const baseFontPx = await chromeFontPx();
+  // L → chrome type grows.
+  await uiFontRadios.getByRole("radio", { name: "L" }).click();
+  await expect
+    .poll(chromeFontPx, { timeout: 5000 })
+    .toBeGreaterThan(baseFontPx);
+  // S → chrome type shrinks below the M baseline.
+  await uiFontRadios.getByRole("radio", { name: "S" }).click();
+  await expect.poll(chromeFontPx, { timeout: 5000 }).toBeLessThan(baseFontPx);
+  // Back to M — exact original size restored.
+  await uiFontRadios.getByRole("radio", { name: "M" }).click();
+  await expect.poll(chromeFontPx, { timeout: 5000 }).toBe(baseFontPx);
+
+  // ── Interface scale (#319): browser-zoom on :root ─────────────────────
+  const rootZoom = () =>
+    page.evaluate(() => document.documentElement.style.zoom);
+  // Two +steps from 100% → 110% → 125% (zoom 1.25).
+  const scaleControl = dialog.getByRole("group", { name: "Interface scale" });
+  const scaleUp = dialog.getByRole("button", {
+    name: "Increase Interface scale",
+  });
+  await scaleUp.click();
+  await scaleUp.click();
+  await expect(scaleControl.getByText("125%")).toBeVisible();
+  await expect.poll(rootZoom, { timeout: 5000 }).toBe("1.25");
+  // Reset to the default so the rest of the spec runs unscaled.
+  await dialog
+    .getByRole("button", { name: "Decrease Interface scale" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Decrease Interface scale" })
+    .click();
+  await expect.poll(rootZoom, { timeout: 5000 }).toBe("1");
+
   await page.keyboard.press("Escape");
 
   // Survives a reload (flash cache + server prefs agree).

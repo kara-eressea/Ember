@@ -14,6 +14,15 @@ import { api } from "../lib/api.js";
 
 /** Keep at most this many rows per conversation; older rows re-load via REST. */
 export const BUFFER_WINDOW = 1500;
+/**
+ * Hard ceiling for a back-scrolled buffer. `loadOlder` prepends pages with no
+ * front-trim (the newest rows must stay live-appendable), so a deep scroll-back
+ * would otherwise inflate the array without bound — and every live append then
+ * re-renders the whole thing (#356). When a merged page crosses this, drop the
+ * newest rows (the ones the user has scrolled away from) and detach the tail so
+ * the existing "Back to present" affordance restores the live view.
+ */
+export const SCROLLBACK_CEILING = BUFFER_WINDOW * 4;
 /** REST page size for backfill and scroll-up. */
 export const PAGE_SIZE = 50;
 /** Keep at most this many join/part/quit lines per conversation. */
@@ -74,6 +83,17 @@ interface MessagesState {
   jumpTo(identityId: string, convId: string, messageId: number): Promise<void>;
   /** Leave the detached history view: reload the live tail. */
   backToPresent(identityId: string, convId: string): Promise<void>;
+  /**
+   * The user navigated away from this conversation (#411). A search jump
+   * leaves the buffer detached with a `jumpTarget` still set — both are
+   * *view* state for a reading position the user has now left. Kept, they
+   * strand the NEXT open of this conversation in old history: the log
+   * remounts with a fresh scrolled-target ref and re-runs the old jump, and
+   * the stale `detachedTail` disables the open-at-tail bottom-stick, so a
+   * channel with a couple of unreads opens nowhere near its latest message.
+   * Dropping the detached window makes the next open backfill the live tail.
+   */
+  leaveConversation(convId: string): void;
   reset(): void;
 }
 
@@ -237,11 +257,23 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         if (epochOf(convId) !== epoch) {
           return 0; // the window this page extends no longer exists
         }
-        patch(convId, (current) => ({
-          ...current,
-          messages: merge(current.messages, page.messages ?? []),
-          hasMoreBefore: page.hasMore ?? false,
-        }));
+        patch(convId, (current) => {
+          let messages = merge(current.messages, page.messages ?? []);
+          let { detachedTail } = current;
+          if (messages.length > SCROLLBACK_CEILING) {
+            // Keep the oldest rows (where the reader is) and drop the newest —
+            // the live tail is now out of the buffer, so stop live appends and
+            // let Back to present rebuild the window.
+            messages = messages.slice(0, SCROLLBACK_CEILING);
+            detachedTail = true;
+          }
+          return {
+            ...current,
+            messages,
+            hasMoreBefore: page.hasMore ?? false,
+            detachedTail,
+          };
+        });
         return page.messages.length;
       } finally {
         patch(convId, (current) => ({ ...current, loadingOlder: false }));
@@ -288,6 +320,26 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       }));
       set({ jumpTarget: undefined });
       await get().backfill(identityId, convId);
+    },
+
+    leaveConversation(convId) {
+      if (get().jumpTarget?.convId === convId) {
+        set({ jumpTarget: undefined });
+      }
+      if (get().buffers[convId]?.detachedTail !== true) {
+        return;
+      }
+      // Same shape as backToPresent, minus the fetch: the next mount's
+      // backfill effect loads the live tail. Bumping the epoch retires any
+      // page still in flight for the abandoned window.
+      bumpEpoch(convId);
+      patch(convId, (buffer) => ({
+        ...buffer,
+        messages: [],
+        hasMoreBefore: false,
+        backfilled: false,
+        detachedTail: false,
+      }));
     },
 
     reset() {

@@ -14,13 +14,17 @@ import { loadRuntimeConfig } from "./lib/config.js";
 import { AppRouter } from "./router.js";
 import { useAuthStore } from "./stores/auth.js";
 import {
+  applyInterface,
   applyTheme,
   savedAccent,
   savedBaseTheme,
   savedColorblind,
+  savedUiFontSize,
+  savedUiScale,
 } from "./theme/theme.js";
 
 applyTheme(savedAccent(), savedBaseTheme(), savedColorblind());
+applyInterface(savedUiFontSize(), savedUiScale());
 const config = await loadRuntimeConfig();
 document.title = config.appName;
 void useAuthStore.getState().restore();

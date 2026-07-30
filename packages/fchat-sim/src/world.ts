@@ -77,6 +77,20 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Amber Vale", "Cindral"],
     },
+    // Reserved for the scrollback rubberband E2E (#360): a channel the
+    // browser character reads while a raw-SimClient partner pumps history in.
+    "peat@example.test": {
+      password: "hunter2",
+      characters: ["Peat Hollow", "Reed Hollow"],
+    },
+    // Reserved for the message-log tail/unread-marker E2E (#372/#373): the
+    // browser reads channels and a DM while Wick Marsh (a raw SimClient) pumps
+    // variable-height history in. Own account so parallel specs never share a
+    // ticket manager.
+    "quill@example.test": {
+      password: "hunter2",
+      characters: ["Quill Marsh", "Wick Marsh"],
+    },
     // Reserved for the auth E2E (account-add/identity CRUD flows).
     "aspen@example.test": {
       password: "hunter2",
@@ -182,6 +196,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Thistle Vane", "Bramble Fen"],
     },
+    // Reserved for the #315 "Mark as read" E2E (same parallelism rule);
+    // Cress Dell is its raw-SimClient "other side" (the DM sender whose
+    // unread badge is cleared from the sidebar context menu).
+    "bracken@example.test": {
+      password: "hunter2",
+      characters: ["Bracken Vale", "Cress Dell"],
+    },
     // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
     // with a bookmark, a friend, and a pending incoming request from Tally.
     "fern@example.test": {
@@ -190,6 +211,86 @@ export const DEFAULT_WORLD: SimWorld = {
       bookmarks: ["Old Greywhisker"],
       friends: [{ own: "Fern Glade", friend: "Nyx Firemane" }],
       incomingRequests: [{ from: "Tally Marsh", to: "Fern Glade" }],
+    },
+    // Reserved for the #316 "Invite to →" E2E (same parallelism rule). Briar
+    // Vale owns the private Invite Harbor; Nettle Fen is the raw-SimClient
+    // invitee (met in a public room). Nettle gets her own account so her
+    // connection is never disturbed by Briar's account-wide ticket churn —
+    // the receiving side needs a stable connection (cf. chat.spec's Birch).
+    "briar@example.test": {
+      password: "hunter2",
+      characters: ["Briar Vale"],
+    },
+    "nettle@example.test": {
+      password: "hunter2",
+      characters: ["Nettle Fen"],
+    },
+    // Reserved for the #329 sidebar offline-filtering E2E (same parallelism
+    // rule). Two characters on one account so the partner is a raw SimClient
+    // whose presence (online → FLN offline) the browser identity observes,
+    // exactly like catchup.spec's Ember/Coal pair. Sorrel drives the
+    // header-toggle case, Bramble the detach → reattach unread case.
+    "sorrel@example.test": {
+      password: "hunter2",
+      characters: ["Sorrel Ash", "Dusk Wren"],
+    },
+    "bramble@example.test": {
+      password: "hunter2",
+      characters: ["Bramble Fen", "Moss Dell"],
+    },
+    // Reserved for the #327 dead-private-room E2E (same parallelism rule).
+    // Cinder Ash is the browser user; Vault Keeper is a raw-SimClient owner
+    // who invites, kicks, then leaves an ADH- room she creates so it is
+    // reaped mid-test — reproducing the "room destroyed while we thought we
+    // held it" ghost without a bouncer restart.
+    "cinder@example.test": {
+      password: "hunter2",
+      characters: ["Cinder Ash"],
+    },
+    "vault@example.test": {
+      password: "hunter2",
+      characters: ["Vault Keeper"],
+    },
+    // Reserved for the #336 typing-indicator-placement E2E (same parallelism
+    // rule). Two characters on one account so the partner is a raw SimClient:
+    // Rowan Birch pushes TPN states the browser identity (Yarrow Dale) sees on
+    // the message bar.
+    "yarrow@example.test": {
+      password: "hunter2",
+      characters: ["Yarrow Dale", "Rowan Birch"],
+    },
+    // Reserved for the #346 identity-rail-toggle E2E (same parallelism rule).
+    // Two characters on one account: the browser connects Tamarisk Ash alone,
+    // hides the rail via the avatar, then connects Marsh Willow from the
+    // picker — a second identity that forces the hidden rail back into view.
+    "tamarisk@example.test": {
+      password: "hunter2",
+      characters: ["Tamarisk Ash", "Marsh Willow"],
+    },
+    // Reserved for the #387 history-load-jump E2E (same parallelism rule).
+    // Sedge Fen reads a channel the raw-SimClient partner Rush Fen has pumped
+    // deep history into; the spec scrolls up across a server page boundary and
+    // asserts the reading position never lurches while the page is in flight.
+    "sedge@example.test": {
+      password: "hunter2",
+      characters: ["Sedge Fen", "Rush Fen"],
+    },
+    // Reserved for the #405 history-autofill E2E (same parallelism rule).
+    // Moss Fen reads a channel the raw-SimClient partner Reed Marsh has pumped
+    // deep history into; the spec opens it in a very tall viewport the latest
+    // page underfills and asserts the log keeps paging older history in until
+    // it overflows, with no user scroll.
+    "moss@example.test": {
+      password: "hunter2",
+      characters: ["Moss Fen", "Reed Marsh"],
+    },
+    // Reserved for the #407 multi-attach E2E (same parallelism rule). Cedar
+    // Vale is the browser identity two devices attach to; Bark Wren is the
+    // raw-SimClient partner whose channel messages must keep reaching the
+    // first device after the second one attaches.
+    "cedar@example.test": {
+      password: "hunter2",
+      characters: ["Cedar Vale", "Bark Wren"],
     },
   },
   channels: [
@@ -330,6 +431,27 @@ export const DEFAULT_WORLD: SimWorld = {
       npcs: [],
       listed: false,
     },
+    // Reserved for the #372 message-log tail E2E (messagelog-tail.spec): Quill
+    // Marsh switches between two fully-read rooms while Wick Marsh pumps
+    // variable-height history in. Hidden and NPC-free for isolation.
+    {
+      name: "ADH-372taila11bb22cc33",
+      title: "Tail Room A",
+      mode: "chat",
+      description: "First of the switch pair.",
+      oplist: ["Wick Marsh"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-372tailb44dd55ee66",
+      title: "Tail Room B",
+      mode: "chat",
+      description: "Second of the switch pair.",
+      oplist: ["Wick Marsh"],
+      npcs: [],
+      listed: false,
+    },
     // Reserved for the #200 seen-recently E2E: Dell Marsh joins and parts
     // live. Hidden and NPC-free for the usual isolation reasons.
     {
@@ -338,6 +460,55 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Resting ground between seasons.",
       oplist: ["Dell Marsh"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #268 combined-reattach E2E (catchup.spec): Ember
+    // Hollis sits here while Coal Whitby joins, parts during a detach (seen
+    // fold), and rejoins live. Hidden and NPC-free for isolation.
+    {
+      name: "ADH-268catchupdd44ee55ff66",
+      title: "Ember Catchup",
+      mode: "chat",
+      description: "Where the waves catch up.",
+      oplist: ["Ember Hollis"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #360 scrollback rubberband E2E (scrollback.spec): Peat
+    // Hollis reads while Reed Hollow pumps a long history in. Hidden and
+    // NPC-free for isolation.
+    {
+      name: "ADH-360scrollbackaa11bb22cc33",
+      title: "Peat Scrollback",
+      mode: "chat",
+      description: "A deep spool of history.",
+      oplist: ["Peat Hollow"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #387 history-load-jump E2E (history-load-jump.spec):
+    // Sedge Fen reads while Rush Fen pumps a deep history in, then scrolls up
+    // across a server page boundary. Hidden and NPC-free for isolation.
+    {
+      name: "ADH-387historyloadjumpaa11bb22",
+      title: "Sedge History Load",
+      mode: "chat",
+      description: "A deep spool paged in from the server.",
+      oplist: ["Sedge Fen"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #405 history-autofill E2E (history-autofill.spec): Moss
+    // Fen resumes a fully-read channel Reed Marsh has pumped a deep history
+    // into, opened in a tall viewport the latest page underfills. Hidden and
+    // NPC-free for isolation.
+    {
+      name: "ADH-405historyautofillcc33dd44",
+      title: "Moss History Autofill",
+      mode: "chat",
+      description: "A deep spool that must auto-fill a tall window.",
+      oplist: ["Moss Fen"],
       npcs: [],
       listed: false,
     },
@@ -350,6 +521,29 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Fronds everywhere.",
       oplist: ["Nyx Firemane"],
       npcs: ["Tally Marsh", "Old Greywhisker"],
+      listed: false,
+    },
+    // Reserved for the #316 "Invite to →" E2E: Briar Vale's private room.
+    // Hidden (never listed in ORS); Briar reaches it by exact id.
+    {
+      name: "ADH-316inviteharbor00aa11bb",
+      title: "Invite Harbor",
+      mode: "chat",
+      description: "Members by invitation.",
+      oplist: ["Briar Vale"],
+      listed: false,
+    },
+    // Reserved for the #351 rail-toggle-layout E2E: a channel with an NPC so
+    // the member list track has content, letting the spec assert the shell
+    // grid keeps its columns (sidebar / chat / members) when the rail hides.
+    // Hidden and single-NPC for the usual isolation reasons.
+    {
+      name: "ADH-351railshed99aa88bb77",
+      title: "Trellis Shed",
+      mode: "chat",
+      description: "Where the shape of things is checked.",
+      oplist: ["Nyx Firemane"],
+      npcs: ["Tally Marsh"],
       listed: false,
     },
   ],

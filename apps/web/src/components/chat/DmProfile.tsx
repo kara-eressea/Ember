@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo } from "react";
 import { match, type MatchReport } from "@emberchat/matcher";
-import { bbcodeToText } from "@emberchat/markdown-bbcode";
+import { wireToPlainText } from "../../lib/wire-text.js";
 import { api } from "../../lib/api.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { loadSocial } from "../../lib/social.js";
@@ -151,7 +151,7 @@ export function DmProfile({
             {PRESENCE_LABEL[dot]}
           </span>
           {status && (
-            <div className={styles.heroStatus} title={bbcodeToText(status)}>
+            <div className={styles.heroStatus} title={wireToPlainText(status)}>
               <RichText bbcode={status} />
             </div>
           )}

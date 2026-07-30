@@ -6,6 +6,7 @@
 
 import type { GatewayEvent, ServerFrame } from "@emberchat/protocol";
 
+import { isAutoStatusInFlight } from "../lib/auto-away.js";
 import { previewText, showMessageNotification } from "../lib/desktop-notify.js";
 import { errNotice } from "../lib/err-codes.js";
 import { loadSocial } from "../lib/social.js";
@@ -15,7 +16,7 @@ import { useMessagesStore } from "../stores/messages.js";
 import { useSearchStore } from "../stores/search.js";
 import { sameCharacter, useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
-import { hydrateTheme } from "../theme/theme.js";
+import { hydrateInterface, hydrateTheme } from "../theme/theme.js";
 
 export function dispatchFrame(frame: ServerFrame): void {
   const sessions = useSessionsStore.getState();
@@ -39,6 +40,7 @@ export function dispatchFrame(frame: ServerFrame): void {
     case "snapshot":
       sessions.applySnapshot(frame.d);
       hydrateTheme(frame.d.self.prefs);
+      hydrateInterface(frame.d.self.prefs);
       return;
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
@@ -166,6 +168,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "conversation.updated":
       sessions.applyConversation(identityId, event.d.conversation);
       return;
+    case "conversation.removed":
+      // Channel leave/close (#327): the row is gone server-side, so drop it
+      // from every attached tab — including the one that clicked.
+      sessions.removeConversation(identityId, event.d.convId);
+      return;
     case "member.join":
       // Synthesize the live-only join line before the set-add; delivery is
       // at-least-once, so a replay for someone already present logs nothing.
@@ -239,6 +246,7 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
     case "prefs.updated":
       sessions.applyPrefs(identityId, event.d);
       hydrateTheme(event.d.prefs);
+      hydrateInterface(event.d.prefs);
       return;
     case "campaign.updated":
       // Rotation-campaign fan-out (M11): full-state idempotent overwrite —
@@ -299,6 +307,18 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       return;
     }
     case "error":
+      // An ERR arriving while one of our automatic auto-away STA sends is in
+      // flight is that send's rejection (typically the status cooldown) — ours
+      // to swallow and retry after the window, never the user's to see (#358).
+      // A manual status change leaves no in-flight guard, so its errors show.
+      if (isAutoStatusInFlight(identityId)) {
+        console.debug(
+          "auto-away: swallowing status error",
+          event.d.number,
+          event.d.message,
+        );
+        return;
+      }
       // Friendly copy for the codes users actually hit (M9); unknown
       // codes surface F-Chat's own message.
       sessions.applyNotice(

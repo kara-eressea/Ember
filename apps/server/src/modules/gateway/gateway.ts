@@ -15,6 +15,7 @@ import type { CampaignScheduler } from "../campaigns/scheduler.js";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
+import type { ImagePreviewHostRegistry } from "../../security/image-preview-hosts.js";
 import type { HistorySink } from "../history/sink.js";
 import type {
   FchatSession,
@@ -64,6 +65,15 @@ export class GatewayHub {
         });
       },
     );
+    options.history.events.on(
+      "conversationRemoved",
+      ({ identityId, conversationId }) => {
+        this.broadcast(identityId, {
+          kind: "conversation.removed",
+          d: { convId: conversationId },
+        });
+      },
+    );
   }
 
   /**
@@ -107,6 +117,12 @@ export class GatewayHub {
     if (first) {
       this.onFirstSubscribe?.(identityId);
     }
+  }
+
+  /** How many browsers are attached to the identity (multi-device fan-out
+   * width; the heartbeat must prune zombies from this count). */
+  subscriberCount(identityId: string): number {
+    return this.#subscribers.get(identityId)?.size ?? 0;
   }
 
   /** True while at least one browser is attached to the identity. */
@@ -377,6 +393,9 @@ export interface GatewayRoutesOptions {
   hub: GatewayHub;
   outbox: Outbox;
   highlights: HighlightMatcher;
+  /** Live union of user image-preview allowlists, refreshed on pref writes so
+   * the CSP keeps up with user-added hosts (#342). */
+  imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
   campaigns: CampaignScheduler;
   /** Cached social lists — served in the snapshot (#194). */
   social: SocialCache;
@@ -389,6 +408,8 @@ export interface GatewayRoutesOptions {
    * what stops a hostile page from riding a victim's network position.
    */
   allowedOrigins: readonly string[];
+  /** Heartbeat period for gateway sockets; test-only knob (HEARTBEAT_MS). */
+  heartbeatMs?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -403,9 +424,11 @@ export async function gatewayRoutes(
     hub,
     outbox,
     highlights,
+    imagePreviewHosts,
     campaigns,
     social,
     allowedOrigins,
+    heartbeatMs,
   } = options;
   const originAllowList = new Set(
     allowedOrigins.map((origin) => origin.toLowerCase()),
@@ -475,11 +498,13 @@ export async function gatewayRoutes(
       hub,
       outbox,
       highlights,
+      imagePreviewHosts,
       campaigns,
       social,
       verifyToken,
       sessionAlive,
       helloBudget,
+      ...(heartbeatMs !== undefined ? { heartbeatMs } : {}),
       log: instance.log,
     });
   });

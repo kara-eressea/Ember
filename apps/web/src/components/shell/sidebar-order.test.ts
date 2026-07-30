@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openDmPartnerSet, orderRows, orderSocial } from "./sidebar-order.js";
+import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
 
 interface Row {
   name: string;
@@ -67,15 +67,15 @@ describe("orderSocial", () => {
   });
 });
 
-describe("openDmPartnerSet", () => {
-  it("lowercases partners so social rows dedupe case-insensitively (#227)", () => {
-    const set = openDmPartnerSet(["Nyx Firemane", "Ember"]);
+describe("socialNameSet", () => {
+  it("lowercases names so DMs dedupe against them case-insensitively (#290)", () => {
+    const set = socialNameSet(["Nyx Firemane", "Ember"]);
     expect(set.has("nyx firemane")).toBe(true);
     expect(set.has("EMBER".toLowerCase())).toBe(true);
     expect(set.has("stranger")).toBe(false);
   });
 
-  it("is empty for no open DMs", () => {
-    expect(openDmPartnerSet([]).size).toBe(0);
+  it("is empty for no friends or bookmarks", () => {
+    expect(socialNameSet([]).size).toBe(0);
   });
 });

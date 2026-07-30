@@ -1,6 +1,19 @@
 /* Global base — everything styles against the --eb-* custom properties
    written by applyTheme(); no hard-coded hex outside theme/tokens.ts. */
 
+:root {
+  /* Interface (chrome) type ramp (#328): one multiplier, set from the UI
+     font-size pref by applyInterface(), retunes every converted chrome
+     font-size at once. M (default) = 1, an exact match to the historical px
+     sizes. Each named step and every converted declaration reads it through
+     calc(<px> * var(--eb-font-ui-scale)). Message text is deliberately
+     excluded — it has its own message-font-size pref (--eb-msg-font). */
+  --eb-font-ui-scale: 1;
+  --eb-font-ui: calc(13px * var(--eb-font-ui-scale));
+  --eb-font-ui-small: calc(12px * var(--eb-font-ui-scale));
+  --eb-font-ui-tiny: calc(11px * var(--eb-font-ui-scale));
+}
+
 *,
 *::before,
 *::after {

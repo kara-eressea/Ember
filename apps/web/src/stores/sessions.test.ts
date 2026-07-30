@@ -204,6 +204,66 @@ describe("Seen recently roster moves (#200)", () => {
       "Tally Marsh",
     ]);
   });
+
+  it("merges a stray raw-keyed private-room duplicate on reattach (#311)", () => {
+    const roomId = "ADH-abc123";
+    const snapshotChannel = (
+      convId: string,
+      key: string,
+      title: string,
+      joined: boolean,
+      unread: number,
+    ) => ({
+      convId,
+      key,
+      title,
+      description: "",
+      mode: "both",
+      oplist: [],
+      members: [],
+      seen: [],
+      joined,
+      pinned: false,
+      unread,
+      mentions: 0,
+      lastReadMessageId: null,
+    });
+    useSessionsStore.getState().applySnapshot({
+      identityId: IDENTITY,
+      self: {
+        character: "Amber Vale",
+        sessionStatus: "online",
+        status: "online",
+        statusmsg: "",
+        ignores: [],
+        limits: {
+          chatMax: 4096,
+          privMax: 50000,
+          lfrpMax: 50000,
+          lfrpFlood: 600,
+        },
+        iconBlacklist: [],
+        chatop: false,
+        sendDelaySeconds: 0,
+        prefs: PREFS_DEFAULTS,
+        outbox: [],
+        campaign: null,
+        social: null,
+      },
+      // A pre-fix session persisted both the real room and a stray
+      // conversation keyed/titled by the lowercased id.
+      channels: [
+        snapshotChannel("conv-real", roomId, "Ember Attic", true, 0),
+        snapshotChannel("conv-stray", "adh-abc123", "adh-abc123", false, 3),
+      ],
+      dms: [],
+    });
+
+    const channels =
+      useSessionsStore.getState().sessions[IDENTITY]?.channels ?? {};
+    expect(Object.keys(channels)).toEqual([roomId]);
+    expect(channels[roomId]).toMatchObject({ title: "Ember Attic", unread: 0 });
+  });
 });
 
 function channelConversation(
@@ -321,5 +381,181 @@ describe("case-insensitive member-set moves (#265)", () => {
       (m) => m.character === "Nyx Firemane",
     );
     expect(nyx?.status).toBe("away");
+  });
+});
+
+describe("presence identity preservation (#355)", () => {
+  // The global NLN/STA/FLN stream fires ~14×/sec. A presence event for a
+  // character who isn't in a given channel/DM/social row must leave that
+  // object (and its members array) at its exact previous reference, or every
+  // subscriber re-renders on every event.
+  const OTHER_KEY = "OtherRoom";
+  const OTHER_CONV = "33333333-3333-7333-8333-333333333333";
+
+  beforeEach(() => {
+    const store = useSessionsStore.getState();
+    // A channel that holds Nyx, and one that doesn't.
+    store.applyChannelMembers(IDENTITY, {
+      key: KEY,
+      mode: "chat",
+      members: [member("Amber Vale"), member("Nyx Firemane")],
+    });
+    store.applyChannelMembers(IDENTITY, {
+      key: OTHER_KEY,
+      mode: "chat",
+      members: [member("Amber Vale")],
+    });
+    // A DM with Nyx, and one with an unrelated partner.
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    store.applyConversation(IDENTITY, {
+      ...pmConversation("Amber Vale"),
+      id: OTHER_CONV,
+    });
+    store.applySocial(IDENTITY, {
+      bookmarks: [
+        {
+          name: "Nyx Firemane",
+          online: false,
+          status: "offline",
+          statusmsg: "",
+        },
+      ],
+      friends: [
+        { name: "Amber Vale", online: true, status: "online", statusmsg: "" },
+      ],
+      incoming: [],
+      outgoing: [],
+      fetchedAt: 0,
+    });
+  });
+
+  it("keeps untouched channel, DM, and social references identical", () => {
+    const session = () => useSessionsStore.getState().sessions[IDENTITY]!;
+    const before = session();
+    const otherChannel = before.channels[OTHER_KEY]!;
+    const otherMembers = otherChannel.members;
+    const otherDm = before.dms[OTHER_CONV]!;
+    const friends = before.social!.friends;
+
+    useSessionsStore.getState().applyPresence(IDENTITY, {
+      character: "Nyx Firemane",
+      online: true,
+      status: "away",
+    });
+
+    const after = session();
+    // The channel Nyx isn't in — same object, same members array.
+    expect(after.channels[OTHER_KEY]).toBe(otherChannel);
+    expect(after.channels[OTHER_KEY]!.members).toBe(otherMembers);
+    // The DM whose partner isn't Nyx — same object.
+    expect(after.dms[OTHER_CONV]).toBe(otherDm);
+    // The friends array (no matching row) — same array.
+    expect(after.social!.friends).toBe(friends);
+  });
+
+  it("replaces only the channel/DM/social row the character appears in", () => {
+    const session = () => useSessionsStore.getState().sessions[IDENTITY]!;
+    const before = session();
+    const nyxChannel = before.channels[KEY]!;
+    const nyxDm = before.dms[CONV]!;
+    const bookmarks = before.social!.bookmarks;
+
+    useSessionsStore.getState().applyPresence(IDENTITY, {
+      character: "Nyx Firemane",
+      online: true,
+      status: "away",
+    });
+
+    const after = session();
+    // The channel Nyx is in gets a new object carrying the updated status.
+    expect(after.channels[KEY]).not.toBe(nyxChannel);
+    expect(
+      after.channels[KEY]!.members.find((m) => m.character === "Nyx Firemane")
+        ?.status,
+    ).toBe("away");
+    // The DM with Nyx gets a new object reflecting the presence.
+    expect(after.dms[CONV]).not.toBe(nyxDm);
+    expect(after.dms[CONV]!.online).toBe(true);
+    expect(after.dms[CONV]!.status).toBe("away");
+    // The bookmarks array (Nyx matched) is rebuilt with the updated row.
+    expect(after.social!.bookmarks).not.toBe(bookmarks);
+    expect(after.social!.bookmarks[0]).toMatchObject({
+      name: "Nyx Firemane",
+      online: true,
+      status: "away",
+    });
+  });
+
+  it("preserves references for a character in no channel/DM/social row", () => {
+    const session = () => useSessionsStore.getState().sessions[IDENTITY]!;
+    const before = session();
+
+    useSessionsStore.getState().applyPresence(IDENTITY, {
+      character: "Stranger Nobody",
+      online: true,
+      status: "away",
+    });
+
+    const after = session();
+    expect(after.channels).toBe(before.channels);
+    expect(after.dms).toBe(before.dms);
+    expect(after.social).toBe(before.social);
+  });
+
+  it("applyPresenceBulk leaves unmatched DMs and social rows identical", () => {
+    const session = () => useSessionsStore.getState().sessions[IDENTITY]!;
+    const before = session();
+    const otherDm = before.dms[OTHER_CONV]!;
+    const friends = before.social!.friends;
+    const bookmarks = before.social!.bookmarks;
+
+    // Only Nyx is in the batch — an unrelated partner/friend must not churn.
+    useSessionsStore
+      .getState()
+      .applyPresenceBulk(IDENTITY, [["Nyx Firemane", "Female", "online", ""]]);
+
+    const after = session();
+    expect(after.dms[OTHER_CONV]).toBe(otherDm);
+    expect(after.social!.friends).toBe(friends);
+    // Nyx is a bookmark — that array is rebuilt.
+    expect(after.social!.bookmarks).not.toBe(bookmarks);
+    expect(after.dms[CONV]!.online).toBe(true);
+  });
+});
+
+describe("removeConversation (#327)", () => {
+  it("drops a channel row and its convId mapping outright", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(null));
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
+    ).toBeDefined();
+
+    store.removeConversation(IDENTITY, CONV);
+    const session = useSessionsStore.getState().sessions[IDENTITY];
+    expect(session?.channels[KEY]).toBeUndefined();
+    expect(session?.channelByConvId[CONV]).toBeUndefined();
+  });
+
+  it("drops a DM row by convId", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV],
+    ).toBeDefined();
+
+    store.removeConversation(IDENTITY, CONV);
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV],
+    ).toBeUndefined();
+  });
+
+  it("is a no-op for an unknown conversation id", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(null));
+    store.removeConversation(IDENTITY, "99999999-9999-7999-8999-999999999999");
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
+    ).toBeDefined();
   });
 });

@@ -99,7 +99,9 @@ export function ProfileBBCode({
 
   return (
     <ProfileLinkProvider value={openProfileLink}>
-      <div className={styles.bbBody}>{renderNodes(nodes, "p", extra)}</div>
+      <div className={styles.bbBody} data-testid="profile-text">
+        {renderNodes(nodes, "p", extra)}
+      </div>
       {lightbox && (
         <Lightbox
           images={[{ url: lightbox.url, description: lightbox.alt }]}

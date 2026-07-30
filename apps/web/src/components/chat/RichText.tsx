@@ -22,13 +22,18 @@ import {
   openPreviewFrom,
   useLinkPreviewStore,
 } from "../../stores/link-preview.js";
-import { useNavigate } from "react-router";
+import { useNavigate, type NavigateFunction } from "react-router";
 import { gateway } from "../../gateway/socket.js";
 import { channelPath } from "../../lib/routes.js";
 import { openCardFrom } from "../../stores/profile.js";
-import { useSessionsStore, useUserPrefs } from "../../stores/sessions.js";
+import {
+  useGenderColorVar,
+  useSessionsStore,
+  useUserPrefs,
+} from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { spoilerSegments, textTokens } from "./rich-text.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import styles from "./chat.module.css";
 
 /**
@@ -43,11 +48,44 @@ const ProfileLinkContext = createContext<ProfileLinkOpener>(openCardFrom);
 
 export const ProfileLinkProvider = ProfileLinkContext.Provider;
 
-export function RichText({ bbcode }: { bbcode: string }) {
+/**
+ * How `[user]` names in this subtree render. By default a `[user]` tag is a
+ * mid-sentence mention chip (the "@name" body treatment). Inside a roll line
+ * the server names the roller/target in `[user]` tags, which should read as
+ * plain inline sender names — no chip — carrying the member-list gender
+ * colour, so the die line reads as a normal chat line (#337). The identity
+ * whose roster resolves that gender rides along in the context.
+ */
+interface PlainNamesMode {
+  plain: boolean;
+  identityId: string;
+}
+
+const PlainNamesContext = createContext<PlainNamesMode>({
+  plain: false,
+  identityId: "",
+});
+
+export const PlainNamesProvider = PlainNamesContext.Provider;
+
+export function RichText({
+  bbcode,
+  local = false,
+}: {
+  bbcode: string;
+  /** `true` when `bbcode` is locally composed (composer / ad previews) rather
+   * than inbound wire text: skip the server-entity decode, since pre-send text
+   * was never server-escaped. Defaults to wire text (decode on). */
+  local?: boolean;
+}) {
   // Memoized: the log re-renders far more often than messages change, and
   // parsing every visible message per render is exactly the hot path a
-  // hostile long message would exploit (audit).
-  const nodes = useMemo(() => parseBBCode(bbcode), [bbcode]);
+  // hostile long message would exploit (audit). Inbound wire text is
+  // entity-decoded first (#335 follow-up) so signed CDN URLs survive intact.
+  const nodes = useMemo(
+    () => parseBBCode(local ? bbcode : decodeWireEntities(bbcode)),
+    [bbcode, local],
+  );
   return <>{renderNodes(nodes, "r")}</>;
 }
 
@@ -110,19 +148,14 @@ function renderNode(
       // [user] opens the mini profile card (M8) — the f-list.net website
       // link lives in the context menu / full viewer instead.
       return node.tag === "user" ? (
-        <button
-          key={key}
-          type="button"
-          className={`${styles.nameButton ?? ""} ${styles.bodyMention}`}
-          onClick={(event) => {
-            openCardFrom(event.currentTarget, node.name);
-          }}
-        >
-          {node.name}
-        </button>
+        <UserName key={key} name={node.name} />
       ) : (
         <InlineIcon key={key} tag={node.tag} name={node.name} />
       );
+    case "channel":
+      // [session]/[channel] invite link (#366): a channel chip that joins and
+      // opens the referenced channel, shown with its human label.
+      return <ChannelLink key={key} channelKey={node.key} label={node.label} />;
     case "noparse":
       return (
         <span key={key} className={styles.bodyCode}>
@@ -146,6 +179,34 @@ function renderNode(
     case "hr":
       return null;
   }
+}
+
+/**
+ * A `[user]` name. Both spellings open the mini profile card on click (M8).
+ * By default it wears the mid-sentence mention chip; inside a roll line
+ * (PlainNamesProvider) it renders as a plain inline sender name — the same
+ * `.nick` treatment as a message sender, coloured by the member-list gender
+ * token — so the die line reads as a normal chat line, not a badge (#337).
+ */
+function UserName({ name }: { name: string }) {
+  const mode = useContext(PlainNamesContext);
+  const genderColor = useGenderColorVar(mode.identityId, name);
+  return (
+    <button
+      type="button"
+      className={
+        mode.plain
+          ? `${styles.nameButton ?? ""} ${styles.nick}`
+          : `${styles.nameButton ?? ""} ${styles.bodyMention}`
+      }
+      style={mode.plain && genderColor ? { color: genderColor } : undefined}
+      onClick={(event) => {
+        openCardFrom(event.currentTarget, name);
+      }}
+    >
+      {name}
+    </button>
+  );
 }
 
 function renderText(text: string, keyBase: string): ReactNode[] {
@@ -235,25 +296,62 @@ function ChannelChip({ name }: { name: string }) {
       className={`${styles.bodyChannel} ${styles.nameButton}`}
       title={`Join #${name}`}
       onClick={() => {
-        const identityId = useUiStore.getState().activeIdentityId;
-        if (identityId === undefined) {
-          return;
-        }
-        const session = useSessionsStore.getState().sessions[identityId];
-        if (!session?.synced) {
-          return;
-        }
-        void gateway.cmd({
-          identityId,
-          action: "channel.join",
-          d: { key: name },
-        });
-        void navigate(channelPath(session.character, name));
+        joinAndOpen(name, navigate);
       }}
     >
       #{name}
     </button>
   );
+}
+
+/**
+ * A `[session]`/`[channel]` invite link (#366): the same channel chip as a
+ * `#Channel` token, but joining an arbitrary channel key (an `ADH-…` private
+ * id or a public name) under its human `label`. Rendered wherever RichText
+ * runs — messages, status lines, profiles — so an invite resolves everywhere
+ * instead of vanishing. Join-while-joined is a harmless no-op; the route
+ * canonicalizes the moment the JCH echo lands.
+ */
+function ChannelLink({
+  channelKey,
+  label,
+}: {
+  channelKey: string;
+  label: string;
+}) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      className={`${styles.bodyChannel} ${styles.nameButton}`}
+      title={`Join ${label}`}
+      onClick={() => {
+        joinAndOpen(channelKey, navigate);
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Join `channelKey` on the active identity and route to it. Shared by the
+ * `#Channel` token and the `[session]`/`[channel]` invite links. No-op when no
+ * identity is active or its session hasn't synced yet. */
+function joinAndOpen(channelKey: string, navigate: NavigateFunction): void {
+  const identityId = useUiStore.getState().activeIdentityId;
+  if (identityId === undefined) {
+    return;
+  }
+  const session = useSessionsStore.getState().sessions[identityId];
+  if (!session?.synced) {
+    return;
+  }
+  void gateway.cmd({
+    identityId,
+    action: "channel.join",
+    d: { key: channelKey },
+  });
+  void navigate(channelPath(session.character, channelKey));
 }
 
 function LinkChip({ href, children }: { href: string; children?: ReactNode }) {

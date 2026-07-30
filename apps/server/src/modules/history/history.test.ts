@@ -8,7 +8,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -257,6 +257,48 @@ describe("history sink", () => {
       senderCharacter: "Nyx Firemane",
       bbcode: "psst, over here",
       sentByUs: false,
+    });
+  });
+
+  it("keeps one conversation when make-open SYS echoes a raw-cased room id (#311)", async () => {
+    const { identityId, session } = await startIdentity();
+    const roomId = "ADH-abc123def456";
+
+    // Our own JCH echo for a freshly created private room ("ADH-" prefix).
+    await inject(session, {
+      cmd: "JCH",
+      payload: {
+        channel: roomId,
+        character: { identity: CHARACTER },
+        title: "Ember Attic",
+      },
+    });
+    // The RST make-open confirmation, which the live server echoes with a
+    // lowercased "adh-" prefix. Left un-canonicalized this spawns a second
+    // conversation titled by the raw id.
+    await inject(session, {
+      cmd: "SYS",
+      payload: {
+        message: "Ember Attic is now open.",
+        channel: roomId.replace(/^ADH-/, "adh-"),
+      },
+    });
+    await app.history.flush();
+
+    const convs = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.kind, "channel"),
+        ),
+      );
+    expect(convs).toHaveLength(1);
+    expect(convs[0]).toMatchObject({
+      channelKey: roomId,
+      title: "Ember Attic",
+      joined: true,
     });
   });
 
@@ -626,6 +668,109 @@ describe("history sink", () => {
       expect(row?.joined).toBe(false);
     });
   });
+
+  /** Leaves the wire channel and resolves on our own LCH echo. */
+  function leaveAndSettle(
+    session: FchatSession,
+    channel: string,
+  ): Promise<void> {
+    const settled = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`timed out leaving ${channel}`));
+      }, 5000);
+      const off = session.events.on("command", (command) => {
+        if (command.cmd === "LCH" && command.payload.channel === channel) {
+          clearTimeout(timer);
+          off();
+          resolve();
+        }
+      });
+    });
+    session.leaveChannel(channel);
+    return settled;
+  }
+
+  it("hides a left channel but keeps its history and drops it from resume (#327)", async () => {
+    const { identityId, session } = await startIdentity();
+    await joinAndSettle(session, "Frontpage");
+    await app.history.flush();
+    const [conv] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.identityId, identityId));
+    await db.insert(messages).values({
+      conversationId: conv!.id,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "kept across a leave",
+    });
+
+    // Leave the wire channel (LCH), then hide the row — the gateway does both.
+    await leaveAndSettle(session, "Frontpage");
+    app.history.closeChannelConversation(identityId, "Frontpage");
+    await app.history.flush();
+
+    const [row] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conv!.id));
+    expect(row?.hidden).toBe(true);
+    expect(row?.joined).toBe(false);
+    // The row is hidden, not deleted — kept logs are a headline feature.
+    const kept = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conv!.id));
+    expect(kept).toHaveLength(1);
+    // A hidden channel never seeds resume or pin.
+    expect(await app.history.channelsForResume(identityId)).toEqual([]);
+    expect(await app.history.pinnedChannelKeys(identityId)).toEqual([]);
+  });
+
+  it("un-hides a rejoined channel and continues its history in place (#327)", async () => {
+    const { identityId, session } = await startIdentity();
+    await joinAndSettle(session, "Frontpage");
+    await app.history.flush();
+    const [conv] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.identityId, identityId));
+    await db.insert(messages).values({
+      conversationId: conv!.id,
+      senderCharacter: "Nyx Firemane",
+      kind: "msg",
+      bbcode: "from before the leave",
+    });
+
+    await leaveAndSettle(session, "Frontpage");
+    app.history.closeChannelConversation(identityId, "Frontpage");
+    await app.history.flush();
+
+    // Rejoining the same key un-hides the very same row — history continues in
+    // place rather than starting a fresh conversation.
+    await joinAndSettle(session, "Frontpage");
+    await vi.waitFor(async () => {
+      await app.history.flush();
+      const [row] = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, conv!.id));
+      expect(row?.hidden).toBe(false);
+      expect(row?.joined).toBe(true);
+    });
+
+    // No duplicate row minted, and the pre-leave message is still there.
+    const rows = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.identityId, identityId));
+    expect(rows).toHaveLength(1);
+    const kept = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conv!.id));
+    expect(kept).toHaveLength(1);
+  });
 });
 
 describe("history pagination", () => {
@@ -709,6 +854,35 @@ describe("history pagination", () => {
     const page3 = third.json<typeof page1>();
     expect(page3.messages.map((m) => m.bbcode)).toEqual(["message 1"]);
     expect(page3.hasMore).toBe(false);
+  });
+
+  it("rejects a malformed before-cursor and honors an out-of-range one (#268)", async () => {
+    const { identityId, conversationId, token } = await seedConversation(3);
+
+    // Non-numeric, zero, and negative cursors fail schema validation (400) —
+    // the keyset query never sees a garbage bound.
+    for (const bad of ["abc", "0", "-5", "1.5"]) {
+      const response = await getMessages(
+        identityId,
+        conversationId,
+        `?before=${bad}`,
+        token,
+      );
+      expect(response.statusCode, `before=${bad}`).toBe(400);
+    }
+
+    // A syntactically valid cursor far below every row is honored verbatim:
+    // an empty page, no more history — not an error.
+    const empty = await getMessages(
+      identityId,
+      conversationId,
+      "?before=1",
+      token,
+    );
+    expect(empty.statusCode).toBe(200);
+    const body = empty.json<{ messages: unknown[]; hasMore: boolean }>();
+    expect(body.messages).toEqual([]);
+    expect(body.hasMore).toBe(false);
   });
 
   it("searches the identity's log with filters, cursor-paged (M9)", async () => {

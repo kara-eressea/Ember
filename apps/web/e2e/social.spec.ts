@@ -45,14 +45,15 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
     .click();
   await expect(page).toHaveURL(/\/dm\/Nyx%20Firemane/);
 
-  // One row per character (#227): opening the DM absorbs the friend row —
-  // Nyx now shows only as a DM row (a link), never both. The former friend
-  // button is gone.
-  await expect(
-    sidebar.getByRole("link", { name: "Nyx Firemane", exact: true }),
-  ).toBeVisible({ timeout: 15_000 });
+  // One row per character (#290, reversing #227/#242): the friend keeps their
+  // home row under Friends — carrying the DM's active anchor — rather than
+  // moving into Direct Messages. Nyx stays a friend button, and no separate
+  // DM link appears for the same character.
   await expect(
     sidebar.getByRole("button", { name: "Nyx Firemane", exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(
+    sidebar.getByRole("link", { name: "Nyx Firemane", exact: true }),
   ).toHaveCount(0);
 
   // Member menu: the bookmark item is relationship-aware. Old Greywhisker
@@ -88,9 +89,9 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   await page.keyboard.press("Escape");
 
   // ── Sidebar ergonomics (#167/#196/#168) ───────────────────────────────
-  // Right-clicking the unified DM row opens the same identity menu.
+  // Right-clicking the friend row (now carrying the DM) opens the identity menu.
   await sidebar
-    .getByRole("link", { name: "Nyx Firemane", exact: true })
+    .getByRole("button", { name: "Nyx Firemane", exact: true })
     .click({ button: "right" });
   await expect(
     page
@@ -103,7 +104,7 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   const filter = page.getByLabel("Filter the channel list");
   await filter.fill("nyx");
   await expect(
-    sidebar.getByRole("link", { name: "Nyx Firemane", exact: true }),
+    sidebar.getByRole("button", { name: "Nyx Firemane", exact: true }),
   ).toBeVisible();
   await expect(
     sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),

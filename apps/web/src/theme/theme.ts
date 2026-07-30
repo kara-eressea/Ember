@@ -5,6 +5,12 @@
 // a flash before the first snapshot arrives.
 
 import {
+  PREFS_DEFAULTS,
+  UI_FONT_SIZES,
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+} from "@emberchat/protocol";
+import {
   ACCENTS,
   BASE_THEMES,
   DEFAULT_ACCENT,
@@ -24,6 +30,8 @@ import {
 const ACCENT_STORAGE_KEY = "eb.accent";
 const BASE_THEME_STORAGE_KEY = "eb.baseTheme";
 const COLORBLIND_STORAGE_KEY = "eb.colorblind";
+const UI_FONT_STORAGE_KEY = "eb.uiFontSize";
+const UI_SCALE_STORAGE_KEY = "eb.uiScale";
 const DEFAULT_BASE_THEME: BaseThemeId = "slate";
 
 /** F-Chat [color=…] names (the wiki's fixed 12). Wire colors, not theme
@@ -205,4 +213,119 @@ export function hydrateTheme(prefs: {
   localStorage.setItem(BASE_THEME_STORAGE_KEY, baseTheme);
   localStorage.setItem(COLORBLIND_STORAGE_KEY, colorblind ? "on" : "off");
   applyTheme(accent, baseTheme, colorblind);
+}
+
+// ── Interface font size + scale (issues #319, #328) ────────────────────────
+// Two Appearance prefs, applied on the root element alongside the palette:
+//
+//  • UI font size (S/M/L) → the `--eb-font-ui-scale` multiplier on :root. The
+//    chrome's type ramp — --eb-font-ui / -small / -tiny and every converted
+//    chrome font-size — is expressed as `calc(<px> * var(--eb-font-ui-scale))`
+//    (base.css), so one variable retunes all interface type at once. #322
+//    wrote the root <html> font-size instead and assumed the chrome inherited
+//    it; the module CSS sets explicit px almost everywhere, which ignores the
+//    root, so nothing moved — this multiplier is what the px declarations
+//    actually read. M = 1 reproduces today's exact sizes; message text keeps
+//    its own separate pref and is deliberately excluded from the sweep.
+//  • UI scale (%) → root `zoom`, the browser-zoom equivalent. The layouts are
+//    px-based, and `zoom` scales type and box together while keeping the #303
+//    resizable-sidebar clamps proportional: the drag reads
+//    getBoundingClientRect and writes a px CSS var, both living inside the
+//    zoomed root, so the [180,400] bounds stay self-consistent at any scale.
+//
+// They compose: `zoom` scales the multiplier-driven type too, so UI-font L at
+// 125% is simply the larger chrome type inside the larger shell.
+
+/** The `--eb-font-ui-scale` multiplier for each interface-type step. M = 1 is
+ * a no-op (exact match to the pre-#328 look); S/L swing ±10–15% for a clearly
+ * visible change across the chrome ramp. */
+export const UI_FONT_SCALE: Record<(typeof UI_FONT_SIZES)[number], number> = {
+  s: 0.9,
+  m: 1,
+  l: 1.15,
+};
+
+const DEFAULT_UI_FONT = PREFS_DEFAULTS.uiFontSize;
+const DEFAULT_UI_SCALE = PREFS_DEFAULTS.uiScale;
+
+/** A stored/percent scale → the finite `zoom` factor, clamped to the
+ * supported band. A non-finite or out-of-range value falls back to 100%. */
+export function uiScaleFactor(percent: number): number {
+  if (!Number.isFinite(percent)) {
+    return 1;
+  }
+  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, percent));
+  return clamped / 100;
+}
+
+function isUiFontSize(value: string): value is (typeof UI_FONT_SIZES)[number] {
+  return (UI_FONT_SIZES as readonly string[]).includes(value);
+}
+
+/** Write the interface font multiplier + scale onto :root. Idempotent — safe
+ * to call on every prefs fan-out. */
+export function applyInterface(
+  uiFontSize: (typeof UI_FONT_SIZES)[number],
+  uiScale: number,
+): void {
+  const root = document.documentElement;
+  // The chrome type ramp (base.css) reads this multiplier through calc().
+  root.style.setProperty(
+    "--eb-font-ui-scale",
+    String(UI_FONT_SCALE[uiFontSize]),
+  );
+  // `zoom` takes a unitless factor; 1 = no scaling. Kept as a string so the
+  // property is always written (some engines drop `zoom: 1` otherwise).
+  const factor = uiScaleFactor(uiScale);
+  root.style.zoom = String(factor);
+  // Mirror the same factor into a custom property (#388). A zoomed root scales
+  // viewport units too, so surfaces that must fill the ACTUAL visual viewport
+  // (the full-size profile window) divide their `vw`/`vh` by this to undo the
+  // zoom and stop overflowing off the right/bottom edge at higher UI scales.
+  root.style.setProperty("--eb-ui-zoom", String(factor));
+}
+
+export function savedUiFontSize(): (typeof UI_FONT_SIZES)[number] {
+  const stored = localStorage.getItem(UI_FONT_STORAGE_KEY);
+  return stored !== null && isUiFontSize(stored) ? stored : DEFAULT_UI_FONT;
+}
+
+export function savedUiScale(): number {
+  const stored = localStorage.getItem(UI_SCALE_STORAGE_KEY);
+  if (stored === null) {
+    return DEFAULT_UI_SCALE;
+  }
+  const parsed = Number.parseInt(stored, 10);
+  if (Number.isNaN(parsed)) {
+    return DEFAULT_UI_SCALE;
+  }
+  return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, parsed));
+}
+
+/**
+ * Server prefs → interface font/scale. Applies and re-caches when either
+ * choice changed, mirroring hydrateTheme's no-op-on-match discipline so an
+ * unrelated pref fan-out never repaints the shell.
+ */
+export function hydrateInterface(prefs: {
+  uiFontSize?: string;
+  uiScale?: number;
+}): void {
+  const uiFontSize =
+    prefs.uiFontSize !== undefined && isUiFontSize(prefs.uiFontSize)
+      ? prefs.uiFontSize
+      : savedUiFontSize();
+  const uiScale =
+    typeof prefs.uiScale === "number" &&
+    Number.isFinite(prefs.uiScale) &&
+    prefs.uiScale >= UI_SCALE_MIN &&
+    prefs.uiScale <= UI_SCALE_MAX
+      ? Math.round(prefs.uiScale)
+      : savedUiScale();
+  if (uiFontSize === savedUiFontSize() && uiScale === savedUiScale()) {
+    return;
+  }
+  localStorage.setItem(UI_FONT_STORAGE_KEY, uiFontSize);
+  localStorage.setItem(UI_SCALE_STORAGE_KEY, String(uiScale));
+  applyInterface(uiFontSize, uiScale);
 }

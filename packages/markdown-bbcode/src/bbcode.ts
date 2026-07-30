@@ -66,6 +66,13 @@ export type BBNode =
     }
   | { readonly type: "name"; readonly tag: BBNameTag; readonly name: string }
   | { readonly type: "noparse"; readonly text: string }
+  // Channel invite links (#366) — receive-side only, never on the outgoing
+  // wire. `[session=Label]channel-id[/session]` is a private-channel invite:
+  // `key` is the ADH channel id the click joins, `label` the human title the
+  // server put in the tag (CIU renders exactly this). `[channel]Name[/channel]`
+  // is the public-channel form, where the body is both the join key and the
+  // label. Raw-body like [user]: the body is a channel key, never markup.
+  | { readonly type: "channel"; readonly key: string; readonly label: string }
   // [spoiler] is not in the outgoing chat subset (our composer never emits it
   // — `||…||` is the supported spelling), but other clients send it, so we
   // parse it in every dialect and render it click-to-reveal (#204). Its body
@@ -283,6 +290,40 @@ export function parseBBCode(
       at = close + `[/${token.tag}]`.length;
       continue;
     }
+    // [session=Label]channel-id[/session] — private-channel invite link.
+    // Raw-body: the body is a channel id, never markup. Render-only (#366);
+    // the composer never emits it, so it round-trips render-side only.
+    if (token.tag === "session" && token.param !== undefined) {
+      const bodyStart = at + token.length;
+      const close = findClose("session", bodyStart);
+      const key =
+        close === -1 ? undefined : input.slice(bodyStart, close).trim();
+      const label = token.param.trim();
+      if (key === undefined || key === "" || label === "") {
+        pushText(top().children, token.raw);
+        at = bodyStart;
+        continue;
+      }
+      top().children.push({ type: "channel", key, label });
+      at = close + "[/session]".length;
+      continue;
+    }
+    // [channel]Name[/channel] — public-channel link; the body is both the
+    // join key and the label.
+    if (token.tag === "channel" && token.param === undefined) {
+      const bodyStart = at + token.length;
+      const close = findClose("channel", bodyStart);
+      const key =
+        close === -1 ? undefined : input.slice(bodyStart, close).trim();
+      if (key === undefined || key === "") {
+        pushText(top().children, token.raw);
+        at = bodyStart;
+        continue;
+      }
+      top().children.push({ type: "channel", key, label: key });
+      at = close + "[/channel]".length;
+      continue;
+    }
     if (token.tag === "url" && token.param === undefined) {
       // [url]href[/url] — the body IS the link.
       const bodyStart = at + token.length;
@@ -431,6 +472,10 @@ export function bbcodeToText(
         case "name":
           out += node.tag === "user" ? node.name : "";
           break;
+        case "channel":
+          // Degrade the invite link to its visible label (#366), never drop it.
+          out += node.label;
+          break;
         case "url":
         case "wrapper":
         case "color":
@@ -500,6 +545,14 @@ export function serializeBBCode(nodes: readonly BBNode[]): string {
         break;
       case "noparse":
         out += `[noparse]${node.text}[/noparse]`;
+        break;
+      // Render-only (#366): never routed to the chat wire, so serializing
+      // these back can't leak a foreign tag. The public form has label === key.
+      case "channel":
+        out +=
+          node.label === node.key
+            ? `[channel]${node.key}[/channel]`
+            : `[session=${node.label}]${node.key}[/session]`;
         break;
       // Render-only: the composer never routes through here to the wire, so
       // round-tripping [spoiler] can't leak a foreign tag onto the chat wire.

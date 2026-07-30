@@ -12,6 +12,7 @@ import { gateway } from "../../gateway/socket.js";
 import { api, type DirectoryChannelDto } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { channelPath } from "../../lib/routes.js";
+import { decodeWireEntities } from "../../lib/wire-text.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -257,6 +258,10 @@ function ChannelRows({
       >
         {virtualizer.getVirtualItems().map((item) => {
           const channel = rows[item.index]!;
+          // Room titles are wire text the server entity-escapes (#350); decode
+          // before display since the browser renders them as plain text, never
+          // through RichText.
+          const title = decodeWireEntities(channel.title);
           return (
             <div
               key={channel.key}
@@ -264,8 +269,8 @@ function ChannelRows({
               style={{ transform: `translateY(${String(item.start)}px)` }}
             >
               <span className={styles.rowGlyph}>#</span>
-              <span className={styles.rowName} title={channel.title}>
-                {channel.title}
+              <span className={styles.rowName} title={title}>
+                {title}
               </span>
               <span
                 className={
@@ -330,7 +335,7 @@ function JoinButton({
     <button
       type="button"
       className={styles.joinButton}
-      aria-label={`Join ${channel.title}`}
+      aria-label={`Join ${decodeWireEntities(channel.title)}`}
       disabled={busy || session.sessionStatus !== "online"}
       onClick={() => {
         void join();

@@ -12,7 +12,10 @@ import { useUiStore } from "../stores/ui.js";
 
 // Node environment — hydrateTheme writes to document/localStorage, and the
 // when-highlighted actions touch Audio/document.title.
-vi.mock("../theme/theme.js", () => ({ hydrateTheme: vi.fn() }));
+vi.mock("../theme/theme.js", () => ({
+  hydrateTheme: vi.fn(),
+  hydrateInterface: vi.fn(),
+}));
 vi.mock("../lib/highlight-notify.js", () => ({
   playHighlightChime: vi.fn(),
   flashTitle: vi.fn(),
@@ -434,6 +437,23 @@ describe("presence", () => {
     );
     expect(session().sendDelaySeconds).toBe(30);
     expect(session().prefs.accent).toBe("moss");
+  });
+
+  it("a sidebar reorder on another client lands over prefs.updated (#412)", () => {
+    dispatchFrame(snapshot());
+    expect(session().prefs.sidebarOrder).toEqual({});
+    // Another attached browser drops a row; the server fans the merged
+    // document back out and this client's sidebar order follows.
+    const sidebarOrder = {
+      [IDENTITY]: { channels: ["b", "a"], friends: ["zoe"] },
+    };
+    dispatchFrame(
+      event("prefs.updated", {
+        sendDelaySeconds: 0,
+        prefs: { ...PREFS_DEFAULTS, sidebarOrder },
+      }),
+    );
+    expect(session().prefs.sidebarOrder).toEqual(sidebarOrder);
   });
 
   it("synthesizes live-only join/part/quit lines, idempotently", () => {

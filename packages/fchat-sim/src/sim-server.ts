@@ -37,6 +37,21 @@ import { SocialService } from "./social-service.js";
 import { TicketService } from "./ticket-service.js";
 import { DEFAULT_WORLD, type SimWorld } from "./world.js";
 
+/**
+ * Entity-escape outbound chat text exactly like the real F-Chat server, which
+ * escapes `& < >` on incoming MSG/LRP and re-broadcasts (and echoes) the
+ * escaped form — so a signed CDN URL's `&` reaches clients as `&amp;`. Mirrors
+ * the wire the live server produces so e2e exercises the client's entity
+ * decode (#335 follow-up). `&` is escaped first — the standard escape order,
+ * the exact inverse of the client's `&amp;`-last decode, so escape∘decode is
+ * the identity on any text. */
+export function escapeWireText(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export interface FchatSimOptions {
   /** Port to listen on; 0 (default) picks a free port. */
   readonly port?: number;
@@ -98,6 +113,10 @@ interface ChannelState {
   /** Character → timeout expiry (epoch ms). Expired entries are pruned on
    * the next join attempt. */
   readonly timeouts: Map<string, number>;
+  /** CCR-created rooms are reaped when their last member leaves/disconnects,
+   * like the real server destroying empty private rooms (#327). Seeded rooms
+   * are persistent test fixtures and are never reaped. */
+  readonly ephemeral: boolean;
 }
 
 interface CharacterState {
@@ -226,6 +245,7 @@ export class FchatSim {
         members: new Set(seed.npcs),
         banned: new Set(),
         timeouts: new Map(),
+        ephemeral: false,
       });
     }
     for (const npc of this.#world.npcs) {
@@ -955,6 +975,7 @@ export class FchatSim {
       members: new Set(),
       banned: new Set(),
       timeouts: new Map(),
+      ephemeral: true,
     });
     this.#handleJoin(connection, character, name);
   }
@@ -1021,7 +1042,10 @@ export class FchatSim {
       cmd: "SYS",
       payload: {
         message: `${channel.title} is now ${open ? "open" : "invite-only"}.`,
-        channel: channel.name,
+        // Faithful to the live server (issue #311): the make-open SYS echoes
+        // the room id with a lowercased "adh-" prefix, unlike the "ADH-" of
+        // the JCH echo. Clients must canonicalize or they grow a stray row.
+        channel: channel.name.replace(/^ADH-/, "adh-"),
       },
     });
   }
@@ -1045,6 +1069,19 @@ export class FchatSim {
       payload: { channel: channel.name, character },
     });
     channel.members.delete(character);
+    this.#reapPrivateRoom(channel);
+  }
+
+  /**
+   * F-Chat destroys a private room once its last occupant leaves: a later
+   * JCH answers with ERR 26 (ChannelNotFound). Official channels persist.
+   * Modeled so the restart→dead-room repro (#327) is reproducible: the sole
+   * occupant disconnects, the room vanishes, and a rejoin fails.
+   */
+  #reapPrivateRoom(channel: ChannelState): void {
+    if (channel.ephemeral && channel.members.size === 0) {
+      this.#channels.delete(channel.name);
+    }
   }
 
   #handleChannelMessage(
@@ -1080,7 +1117,11 @@ export class FchatSim {
       channel,
       {
         cmd: "MSG",
-        payload: { character, message: payload.message, channel: channel.name },
+        payload: {
+          character,
+          message: escapeWireText(payload.message),
+          channel: channel.name,
+        },
       },
       character,
     );
@@ -1121,7 +1162,11 @@ export class FchatSim {
       channel,
       {
         cmd: "LRP",
-        payload: { character, message: payload.message, channel: channel.name },
+        payload: {
+          character,
+          message: escapeWireText(payload.message),
+          channel: channel.name,
+        },
       },
       character,
     );
@@ -1685,8 +1730,12 @@ export class FchatSim {
       return;
     }
     this.#online.delete(character);
-    for (const channel of this.#channels.values()) {
-      channel.members.delete(character);
+    for (const channel of [...this.#channels.values()]) {
+      if (channel.members.delete(character)) {
+        // A private room whose last member just dropped is destroyed, exactly
+        // like the real server reaping empty ADH- rooms (#327).
+        this.#reapPrivateRoom(channel);
+      }
     }
     // FLN is "treated as a global LCH", so no per-channel LCH on disconnect.
     this.#broadcast({ cmd: "FLN", payload: { character } });

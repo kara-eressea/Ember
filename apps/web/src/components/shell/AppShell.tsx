@@ -7,7 +7,7 @@
 // says so (sessions themselves outlive every tab — the bouncer property),
 // and advance the read cursor for whatever conversation is on screen.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
 import { gateway } from "../../gateway/socket.js";
 import { startAutoAway } from "../../lib/auto-away.js";
@@ -26,6 +26,8 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { useRailStore } from "../../stores/rail.js";
+import { railHidden } from "../../lib/rail-visibility.js";
 import { adViewFor } from "../chat/ads.js";
 import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
@@ -47,7 +49,16 @@ import { MiniProfileCard } from "../profile/MiniProfileCard.js";
 import { ProfileViewer } from "../profile/ProfileViewer.js";
 import { IdentityRail } from "./IdentityRail.js";
 import { QuickSwitcher } from "./QuickSwitcher.js";
+import { ResizeHandle } from "./ResizeHandle.js";
 import { Sidebar } from "./Sidebar.js";
+import {
+  LEFT_DEFAULT_WIDTH,
+  RIGHT_DEFAULT_WIDTH,
+  persistColumnWidth,
+  savedColumnWidth,
+  WIDTH_VARS,
+} from "../../lib/sidebar-resize.js";
+import { useUnreadIndicator } from "../../lib/use-unread-indicator.js";
 import styles from "./shell.module.css";
 
 export function AppShell() {
@@ -67,10 +78,31 @@ export function AppShell() {
   const session = useSessionsStore((s) =>
     identityId === undefined ? undefined : s.sessions[identityId],
   );
+  // Identity-rail visibility (#346): the stored hide preference, overridden to
+  // visible whenever a second identity is connected so a newly-connected
+  // character is never lost. Read from the store (initialized synchronously
+  // from localStorage), so the shell's first render is already in final shape.
+  const railPref = useRailStore((s) => s.hidden);
+  const hideRail = railHidden(railPref, identities?.length ?? 0);
   const membersOpen = useUiStore((s) => s.membersOpen);
   const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
   const dmDrawerOpen = useUiStore((s) => s.dmDrawerOpen);
   const narrow = useIsNarrow();
+  // Resizable docked columns (#292): the committed widths live in state and
+  // are mirrored to localStorage; the grid reads them through CSS variables.
+  // During a drag the ResizeHandle writes the variable imperatively (rAF), so
+  // these only change on commit — no render per pixel.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [leftWidth, setLeftWidth] = useState(() => savedColumnWidth("left"));
+  const [rightWidth, setRightWidth] = useState(() => savedColumnWidth("right"));
+  const commitLeftWidth = (width: number) => {
+    setLeftWidth(width);
+    persistColumnWidth("left", width);
+  };
+  const commitRightWidth = (width: number) => {
+    setRightWidth(width);
+    persistColumnWidth("right", width);
+  };
   const prefsOpen = useUiStore((s) => s.prefsOpen);
   const profileViewing = useProfileStore((s) => s.viewing);
   const profileCard = useProfileStore((s) => s.card);
@@ -96,6 +128,9 @@ export function AppShell() {
       : undefined;
   const convId = conv?.convId;
   const convSuffix = conv?.suffix;
+
+  // Favicon badge + title count for backgrounded tabs (#390).
+  useUnreadIndicator();
 
   useEffect(() => {
     gateway.connect();
@@ -144,6 +179,23 @@ export function AppShell() {
       }
     }
   }, [identityIdsKey]);
+
+  // Release the conversation we are leaving from any search-jump view it was
+  // left in (#411): a detached buffer plus a stale jumpTarget survive the
+  // switch and strand the NEXT open of that conversation in old history.
+  // Only a switch BETWEEN two real conversations releases — never the
+  // teardown to undefined, which also runs on React's dev double-mount and
+  // would undo the jump we just made.
+  const prevConvIdRef = useRef<string>(undefined);
+  useEffect(() => {
+    const previous = prevConvIdRef.current;
+    if (convId !== undefined && previous !== undefined && previous !== convId) {
+      useMessagesStore.getState().leaveConversation(previous);
+    }
+    if (convId !== undefined) {
+      prevConvIdRef.current = convId;
+    }
+  }, [convId]);
 
   useEffect(() => {
     useUiStore.getState().setActive(identityId, convId);
@@ -266,10 +318,33 @@ export function AppShell() {
 
   return (
     <div
-      className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")}`}
+      ref={shellRef}
+      className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")} ${hideRail ? (styles.railHidden ?? "") : ""}`}
+      style={{
+        [WIDTH_VARS.left]: `${leftWidth}px`,
+        [WIDTH_VARS.right]: `${rightWidth}px`,
+      }}
     >
       <IdentityRail activeId={activeId} />
       <Sidebar session={session} activeConvId={convId} />
+      {/* Docked-only: below the narrow breakpoint the right column is an
+          overlay drawer and the columns don't resize (#292). */}
+      {!narrow && (
+        <ResizeHandle
+          column="left"
+          shellRef={shellRef}
+          defaultWidth={LEFT_DEFAULT_WIDTH}
+          onCommit={commitLeftWidth}
+        />
+      )}
+      {!narrow && rightColumnOpen && (
+        <ResizeHandle
+          column="right"
+          shellRef={shellRef}
+          defaultWidth={RIGHT_DEFAULT_WIDTH}
+          onCommit={commitRightWidth}
+        />
+      )}
       <main className={styles.main}>
         {session.notice && (
           <div

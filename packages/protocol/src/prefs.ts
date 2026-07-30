@@ -23,6 +23,16 @@ export type BaseThemeId = (typeof BASE_THEME_IDS)[number];
 
 export const DENSITIES = ["cozy", "compact"] as const;
 export const FONT_SIZES = ["s", "m", "l"] as const;
+/** Interface (chrome) type ramp — sidebar, headers, menus, prefs — S/M/L,
+ * independent of the message-body FONT_SIZES above. Mirrored by the web
+ * theme's UI_FONT_PX. */
+export const UI_FONT_SIZES = ["s", "m", "l"] as const;
+/** Whole-interface scale steps (percent), browser-zoom style. The UI offers
+ * exactly these; the schema validates the [min, max] band so a future step
+ * doesn't reject an older stored value. Default 100. */
+export const UI_SCALE_STEPS = [80, 90, 100, 110, 125, 150] as const;
+export const UI_SCALE_MIN = 80;
+export const UI_SCALE_MAX = 150;
 /** `[12:04]` · `[12:04:33]` · hidden. */
 export const TIMESTAMP_FORMATS = ["time", "seconds", "off"] as const;
 /** Inline images vs name chips with a hover preview (decisions.md §8). */
@@ -32,6 +42,17 @@ export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
  * click still navigates); hover = ~250ms hover opens it; off = links are
  * plain links. */
 export const LINK_PREVIEW_MODES = ["off", "hover", "click"] as const;
+
+/** The sidebar's four reorderable/collapsible sections. Lives here because
+ * the manual drag order (#391) is a synced pref keyed by section (#412);
+ * the web sidebar re-exports this list. */
+export const SIDEBAR_SECTIONS = [
+  "channels",
+  "dms",
+  "friends",
+  "bookmarks",
+] as const;
+export type SidebarSection = (typeof SIDEBAR_SECTIONS)[number];
 
 /** Matches the eicon-name charset the URL builder accepts (web avatar.ts). */
 export const EICON_NAME = /^[a-zA-Z0-9_\-\s.]+$/;
@@ -58,6 +79,15 @@ export const DEFAULT_IMAGE_PREVIEW_HOSTS = [
   "cdn.discordapp.com",
   "media.discordapp.net",
   "xariah.net",
+  // Bluesky's image CDN: /img/feed_fullsize/plain/<did>/<cid>@jpeg — direct
+  // images with no file extension in the path (#410).
+  "cdn.bsky.app",
+  // x.com / twitter.com status links are rewritten to fixvx's direct-media
+  // host for the embed fetch (web link-preview.ts); d.fixvx.com redirects to
+  // the raw media on pbs.twimg.com (already listed above). fixvx.com is
+  // listed too so a directly-pasted fixvx share link clears the allowlist.
+  "fixvx.com",
+  "d.fixvx.com",
 ] as const;
 
 /** UTF-8 byte length without TextEncoder/Buffer — this package targets both
@@ -86,10 +116,21 @@ const prefsShape = {
   density: z.enum(DENSITIES),
   /** Message body font size. */
   fontSize: z.enum(FONT_SIZES),
+  /** Interface (chrome) type size — scales sidebar/header/menu/prefs text,
+   * independent of the message-body `fontSize` above (issue #319). */
+  uiFontSize: z.enum(UI_FONT_SIZES),
+  /** Whole-interface scale, percent (browser-zoom style, issue #319). Stored
+   * as an integer in [UI_SCALE_MIN, UI_SCALE_MAX]; the UI steps through
+   * UI_SCALE_STEPS. Default 100. */
+  uiScale: z.number().int().min(UI_SCALE_MIN).max(UI_SCALE_MAX),
   /** Colorblind-friendly status colors + shape-coded presence dots (M9):
    * ok/warn/danger move to an Okabe–Ito-derived set and the away/offline
    * dots gain distinct shapes so hue is never the only signal. */
   colorblindMode: z.boolean(),
+  /** Small round avatars (people) and # tokens (channels) on the sidebar
+   * rows (#416). Off restores the denser text-only rows; the status dot and
+   * colouring on the row itself stay either way. */
+  sidebarAvatars: z.boolean(),
   /** Timestamp rendering in the log. */
   timestampFormat: z.enum(TIMESTAMP_FORMATS),
   use24HourClock: z.boolean(),
@@ -158,10 +199,15 @@ const prefsShape = {
    * chips in the status editor. Written on every successful non-empty STA;
    * patches replace the whole array (the recents convention). */
   statusMessageRecents: z.array(z.string().min(1).max(255)).max(20),
-  /** Hide offline friends/bookmarks in the channel list (default on).
-   * Older clients simply ignore the stored key (resolvePrefs drops
-   * unknowns) and keep showing offline rows. */
-  hideOfflineCharacters: z.boolean(),
+  /** Show offline people in each of the three sidebar people sections,
+   * independently (#329). Default off = offline rows hide (subject to the
+   * always-show exemptions the sidebar applies: pinned, unread, or the open
+   * conversation). Replaces the single global hideOfflineCharacters
+   * (default hide) — resolvePrefs seeds all three from that legacy key so an
+   * existing "show everyone" choice carries over unchanged. */
+  showOfflineFriends: z.boolean(),
+  showOfflineBookmarks: z.boolean(),
+  showOfflineDms: z.boolean(),
   /** Server-side: away after N minutes with zero gateway subscribers,
    * cleared on the next attach. Opt-in (decisions.md §10). */
   detachedAwayEnabled: z.boolean(),
@@ -200,6 +246,23 @@ const prefsShape = {
       }),
     )
     .max(12),
+  /** Manual sidebar drag order (#391), synced so every attached browser
+   * agrees (#412). Keyed identityId → section → ordered row ids (channel
+   * keys, lowercased character names); a row absent from a list sorts after
+   * the ordered ones. Pins (#169) and presence grouping (#164) still sort
+   * first — this order applies within those groups. Patches replace the
+   * whole record (same convention as channelAdView). */
+  sidebarOrder: z
+    .record(
+      z.string().min(1).max(64),
+      z.partialRecord(
+        z.enum(SIDEBAR_SECTIONS),
+        z.array(z.string().min(1).max(128)).max(500),
+      ),
+    )
+    .refine((value) => Object.keys(value).length <= 50, {
+      message: "too many identities in the sidebar order",
+    }),
   /** Channel view default (M10, replaces M6's hideAds boolean): what a
    * channel shows unless overridden — "both" everything, "chat" hides ad
    * rows, "ads" hides chat rows. Ads never count toward unread regardless
@@ -219,6 +282,9 @@ const prefsShape = {
 /** The M6 shapes the M10 tri-state replaced — read once by resolvePrefs to
  * migrate stored documents; never written again. */
 const legacyHideAds = z.boolean();
+/** The single global hide-offline pref the per-section keys replaced (#329):
+ * read once to seed the three sections; never written again. */
+const legacyHideOfflineCharacters = z.boolean();
 const legacyChannelAdVisibility = z.record(
   z.string().min(1).max(128),
   z.enum(["show", "hide"]),
@@ -243,7 +309,10 @@ export const PREFS_DEFAULTS: UserPrefs = {
   baseTheme: "slate",
   density: "cozy",
   fontSize: "m",
+  uiFontSize: "m",
+  uiScale: 100,
   colorblindMode: false,
+  sidebarAvatars: true,
   timestampFormat: "time",
   use24HourClock: true,
   groupConsecutive: false,
@@ -267,7 +336,9 @@ export const PREFS_DEFAULTS: UserPrefs = {
   autoAwayMessage: "",
   autoAwayClearOnReturn: true,
   statusMessageRecents: [],
-  hideOfflineCharacters: true,
+  showOfflineFriends: false,
+  showOfflineBookmarks: false,
+  showOfflineDms: false,
   detachedAwayEnabled: false,
   detachedAwayMinutes: 30,
   desktopNotifyMentions: false,
@@ -277,6 +348,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   mutedIdentityIds: [],
   mutedConvIds: [],
   savedSearches: [],
+  sidebarOrder: {},
   adViewDefault: "both",
   channelAdView: {},
 };
@@ -306,6 +378,26 @@ export function resolvePrefs(stored: unknown): UserPrefs {
     const legacy = legacyHideAds.safeParse(source["hideAds"]);
     if (legacy.success && legacy.data) {
       resolved["adViewDefault"] = "chat";
+    }
+  }
+  // #329 migration: the three per-section show-offline keys replaced the
+  // single global hideOfflineCharacters (default hide). Seed any section key
+  // a pre-#329 document never wrote from that legacy value so a stored "show
+  // everyone" (hide === false) carries over as show-offline everywhere; the
+  // common hide default already matches the new per-section default (false).
+  {
+    const legacy = legacyHideOfflineCharacters.safeParse(
+      source["hideOfflineCharacters"],
+    );
+    const seedShow = legacy.success ? !legacy.data : false;
+    for (const key of [
+      "showOfflineFriends",
+      "showOfflineBookmarks",
+      "showOfflineDms",
+    ] as const) {
+      if (source[key] === undefined) {
+        resolved[key] = seedShow;
+      }
     }
   }
   if (source["channelAdView"] === undefined) {

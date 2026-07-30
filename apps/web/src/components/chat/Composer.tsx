@@ -5,7 +5,15 @@
 // the line. The byte counter counts the translated wire form — that is what
 // the server measures.
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import {
@@ -30,6 +38,7 @@ import {
   type AnyKeyEvent,
   type ComposerInputHandle,
 } from "./composer-input.js";
+import { shouldRedirectToComposer } from "./composer-typeanywhere.js";
 import { eiconsIn, mergeRecents } from "./eicon-recents.js";
 import { EiconPicker } from "./EiconPicker.js";
 import { HelpPanel } from "./HelpPanel.js";
@@ -56,6 +65,21 @@ const MARKDOWN_MODE_KEY = "emberchat.composeMarkdown";
 const InlineEditor = lazy(() => import("./InlineEditor.js"));
 
 const utf8 = new TextEncoder();
+
+/** The partner's typing status as a plain-language line above the message bar
+ * (#336, Discord-style — that's where the eyes are). TPN is DM-only, so this
+ * only ever renders for a DM composer. "clear" (and unknown) reads as an empty
+ * string: the line keeps its reserved height so the message log never jumps
+ * when the status comes and goes. */
+function typingLabel(partner: string, status: string | undefined): string {
+  if (status === "typing") {
+    return `${partner} is typing…`;
+  }
+  if (status === "paused") {
+    return `${partner} has typed something`;
+  }
+  return "";
+}
 
 function savedMarkdownMode(): boolean {
   try {
@@ -102,6 +126,20 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // Rejoin affordance state (#327): a dead private room never echoes a join,
+  // so a bounded wait that times out flips this to "gone" — no infinite
+  // Join-retry loop, just plain language that the room is no longer there.
+  const [rejoinState, setRejoinState] = useState<"idle" | "joining" | "gone">(
+    "idle",
+  );
+  // Reset when the affordance's channel changes (the composer persists across
+  // conversation switches) — the render-phase reset React recommends over an
+  // effect that would setState after paint.
+  const [rejoinKeyMark, setRejoinKeyMark] = useState(rejoinKey);
+  if (rejoinKey !== rejoinKeyMark) {
+    setRejoinKeyMark(rejoinKey);
+    setRejoinState("idle");
+  }
   // Synchronous correctness guard against double-send (#267). `busy` is
   // captured at render time, so two Enter events in one frame both see
   // busy=false and both dispatch. This ref flips synchronously before any
@@ -226,6 +264,34 @@ export function Composer({
     });
   }
 
+  // Click-to-focus surface (#313): the whole visible input bar is ~46px tall
+  // but the focus target inside is a single text line. A mousedown on the
+  // bar's inert chrome (padding, the vertical gaps above/below the line, the
+  // + glyph) focuses the composer so no click lands on dead space. Clicks on
+  // the input itself (its own selection drags), a button, or any other
+  // interactive child are left to native handling — we only step in for the
+  // chrome, so text-selection drags starting inside the input are untouched.
+  function onBarMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (
+      target.closest(
+        'button, a, input, textarea, select, [role="button"], .cm-editor',
+      )
+    ) {
+      return;
+    }
+    // preventDefault stops the mousedown from blurring the input we are about
+    // to focus (it never runs for drags inside the input, excluded above), so
+    // this never steals focus on re-render — it is a direct pointer action.
+    event.preventDefault();
+    const el = inputRef.current;
+    if (el?.focusAtCoords) {
+      el.focusAtCoords(event.clientX, event.clientY);
+    } else {
+      el?.focus();
+    }
+  }
+
   function autogrow() {
     const el = textareaRef.current;
     if (el) {
@@ -284,6 +350,51 @@ export function Composer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
   }, []);
+
+  // Type-anywhere (#395): a printable keystroke on the window — with nothing
+  // editable focused and no dialog/palette/prefs window capturing keys —
+  // focuses the composer and delivers that character, the same "just start
+  // typing" affordance the official client offers. The guard (all the
+  // exclusions: modifier combos, named keys, IME, an already-focused input,
+  // an open modal) lives in shouldRedirectToComposer so it stays testable.
+  // Ctrl+K / Escape and the message log's own keys carry modifiers or are
+  // named keys, so they never reach here. Complements click-to-focus (#317).
+  useEffect(() => {
+    function onWindowKeyDown(event: KeyboardEvent) {
+      if (!online) {
+        return;
+      }
+      const el = inputRef.current;
+      if (!el) {
+        return;
+      }
+      const modalOpen = document.querySelector('[aria-modal="true"]') !== null;
+      if (
+        !shouldRedirectToComposer(event, {
+          activeElement: document.activeElement,
+          modalOpen,
+        })
+      ) {
+        return;
+      }
+      // We deliver the character ourselves — stop the browser from also
+      // landing it somewhere (e.g. a "/" quick-find) as we move focus.
+      event.preventDefault();
+      const next = text + event.key;
+      el.focus();
+      onTextChange(next);
+      requestAnimationFrame(() => {
+        inputRef.current?.setSelectionRange(next.length, next.length);
+      });
+    }
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+    };
+    // onTextChange is a fresh closure each render; text/online are the inputs
+    // that matter for what gets appended and whether we act at all.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, online]);
 
   function toggleMarkdown() {
     const next = !markdown;
@@ -632,23 +743,55 @@ export function Composer({
   }
 
   if (rejoinKey !== undefined) {
+    const key = rejoinKey;
+    const isPrivateRoom = key.startsWith("ADH-");
+    const attemptRejoin = async () => {
+      setRejoinState("joining");
+      await gateway.cmd({
+        identityId: session.identityId,
+        action: "channel.join",
+        d: { key },
+      });
+      // Wait for the join to land us in the live channel. A successful join
+      // re-renders this composer away (the parent stops passing rejoinKey
+      // once we're a member); a room that no longer exists never echoes, so
+      // a timeout means it's gone.
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const live =
+          useSessionsStore.getState().sessions[session.identityId]?.channels[
+            key
+          ];
+        if (live && live.members.length > 0) {
+          setRejoinState("idle");
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      setRejoinState("gone");
+    };
     return (
       <div className={styles.composer}>
         <div className={styles.joinPrompt}>
-          You are not in this channel.
-          <button
-            className={styles.joinButton}
-            disabled={!online}
-            onClick={() => {
-              void gateway.cmd({
-                identityId: session.identityId,
-                action: "channel.join",
-                d: { key: rejoinKey },
-              });
-            }}
-          >
-            Join {rejoinKey}
-          </button>
+          {rejoinState === "gone" ? (
+            isPrivateRoom ? (
+              "This private room no longer exists — it closed when the last person left. Leave it from the sidebar to clear the row."
+            ) : (
+              "This channel is no longer available. Leave it from the sidebar to clear the row."
+            )
+          ) : (
+            <>
+              You are not in this channel.
+              <button
+                className={styles.joinButton}
+                disabled={!online || rejoinState === "joining"}
+                onClick={() => {
+                  void attemptRejoin();
+                }}
+              >
+                {rejoinState === "joining" ? `Joining ${key}…` : `Join ${key}`}
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -671,10 +814,10 @@ export function Composer({
               <>
                 {session.character}
                 {previewEmote.possessive ? "" : " "}
-                <RichText bbcode={previewEmote.action} />
+                <RichText bbcode={previewEmote.action} local />
               </>
             ) : (
-              <RichText bbcode={wire} />
+              <RichText bbcode={wire} local />
             )}
           </div>
           {lossCount > 0 && (
@@ -711,6 +854,19 @@ export function Composer({
         />
       )}
       <div className={styles.composerField}>
+        {partner !== undefined && (
+          // A slim line resting on the message box (#336). Rendered for every
+          // DM so its height is always reserved — the text swaps in and out
+          // without resizing the composer, so the log's bottom-stick never
+          // glitches (the ResizeObserver from #288 sees no growth).
+          <div
+            className={styles.typingLine}
+            aria-live="polite"
+            data-testid="typing-line"
+          >
+            {typingLabel(partner, session.dms[convId]?.typing)}
+          </div>
+        )}
         {showSlash && (
           <SlashAutocomplete
             suggestions={slashSuggestions}
@@ -738,7 +894,7 @@ export function Composer({
               setHelpOpen(true);
             }}
           />
-          <div className={styles.inputBar}>
+          <div className={styles.inputBar} onMouseDown={onBarMouseDown}>
             <span
               className={styles.inputGlyph}
               title="Attachments arrive later"
@@ -803,8 +959,8 @@ export function Composer({
             onClick={toggleMarkdown}
             title={
               markdown
-                ? "Markdown on — sends BBCode"
-                : "Markdown off — raw BBCode"
+                ? "Formatting on — your **bold**, *italic* and links are styled when you send"
+                : "Formatting off — sends exactly what you typed"
             }
           >
             Ⓜ Markdown

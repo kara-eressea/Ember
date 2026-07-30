@@ -38,6 +38,7 @@ import {
   userPreferences,
 } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
+import type { ImagePreviewHostRegistry } from "../../security/image-preview-hosts.js";
 import {
   ConversationLimitError,
   type ConversationRow,
@@ -76,6 +77,16 @@ export const CATCHUP_BATCH_SIZE = 200;
 export const AUTH_RECHECK_MS = 30_000;
 /** Inbound frame quota — generous for humans, a wall for loops. */
 export const MAX_FRAMES_PER_MINUTE = 600;
+/**
+ * WebSocket-level heartbeat. A browser that vanished without a close frame
+ * (laptop asleep, NAT/proxy dropping an idle tunnel) leaves a socket that
+ * still looks OPEN: the hub keeps fanning out into it and nothing ever
+ * arrives, so the device sits there "attached" and silently stale — the
+ * multi-device promise broken for every browser but the newest. Each tick
+ * pings; a tick that finds the previous ping unanswered terminates the
+ * socket, which unsubscribes it and lets the client reconnect and catch up.
+ */
+export const HEARTBEAT_MS = 30_000;
 
 export interface GatewayConnectionContext {
   readonly db: Db;
@@ -84,6 +95,9 @@ export interface GatewayConnectionContext {
   readonly hub: GatewayHub;
   readonly outbox: Outbox;
   readonly highlights: Pick<HighlightMatcher, "invalidate">;
+  /** Live union of user image-preview allowlists; refreshed when a user's
+   * imagePreviewHosts pref changes so the CSP admits the new host (#342). */
+  readonly imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
   readonly campaigns: CampaignScheduler;
   /** Cached social lists — served in the snapshot when present (#194). */
   readonly social: SocialCache;
@@ -98,6 +112,8 @@ export interface GatewayConnectionContext {
    * multiplies them unmetered. False = over budget, close the connection.
    */
   readonly helloBudget: (userId: string) => boolean;
+  /** Heartbeat period; test-only knob, defaults to HEARTBEAT_MS. */
+  readonly heartbeatMs?: number;
   readonly log: SessionLogger;
 }
 
@@ -133,6 +149,9 @@ export class GatewayConnection {
   #inbound: Promise<void> = Promise.resolve();
   #helloTimer: NodeJS.Timeout | undefined;
   #authTimer: NodeJS.Timeout | undefined;
+  #heartbeatTimer: NodeJS.Timeout | undefined;
+  /** True while a heartbeat ping is out with no answer (of any kind) yet. */
+  #awaitingPong = false;
   #frameWindowStart = 0;
   #framesInWindow = 0;
 
@@ -146,8 +165,29 @@ export class GatewayConnection {
     }, HELLO_TIMEOUT_MS);
 
     socket.on("message", (data: WebSocket.RawData) => {
+      this.#awaitingPong = false; // any traffic proves the peer is alive
       this.#enqueue(() => this.#handleRaw(data));
     });
+    socket.on("pong", () => {
+      this.#awaitingPong = false;
+    });
+    this.#heartbeatTimer = setInterval(() => {
+      if (this.#awaitingPong) {
+        // The peer went away without a close frame: drop it now rather than
+        // fanning out into a socket nobody reads (multi-device, #407).
+        this.#log.info({}, "gateway heartbeat timed out — dropping socket");
+        this.#teardown();
+        socket.terminate();
+        return;
+      }
+      this.#awaitingPong = true;
+      try {
+        socket.ping();
+      } catch {
+        this.#teardown();
+        socket.terminate();
+      }
+    }, ctx.heartbeatMs ?? HEARTBEAT_MS);
     socket.on("error", (error) => {
       this.#log.warn({ err: error }, "gateway socket error");
     });
@@ -435,6 +475,32 @@ export class GatewayConnection {
     this.#subscriptions.set(identityId, sub);
     this.#ctx.hub.subscribe(identityId, this);
 
+    try {
+      await this.#syncSubscription(identityId, identity, sub);
+    } finally {
+      // Whatever happened above (a failed snapshot query, a mid-catchup
+      // resync), the buffer must be released: a subscription left in
+      // "pending" swallows every event from then on, and the browser sits
+      // connected but permanently stale (#407).
+      const pending = sub.pending ?? [];
+      sub.pending = undefined;
+      for (const frame of pending) {
+        if (
+          this.#subscriptions.get(identityId) === sub &&
+          !this.#isDuplicate(sub, frame.d)
+        ) {
+          this.#send(frame);
+        }
+      }
+    }
+  }
+
+  /** snapshot → catchup for one freshly created subscription. */
+  async #syncSubscription(
+    identityId: string,
+    identity: OwnedIdentity,
+    sub: Subscription,
+  ): Promise<void> {
     const session = this.#ctx.sessions.get(identityId);
     const snapshot = await buildSnapshot(this.#ctx.db, identityId, session);
     const vars = session?.state.vars ?? DEFAULT_SERVER_VARS;
@@ -482,18 +548,6 @@ export class GatewayConnection {
     });
 
     await this.#sendCatchup(identityId, sub);
-
-    // Flush events that arrived during the sync, minus catchup duplicates.
-    const pending = sub.pending ?? [];
-    sub.pending = undefined;
-    for (const frame of pending) {
-      if (
-        this.#subscriptions.get(identityId) === sub &&
-        !this.#isDuplicate(sub, frame.d)
-      ) {
-        this.#send(frame);
-      }
-    }
   }
 
   async #sendCatchup(identityId: string, sub: Subscription): Promise<void> {
@@ -593,11 +647,16 @@ export class GatewayConnection {
       case "channel.leave": {
         const session = this.#requireSession(identity.id, id);
         if (session) {
+          // Leave the wire channel when we're a live member (leaveChannel
+          // skips the LCH for a dead/desynced key on its own). Then hide the
+          // conversation row so the sidebar loses it everywhere — the kept
+          // message history stays in the DB (reachable via log export) and a
+          // later rejoin un-hides it in place. Hiding also drops it from the
+          // resume set, so no auto-rejoin can drag it back, subsuming the old
+          // unpin-on-leave (#169). Works for a live channel, a kicked ghost,
+          // and a private room destroyed while detached alike (#327).
           session.leaveChannel(cmd.d.key);
-          // Explicit leave unpins (#169): otherwise the pin's auto-rejoin
-          // would drag the channel back on the next reconnect. The updated
-          // row fans out via the sink's conversation event.
-          await this.#ctx.history.unpinChannelForLeave(identity.id, cmd.d.key);
+          this.#ctx.history.closeChannelConversation(identity.id, cmd.d.key);
           this.#ack(id, { ok: true });
         }
         return;
@@ -1049,6 +1108,12 @@ export class GatewayConnection {
       });
     // The highlight matcher caches highlightOwnNick per user (M5).
     this.#ctx.highlights.invalidate(this.#userId);
+    // The CSP folds in every user's image-preview allowlist (#342); rebuild
+    // the cached union when this patch touched it so the next response admits
+    // (or drops) the host. Cheap and rare — a full recompute is fine.
+    if (Object.prototype.hasOwnProperty.call(patch, "imagePreviewHosts")) {
+      await this.#ctx.imagePreviewHosts.refresh();
+    }
     // Broadcast the full resolved state, not the patch — every tab applies
     // it as an idempotent overwrite regardless of what it missed.
     const state = {
@@ -1251,6 +1316,10 @@ export class GatewayConnection {
     if (this.#authTimer) {
       clearInterval(this.#authTimer);
       this.#authTimer = undefined;
+    }
+    if (this.#heartbeatTimer) {
+      clearInterval(this.#heartbeatTimer);
+      this.#heartbeatTimer = undefined;
     }
     this.#subscriptions.clear();
     this.#ctx.hub.dropConnection(this);

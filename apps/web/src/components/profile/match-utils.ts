@@ -44,6 +44,16 @@ export function notableDimensions(
     .slice(0, limit);
 }
 
+/** The ids of the viewed character's kinks that overlap with your own active
+ * character — the same set the Compare tab aligns (a kink present on both
+ * lists). Drives the Kinks tab's colour scope (#293): only these get the
+ * coloured stance label + glyph; everything else renders neutral. Empty when
+ * there is no own-character/match data (undefined report), so nothing is
+ * coloured. */
+export function matchedKinkIds(report: MatchReport | undefined): Set<number> {
+  return new Set((report?.kinks ?? []).map((kink) => kink.id));
+}
+
 /** One-line verdict under the compare header (§9). */
 export function compareSummary(report: MatchReport, them: string): string {
   const conflicts = report.dimensions.filter(

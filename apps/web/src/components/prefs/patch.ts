@@ -7,7 +7,7 @@ import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { UserPrefs, UserPrefsPatch } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { useSessionsStore } from "../../stores/sessions.js";
-import { hydrateTheme } from "../../theme/theme.js";
+import { hydrateInterface, hydrateTheme } from "../../theme/theme.js";
 
 export async function patchPrefs(
   identityId: string,
@@ -18,6 +18,7 @@ export async function patchPrefs(
   const next: UserPrefs = { ...current, ...patch };
   store.applyPrefsLocal(next);
   hydrateTheme(next);
+  hydrateInterface(next);
   const ack = await gateway.cmd({
     identityId,
     action: "prefs.set",
@@ -26,6 +27,7 @@ export async function patchPrefs(
   if (!ack.ok) {
     useSessionsStore.getState().applyPrefsLocal(current);
     hydrateTheme(current);
+    hydrateInterface(current);
   }
   return ack.ok;
 }

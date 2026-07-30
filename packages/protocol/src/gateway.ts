@@ -542,6 +542,7 @@ export type GatewayEvent =
       d: { convId: string; message: MessageDto };
     }
   | { kind: "conversation.updated"; d: { conversation: ConversationDto } }
+  | { kind: "conversation.removed"; d: { convId: string } }
   | { kind: "member.join"; d: { channelKey: string; member: MemberDto } }
   | { kind: "member.leave"; d: { channelKey: string; character: string } }
   | {

@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { match } from "@emberchat/matcher";
+import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
@@ -26,6 +27,7 @@ import {
   type LoadedProfile,
 } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { RichText } from "../chat/RichText.js";
 import { Avatar } from "../common/Avatar.js";
 import { CHOICES } from "./choices.js";
 import {
@@ -38,7 +40,8 @@ import { PrivateNote } from "./PrivateNote.js";
 import { GuestbookTab } from "./GuestbookTab.js";
 import { ImagesTab } from "./ImagesTab.js";
 import { DimChip, MatchPill } from "./MatchTier.js";
-import { notableDimensions } from "./match-utils.js";
+import { matchedKinkIds, notableDimensions } from "./match-utils.js";
+import { findStatusMessage } from "./mini-status.js";
 import { ProfileBBCode } from "./ProfileBBCode.js";
 import { ago, dateLabel } from "./time.js";
 import styles from "./profile.module.css";
@@ -128,6 +131,11 @@ export function ProfileViewer({
         ref={windowRef}
       >
         <div className={styles.windowControls}>
+          <FetchedControl
+            identityId={identityId}
+            name={viewing}
+            loaded={loaded}
+          />
           <button
             type="button"
             className={styles.windowControl}
@@ -141,7 +149,9 @@ export function ProfileViewer({
               });
             }}
           >
-            {fullscreen ? "⤡" : "⛶"}
+            {/* Arrow-family glyphs, not ⛶ (#413): the geometric-shapes box
+                renders a step larger than the ✕ beside it in every UI face. */}
+            {fullscreen ? "⤡" : "⤢"}
           </button>
           <button
             type="button"
@@ -306,12 +316,7 @@ function ViewerBody({
 
   return (
     <>
-      <Header
-        identityId={identityId}
-        profile={profile}
-        response={response}
-        loading={loaded?.state === "loading"}
-      />
+      <Header identityId={identityId} profile={profile} />
       {(response.stale || response.budgetExhausted) && (
         <div className={styles.staleBanner} role="status">
           <span aria-hidden>⚠</span>
@@ -347,14 +352,20 @@ function ViewerBody({
           F-List <span aria-hidden>↗</span>
         </a>
       </div>
+      {/* Scroll container spans the full main region so the scrollbar anchors
+          to the viewport edge (#331); the reading column is capped and centered
+          inside it. The inner wrapper is a stable, always-present element, so it
+          never remounts the tab content beneath it (#283/#289). */}
       <div className={styles.content} data-testid="profile-content">
-        <TabContent
-          identityId={identityId}
-          profile={profile}
-          activeTab={activeTab}
-          ownCharacter={ownCharacter}
-          fullscreen={fullscreen}
-        />
+        <div className={styles.contentColumn} data-testid="profile-column">
+          <TabContent
+            identityId={identityId}
+            profile={profile}
+            activeTab={activeTab}
+            ownCharacter={ownCharacter}
+            fullscreen={fullscreen}
+          />
+        </div>
       </div>
     </>
   );
@@ -393,7 +404,13 @@ function TabContent({
     case "details":
       return <DetailsTab profile={profile} />;
     case "kinks":
-      return <KinksTab profile={profile} />;
+      return (
+        <KinksTab
+          profile={profile}
+          ownProfile={ownProfile}
+          ownCharacter={ownCharacter}
+        />
+      );
     case "compare":
       return (
         <CompareTab
@@ -475,18 +492,21 @@ function MatchStrip({
 
 // ── Header (§3) + PrivateNote (§4) ───────────────────────────────────────────
 
-function Header({
+export function Header({
   identityId,
   profile,
-  response,
-  loading,
 }: {
   identityId: string;
   profile: ProfileDto;
-  response: NonNullable<LoadedProfile["response"]>;
-  loading: boolean;
 }) {
   const social = useSessionsStore((s) => s.sessions[identityId]?.social);
+  // Live STA status message from whichever session source knows it — the same
+  // data the mini card and member list render (#365). Rendered through the
+  // shared chat BBCode renderer, which owns its wire-text decode (decode
+  // exactly once, #348/#353); no line when nothing is set.
+  const statusMessage = useSessionsStore((s) =>
+    findStatusMessage(s.sessions[identityId], profile.name),
+  );
   const isFriend = social?.friends.some(
     (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
   );
@@ -494,7 +514,6 @@ function Header({
     social?.bookmarks.some(
       (row) => row.name.toLowerCase() === profile.name.toLowerCase(),
     ) ?? false;
-  const [tooltip, setTooltip] = useState(false);
   // Optimistic bookmark state (#185): show the intended state instantly while
   // the request is in flight; clear the override afterwards so the refreshed
   // social lists (the same pathway the member menu uses) become the source of
@@ -556,36 +575,76 @@ function Header({
             ⚑
           </button>
         </div>
-        <div className={styles.metaRow}>
-          fetched {ago(response.fetchedAt)}
-          <span
-            onMouseEnter={() => {
-              setTooltip(true);
-            }}
-            onMouseLeave={() => {
-              setTooltip(false);
-            }}
+        {statusMessage && (
+          // Render the chat BBCode subset the way the mini card does (#210):
+          // [url], [eicon], [color] must never show as raw tags. The title
+          // falls back to flattened plain text for the hover tooltip.
+          <div
+            className={styles.headerStatus}
+            title={bbcodeToText(statusMessage)}
           >
-            <button
-              type="button"
-              className={styles.iconBtn}
-              aria-label="Refresh profile"
-              disabled={response.budgetExhausted || loading}
-              onClick={() => {
-                void loadProfile(identityId, profile.name, true);
-              }}
-            >
-              ⟳
-              {tooltip && response.budgetExhausted && (
-                <span className={styles.tooltip} role="tooltip">
-                  Hourly profile budget exhausted — showing cached copy.
-                </span>
-              )}
-            </button>
-          </span>
-        </div>
+            <RichText bbcode={statusMessage} />
+          </div>
+        )}
       </div>
     </header>
+  );
+}
+
+// ── FetchedControl (§3, #382) ────────────────────────────────────────────────
+
+/** The "fetched X ago" stamp + refresh button. Lives inline in the window's
+ * top-right control cluster, to the LEFT of the full-size/close buttons, so it
+ * no longer costs the header a whole row (#382). Renders nothing until a
+ * profile response exists (the loading/error chrome carries its own copy). */
+function FetchedControl({
+  identityId,
+  name,
+  loaded,
+}: {
+  identityId: string;
+  name: string;
+  loaded: LoadedProfile | undefined;
+}) {
+  const [tooltip, setTooltip] = useState(false);
+  const response = loaded?.response;
+  if (!response) {
+    return null;
+  }
+  const loading = loaded?.state === "loading";
+  return (
+    <div className={styles.fetchedControl}>
+      <span className={styles.fetchedLabel}>
+        fetched {ago(response.fetchedAt)}
+      </span>
+      <span
+        onMouseEnter={() => {
+          setTooltip(true);
+        }}
+        onMouseLeave={() => {
+          setTooltip(false);
+        }}
+      >
+        <button
+          type="button"
+          className={styles.windowControl}
+          aria-label="Refresh profile"
+          disabled={response.budgetExhausted || loading}
+          onClick={() => {
+            void loadProfile(identityId, name, true);
+          }}
+        >
+          {/* ↻ (arrows block) matches the close/fullscreen glyph size (#413);
+              ⟳ from supplemental-arrows-A renders oversized. */}
+          ↻
+          {tooltip && response.budgetExhausted && (
+            <span className={styles.tooltip} role="tooltip">
+              Hourly profile budget exhausted — showing cached copy.
+            </span>
+          )}
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -618,10 +677,30 @@ function DetailsTab({ profile }: { profile: ProfileDto }) {
 
 // ── Kinks (§8) ───────────────────────────────────────────────────────────────
 
-function KinksTab({ profile }: { profile: ProfileDto }) {
-  const ownProfile = useProfileStore((s) => s.ownProfile);
+function KinksTab({
+  profile,
+  ownProfile,
+  ownCharacter,
+}: {
+  profile: ProfileDto;
+  ownProfile: ProfileDto | undefined;
+  ownCharacter: string | undefined;
+}) {
+  // Overlap with your own connected character drives the colour scope (#293):
+  // only kinks you both list get the coloured stance label + glyph, computed
+  // from the same matcher the Compare tab uses. Viewing yourself, or with no
+  // own-character/match data, leaves the whole list neutral.
+  const self =
+    ownCharacter !== undefined &&
+    profile.name.toLowerCase() === ownCharacter.toLowerCase();
+  const report = useMemo(
+    () => (ownProfile && !self ? match(ownProfile, profile) : undefined),
+    [ownProfile, profile, self],
+  );
+  const matchIds = useMemo(() => matchedKinkIds(report), [report]);
+  const hasMatches = matchIds.size > 0;
   const ownChoice = new Map(
-    (ownProfile?.profile.kinks ?? []).map((kink) => [kink.id, kink.choice]),
+    (ownProfile?.kinks ?? []).map((kink) => [kink.id, kink.choice]),
   );
   if (profile.kinks.length === 0 && profile.customKinks.length === 0) {
     return (
@@ -636,22 +715,32 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
   return (
     <>
       <div className={styles.kinkLegend}>
-        <span className={styles.kinkLegendLabel}>This character:</span>
-        {CHOICES.map((choice) => (
-          <span
-            key={choice.id}
-            className={styles.kinkLegendChip}
-            style={{ "--kink-col": choice.color } as React.CSSProperties}
-          >
-            <span className={styles.kinkLegendGlyph} aria-hidden>
-              {choice.glyph}
+        {hasMatches ? (
+          <>
+            <span className={styles.kinkLegendLabel}>Shared with you:</span>
+            {CHOICES.map((choice) => (
+              <span
+                key={choice.id}
+                className={styles.kinkLegendChip}
+                style={{ "--kink-col": choice.color } as React.CSSProperties}
+              >
+                <span className={styles.kinkLegendGlyph} aria-hidden>
+                  {choice.glyph}
+                </span>
+                {choice.label}
+              </span>
+            ))}
+            <span className={styles.kinkLegendNote}>
+              Colours mark kinks you also list — the colour is {profile.name}'s
+              choice; the trailing badge is yours. The rest are shown plainly.
             </span>
-            {choice.label}
+          </>
+        ) : (
+          <span className={styles.kinkLegendNote}>
+            {profile.name}'s kink list. Colours would mark the ones you also
+            list, once your own character's profile is loaded to compare.
           </span>
-        ))}
-        <span className={styles.kinkLegendNote}>
-          Trailing badge = your own choice
-        </span>
+        )}
       </div>
       {/* Fixed-width columns that scroll horizontally inside this pane on the
           narrow layout (#281) — the page/modal body never scrolls sideways. */}
@@ -664,14 +753,22 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
             const customs = profile.customKinks.filter(
               (custom) => custom.choice === column.id,
             );
+            // The stance colour only keys the column when there is overlap to
+            // mark (#293); otherwise the header reads as a neutral category.
             return (
               <section
                 key={column.id}
                 className={styles.kinkCol}
-                style={{ "--kink-col": column.color } as React.CSSProperties}
+                style={
+                  hasMatches
+                    ? ({ "--kink-col": column.color } as React.CSSProperties)
+                    : undefined
+                }
               >
                 <header className={styles.kinkColHead}>
-                  <span className={styles.kinkColLabel}>
+                  <span
+                    className={`${styles.kinkColLabel} ${hasMatches ? styles.kinkColLabelMatch : ""}`}
+                  >
                     <span className={styles.kinkLegendGlyph} aria-hidden>
                       {column.glyph}
                     </span>
@@ -687,9 +784,13 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
                       key={custom.name}
                       custom={custom}
                       grouped={groupedChildren(custom.children, catalog)}
+                      matchIds={matchIds}
                     />
                   ))}
                   {rows.map((kink) => {
+                    // Coloured stance label + your-choice glyph appear only on
+                    // kinks you both list (#293); the rest stay neutral.
+                    const isMatch = matchIds.has(kink.id);
                     const mine = ownChoice.get(kink.id);
                     const mineChoice = CHOICES.find(
                       (choice) => choice.id === mine,
@@ -697,11 +798,11 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
                     return (
                       <div
                         key={kink.id}
-                        className={styles.kinkRow}
+                        className={`${styles.kinkRow} ${isMatch ? styles.kinkRowMatch : ""}`}
                         title={kink.description}
                       >
                         <span className={styles.kinkName}>{kink.name}</span>
-                        {mineChoice && (
+                        {isMatch && mineChoice && (
                           <span
                             className={styles.choiceMark}
                             style={
@@ -731,9 +832,11 @@ function KinksTab({ profile }: { profile: ProfileDto }) {
 function CustomKinkRow({
   custom,
   grouped,
+  matchIds,
 }: {
   custom: ProfileDto["customKinks"][number];
   grouped: GroupedKink[];
+  matchIds: Set<number>;
 }) {
   const [open, setOpen] = useState(false);
   const expandable = custom.description !== "" || grouped.length > 0;
@@ -765,7 +868,10 @@ function CustomKinkRow({
       {open && grouped.length > 0 && (
         <ul className={styles.kinkGroupChildren}>
           {grouped.map((child) => (
-            <li key={child.id} className={styles.kinkGroupChild}>
+            <li
+              key={child.id}
+              className={`${styles.kinkGroupChild} ${matchIds.has(child.id) ? styles.kinkGroupChildMatch : ""}`}
+            >
               {child.name}
             </li>
           ))}

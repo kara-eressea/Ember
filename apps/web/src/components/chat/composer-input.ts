@@ -25,6 +25,12 @@ export interface ComposerInputHandle {
    * textarea handle deliberately does not implement it: that path keeps the
    * legacy setState + rAF restore behavior unchanged. */
   applyEdit?(text: string, selStart: number, selEnd: number): void;
+  /** Focus the input, placing the caret near a viewport point when the
+   * surface can (CodeMirror's posAtCoords, falling back to the doc end).
+   * Powers the click-to-focus input bar (#313): a click on the bar's inert
+   * chrome focuses the composer with a sensible caret. The textarea handle
+   * omits it — the browser keeps its own caret on focus(). */
+  focusAtCoords?(clientX: number, clientY: number): void;
 }
 
 /** Adapter: the legacy textarea satisfies the same handle. */

@@ -26,6 +26,7 @@ export function QuickSwitcher({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -62,6 +63,13 @@ export function QuickSwitcher({
     [query, candidates],
   );
   const activeIndex = Math.min(active, Math.max(matches.length - 1, 0));
+
+  // Keep the highlighted row visible as arrows walk past the fold (#389).
+  // `nearest` scrolls the minimum needed — no jump when the row is already in
+  // view, one row's worth when it just crossed an edge.
+  useEffect(() => {
+    rowRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, matches.length]);
 
   function pick(index: number) {
     const match = matches[index];
@@ -122,6 +130,9 @@ export function QuickSwitcher({
           {matches.map((match, index) => (
             <button
               key={`${match.kind}:${match.id}`}
+              ref={(el) => {
+                rowRefs.current[index] = el;
+              }}
               id={`qs-${match.id}`}
               type="button"
               role="option"

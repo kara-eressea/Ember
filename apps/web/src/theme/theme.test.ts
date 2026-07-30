@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { hydrateTheme, themeVariables } from "./theme.js";
+import {
+  applyInterface,
+  hydrateInterface,
+  hydrateTheme,
+  themeVariables,
+  uiScaleFactor,
+  UI_FONT_SCALE,
+} from "./theme.js";
 import {
   BASE_THEMES,
   genderColorVar,
@@ -271,5 +278,98 @@ describe("hydrateTheme", () => {
     stored.set("eb.baseTheme", "slate");
     hydrateTheme({ accent: "clay", baseTheme: "slate" });
     expect(setProperty).not.toHaveBeenCalled();
+  });
+});
+
+describe("uiScaleFactor", () => {
+  it("maps a percent to a unitless zoom factor", () => {
+    expect(uiScaleFactor(100)).toBe(1);
+    expect(uiScaleFactor(80)).toBe(0.8);
+    expect(uiScaleFactor(125)).toBe(1.25);
+    expect(uiScaleFactor(150)).toBe(1.5);
+  });
+
+  it("clamps out-of-band and non-finite input to the supported range", () => {
+    expect(uiScaleFactor(40)).toBe(0.8); // below UI_SCALE_MIN
+    expect(uiScaleFactor(300)).toBe(1.5); // above UI_SCALE_MAX
+    expect(uiScaleFactor(Number.NaN)).toBe(1);
+    expect(uiScaleFactor(Infinity)).toBe(1);
+  });
+});
+
+describe("UI_FONT_SCALE ramp", () => {
+  it("keeps M at 1 (exact today's look) and swings S/L for visibility", () => {
+    expect(UI_FONT_SCALE.m).toBe(1);
+    expect(UI_FONT_SCALE.s).toBeLessThan(1);
+    expect(UI_FONT_SCALE.l).toBeGreaterThan(1);
+  });
+});
+
+describe("interface font + scale on :root", () => {
+  const stored = new Map<string, string>();
+  const style: Record<string, string> & { setProperty?: unknown } = {};
+  const setProperty = vi.fn((name: string, value: string) => {
+    (style as Record<string, string>)[name] = value;
+  });
+
+  beforeEach(() => {
+    stored.clear();
+    setProperty.mockClear();
+    for (const key of Object.keys(style)) {
+      delete (style as Record<string, unknown>)[key];
+    }
+    style.setProperty = setProperty;
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    });
+    vi.stubGlobal("document", { documentElement: { style } });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("applyInterface writes the font multiplier and the zoom factor", () => {
+    applyInterface("l", 125);
+    expect(setProperty).toHaveBeenCalledWith(
+      "--eb-font-ui-scale",
+      String(UI_FONT_SCALE.l),
+    );
+    expect(style.zoom).toBe("1.25");
+
+    applyInterface("s", 100);
+    expect(setProperty).toHaveBeenCalledWith(
+      "--eb-font-ui-scale",
+      String(UI_FONT_SCALE.s),
+    );
+    expect(style.zoom).toBe("1");
+  });
+
+  it("hydrateInterface applies server prefs and refreshes the flash cache", () => {
+    hydrateInterface({ uiFontSize: "l", uiScale: 125 });
+    expect(stored.get("eb.uiFontSize")).toBe("l");
+    expect(stored.get("eb.uiScale")).toBe("125");
+    expect(style["--eb-font-ui-scale"]).toBe(String(UI_FONT_SCALE.l));
+    expect(style.zoom).toBe("1.25");
+  });
+
+  it("no-ops when the cache already matches", () => {
+    stored.set("eb.uiFontSize", "m");
+    stored.set("eb.uiScale", "100");
+    hydrateInterface({ uiFontSize: "m", uiScale: 100 });
+    expect(setProperty).not.toHaveBeenCalled();
+    expect(style.zoom).toBeUndefined();
+  });
+
+  it("falls back to the cache for unknown/out-of-band values", () => {
+    stored.set("eb.uiFontSize", "l");
+    stored.set("eb.uiScale", "125");
+    // Garbage from a newer client must not repaint to default.
+    hydrateInterface({ uiFontSize: "xl", uiScale: 999 });
+    expect(stored.get("eb.uiFontSize")).toBe("l");
+    expect(stored.get("eb.uiScale")).toBe("125");
+    expect(setProperty).not.toHaveBeenCalled();
+    expect(style.zoom).toBeUndefined();
   });
 });

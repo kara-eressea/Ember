@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
+import { genderColorVar } from "../theme/tokens.js";
 import type {
   CampaignDto,
   OutboxItemDto,
@@ -222,6 +223,7 @@ interface SessionsState {
     reason?: string,
   ): void;
   applyConversation(identityId: string, conversation: ConversationDto): void;
+  removeConversation(identityId: string, convId: string): void;
   applyMemberJoin(
     identityId: string,
     channelKey: string,
@@ -294,6 +296,57 @@ export function useUserPrefs(): UserPrefs {
   });
 }
 
+/**
+ * A character's gender as this session currently knows it — present channel
+ * members first, then the "seen recently" roster. Undefined when no channel
+ * holds the character, so a sender name without a known gender falls back to
+ * the default text colour, exactly like a member-list row does. This is the
+ * one source the member list and the message log share: both colour a name
+ * by feeding this gender to `genderColorVar`, so the same character always
+ * carries the same colour in both places (#338).
+ */
+export function genderOf(
+  session: IdentitySession | undefined,
+  character: string,
+): string | undefined {
+  if (!session) {
+    return undefined;
+  }
+  for (const channel of Object.values(session.channels)) {
+    const member = channel.members.find((m) =>
+      sameCharacter(m.character, character),
+    );
+    if (member) {
+      return member.gender;
+    }
+  }
+  for (const channel of Object.values(session.channels)) {
+    const seen = channel.seen.find((s) =>
+      sameCharacter(s.character, character),
+    );
+    if (seen) {
+      return seen.gender;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The gender-based name colour for a character in one identity's session, as
+ * a `var(--eb-gender-…)` token — or undefined when the gender is unknown
+ * (name renders in the default text colour). The member list and the message
+ * log both colour names through this, so a character reads the same in both
+ * (#338).
+ */
+export function useGenderColorVar(
+  identityId: string,
+  character: string,
+): string | undefined {
+  return useSessionsStore((s) =>
+    genderColorVar(genderOf(s.sessions[identityId], character)),
+  );
+}
+
 function emptySession(identityId: string): IdentitySession {
   return {
     identityId,
@@ -318,7 +371,44 @@ function emptySession(identityId: string): IdentitySession {
   };
 }
 
-/** Applies one presence delta to social rows, case-insensitively (#218). */
+/**
+ * Map a record's values, preserving identity: the returned object is the
+ * exact same reference when `fn` left every value untouched, and each value
+ * keeps its reference unless `fn` replaced it. F-Chat's global presence stream
+ * fires ~14×/sec; rebuilding every channel/DM on each event makes every
+ * subscriber re-render forever (#355), so untouched entries must stay `===`.
+ */
+function mapValues<T>(
+  record: Record<string, T>,
+  fn: (value: T, key: string) => T,
+): Record<string, T> {
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const mapped = fn(value, key);
+    next[key] = mapped;
+    if (mapped !== value) {
+      changed = true;
+    }
+  }
+  return changed ? next : record;
+}
+
+/** Array counterpart of `mapValues`: same reference when nothing changed. */
+function mapPreserving<T>(array: T[], fn: (value: T) => T): T[] {
+  let changed = false;
+  const next = array.map((value) => {
+    const mapped = fn(value);
+    if (mapped !== value) {
+      changed = true;
+    }
+    return mapped;
+  });
+  return changed ? next : array;
+}
+
+/** Applies one presence delta to social rows, case-insensitively (#218).
+ * Identity-preserving: unchanged when no friend/bookmark row matched (#355). */
 function patchSocialPresence(
   social: SocialData,
   d: {
@@ -337,11 +427,11 @@ function patchSocialPresence(
           statusmsg: d.online ? (d.statusmsg ?? row.statusmsg) : "",
         }
       : row;
-  return {
-    ...social,
-    bookmarks: social.bookmarks.map(apply),
-    friends: social.friends.map(apply),
-  };
+  const bookmarks = mapPreserving(social.bookmarks, apply);
+  const friends = mapPreserving(social.friends, apply);
+  return bookmarks === social.bookmarks && friends === social.friends
+    ? social
+    : { ...social, bookmarks, friends };
 }
 
 /** LIS batches are partial: presence in the batch marks a row online;
@@ -386,6 +476,16 @@ function cursorClearsBadges(
     return false;
   }
   return newest === null || next >= newest;
+}
+
+/**
+ * Canonicalize a private-room id's prefix (mirrors the server's
+ * canonicalChannelKey). The server now normalizes keys at ingest, so live
+ * events already agree; this lets a reattach snapshot collapse a stray
+ * "adh-"-prefixed row left behind by a pre-fix session (issue #311).
+ */
+function canonicalChannelKey(key: string): string {
+  return /^adh-/i.test(key) ? `ADH-${key.slice(4)}` : key;
 }
 
 /** The seen roster without one nick (case-insensitive; unchanged input when
@@ -543,15 +643,24 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       const channels: Record<string, ChannelView> = {};
       const channelByConvId: Record<string, string> = {};
       for (const ch of d.channels) {
-        channels[ch.key] = {
+        const key = canonicalChannelKey(ch.key);
+        // A pre-fix session may carry both the real room and a stray
+        // raw-keyed duplicate that canonicalize to one key; the joined
+        // entry is the real room, so let it win the collision.
+        const existing = channels[key];
+        if (existing && existing.joined && !ch.joined) {
+          continue;
+        }
+        channels[key] = {
           ...ch,
+          key,
           oplist: [...ch.oplist],
           members: [...ch.members],
           seen: [...ch.seen],
           highlightedAt: 0,
           newestMessageId: null,
         };
-        channelByConvId[ch.convId] = ch.key;
+        channelByConvId[ch.convId] = key;
       }
       const dms: Record<string, DmView> = {};
       for (const dm of d.dms) {
@@ -760,6 +869,28 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
       });
     },
 
+    removeConversation(identityId, convId) {
+      // A channel leave/close removes the row outright (#327). Channels are
+      // keyed by their channel key, so resolve convId → key first; DMs are
+      // keyed by convId directly. Idempotent: a row already gone is a no-op.
+      patch(identityId, (session) => {
+        const key = session.channelByConvId[convId];
+        if (key !== undefined && session.channels[key]) {
+          const channels = { ...session.channels };
+          delete channels[key];
+          const channelByConvId = { ...session.channelByConvId };
+          delete channelByConvId[convId];
+          return { ...session, channels, channelByConvId };
+        }
+        if (convId in session.dms) {
+          const dms = { ...session.dms };
+          delete dms[convId];
+          return { ...session, dms };
+        }
+        return session;
+      });
+    },
+
     applyMemberJoin(identityId, channelKey, member) {
       patchChannel(identityId, channelKey, (channel) => ({
         ...channel,
@@ -814,49 +945,43 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     applyPresence(identityId, d) {
       patch(identityId, (session) => {
-        let channels = session.channels;
-        if (!d.online) {
-          // FLN is a global leave: the character drops out of every channel.
-          channels = Object.fromEntries(
-            Object.entries(channels).map(([key, ch]) => [
-              key,
-              ch.members.some((m) => sameCharacter(m.character, d.character))
-                ? moveMemberToSeen(ch, d.character)
-                : ch,
-            ]),
-          );
-        } else {
-          channels = Object.fromEntries(
-            Object.entries(channels).map(([key, ch]) => [
-              key,
-              {
-                ...ch,
-                members: ch.members.map((m) =>
-                  sameCharacter(m.character, d.character)
-                    ? {
-                        ...m,
-                        gender: d.gender ?? m.gender,
-                        status: d.status ?? m.status,
-                        statusmsg: d.statusmsg ?? m.statusmsg,
-                      }
-                    : m,
-                ),
-              },
-            ]),
-          );
-        }
-        const dms = Object.fromEntries(
-          Object.entries(session.dms).map(([convId, dm]) => [
-            convId,
-            sameCharacter(dm.partner, d.character)
-              ? {
-                  ...dm,
-                  online: d.online,
-                  status: d.online ? (d.status ?? dm.status) : "",
-                  statusmsg: d.online ? (d.statusmsg ?? dm.statusmsg) : "",
-                }
-              : dm,
-          ]),
+        // Presence is a global stream; a character sits in only a handful of
+        // the viewer's channels/DMs. Touch only those, leaving every other
+        // channel/DM/member object at its old reference so subscribers of an
+        // unaffected view don't re-render (#355).
+        const channels = mapValues(session.channels, (ch) => {
+          if (
+            !ch.members.some((m) => sameCharacter(m.character, d.character))
+          ) {
+            return ch;
+          }
+          if (!d.online) {
+            // FLN is a global leave: the character drops out of the channel.
+            return moveMemberToSeen(ch, d.character);
+          }
+          return {
+            ...ch,
+            members: ch.members.map((m) =>
+              sameCharacter(m.character, d.character)
+                ? {
+                    ...m,
+                    gender: d.gender ?? m.gender,
+                    status: d.status ?? m.status,
+                    statusmsg: d.statusmsg ?? m.statusmsg,
+                  }
+                : m,
+            ),
+          };
+        });
+        const dms = mapValues(session.dms, (dm) =>
+          sameCharacter(dm.partner, d.character)
+            ? {
+                ...dm,
+                online: d.online,
+                status: d.online ? (d.status ?? dm.status) : "",
+                statusmsg: d.online ? (d.statusmsg ?? dm.statusmsg) : "",
+              }
+            : dm,
         );
         // Our own STA (set from any tab, or restored after a reconnect)
         // converges the MeBar/rail status everywhere.
@@ -890,33 +1015,30 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             { gender, status, statusmsg },
           ]),
         );
-        const dms = Object.fromEntries(
-          Object.entries(session.dms).map(([convId, dm]) => {
-            const presence = byLower.get(dm.partner.toLowerCase());
-            return [
-              convId,
-              presence
-                ? {
-                    ...dm,
-                    online: true,
-                    status: presence.status,
-                    statusmsg: presence.statusmsg,
-                  }
-                : dm,
-            ];
-          }),
-        );
-        const social = session.social
-          ? {
-              ...session.social,
-              bookmarks: session.social.bookmarks.map((row) =>
-                bulkRow(row, byLower),
-              ),
-              friends: session.social.friends.map((row) =>
-                bulkRow(row, byLower),
-              ),
-            }
-          : undefined;
+        const dms = mapValues(session.dms, (dm) => {
+          const presence = byLower.get(dm.partner.toLowerCase());
+          return presence
+            ? {
+                ...dm,
+                online: true,
+                status: presence.status,
+                statusmsg: presence.statusmsg,
+              }
+            : dm;
+        });
+        let social = session.social;
+        if (social) {
+          const bookmarks = mapPreserving(social.bookmarks, (row) =>
+            bulkRow(row, byLower),
+          );
+          const friends = mapPreserving(social.friends, (row) =>
+            bulkRow(row, byLower),
+          );
+          social =
+            bookmarks === social.bookmarks && friends === social.friends
+              ? social
+              : { ...social, bookmarks, friends };
+        }
         return { ...session, dms, ...(social ? { social } : {}) };
       });
     },
@@ -964,6 +1086,20 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
 
     bumpUnread(identityId, convId, messageId, mention = false) {
       patch(identityId, (session) => {
+        // KNOWN LIMITATION (pre-existing, #269 item 5): a message.new whose
+        // convId has no channelByConvId mapping and no dms[] row yet is
+        // dropped by the final `return session` below. The mapping is only
+        // registered by the conversation.upsert action, which rides a
+        // separate gateway event; if a message.new for a conversation is
+        // dispatched before its upsert lands, this bump has nowhere to go.
+        // In practice the server orders the upsert (channel JCH / pm.open)
+        // ahead of any message, so the window is not observed. A real fix is
+        // structural — it needs a per-session buffer of pending (convId →
+        // {unread, mentions, newestMessageId}) bumps, flushed into the
+        // channel/DM row inside conversation.upsert when the mapping first
+        // registers — not a guard we can add here, since the target row does
+        // not exist. Deferred deliberately; captured so it is not rediscovered
+        // as a new bug.
         const key = session.channelByConvId[convId];
         if (key !== undefined && session.channels[key]) {
           const channel = session.channels[key];
