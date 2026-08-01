@@ -183,7 +183,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     },
 
     appendMany(convId, messages) {
-      // Same reasoning as appendLive, and it bites here too (#419): a
+      // Same reasoning as appendLive, and it bites here too (#432): a
       // detached conversation advertises no resume cursor, so the server
       // replays from the read cursor — a span that need not touch this
       // window at all. Merging it would stitch an unreachable interior hole
@@ -203,7 +203,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         // walks the missed span contiguously from the oldest replayed id.
         hasMoreBefore: true,
         // The replay IS a usable window, so keep the buffer readable rather
-        // than dropping the log back to "Loading…" (#419): `backfilled`
+        // than dropping the log back to "Loading…" (#432): `backfilled`
         // gates rendering AND every scroll-back path, and the log's initial
         // fetch is keyed by conversation — clearing this under a MOUNTED log
         // left the missed span unreachable until the user navigated away and

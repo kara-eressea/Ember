@@ -392,7 +392,7 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Bark Wren"],
     },
-    // Reserved for the #419 wake-resync E2E (same isolation rules). Gorse
+    // Reserved for the #432 wake-resync E2E (same isolation rules). Gorse
     // Fell reads a DM whose buffer a gap-flagged catch-up replaces mid-visit;
     // Teasel Crake is the raw-SimClient partner filling the backlog.
     "gorse@example.test": {

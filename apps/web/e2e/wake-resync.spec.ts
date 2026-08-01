@@ -1,4 +1,4 @@
-// Sleep → wake → reconnect with a gap (#419). When the catch-up replay outran
+// Sleep → wake → reconnect with a gap (#432). When the catch-up replay outran
 // the budget the server flags the first frame `gap: true`, and the client
 // replaces that conversation's buffer with the replayed window — the old
 // prefix is no longer contiguous with it. That reset used to leave a MOUNTED

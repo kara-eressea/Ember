@@ -238,7 +238,7 @@ describe("scroll-back paging (history.page, #254)", () => {
   });
 });
 
-// Sleep → wake → reconnect (#419): the catch-up replay outran the budget, so
+// Sleep → wake → reconnect (#432): the catch-up replay outran the budget, so
 // the server flags a gap and the client's prefix is non-contiguous with it.
 describe("catch-up gaps", () => {
   const IDENTITY = "11111111-1111-7111-8111-111111111111";
