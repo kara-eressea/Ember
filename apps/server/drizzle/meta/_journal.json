@@ -120,6 +120,13 @@
       "when": 1784740708297,
       "tag": "0016_channel-hidden",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785613242328,
+      "tag": "0017_character-timezone-activity",
+      "breakpoints": true
     }
   ]
 }

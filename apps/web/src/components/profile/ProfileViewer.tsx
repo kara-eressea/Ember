@@ -17,11 +17,13 @@ import {
   savedViewerFullscreen,
 } from "../../lib/viewer-size.js";
 import {
+  loadActivity,
   loadHistory,
   loadInsights,
   loadOwnProfile,
   loadProfile,
   removeHistoryEntry,
+  resetActivity,
   resetInsights,
   useProfileStore,
   type LoadedProfile,
@@ -35,8 +37,10 @@ import {
   kinkNameCatalog,
   type GroupedKink,
 } from "./kink-groups.js";
+import { ActivityHeatmap } from "./ActivityHeatmap.js";
 import { CompareTab } from "./CompareTab.js";
 import { PrivateNote } from "./PrivateNote.js";
+import { TimezonePicker } from "./TimezonePicker.js";
 import { GuestbookTab } from "./GuestbookTab.js";
 import { ImagesTab } from "./ImagesTab.js";
 import { DimChip, MatchPill } from "./MatchTier.js";
@@ -895,10 +899,11 @@ function InsightsTab({
   const insights = useProfileStore((s) => s.insights[name.toLowerCase()]);
   // The private note lives here now (#211) — the header corner is reserved for
   // window controls (close + fullscreen). The saved note rides the cached
-  // profile response.
-  const note = useProfileStore(
-    (s) => s.profiles[name.toLowerCase()]?.response?.note ?? null,
-  );
+  // profile response, and so does the timezone beside it.
+  const cached = useProfileStore((s) => s.profiles[name.toLowerCase()]);
+  const note = cached?.response?.note ?? null;
+  const timezone = cached?.response?.timezone ?? null;
+  const flistOffset = cached?.response?.profile.timezone ?? null;
   useEffect(() => {
     void loadInsights(identityId, name);
   }, [identityId, name]);
@@ -909,9 +914,16 @@ function InsightsTab({
   // in flight → the loaded panel ~1s later), so the note is rendered *outside*
   // that swap: it always occupies the same, keyed position after `content`.
   // Without this, the branch flip that lands when the insights load resolves
-  // would remount PrivateNote and slam the editor shut mid-write (#283).
+  // would remount PrivateNote and slam the editor shut mid-write (#283). The
+  // timezone field carries a draft too, so it shares the pinned block.
   const noteBlock = (
     <div key="private-note" className={styles.insightsNote}>
+      <TimezonePicker
+        identityId={identityId}
+        name={name}
+        initial={timezone}
+        flistOffset={flistOffset}
+      />
       <PrivateNote identityId={identityId} name={name} initial={note} />
     </div>
   );
@@ -1021,6 +1033,7 @@ function InsightsTab({
             ]}
           />
         </div>
+        <ActivitySection identityId={identityId} name={name} />
       </>
     );
   }
@@ -1033,6 +1046,46 @@ function InsightsTab({
       {noteBlock}
     </>
   );
+}
+
+/** The heatmap loads on its own (a second query, its own failure mode), so it
+ * carries its own shimmer/error branch under the insight columns. */
+function ActivitySection({
+  identityId,
+  name,
+}: {
+  identityId: string;
+  name: string;
+}) {
+  const activity = useProfileStore((s) => s.activity[name.toLowerCase()]);
+  useEffect(() => {
+    void loadActivity(identityId, name);
+  }, [identityId, name]);
+
+  if (!activity) {
+    return <div className={styles.shimmer} style={{ height: 96 }} />;
+  }
+  if (activity === "error") {
+    return (
+      <section className={styles.group}>
+        <div className={styles.groupLabel}>Active hours</div>
+        <div className={styles.heatEmpty}>
+          Couldn&apos;t read when {name} is around.{" "}
+          <button
+            type="button"
+            className={styles.noteImport}
+            onClick={() => {
+              resetActivity(name);
+              void loadActivity(identityId, name);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </section>
+    );
+  }
+  return <ActivityHeatmap activity={activity} />;
 }
 
 function InsightGroup({

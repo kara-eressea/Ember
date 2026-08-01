@@ -9,9 +9,12 @@ import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
+import { clockTitle, localClock } from "../../lib/local-time.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
+import { useMinuteClock } from "../../lib/useMinuteClock.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
+import { useProfileStore } from "../../stores/profile.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -431,6 +434,18 @@ export function DmHeader({
   // The partner's identity menu (#167) — the same menu a member-list row
   // opens, anchored under the ⋮ button.
   const [menuAt, setMenuAt] = useState<{ x: number; y: number }>();
+  // Their local clock rides the cached profile (user-set zone first, else the
+  // profile's own UTC offset). Read-only: the DM sidebar owns the fetch, so a
+  // collapsed sidebar simply means no clock rather than a background request
+  // — and a profile view the user never asked for.
+  const response = useProfileStore(
+    (s) => s.profiles[dm.partner.toLowerCase()]?.response,
+  );
+  const clock = localClock(
+    useMinuteClock(),
+    response?.timezone,
+    response?.profile.timezone,
+  );
 
   // Close the DM window (gateway pm.close): history is kept and the
   // conversation reopens on the next pm.open or inbound message; only the
@@ -569,7 +584,7 @@ export function DmHeader({
           }}
         />
       )}
-      {(dm.statusmsg || dm.status) && (
+      {(dm.statusmsg || dm.status || clock) && (
         <div className={styles.description}>
           {dm.online ? (
             <>
@@ -583,6 +598,14 @@ export function DmHeader({
             </>
           ) : (
             "offline"
+          )}
+          {clock && (
+            <span
+              className={styles.headerClock}
+              title={clockTitle(clock, dm.partner)}
+            >
+              {" · "}Local time {clock.time}
+            </span>
           )}
         </div>
       )}

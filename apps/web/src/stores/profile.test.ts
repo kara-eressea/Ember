@@ -38,6 +38,7 @@ function response(name: string): ProfileResponse {
     stale: false,
     budgetExhausted: false,
     note: null,
+    timezone: null,
   };
 }
 
@@ -49,6 +50,7 @@ beforeEach(() => {
     profiles: {},
     history: [],
     insights: {},
+    activity: {},
     ownProfile: undefined,
     ownProfileError: undefined,
   });

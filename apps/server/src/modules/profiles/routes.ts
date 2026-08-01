@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import {
   guestbookPageSchema,
+  profileActivitySchema,
   profileHistoryEntrySchema,
   profileInsightsSchema,
   profileResponseSchema,
@@ -17,6 +18,7 @@ import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
 import { upstreamStatus } from "../flist-api/with-ticket.js";
 import type { ProfileIdentity, ProfileService } from "./service.js";
+import { isValidTimeZone } from "./timezone.js";
 
 const errorResponse = z.object({ error: z.string() });
 const budgetResponse = z.object({
@@ -160,6 +162,7 @@ export async function profilesRoutes(
         stale: result.stale,
         budgetExhausted: result.budgetExhausted,
         note: result.note,
+        timezone: result.timezone,
       };
     },
   );
@@ -230,13 +233,19 @@ export async function profilesRoutes(
     },
   );
 
+  // The viewer's own data about a character: private note + the timezone
+  // they set for them. Both ride the profile response too, so the surfaces
+  // paint in one request; these routes are the read-back / write path.
   app.get(
     "/:identityId/profile/:name/note",
     {
       schema: {
         params: characterParams,
         response: {
-          200: z.object({ note: z.string().nullable() }),
+          200: z.object({
+            note: z.string().nullable(),
+            timezone: z.string().nullable(),
+          }),
           404: errorResponse,
         },
       },
@@ -250,7 +259,7 @@ export async function profilesRoutes(
       if (!identity) {
         return reply.code(404).send({ error: "Identity not found" });
       }
-      return { note: await profiles.getNote(identity.id, request.params.name) };
+      return profiles.getNote(identity.id, request.params.name);
     },
   );
 
@@ -284,6 +293,43 @@ export async function profilesRoutes(
     },
   );
 
+  app.put(
+    "/:identityId/profile/:name/timezone",
+    {
+      schema: {
+        params: characterParams,
+        // Null clears it — the character falls back to F-List's own offset.
+        body: z.object({
+          timezone: z
+            .string()
+            .max(64)
+            .refine(isValidTimeZone, "Unknown time zone")
+            .nullable(),
+        }),
+        response: {
+          200: z.object({ ok: z.literal(true) }),
+          404: errorResponse,
+        },
+      },
+      config: readLimit,
+    },
+    async (request, reply) => {
+      const identity = await ownedIdentity(
+        request.params.identityId,
+        request.user.sub,
+      );
+      if (!identity) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      await profiles.putTimezone(
+        identity.id,
+        request.params.name,
+        request.body.timezone,
+      );
+      return { ok: true as const };
+    },
+  );
+
   app.get(
     "/:identityId/profile/:name/insights",
     {
@@ -305,6 +351,43 @@ export async function profilesRoutes(
         return reply.code(404).send({ error: "Identity not found" });
       }
       return profiles.insights(identity.id, request.params.name);
+    },
+  );
+
+  // Weekday × hour buckets in the caller's own zone (the axis the grid is
+  // drawn on). Same local-data-only story as insights: no F-List traffic.
+  app.get(
+    "/:identityId/profile/:name/activity",
+    {
+      schema: {
+        params: characterParams,
+        querystring: z.object({
+          tz: z
+            .string()
+            .max(64)
+            .refine(isValidTimeZone, "Unknown time zone")
+            .default("UTC"),
+        }),
+        response: {
+          200: profileActivitySchema,
+          404: errorResponse,
+        },
+      },
+      config: readLimit,
+    },
+    async (request, reply) => {
+      const identity = await ownedIdentity(
+        request.params.identityId,
+        request.user.sub,
+      );
+      if (!identity) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      return profiles.activity(
+        identity.id,
+        request.params.name,
+        request.query.tz,
+      );
     },
   );
 

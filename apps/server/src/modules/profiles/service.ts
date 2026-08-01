@@ -3,7 +3,7 @@
 // the bulk mapping lists into ProfileDto, per-identity view history, private
 // notes, and insights computed from data the bouncer already holds.
 
-import { and, desc, eq, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import {
   characterDataSchema,
@@ -13,6 +13,7 @@ import {
 } from "@emberchat/fchat-protocol";
 import type {
   GuestbookPage,
+  ProfileActivity,
   ProfileDto,
   ProfileHistoryEntry,
   ProfileInsights,
@@ -37,6 +38,7 @@ import {
 } from "../flist-api/ticket-manager.js";
 import { withTicket, type TicketedIdentity } from "../flist-api/with-ticket.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
+import { isValidTimeZone } from "./timezone.js";
 
 export interface ProfileServiceOptions {
   db: Db;
@@ -57,6 +59,14 @@ export interface ProfileIdentity extends TicketedIdentity {
   character: string;
 }
 
+/** The viewer's own data about a character: the private note and the zone
+ * they set for them. Both halves live in one row and are cleared
+ * independently — an empty note never takes the timezone with it. */
+export interface CharacterNote {
+  note: string | null;
+  timezone: string | null;
+}
+
 export type ProfileResult =
   | {
       status: "ok";
@@ -65,6 +75,7 @@ export type ProfileResult =
       stale: boolean;
       budgetExhausted: boolean;
       note: string | null;
+      timezone: string | null;
     }
   | { status: "not-found"; error: string }
   | { status: "budget-exhausted"; retryAfterSeconds: number };
@@ -89,6 +100,9 @@ export type GuestbookResult =
   | { status: "budget-exhausted"; retryAfterSeconds: number }
   | { status: "upstream-error"; error: string };
 
+/** Look-back window for the activity heatmap. Long enough for a weekly
+ * rhythm to show, short enough that a changed routine isn't drowned. */
+const ACTIVITY_WINDOW_DAYS = 90;
 const IMAGE_BASE = "https://static.f-list.net/images/charimage";
 const INLINE_BASE = "https://static.f-list.net/images/charinline";
 const KINK_CHOICES = new Set(["fave", "yes", "maybe", "no"]);
@@ -140,7 +154,7 @@ export class ProfileService {
     // land in the recent-views history (#209). Self views are skipped; the
     // note is still fetched so nothing else regresses.
     const isSelf = this.#isSelf(identity, lower, result.canonical);
-    const [profile, note] = await Promise.all([
+    const [profile, own] = await Promise.all([
       this.#resolve(result.payload),
       isSelf
         ? this.getNote(identity.id, lower)
@@ -152,7 +166,8 @@ export class ProfileService {
       fetchedAt: result.fetchedAt,
       stale: result.stale,
       budgetExhausted: result.budgetExhausted,
-      note,
+      note: own.note,
+      timezone: own.timezone,
     };
   }
 
@@ -321,9 +336,12 @@ export class ProfileService {
     return deleted.length > 0;
   }
 
-  async getNote(identityId: string, name: string): Promise<string | null> {
+  async getNote(identityId: string, name: string): Promise<CharacterNote> {
     const [row] = await this.#db
-      .select({ note: characterNotes.note })
+      .select({
+        note: characterNotes.note,
+        timezone: characterNotes.timezone,
+      })
       .from(characterNotes)
       .where(
         and(
@@ -332,30 +350,55 @@ export class ProfileService {
         ),
       )
       .limit(1);
-    return row?.note ?? null;
+    return {
+      // "" is the storage shape of "no note on a row kept for its timezone".
+      note: row?.note ? row.note : null,
+      timezone: row?.timezone ?? null,
+    };
   }
 
-  /** Empty note = delete the row (the UI's "clear" is not a tombstone). */
+  /** Empty note = clear it (the UI's "clear" is not a tombstone), but the row
+   * only goes away when the timezone is empty too. */
   async putNote(identityId: string, name: string, note: string): Promise<void> {
+    await this.#putCharacterNote(identityId, name, { note });
+  }
+
+  /** Null = forget the user-set zone and fall back to F-List's offset. */
+  async putTimezone(
+    identityId: string,
+    name: string,
+    timezone: string | null,
+  ): Promise<void> {
+    await this.#putCharacterNote(identityId, name, { timezone });
+  }
+
+  /** Writes one half of the row (upsert on that column only, so a concurrent
+   * write to the other half can't be read-modify-clobbered), then drops the
+   * row once both halves are empty. */
+  async #putCharacterNote(
+    identityId: string,
+    name: string,
+    patch: { note: string } | { timezone: string | null },
+  ): Promise<void> {
     const lower = name.toLowerCase();
-    if (note === "") {
-      await this.#db
-        .delete(characterNotes)
-        .where(
-          and(
-            eq(characterNotes.identityId, identityId),
-            eq(characterNotes.characterLower, lower),
-          ),
-        );
-      return;
-    }
+    const updatedAt = new Date(this.#now());
     await this.#db
       .insert(characterNotes)
-      .values({ identityId, characterLower: lower, note })
+      .values({ identityId, characterLower: lower, note: "", ...patch })
       .onConflictDoUpdate({
         target: [characterNotes.identityId, characterNotes.characterLower],
-        set: { note, updatedAt: new Date(this.#now()) },
+        set: { ...patch, updatedAt },
       });
+    await this.#db
+      .delete(characterNotes)
+      .where(
+        and(
+          eq(characterNotes.identityId, identityId),
+          eq(characterNotes.characterLower, lower),
+          eq(characterNotes.note, ""),
+          isNull(characterNotes.timezone),
+        ),
+      );
   }
 
   /** Budget-counted guestbook page, gated on the cached profile's
@@ -533,6 +576,57 @@ export class ProfileService {
     };
   }
 
+  /** When this character talks: weekday × hour buckets over the last 90 days,
+   * in the caller's zone. Postgres does the bucketing through `AT TIME ZONE`
+   * so DST shifts inside the window land in the right hour. */
+  async activity(
+    identityId: string,
+    name: string,
+    timezone: string,
+  ): Promise<ProfileActivity> {
+    if (!isValidTimeZone(timezone)) {
+      throw new RangeError(`Unknown time zone: ${timezone}`);
+    }
+    // ISO day-of-week: 1 = Monday … 7 = Sunday, so row 0 = Monday. The zone
+    // is a bind parameter (never interpolated) and needs the ::text cast —
+    // AT TIME ZONE is overloaded on text/interval and an untyped parameter
+    // is ambiguous.
+    const dow = sql<number>`extract(isodow from ${messages.createdAt} at time zone ${timezone}::text)::int`;
+    const hour = sql<number>`extract(hour from ${messages.createdAt} at time zone ${timezone}::text)::int`;
+    const rows = await this.#db
+      .select({ dow, hour, count: sql<number>`count(*)::int` })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          sql`lower(${messages.senderCharacter}) = ${name.toLowerCase()}`,
+          sql`not ${messages.sentByUs}`,
+          // Roleplay ads are commonly posted by rotation tools (ours
+          // included) — counting them would draw activity the character
+          // was never present for. System lines aren't theirs at all.
+          inArray(messages.kind, ["msg", "pm", "rll"]),
+          gte(
+            messages.createdAt,
+            new Date(this.#now() - ACTIVITY_WINDOW_DAYS * 86_400_000),
+          ),
+        ),
+      )
+      // By select position: repeating the expressions would re-bind the zone
+      // as fresh parameters, which Postgres won't match against the ones in
+      // the select list ("must appear in the GROUP BY clause").
+      .groupBy(sql`1`, sql`2`);
+
+    const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+    let total = 0;
+    for (const row of rows) {
+      const count = Number(row.count);
+      grid[Number(row.dow) - 1]![Number(row.hour)] = count;
+      total += count;
+    }
+    return { windowDays: ACTIVITY_WINDOW_DAYS, total, grid, timezone };
+  }
+
   async #fetchCharacter(
     identity: ProfileIdentity,
     name: string,
@@ -573,7 +667,7 @@ export class ProfileService {
     identityId: string,
     lower: string,
     canonical: string,
-  ): Promise<string | null> {
+  ): Promise<CharacterNote> {
     const at = new Date(this.#now());
     await this.#db
       .insert(profileViews)

@@ -65,6 +65,13 @@
   font-size: var(--eb-font-ui-small);
 }
 
+/* Partner's wall clock in the DM header's status line — same row, quieter,
+   and never the reason the row exists on its own. */
+.headerClock {
+  color: var(--eb-faint);
+  white-space: nowrap;
+}
+
 .descriptionClamped {
   display: -webkit-box;
   -webkit-line-clamp: 1;
