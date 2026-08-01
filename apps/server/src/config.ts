@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RECONNECT_FLOOR_MS } from "./modules/session-engine/fchat-session.js";
 
 // The .env.example placeholder. Refusing it at startup means a copied-but-
 // unedited env file cannot silently ship a world-readable signing secret.
@@ -28,6 +29,15 @@ const configSchema = z.object({
    * local fchat-sim don't serialize on a pointless throttle.
    */
   FLIST_API_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(1000),
+  /**
+   * Reconnect backoff overrides — TEST KNOBS ONLY, for E2E runs against the
+   * local fchat-sim. Unset = the policy constants (10 s floor, 5 min cap).
+   * The >= 10 s floor is developer policy against F-List's server, so a
+   * sub-policy floor against the real F-Chat refuses to boot, like the
+   * API-interval guard below.
+   */
+  FCHAT_RECONNECT_FLOOR_MS: z.coerce.number().int().min(50).optional(),
+  FCHAT_RECONNECT_CAP_MS: z.coerce.number().int().min(50).optional(),
   /**
    * Campaign-scheduler timing overrides (M11) — TEST KNOBS ONLY, for E2E
    * runs against the local fchat-sim. Unset = the policy constants
@@ -173,6 +183,13 @@ const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 
+/** True for f-list.net itself and any subdomain — never for a lookalike
+ * host that merely ends in the same characters. */
+function isFlistHost(url: string): boolean {
+  const hostname = new URL(url).hostname;
+  return hostname === "f-list.net" || hostname.endsWith(".f-list.net");
+}
+
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): AppConfig {
@@ -182,10 +199,21 @@ export function loadConfig(
   // the F-List developer policy in production (M6 audit).
   if (
     config.FLIST_API_MIN_INTERVAL_MS < 1000 &&
-    new URL(config.FLIST_API_URL).hostname.endsWith("f-list.net")
+    isFlistHost(config.FLIST_API_URL)
   ) {
     throw new Error(
       "FLIST_API_MIN_INTERVAL_MS below 1000 is only allowed against a local fchat-sim, never the real F-List API",
+    );
+  }
+  // Same guardrail for the reconnect backoff: the >= 10 s floor is policy
+  // against F-List's server, so only a sim stack may shorten it.
+  if (
+    config.FCHAT_RECONNECT_FLOOR_MS !== undefined &&
+    config.FCHAT_RECONNECT_FLOOR_MS < RECONNECT_FLOOR_MS &&
+    isFlistHost(config.FCHAT_URL)
+  ) {
+    throw new Error(
+      `FCHAT_RECONNECT_FLOOR_MS below ${String(RECONNECT_FLOOR_MS)} is only allowed against a local fchat-sim, never the real F-Chat`,
     );
   }
   // Same guardrail for the campaign schedule: shrunken rotation timings
@@ -201,10 +229,7 @@ export function loadConfig(
       config.CAMPAIGN_INTERVAL_JITTER_MS < 10 * 60_000) ||
     (config.CAMPAIGN_START_JITTER_MS !== undefined &&
       config.CAMPAIGN_START_JITTER_MS < 3 * 60_000);
-  if (
-    campaignShrunk &&
-    new URL(config.FCHAT_URL).hostname.endsWith("f-list.net")
-  ) {
+  if (campaignShrunk && isFlistHost(config.FCHAT_URL)) {
     throw new Error(
       "CAMPAIGN_* timings below the policy floors are only allowed against a local fchat-sim, never the real F-Chat",
     );

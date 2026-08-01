@@ -3,10 +3,16 @@
 // A raw SimClient plays the "other side", pushing TPN states; the line reflects
 // them in plain language, reserves its height when clear so the message log
 // never jumps, and lives inside the composer (below the log, above the input).
-// Owns yarrow@example.test (Yarrow Dale; Rowan Birch is the other side).
+// Owns yarrow@example.test (Yarrow Dale) and
+// rowanbirch@example.test (Rowan Birch, the other side).
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 test("typing status shows on the message bar and clears again", async ({
   page,
@@ -17,7 +23,7 @@ test("typing status shows on the message bar and clears again", async ({
   await provisionAndConnect(page, "yarrow@example.test", "Yarrow Dale");
 
   const rowan = await SimClient.connect(
-    "yarrow@example.test",
+    "rowanbirch@example.test",
     "hunter2",
     "Rowan Birch",
   );

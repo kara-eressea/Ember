@@ -143,15 +143,26 @@ export async function buildApp({
     app.log,
     process.env.NODE_ENV === "test" ? directoryTuning : undefined,
   );
+  // In-process knobs stay behind NODE_ENV — nothing outside the test runner
+  // may reach them. The env knobs carry their own gate instead (a sub-policy
+  // floor refuses to boot against real F-Chat, config.ts), which is what lets
+  // the E2E stack's *spawned* server binary shorten the sim's backoff.
+  const tuning: SessionTuning = {
+    ...(process.env.NODE_ENV === "test" ? sessionTuning : {}),
+    ...(config.FCHAT_RECONNECT_FLOOR_MS !== undefined
+      ? { backoffFloorMs: config.FCHAT_RECONNECT_FLOOR_MS }
+      : {}),
+    ...(config.FCHAT_RECONNECT_CAP_MS !== undefined
+      ? { backoffCapMs: config.FCHAT_RECONNECT_CAP_MS }
+      : {}),
+  };
   const sessions = new SessionRegistry({
     tickets,
     wsUrl: config.FCHAT_URL,
     clientName: config.CLIENT_NAME,
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
-    // Hard gate, not just wiring discipline: the 10s backoff floor is
-    // developer policy, so timing knobs are inert outside the test runner.
-    tuning: process.env.NODE_ENV === "test" ? sessionTuning : undefined,
+    tuning,
     onSessionStarted: (identityId, session) => {
       // History first: message.new fan-out happens post-persistence via the
       // sink's bus, so the sink must see every command the hub translates.

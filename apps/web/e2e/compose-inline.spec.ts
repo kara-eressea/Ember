@@ -9,12 +9,13 @@
 // (Tansy Meridian): spec files run in parallel, so specs never share
 // accounts (a new ticket invalidates all previous ones account-wide).
 
-import { expect, test } from "@playwright/test";
 import {
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  test,
 } from "./helpers.js";
 
 test("inline composer: decorations, send, slash, toolbar, timer, paste, undo", async ({

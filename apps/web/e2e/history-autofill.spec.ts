@@ -10,17 +10,17 @@
 // channel in a tall viewport that the latest page underfills, and asserts the
 // log keeps loading older messages until it overflows.
 //
-// Owns moss@example.test (Moss Fen + Reed Marsh): spec files run in parallel
-// and a character can hold only one sim connection, so specs never share
-// characters.
+// Owns moss@example.test (Moss Fen) and reedmarsh@example.test (Reed Marsh):
+// specs never share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 /** Spec-unique hidden channel. */
@@ -45,7 +45,7 @@ test("a short log keeps auto-filling older history until it overflows (#405)", a
   await joinChannel(page, CHANNEL_KEY, CHANNEL_TITLE);
 
   const reed = await SimClient.connect(
-    "moss@example.test",
+    "reedmarsh@example.test",
     "hunter2",
     "Reed Marsh",
   );

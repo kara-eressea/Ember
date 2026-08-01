@@ -1,14 +1,16 @@
 // #407: a newly attached browser must not stop the fan-out to browsers that
 // were already attached. Device A sits in a channel; device B logs into the
 // same app account and opens the same identity; A must keep painting live
-// messages. Owns cedar@example.test (Cedar Vale + Bark Wren).
+// messages. Owns cedar@example.test (Cedar Vale) and
+// bark@example.test (Bark Wren).
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 test("a second browser attaching leaves the first still receiving live messages", async ({
@@ -26,7 +28,7 @@ test("a second browser attaching leaves the first still receiving live messages"
   await joinChannel(page, "Development", "Development");
 
   const bark = await SimClient.connect(
-    "cedar@example.test",
+    "bark@example.test",
     "hunter2",
     "Bark Wren",
   );

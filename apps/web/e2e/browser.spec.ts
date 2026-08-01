@@ -2,12 +2,17 @@
 // dialog, tabs list official channels and open rooms with counts, the filter
 // narrows rows, Join flips to ✓ Joined and the channel appears in the
 // sidebar, and the footer joins a hidden room by exact id (hidden rooms
-// never appear in the lists). Owns laurel@example.test (Laurel Quince) —
-// spec files run in parallel and a character can hold only one sim
-// connection, so specs never share one.
+// never appear in the lists). Owns laurel@example.test (Laurel Quince) and
+// pip@example.test (Quince Pip, the raw-SimClient room owner): specs never
+// share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 test("channel browser: browse, filter, join, hidden-by-name", async ({
   page,
@@ -77,7 +82,7 @@ test("channel browser: browse, filter, join, hidden-by-name", async ({
 
   // ── Inbound invite (CIU) is an actionable sidebar row ──────────────────
   const pip = await SimClient.connect(
-    "laurel@example.test",
+    "pip@example.test",
     "hunter2",
     "Quince Pip",
   );

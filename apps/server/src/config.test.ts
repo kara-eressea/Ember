@@ -41,6 +41,35 @@ describe("loadConfig", () => {
     );
   });
 
+  it("allows a sub-policy reconnect floor only against a local sim", () => {
+    expect(() =>
+      loadConfig({ ...BASE_ENV, FCHAT_RECONNECT_FLOOR_MS: "300" }),
+    ).toThrow(/only allowed against a local fchat-sim/);
+    expect(
+      loadConfig({
+        ...BASE_ENV,
+        FCHAT_URL: "ws://127.0.0.1:9090/chat2",
+        FCHAT_RECONNECT_FLOOR_MS: "300",
+      }).FCHAT_RECONNECT_FLOOR_MS,
+    ).toBe(300);
+    // The policy floor itself is always fine, sim or not.
+    expect(
+      loadConfig({ ...BASE_ENV, FCHAT_RECONNECT_FLOOR_MS: "10000" })
+        .FCHAT_RECONNECT_FLOOR_MS,
+    ).toBe(10_000);
+  });
+
+  it("does not mistake a lookalike host for f-list.net", () => {
+    // endsWith("f-list.net") would match "notf-list.net" and refuse to boot.
+    expect(
+      loadConfig({
+        ...BASE_ENV,
+        FCHAT_URL: "wss://chat.notf-list.net/chat2",
+        FCHAT_RECONNECT_FLOOR_MS: "300",
+      }).FCHAT_RECONNECT_FLOOR_MS,
+    ).toBe(300);
+  });
+
   it("refuses a non-websocket FCHAT_URL", () => {
     expect(() =>
       loadConfig({ ...BASE_ENV, FCHAT_URL: "https://chat.f-list.net/chat2" }),
