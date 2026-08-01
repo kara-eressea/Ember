@@ -7,12 +7,13 @@
 // counts Frontpage members — so specs share neither characters nor counted
 // channels.
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 test("identity rail: full context swap, background badges, @me alias", async ({

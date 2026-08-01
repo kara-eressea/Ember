@@ -10,16 +10,17 @@
 //      the reattached client shows the row again (unread exemption) even
 //      though the partner is still offline.
 //
-// Owns sorrel@example.test (Sorrel Ash + Dusk Wren) and bramble@example.test
-// (Bramble Fen + Moss Dell): spec files run in parallel and a character holds
-// only one sim connection, so specs never share characters.
+// Owns sorrel@example.test (Sorrel Ash), dusk@example.test (Dusk Wren),
+// bramble@example.test (Bramble Holt) and mossdell@example.test (Moss Dell):
+// specs never share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 test("offline DM row hides when read, and the header toggle shows it", async ({
@@ -31,7 +32,7 @@ test("offline DM row hides when read, and the header toggle shows it", async ({
 
   const nav = page.getByRole("navigation");
   const dusk = await SimClient.connect(
-    "sorrel@example.test",
+    "dusk@example.test",
     "hunter2",
     "Dusk Wren",
   );
@@ -77,19 +78,19 @@ test("reattach shows a hidden offline DM row once unread arrives while detached"
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
-  await provisionAndConnect(page, "bramble@example.test", "Bramble Fen");
+  await provisionAndConnect(page, "bramble@example.test", "Bramble Holt");
 
   const nav = page.getByRole("navigation");
   const dmRow = nav.getByRole("link", { name: /Moss Dell/ });
 
   let moss = await SimClient.connect(
-    "bramble@example.test",
+    "mossdell@example.test",
     "hunter2",
     "Moss Dell",
   );
   try {
     // A first DM, read while attached — the row exists and has no unread.
-    moss.send("PRI", { recipient: "Bramble Fen", message: "first hello" });
+    moss.send("PRI", { recipient: "Bramble Holt", message: "first hello" });
     await dmRow.click();
     await expect(
       page.getByTestId("message-log").getByText("first hello"),
@@ -104,13 +105,13 @@ test("reattach shows a hidden offline DM row once unread arrives while detached"
     // ── Detach: the bouncer holds the session and keeps accruing state ────
     await page.goto("about:blank");
     moss = await SimClient.connect(
-      "bramble@example.test",
+      "mossdell@example.test",
       "hunter2",
       "Moss Dell",
     );
     for (let i = 1; i <= 3; i += 1) {
       moss.send("PRI", {
-        recipient: "Bramble Fen",
+        recipient: "Bramble Holt",
         message: `while away #${String(i)}`,
       });
       await delay(80);

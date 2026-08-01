@@ -5,12 +5,13 @@
 // spec files run in parallel, so specs never share characters or assert
 // against channels other specs count members in.
 
-import { expect, test } from "@playwright/test";
 import {
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
   solidPng,
+  test,
 } from "./helpers.js";
 
 const ROOM_ID = "ADH-22bb33cc44dd55ee66ff";

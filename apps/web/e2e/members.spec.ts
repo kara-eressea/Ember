@@ -2,17 +2,19 @@
 // the member list's Seen recently fold (collapsed by default), expanding
 // shows the row with its relative time, the filter finds offline members,
 // and a rejoin moves the nick back to the online groups.
-// Owns clover@example.test (Clover Hart + Dell Marsh) and Fallow Field —
+// Owns clover@example.test (Clover Hart),
+// dellmarsh@example.test (Dell Marsh) and Fallow Field —
 // spec files run in parallel and a character can hold only one sim
 // connection, so specs never share accounts or channels.
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 const CHANNEL_KEY = "ADH-200fallow88ee99ff00";
@@ -36,7 +38,7 @@ test("seen recently: part → fold appears, expand, filter, rejoin clears", asyn
 
   // The other side joins…
   const dell = await SimClient.connect(
-    "clover@example.test",
+    "dellmarsh@example.test",
     "hunter2",
     "Dell Marsh",
   );
@@ -105,7 +107,7 @@ test("member menu: Escape closes the menu without jumping the log", async ({
   const log = page.getByTestId("message-log");
 
   const dell = await SimClient.connect(
-    "clover@example.test",
+    "dellmarsh@example.test",
     "hunter2",
     "Dell Marsh",
   );

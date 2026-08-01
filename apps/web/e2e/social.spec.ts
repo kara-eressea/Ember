@@ -5,8 +5,12 @@
 // room — spec files run in parallel, so specs never share characters or
 // channels.
 
-import { expect, test } from "@playwright/test";
-import { interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  test,
+} from "./helpers.js";
 
 const FERNERY = "ADH-33cc44dd55ee66ff77aa";
 

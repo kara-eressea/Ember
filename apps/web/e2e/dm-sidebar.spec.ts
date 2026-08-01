@@ -2,11 +2,17 @@
 // the partner's identity in the right column; the private note autosaves and
 // survives a reload (it rides the profile response, like the viewer's note);
 // the collapse toggle persists as a single global preference across reloads.
-// Owns thistle@example.test (Thistle Vane; Bramble Fen is the raw-SimClient
+// Owns thistle@example.test (Thistle Vane) and bramblefen@example.test
+// (Bramble Fen, the raw-SimClient
 // "other side") — spec files run in parallel, so specs never share characters.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 const NOTE_TEXT = "Met in the greenhouse. Owes me a trellis.";
 
@@ -21,7 +27,7 @@ test("DM sidebar: renders the partner, note autosaves + persists, collapse persi
   // Bramble Fen (the other side) opens the conversation with an inbound PM —
   // no shared channel needed. The DM row appears in the sidebar.
   const bramble = await SimClient.connect(
-    "thistle@example.test",
+    "bramblefen@example.test",
     "hunter2",
     "Bramble Fen",
   );

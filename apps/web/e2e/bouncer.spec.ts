@@ -1,16 +1,16 @@
 // The M2 verification E2E (milestone-2.md): two devices on one app account —
 // unread badges converge through the gateway fan-out, and the second device
 // gets the "new since last visit" divider at catch-up. Owns
-// willow@example.test (Willow Reed + Fern Ashwood): spec files run in
-// parallel and a character can hold only one sim connection, so specs never
-// share characters.
+// willow@example.test (Willow Reed) and ashwood@example.test (Ash Fernwood):
+// specs never share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 test("two devices: unread badges converge; catch-up shows the new divider", async ({
@@ -29,15 +29,15 @@ test("two devices: unread badges converge; catch-up shows the new divider", asyn
   await joinChannel(page, "Development", "Development");
 
   const fern = await SimClient.connect(
-    "willow@example.test",
+    "ashwood@example.test",
     "hunter2",
-    "Fern Ashwood",
+    "Ash Fernwood",
   );
   try {
     // A PM lands while device A watches the channel: sidebar badge appears.
     fern.send("PRI", { recipient: "Willow Reed", message: "first wave" });
     const navA = page.getByRole("navigation");
-    const dmRowA = navA.getByRole("link", { name: /Fern Ashwood/ });
+    const dmRowA = navA.getByRole("link", { name: /Ash Fernwood/ });
     const badgeA = dmRowA.getByTestId("nav-badge");
     await expect(badgeA).toHaveText("1");
 
@@ -55,7 +55,7 @@ test("two devices: unread badges converge; catch-up shows the new divider", asyn
     await pageB.getByRole("button", { name: "Open", exact: true }).click();
     await expect(pageB).toHaveURL(/\/app\//);
     const navB = pageB.getByRole("navigation");
-    const dmRowB = navB.getByRole("link", { name: /Fern Ashwood/ });
+    const dmRowB = navB.getByRole("link", { name: /Ash Fernwood/ });
     const badgeB = dmRowB.getByTestId("nav-badge");
     // The unread count was computed server-side into B's snapshot.
     await expect(badgeB).toHaveText("1");

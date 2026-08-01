@@ -9,8 +9,8 @@
 // previous ones account-wide), so accounts are spec-exclusive like
 // characters and channels.
 
-import { expect, test, type Page } from "@playwright/test";
-import { provisionUser } from "./helpers.js";
+import { type Page } from "@playwright/test";
+import { expect, provisionUser, test } from "./helpers.js";
 
 // 1×1 transparent PNG — stands in for every F-List avatar.
 const TINY_PNG = Buffer.from(

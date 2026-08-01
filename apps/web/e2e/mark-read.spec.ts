@@ -2,11 +2,16 @@
 // cleared without opening the conversation. The sidebar right-click menus gain
 // a Mark as read item that clears the unread badge and advances the persisted
 // read cursor — so it does not navigate and it sticks across a reattach. Owns
-// bracken@example.test (Bracken Vale + Cress Dell): spec files run in parallel
-// and a character holds only one sim connection, so specs never share one.
+// bracken@example.test (Bracken Vale) and cress@example.test (Cress Dell):
+// specs never share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 test("mark a DM read from its row menu — badge clears, no navigation, survives reattach", async ({
   page,
@@ -17,7 +22,7 @@ test("mark a DM read from its row menu — badge clears, no navigation, survives
   await provisionAndConnect(page, "bracken@example.test", "Bracken Vale");
 
   const cress = await SimClient.connect(
-    "bracken@example.test",
+    "cress@example.test",
     "hunter2",
     "Cress Dell",
   );

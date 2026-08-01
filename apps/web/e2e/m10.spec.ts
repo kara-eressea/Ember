@@ -3,12 +3,17 @@
 // channel outcome, cooldown row afterwards), see the distinct ad block in
 // the log with ads never counting toward unread, then search characters by
 // kink, open the mini card from a result, and rerun a saved search for the
-// "N new" badge. Owns vesna@example.test (Vesna Marlowe; Kolvarr is the
-// raw-SimClient "other side") and the hidden Aurora Den room — spec files
-// run in parallel, so specs never share characters or channels.
+// "N new" badge. Owns vesna@example.test (Vesna Marlowe), kolvarr@example.test
+// (Kolvarr, the raw-SimClient "other side") and the hidden Aurora Den room:
+// specs never share an account, a character, or a channel.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 const AURORA = "ADH-m10aurora00dd11ee22ff";
 
@@ -73,7 +78,7 @@ test("M10: author → post → distinct ad render; kink search with saved rerun 
 
   // Kolvarr comes online in the room as the "other side".
   const kolvarr = await SimClient.connect(
-    "vesna@example.test",
+    "kolvarr@example.test",
     "hunter2",
     "Kolvarr",
   );
@@ -135,7 +140,7 @@ test("M10: author → post → distinct ad render; kink search with saved rerun 
   await expect(search.getByText("Campfire folk")).toBeVisible();
 
   const kolvarr2 = await SimClient.connect(
-    "vesna@example.test",
+    "kolvarr@example.test",
     "hunter2",
     "Kolvarr",
   );

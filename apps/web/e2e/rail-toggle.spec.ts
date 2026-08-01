@@ -13,11 +13,13 @@
 // sidebar-width track, members ballooning into 1fr). These assertions measure
 // the real column geometry, not just that the rail vanished.
 
-import { expect, test, type Locator } from "@playwright/test";
+import { type Locator } from "@playwright/test";
 import {
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  test,
 } from "./helpers.js";
 
 async function width(locator: Locator): Promise<number> {

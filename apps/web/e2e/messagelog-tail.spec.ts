@@ -10,17 +10,17 @@
 //   #373.2 — Esc must remove the in-log "new since you left" divider even when
 //            the bar is not shown (the common few-unreads case).
 //
-// Owns quill@example.test (Quill Marsh + Wick Marsh): spec files run in
-// parallel and a character holds only one sim connection, so specs never share
-// characters.
+// Owns quill@example.test (Quill Marsh) and wick@example.test (Wick Marsh):
+// specs never share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
 import {
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
   SimClient,
+  test,
 } from "./helpers.js";
 
 /** Mirrors AT_BOTTOM_SLACK_PX in MessageLog — within this counts as bottom. */
@@ -60,7 +60,7 @@ test("switching between two fully-read channels lands at the bottom (#372)", asy
   await joinChannel(page, ROOM_B, ROOM_B_TITLE);
 
   const reed = await SimClient.connect(
-    "quill@example.test",
+    "wick@example.test",
     "hunter2",
     "Wick Marsh",
   );
@@ -120,7 +120,7 @@ test("new-messages bar hides when unreads fit on screen; Esc clears the divider 
   await provisionAndConnect(page, "quill@example.test", "Quill Marsh");
 
   const reed = await SimClient.connect(
-    "quill@example.test",
+    "wick@example.test",
     "hunter2",
     "Wick Marsh",
   );
@@ -194,7 +194,7 @@ test("scrolling down to the newest messages clears the unread bar (#415)", async
   await provisionAndConnect(page, "quill@example.test", "Quill Marsh");
 
   const reed = await SimClient.connect(
-    "quill@example.test",
+    "wick@example.test",
     "hunter2",
     "Wick Marsh",
   );
@@ -271,7 +271,7 @@ test("new-messages bar shows and jumps when the unreads are off screen (#363/#37
   await provisionAndConnect(page, "quill@example.test", "Quill Marsh");
 
   const reed = await SimClient.connect(
-    "quill@example.test",
+    "wick@example.test",
     "hunter2",
     "Wick Marsh",
   );
@@ -344,7 +344,7 @@ test("re-opening a conversation left in a search-jump view lands at the tail (#4
   await browser.getByRole("button", { name: "Close channel browser" }).click();
 
   const reed = await SimClient.connect(
-    "quill@example.test",
+    "wick@example.test",
     "hunter2",
     "Wick Marsh",
   );

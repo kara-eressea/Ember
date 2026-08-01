@@ -3,13 +3,14 @@
 // on the other side of the relay (auth.spec owns Amber Vale — a character
 // may only hold one sim connection, so the specs never share one).
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 /** How many channel messages Birch pumps in to force history pagination

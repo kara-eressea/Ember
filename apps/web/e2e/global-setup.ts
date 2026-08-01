@@ -120,6 +120,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // The sim is local — the 1 req/s policy budget only matters against
         // the real F-List, and serializing on it starves parallel specs.
         FLIST_API_MIN_INTERVAL_MS: "0",
+        // Likewise the 10s reconnect floor: it binds against F-List's server,
+        // not our sim. A genuine drop under runner contention would otherwise
+        // park the character offline past every spec's connect budget.
+        FCHAT_RECONNECT_FLOOR_MS: "300",
+        FCHAT_RECONNECT_CAP_MS: "2000",
         // The whole parallel suite arrives from one loopback IP; the
         // production per-IP backstop would 429 innocent specs.
         RATE_LIMIT_MAX: "100000",

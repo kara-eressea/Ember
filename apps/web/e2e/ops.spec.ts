@@ -1,12 +1,18 @@
 // The M6 op-tooling E2E: non-ops never see admin affordances; a live COA
 // promotion unlocks them; a menu kick updates the member list and renders
 // the SystemLine; slash moderation (/ban, /banlist) round-trips. Owns
-// rue@example.test (Rue Alder; Alder Fen and Sorrel Vane are the
+// rue@example.test (Rue Alder) and alder@example.test (Alder Fen and
+// Sorrel Vane, the
 // raw-SimClient "other sides") and the hidden Potting Shed room — spec
 // files run in parallel, so specs never share characters or channels.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 const SHED = "ADH-55ee66ff77aa88bb99cc";
 
@@ -19,7 +25,7 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
 
   // Alder (owner) and Sorrel (moderation target) sit in the Potting Shed.
   const alder = await SimClient.connect(
-    "rue@example.test",
+    "alder@example.test",
     "hunter2",
     "Alder Fen",
   );
@@ -30,7 +36,7 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
       p.character.identity === "Alder Fen",
   );
   const sorrel = await SimClient.connect(
-    "rue@example.test",
+    "alder@example.test",
     "hunter2",
     "Sorrel Vane",
   );
