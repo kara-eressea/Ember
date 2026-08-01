@@ -14,7 +14,7 @@ import {
  * floor). Never wired to config — production always runs policy defaults. */
 export type SessionTuning = Pick<
   FchatSessionOptions,
-  "backoffFloorMs" | "backoffCapMs" | "watchdogMs" | "random"
+  "backoffFloorMs" | "backoffCapMs" | "watchdogMs" | "random" | "statusGateMs"
 >;
 
 export interface SessionRegistryOptions {

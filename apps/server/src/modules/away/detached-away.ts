@@ -223,9 +223,11 @@ export class DetachedAway {
           const previous = session.ownStatus;
           await session.setStatus("away", prefs.autoAwayMessage);
           if (this.#options.hub.hasSubscribers(identityId)) {
-            // Attached while the STA was in flight (the send is flood-
-            // gated); onAttach found nothing to restore, so hand back
-            // here instead of leaving a fresh attach sitting away.
+            // Attached while the STA was in flight (the send is flood- and
+            // status-gated); onAttach found nothing to restore, so hand back
+            // here instead of leaving a fresh attach sitting away. A hand-back
+            // inside the status gate supersedes the away rather than queueing
+            // behind it — the session keeps only the newest desire.
             await session.setStatus(previous.status, previous.statusmsg);
           } else {
             this.#applied.set(identityId, previous);

@@ -58,6 +58,15 @@ export const AD_IMMEDIATE_WAIT_CEILING_MS = 10_000;
 /** The server paces character searches at one per 5 s (ERR 50) — a
  * protocol constant; no VAR carries it. */
 export const FKS_PACE_SECONDS = 5;
+/**
+ * Minimum spacing between our own STA frames. F-Chat refuses a status change
+ * made within five seconds of the last one — ERR 14, "You must wait five
+ * seconds between status changes" — and no VAR carries that cadence, so it is
+ * a constant with a little headroom for transit jitter. The bouncer paces
+ * status changes itself because the browsers can't: auto-away runs in every
+ * attached browser, and only the session knows what already went on the wire.
+ */
+export const STATUS_GATE_MS = 5_500;
 /** How long a fired search waits for its FKS/ERR before giving up. */
 const SEARCH_RESPONSE_TIMEOUT_MS = 10_000;
 /** ERR codes that are search outcomes: 18 no results, 50 pace, 61 too
@@ -162,6 +171,8 @@ export interface FchatSessionOptions {
   readonly backoffCapMs?: number;
   readonly watchdogMs?: number;
   readonly random?: () => number;
+  /** Status pacing window; production uses STATUS_GATE_MS. */
+  readonly statusGateMs?: number;
 }
 
 export class SessionNotOnlineError extends Error {
@@ -205,6 +216,7 @@ export class FchatSession {
   readonly #log: SessionLogger;
   readonly #backoff: BackoffOptions;
   readonly #watchdogMs: number;
+  readonly #statusGateMs: number;
   readonly #rateGate: RateGate;
 
   #status: SessionStatus = "idle";
@@ -237,6 +249,14 @@ export class FchatSession {
    * resets a fresh connection to plain "online"). */
   #desiredStatus:
     { status: ClientSettableStatus; statusmsg: string } | undefined;
+  /** A status change accepted while the ERR-14 window was still closed, held
+   * until it opens. Newest wins: an intermediate desire is overwritten, never
+   * queued — only the status the user ended up on belongs on the wire. */
+  #queuedStatus:
+    { status: ClientSettableStatus; statusmsg: string } | undefined;
+  #statusTimer: NodeJS.Timeout | undefined;
+  /** When the last status change was handed to the wire, for the gate. */
+  #lastStatusSentAt = 0;
   /** Ignored senders (lowercased) already sent an IGN notify on this
    * connection — one courtesy frame per sender, not one per message. */
   readonly #notifiedIgnored = new Set<string>();
@@ -258,6 +278,7 @@ export class FchatSession {
       random: options.random ?? Math.random,
     };
     this.#watchdogMs = options.watchdogMs ?? WATCHDOG_MS;
+    this.#statusGateMs = options.statusGateMs ?? STATUS_GATE_MS;
     this.events = new SessionEventBus(this.#log);
     // MSG and PRI share the documented msg_flood value but the server tracks
     // them separately; ads pace on lfrp_flood (1/10 min live) per channel.
@@ -657,9 +678,19 @@ export class FchatSession {
     await this.#roomCommand({ cmd: "CBL", payload: { channel } });
   }
 
-  /** What the character's status should read as right now. */
+  /**
+   * What the character's status should read as right now — including a change
+   * that is accepted but still waiting out the status gate, since that is what
+   * every acked client already believes.
+   */
   get ownStatus(): { status: ClientSettableStatus; statusmsg: string } {
-    return this.#desiredStatus ?? { status: "online", statusmsg: "" };
+    return (
+      this.#queuedStatus ??
+      this.#desiredStatus ?? {
+        status: "online",
+        statusmsg: "",
+      }
+    );
   }
 
   /**
@@ -713,14 +744,64 @@ export class FchatSession {
 
   /**
    * Sets the character's status (STA). Remembered and re-sent after every
-   * reconnect.
+   * reconnect. Resolving means "accepted", not necessarily "already on the
+   * wire": the session is the only place that knows what F-Chat has been told,
+   * so it both drops no-ops and paces real changes past the five-second gate.
+   *
+   * Both matter for multi-device. Every attached browser runs its own
+   * auto-away, so two of them independently restoring "online" used to become
+   * two STAs inside the gate — and the resulting ERR 14 fanned out to the whole
+   * session, hitting browsers that had sent nothing.
    */
   async setStatus(
     status: ClientSettableStatus,
     statusmsg: string,
   ): Promise<void> {
     this.#assertOnline();
-    await this.#pushStatus(status, statusmsg);
+    const current = this.ownStatus;
+    if (current.status === status && current.statusmsg === statusmsg) {
+      // Already what the session reads as: nothing to tell F-Chat. Re-assert
+      // it to the subscribers instead — the requester is by definition holding
+      // a stale view, and the echo is what heals it.
+      this.#emitStatus(status, statusmsg);
+      return;
+    }
+    this.#queuedStatus = { status, statusmsg };
+    if (this.#statusTimer) {
+      return; // a send is already waiting out the gate; newest wins
+    }
+    const waitMs = this.#lastStatusSentAt
+      ? this.#lastStatusSentAt + this.#statusGateMs - Date.now()
+      : 0;
+    if (waitMs > 0) {
+      this.#statusTimer = setTimeout(() => {
+        this.#statusTimer = undefined;
+        this.#flushStatus().catch((error: unknown) => {
+          this.#log.warn({ err: error }, "paced status change failed");
+        });
+      }, waitMs);
+      return;
+    }
+    await this.#flushStatus();
+  }
+
+  /** Sends the queued status if it is still worth sending. */
+  #flushStatus(): Promise<void> {
+    const queued = this.#queuedStatus;
+    // Cleared first so `ownStatus` reads as the last SENT status again — what
+    // the wait may have made this change redundant against.
+    this.#queuedStatus = undefined;
+    if (!queued || this.#status !== "online") {
+      return Promise.resolve();
+    }
+    const current = this.ownStatus;
+    if (
+      current.status === queued.status &&
+      current.statusmsg === queued.statusmsg
+    ) {
+      return Promise.resolve();
+    }
+    return this.#pushStatus(queued.status, queued.statusmsg);
   }
 
   /**
@@ -732,18 +813,26 @@ export class FchatSession {
    * send must not come back from the dead at the next reconnect.
    */
   #pushStatus(status: ClientSettableStatus, statusmsg: string): Promise<void> {
+    // Stamped at hand-off rather than at wire time: a change racing the rate
+    // gate must still see the status window as taken.
+    this.#lastStatusSentAt = Date.now();
     return this.#rateGate.schedule("STA", () => {
       if (!this.#send({ cmd: "STA", payload: { status, statusmsg } })) {
         throw new SessionNotOnlineError(this.#status);
       }
       this.#desiredStatus = { status, statusmsg };
-      const echo = {
-        cmd: "STA",
-        payload: { character: this.character, status, statusmsg },
-      } as const;
-      this.state.apply(echo);
-      this.events.emit("command", echo);
+      this.#emitStatus(status, statusmsg);
     });
+  }
+
+  /** Folds an own-status STA into state and onto the bus (no wire traffic). */
+  #emitStatus(status: ClientSettableStatus, statusmsg: string): void {
+    const echo = {
+      cmd: "STA",
+      payload: { character: this.character, status, statusmsg },
+    } as const;
+    this.state.apply(echo);
+    this.events.emit("command", echo);
   }
 
   /**
@@ -1059,6 +1148,16 @@ export class FchatSession {
       clearTimeout(this.#watchdogTimer);
       this.#watchdogTimer = undefined;
     }
+    if (this.#statusTimer) {
+      clearTimeout(this.#statusTimer);
+      this.#statusTimer = undefined;
+    }
+    // Like the rate gate: a status change that never reached the wire is
+    // dropped rather than resurrected, and the next connection starts with
+    // fresh flood accounting (the chosen status still rides #desiredStatus
+    // back up on identify).
+    this.#queuedStatus = undefined;
+    this.#lastStatusSentAt = 0;
     this.#rateGate.clear();
     this.#notifiedIgnored.clear();
     this.#typingSent.clear();

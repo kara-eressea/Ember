@@ -16,6 +16,9 @@ export const FchatErrorCode = {
   AdminRequired: 10,
   AlreadyIdentified: 11,
   KinkRequestFlood: 13,
+  /** Absent from the wiki's table, but live F-Chat answers a second STA
+   * inside five seconds with it (observed 2026-08). */
+  StatusFlood: 14,
   MessageTooLong: 15,
   AlreadyGlobalModerator: 16,
   NotGlobalModerator: 17,
@@ -91,6 +94,7 @@ export const FCHAT_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   10: "This command requires that you be an administrator.",
   11: "Already identified.",
   13: "You must wait ten seconds between requesting kinks.",
+  14: "You must wait five seconds between status changes.",
   15: "Message exceeded the maximum length.",
   16: "This character is already a global moderator.",
   17: "This character is not a global moderator.",
