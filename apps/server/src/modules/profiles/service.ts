@@ -588,9 +588,9 @@ export class ProfileService {
       throw new RangeError(`Unknown time zone: ${timezone}`);
     }
     // ISO day-of-week: 1 = Monday … 7 = Sunday, so row 0 = Monday. The zone
-    // is a bind parameter (never interpolated) and needs the ::text cast —
-    // AT TIME ZONE is overloaded on text/interval and an untyped parameter
-    // is ambiguous.
+    // rides as a bind parameter, never interpolated; ::text pins the
+    // overloaded AT TIME ZONE (text zone vs interval offset) to the zone
+    // form rather than leaning on inference over an untyped parameter.
     const dow = sql<number>`extract(isodow from ${messages.createdAt} at time zone ${timezone}::text)::int`;
     const hour = sql<number>`extract(hour from ${messages.createdAt} at time zone ${timezone}::text)::int`;
     const rows = await this.#db
