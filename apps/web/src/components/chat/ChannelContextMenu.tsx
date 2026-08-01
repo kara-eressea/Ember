@@ -264,8 +264,11 @@ export function ChannelContextMenu({
                 ? "Choose whether this channel shows chat, roleplay ads, or both"
                 : "This channel allows only one kind of message, so there is nothing to choose"
             }
+            // Open-only, never a toggle — see MemberContextMenu's "Invite
+            // to →": onMouseEnter has already opened the panel by the time a
+            // click can land, so toggling would shut it again.
             onClick={() => {
-              setShowOpen(!showOpen);
+              setShowOpen(true);
             }}
             onKeyDown={(event) => {
               if (event.key === "ArrowRight" || event.key === "Enter") {
