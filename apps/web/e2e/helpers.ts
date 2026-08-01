@@ -1,14 +1,90 @@
-// Shared E2E plumbing: avatar interception (no real f-list.net traffic from
-// tests), unique app credentials, and a bare F-Chat client speaking straight
-// to fchat-sim for the "other side" of relays.
+// Shared E2E plumbing: the session-hangup fixture every spec imports `test`
+// from, avatar interception (no real f-list.net traffic from tests), unique
+// app credentials, and a bare F-Chat client speaking straight to fchat-sim
+// for the "other side" of relays.
 
 import { execFile } from "node:child_process";
 import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { expect, type Page } from "@playwright/test";
+import { expect, test as base, type Page } from "@playwright/test";
 
 const execFileAsync = promisify(execFile);
+
+interface Credentials {
+  username: string;
+  email: string;
+  password: string;
+}
+
+/**
+ * Users provisionUser() minted for the test in flight, drained by the hangup
+ * fixture below. A module slot IS per-test scope here: Playwright workers are
+ * separate processes and run their tests one at a time.
+ */
+const provisionedThisTest: Credentials[] = [];
+
+/**
+ * Sessions outlive the browser — that IS the bouncer, and closing a page is
+ * not a log-off. So a finished test leaves its identity connected to the sim,
+ * where a character holds exactly one connection: the next test to name that
+ * character displaces it, the displaced session re-IDNs after its backoff and
+ * displaces the live one straight back, and from there the two trade the
+ * character for the rest of the run. Every spec therefore imports `test` from
+ * here, and this fixture logs the identities off once the test is done.
+ *
+ * It runs after the test body, so a spec's own detach/reattach steps (which
+ * take the browser away, never the session) are untouched, and it sweeps
+ * every user the test provisioned — including the extra ones a multi-device
+ * spec creates for its second context.
+ */
+export const test = base.extend<{ hangUpSessions: void }>({
+  hangUpSessions: [
+    async ({ request }, use) => {
+      provisionedThisTest.length = 0;
+      await use();
+      const users = [...provisionedThisTest];
+      provisionedThisTest.length = 0;
+      for (const creds of users) {
+        try {
+          // The API takes a Bearer token the browser holds in its store, so
+          // the sweep logs in for itself rather than borrowing page state —
+          // that also keeps it working after a spec ends on about:blank.
+          const login = await request.post("/api/auth/login", {
+            data: { email: creds.email, password: creds.password },
+          });
+          if (!login.ok()) {
+            continue;
+          }
+          const { accessToken } = (await login.json()) as {
+            accessToken: string;
+          };
+          const headers = { authorization: `Bearer ${accessToken}` };
+          const listed = await request.get("/api/identities", { headers });
+          if (!listed.ok()) {
+            continue;
+          }
+          const { identities } = (await listed.json()) as {
+            identities: { id: string }[];
+          };
+          await Promise.all(
+            identities.map((identity) =>
+              request.post(`/api/identities/${identity.id}/disconnect`, {
+                headers,
+              }),
+            ),
+          );
+        } catch {
+          // Teardown must never turn a passing test red; a session the sweep
+          // misses can only cost the next test, and the run ends soon after.
+        }
+      }
+    },
+    { auto: true },
+  ],
+});
+
+export { expect } from "@playwright/test";
 
 // The E2E stack runs the production shape: registration is disabled
 // (decisions.md §2), so accounts are born through the admin CLI, exactly
@@ -80,7 +156,7 @@ export function solidPng(width: number, height: number): Buffer {
   ]);
 }
 
-export function credentials() {
+export function credentials(): Credentials {
   const unique = `${String(Date.now())}${String(Math.floor(Math.random() * 1000))}`;
   return {
     username: `e2e${unique}`,
@@ -93,9 +169,11 @@ export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Creates a fresh app user via the admin CLI against the E2E database. */
-export async function provisionUser() {
+/** Creates a fresh app user via the admin CLI against the E2E database. Every
+ * user is registered for the end-of-test session hangup. */
+export async function provisionUser(): Promise<Credentials> {
   const creds = credentials();
+  provisionedThisTest.push(creds);
   await execFileAsync(
     process.execPath,
     [

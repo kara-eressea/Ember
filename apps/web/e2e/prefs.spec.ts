@@ -2,16 +2,19 @@
 // the modal, the rail switches panes, Escape and the backdrop close it, and
 // the Appearance pane's accent choice persists across a reload AND a second
 // device (the milestone-5.md verification target — prefs live server-side).
-// Owns hazel@example.test (Hazel Fenwick) — spec files run in parallel and
+// Owns hazel@example.test (Hazel Fenwick) and sprout@example.test
+// (Fenwick Sprout, the raw-SimClient partner) — spec files run in parallel and
 // a character can hold only one sim connection, so specs never share one.
 
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
 import {
-  SimClient,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 /** The applied accent, straight from the theme's CSS custom property. */
@@ -82,7 +85,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
 
   // The account's second character wanders in and out via a raw sim client.
   const sprout = await SimClient.connect(
-    "hazel@example.test",
+    "sprout@example.test",
     "hunter2",
     "Fenwick Sprout",
   );
@@ -123,7 +126,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   await hostField.pressSequentially("exam");
   const linesBefore = await page.getByTestId("presence-line").count();
   const sproutFocus = await SimClient.connect(
-    "hazel@example.test",
+    "sprout@example.test",
     "hunter2",
     "Fenwick Sprout",
   );
@@ -309,7 +312,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
   // The sibling character says the magic word. JCH→MSG on one socket is
   // ordered, so the membership exists by the time the message arrives.
   const sprout2 = await SimClient.connect(
-    "hazel@example.test",
+    "sprout@example.test",
     "hunter2",
     "Fenwick Sprout",
   );
@@ -431,7 +434,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
       true;
   });
   const sprout3 = await SimClient.connect(
-    "hazel@example.test",
+    "sprout@example.test",
     "hunter2",
     "Fenwick Sprout",
   );

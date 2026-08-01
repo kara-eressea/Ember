@@ -6,17 +6,19 @@
 // (useLayoutEffect) and compensates row re-measures with a relative delta
 // that rides along with live scrolling instead of fighting it.
 //
-// Owns peat@example.test (Peat Hollow + Reed Hollow): spec files run in
+// Owns peat@example.test (Peat Hollow) and
+// reedhollow@example.test (Reed Hollow): spec files run in
 // parallel and a character can hold only one sim connection, so specs never
 // share characters.
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 /** Spec-unique hidden channel. */
@@ -44,7 +46,7 @@ test("scrolling up through history keeps the anchor row fixed (#360)", async ({
   await joinChannel(page, CHANNEL_KEY, CHANNEL_TITLE);
 
   const reed = await SimClient.connect(
-    "peat@example.test",
+    "reedhollow@example.test",
     "hunter2",
     "Reed Hollow",
   );

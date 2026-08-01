@@ -6,8 +6,13 @@
 // briar@example.test (Briar Vale; Nettle Fen is the raw-SimClient invitee)
 // and the Invite Harbor room — parallel specs never share characters/channels.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 const HARBOR = "ADH-316inviteharbor00aa11bb";
 const PUBLIC = "Gardening";

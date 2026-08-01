@@ -5,13 +5,14 @@
 // and the hidden Sun Porch room: spec files run in parallel, so specs never
 // share characters or channels.
 
-import { expect, test } from "@playwright/test";
 import {
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
   SimClient,
+  test,
 } from "./helpers.js";
 
 const ROOM_ID = "ADH-284sunporch11aa22bb";
@@ -32,7 +33,7 @@ test("log keeps following new messages under the profile modal (#284)", async ({
   await joinChannel(page, ROOM_ID, "Sun Porch");
 
   const wren = await SimClient.connect(
-    "marigold@example.test",
+    "salloway@example.test",
     "hunter2",
     "Wren Salloway",
   );

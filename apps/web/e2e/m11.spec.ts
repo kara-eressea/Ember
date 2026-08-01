@@ -3,13 +3,18 @@
 // land in the log under the shrunken sim-only timings, see the channel
 // pause when its window closes, stop everything (kill switch), renew, and
 // then rate another poster's ad (editor popover, stars on later ads, the
-// ≤2★ collapse with in-place expand). Owns linden@example.test (Linden
-// Frost; Orsolya is the raw-SimClient "other side") and the hidden
-// Borealis Lounge room — spec files run in parallel, so specs never share
-// characters or channels.
+// ≤2★ collapse with in-place expand). Owns linden@example.test (Linden Frost),
+// orsolya@example.test (the raw-SimClient "other side") and the hidden
+// Borealis Lounge room: specs never share an account, a character, or a
+// channel.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 const BOREALIS = "ADH-m11borealis33aa44bb";
 const POLAR = "ADH-m11polar55cc66dd77";
@@ -127,7 +132,7 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
 
   // ── Ratings: Orsolya posts ads; rate her, watch the collapse ─────────
   const orsolya = await SimClient.connect(
-    "linden@example.test",
+    "orsolya@example.test",
     "hunter2",
     "Orsolya",
   );

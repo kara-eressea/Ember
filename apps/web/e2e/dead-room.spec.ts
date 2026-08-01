@@ -8,8 +8,13 @@
 // leave/close the dead row. Owns cinder@example.test / vault@example.test and
 // the room Vault Keeper mints — parallel specs never share characters/rooms.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 test("a destroyed private room can still be left after its join fails", async ({
   page,

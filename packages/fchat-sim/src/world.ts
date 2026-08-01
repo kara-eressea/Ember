@@ -69,10 +69,22 @@ export interface SimWorld {
 
 export const DEFAULT_WORLD: SimWorld = {
   accounts: {
+    // Two isolation rules govern this roster, both enforced by the sim's real
+    // semantics rather than by convention:
+    //
+    //   ACCOUNTS are never shared — not between parallel spec files, and not
+    //   between a spec's browser identity and its raw SimClient partner. Every
+    //   new ticket invalidates all previous ones account-wide, so a shared
+    //   account means one side's re-ticket makes the other's cached ticket
+    //   fail IDN with ERR 4 the moment it reconnects.
+    //
+    //   CHARACTERS are never shared — a character holds exactly one sim
+    //   connection, and a second IDN for it displaces the first (ERR 2). Two
+    //   specs, or two sessions within one spec, that name the same character
+    //   will take turns kicking each other offline.
+    //
     // amber is shared by unit/integration suites (each runs its own sim);
-    // within the E2E suite it belongs to chat.spec alone — sharing an
-    // ACCOUNT between parallel specs makes their ticket managers invalidate
-    // each other (every new ticket kills all previous ones account-wide).
+    // within the E2E suite it belongs to chat.spec alone.
     "amber@example.test": {
       password: "hunter2",
       characters: ["Amber Vale", "Cindral"],
@@ -81,15 +93,22 @@ export const DEFAULT_WORLD: SimWorld = {
     // browser character reads while a raw-SimClient partner pumps history in.
     "peat@example.test": {
       password: "hunter2",
-      characters: ["Peat Hollow", "Reed Hollow"],
+      characters: ["Peat Hollow"],
+    },
+    "reedhollow@example.test": {
+      password: "hunter2",
+      characters: ["Reed Hollow"],
     },
     // Reserved for the message-log tail/unread-marker E2E (#372/#373): the
     // browser reads channels and a DM while Wick Marsh (a raw SimClient) pumps
-    // variable-height history in. Own account so parallel specs never share a
-    // ticket manager.
+    // variable-height history in.
     "quill@example.test": {
       password: "hunter2",
-      characters: ["Quill Marsh", "Wick Marsh"],
+      characters: ["Quill Marsh"],
+    },
+    "wick@example.test": {
+      password: "hunter2",
+      characters: ["Wick Marsh"],
     },
     // Reserved for the auth E2E (account-add/identity CRUD flows).
     "aspen@example.test": {
@@ -100,13 +119,18 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Birch Rowan"],
     },
-    // Reserved for the M2 bouncer E2E — spec files run in parallel and a
-    // character can hold only one sim connection, so specs never share one.
+    // Reserved for the M2 bouncer E2E. Fern Ashwood is listed but never
+    // connected here — she is the second picker entry the credentials unit
+    // test needs; the spec's raw-SimClient partner is Ash Fernwood below.
     "willow@example.test": {
       password: "hunter2",
       characters: ["Willow Reed", "Fern Ashwood"],
     },
-    // Reserved for the M3 multi-identity rail E2E (same parallelism rule);
+    "ashwood@example.test": {
+      password: "hunter2",
+      characters: ["Ash Fernwood"],
+    },
+    // Reserved for the M3 multi-identity rail E2E (same isolation rules);
     // Bramble is its raw-SimClient "other side".
     "rowan@example.test": {
       password: "hunter2",
@@ -116,94 +140,139 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Bramble Thorn"],
     },
-    // Reserved for the M4 compose/delayed-send E2E (same parallelism rule).
+    // Reserved for the M4 compose/delayed-send E2E (same isolation rules).
     "sage@example.test": {
       password: "hunter2",
       characters: ["Sage Willowmere"],
     },
-    // Reserved for the M5 preferences E2E (same parallelism rule);
+    // Reserved for the M5 preferences E2E (same isolation rules);
     // Fenwick Sprout is its raw-SimClient "other side".
     "hazel@example.test": {
       password: "hunter2",
-      characters: ["Hazel Fenwick", "Fenwick Sprout"],
+      characters: ["Hazel Fenwick"],
     },
-    // Reserved for the M6 channel-browser E2E (same parallelism rule);
+    "sprout@example.test": {
+      password: "hunter2",
+      characters: ["Fenwick Sprout"],
+    },
+    // Reserved for the M6 channel-browser E2E (same isolation rules);
     // Quince Pip is its raw-SimClient "other side" (room owner, inviter).
     "laurel@example.test": {
       password: "hunter2",
-      characters: ["Laurel Quince", "Quince Pip"],
+      characters: ["Laurel Quince"],
     },
-    // Reserved for the M6 RP-messages E2E (same parallelism rule); Moss
+    "pip@example.test": {
+      password: "hunter2",
+      characters: ["Quince Pip"],
+    },
+    // Reserved for the M6 RP-messages E2E (same isolation rules); Moss
     // Tinker is its raw-SimClient "other side" (Greenhouse op, ad sender).
     "ivy@example.test": {
       password: "hunter2",
-      characters: ["Ivy Bramblewood", "Moss Tinker"],
+      characters: ["Ivy Bramblewood"],
     },
-    // Reserved for the M10 ads+search E2E (same parallelism rule); Kolvarr
+    "tinker@example.test": {
+      password: "hunter2",
+      characters: ["Moss Tinker"],
+    },
+    // Reserved for the M10 ads+search E2E (same isolation rules); Kolvarr
     // is its raw-SimClient "other side" (Aurora Den op, search target).
     "vesna@example.test": {
       password: "hunter2",
-      characters: ["Vesna Marlowe", "Kolvarr"],
+      characters: ["Vesna Marlowe"],
     },
-    // Reserved for the M11 campaigns+ratings E2E (same parallelism rule);
+    "kolvarr@example.test": {
+      password: "hunter2",
+      characters: ["Kolvarr"],
+    },
+    // Reserved for the M11 campaigns+ratings E2E (same isolation rules);
     // Orsolya is its raw-SimClient "other side" (Borealis Lounge op, the
     // rated ad poster).
     "linden@example.test": {
       password: "hunter2",
-      characters: ["Linden Frost", "Orsolya"],
+      characters: ["Linden Frost"],
     },
-    // Reserved for the M6 op-tooling E2E (same parallelism rule); Alder Fen
+    "orsolya@example.test": {
+      password: "hunter2",
+      characters: ["Orsolya"],
+    },
+    // Reserved for the M6 op-tooling E2E (same isolation rules); Alder Fen
     // (Potting Shed owner) and Sorrel Vane (moderation target) are its
-    // raw-SimClient "other sides".
+    // raw-SimClient "other sides" — one account between them is safe, as
+    // neither ever reconnects.
     "rue@example.test": {
       password: "hunter2",
-      characters: ["Rue Alder", "Alder Fen", "Sorrel Vane"],
+      characters: ["Rue Alder"],
     },
-    // Reserved for the #200 seen-recently E2E (same parallelism rule);
+    "alder@example.test": {
+      password: "hunter2",
+      characters: ["Alder Fen", "Sorrel Vane"],
+    },
+    // Reserved for the #200 seen-recently E2E (same isolation rules);
     // Dell Marsh is its raw-SimClient "other side" (joins, then parts).
     "clover@example.test": {
       password: "hunter2",
-      characters: ["Clover Hart", "Dell Marsh"],
+      characters: ["Clover Hart"],
     },
-    // Reserved for the history catch-up E2E (#254, same parallelism rule);
+    "dellmarsh@example.test": {
+      password: "hunter2",
+      characters: ["Dell Marsh"],
+    },
+    // Reserved for the history catch-up E2E (#254, same isolation rules);
     // Coal Whitby is its raw-SimClient "other side" (the DM partner whose
     // messages pile up while the browser is detached).
     "ember@example.test": {
       password: "hunter2",
-      characters: ["Ember Hollis", "Coal Whitby"],
+      characters: ["Ember Hollis"],
     },
-    // Reserved for the inline-composer E2E (#226, same parallelism rule).
+    "whitby@example.test": {
+      password: "hunter2",
+      characters: ["Coal Whitby"],
+    },
+    // Reserved for the inline-composer E2E (#226, same isolation rules).
     "tansy@example.test": {
       password: "hunter2",
       characters: ["Tansy Meridian"],
     },
-    // Reserved for the #284 background-scroll E2E (same parallelism rule);
+    // Reserved for the #284 background-scroll E2E (same isolation rules);
     // Wren Salloway is its raw-SimClient "other side" (the message sender
     // while the profile modal obscures the log).
     "marigold@example.test": {
       password: "hunter2",
-      characters: ["Marigold Bell", "Wren Salloway"],
+      characters: ["Marigold Bell"],
     },
-    // Reserved for the M8 profile E2E (same parallelism rule).
+    "salloway@example.test": {
+      password: "hunter2",
+      characters: ["Wren Salloway"],
+    },
+    // Reserved for the M8 profile E2E (same isolation rules).
     "juniper@example.test": {
       password: "hunter2",
       characters: ["Juniper Wren"],
     },
-    // Reserved for the #170 DM mini-profile sidebar E2E (same parallelism
-    // rule); Bramble Fen is its raw-SimClient "other side" (the PM sender,
+    // Reserved for the #170 DM mini-profile sidebar E2E (same isolation
+    // rules); Bramble Fen is its raw-SimClient "other side" (the PM sender,
     // whose profile is seeded so the sidebar's note + match load).
     "thistle@example.test": {
       password: "hunter2",
-      characters: ["Thistle Vane", "Bramble Fen"],
+      characters: ["Thistle Vane"],
     },
-    // Reserved for the #315 "Mark as read" E2E (same parallelism rule);
+    "bramblefen@example.test": {
+      password: "hunter2",
+      characters: ["Bramble Fen"],
+    },
+    // Reserved for the #315 "Mark as read" E2E (same isolation rules);
     // Cress Dell is its raw-SimClient "other side" (the DM sender whose
     // unread badge is cleared from the sidebar context menu).
     "bracken@example.test": {
       password: "hunter2",
-      characters: ["Bracken Vale", "Cress Dell"],
+      characters: ["Bracken Vale"],
     },
-    // Reserved for the M6 social E2E (same parallelism rule). Fern arrives
+    "cress@example.test": {
+      password: "hunter2",
+      characters: ["Cress Dell"],
+    },
+    // Reserved for the M6 social E2E (same isolation rules). Fern arrives
     // with a bookmark, a friend, and a pending incoming request from Tally.
     "fern@example.test": {
       password: "hunter2",
@@ -212,7 +281,7 @@ export const DEFAULT_WORLD: SimWorld = {
       friends: [{ own: "Fern Glade", friend: "Nyx Firemane" }],
       incomingRequests: [{ from: "Tally Marsh", to: "Fern Glade" }],
     },
-    // Reserved for the #316 "Invite to →" E2E (same parallelism rule). Briar
+    // Reserved for the #316 "Invite to →" E2E (same isolation rules). Briar
     // Vale owns the private Invite Harbor; Nettle Fen is the raw-SimClient
     // invitee (met in a public room). Nettle gets her own account so her
     // connection is never disturbed by Briar's account-wide ticket churn —
@@ -225,20 +294,29 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Nettle Fen"],
     },
-    // Reserved for the #329 sidebar offline-filtering E2E (same parallelism
-    // rule). Two characters on one account so the partner is a raw SimClient
-    // whose presence (online → FLN offline) the browser identity observes,
-    // exactly like catchup.spec's Ember/Coal pair. Sorrel drives the
-    // header-toggle case, Bramble the detach → reattach unread case.
+    // Reserved for the #329 sidebar offline-filtering E2E (same isolation
+    // rules). Each browser identity has a raw-SimClient partner whose
+    // presence (online → FLN offline) it observes, exactly like catchup's
+    // Ember/Coal pair. Sorrel drives the header-toggle case, Bramble Holt
+    // the detach → reattach unread case — and Moss Dell reconnects mid-spec,
+    // so his own account matters twice over.
     "sorrel@example.test": {
       password: "hunter2",
-      characters: ["Sorrel Ash", "Dusk Wren"],
+      characters: ["Sorrel Ash"],
+    },
+    "dusk@example.test": {
+      password: "hunter2",
+      characters: ["Dusk Wren"],
     },
     "bramble@example.test": {
       password: "hunter2",
-      characters: ["Bramble Fen", "Moss Dell"],
+      characters: ["Bramble Holt"],
     },
-    // Reserved for the #327 dead-private-room E2E (same parallelism rule).
+    "mossdell@example.test": {
+      password: "hunter2",
+      characters: ["Moss Dell"],
+    },
+    // Reserved for the #327 dead-private-room E2E (same isolation rules).
     // Cinder Ash is the browser user; Vault Keeper is a raw-SimClient owner
     // who invites, kicks, then leaves an ADH- room she creates so it is
     // reaped mid-test — reproducing the "room destroyed while we thought we
@@ -251,15 +329,18 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Vault Keeper"],
     },
-    // Reserved for the #336 typing-indicator-placement E2E (same parallelism
-    // rule). Two characters on one account so the partner is a raw SimClient:
-    // Rowan Birch pushes TPN states the browser identity (Yarrow Dale) sees on
-    // the message bar.
+    // Reserved for the #336 typing-indicator-placement E2E (same isolation
+    // rules). Rowan Birch is the raw-SimClient partner, pushing TPN states the
+    // browser identity (Yarrow Dale) sees on the message bar.
     "yarrow@example.test": {
       password: "hunter2",
-      characters: ["Yarrow Dale", "Rowan Birch"],
+      characters: ["Yarrow Dale"],
     },
-    // Reserved for the #346 identity-rail-toggle E2E (same parallelism rule).
+    "rowanbirch@example.test": {
+      password: "hunter2",
+      characters: ["Rowan Birch"],
+    },
+    // Reserved for the #346 identity-rail-toggle E2E (same isolation rules).
     // Two characters on one account: the browser connects Tamarisk Ash alone,
     // hides the rail via the avatar, then connects Marsh Willow from the
     // picker — a second identity that forces the hidden rail back into view.
@@ -267,30 +348,42 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Tamarisk Ash", "Marsh Willow"],
     },
-    // Reserved for the #387 history-load-jump E2E (same parallelism rule).
+    // Reserved for the #387 history-load-jump E2E (same isolation rules).
     // Sedge Fen reads a channel the raw-SimClient partner Rush Fen has pumped
     // deep history into; the spec scrolls up across a server page boundary and
     // asserts the reading position never lurches while the page is in flight.
     "sedge@example.test": {
       password: "hunter2",
-      characters: ["Sedge Fen", "Rush Fen"],
+      characters: ["Sedge Fen"],
     },
-    // Reserved for the #405 history-autofill E2E (same parallelism rule).
+    "rush@example.test": {
+      password: "hunter2",
+      characters: ["Rush Fen"],
+    },
+    // Reserved for the #405 history-autofill E2E (same isolation rules).
     // Moss Fen reads a channel the raw-SimClient partner Reed Marsh has pumped
     // deep history into; the spec opens it in a very tall viewport the latest
     // page underfills and asserts the log keeps paging older history in until
     // it overflows, with no user scroll.
     "moss@example.test": {
       password: "hunter2",
-      characters: ["Moss Fen", "Reed Marsh"],
+      characters: ["Moss Fen"],
     },
-    // Reserved for the #407 multi-attach E2E (same parallelism rule). Cedar
+    "reedmarsh@example.test": {
+      password: "hunter2",
+      characters: ["Reed Marsh"],
+    },
+    // Reserved for the #407 multi-attach E2E (same isolation rules). Cedar
     // Vale is the browser identity two devices attach to; Bark Wren is the
     // raw-SimClient partner whose channel messages must keep reaching the
     // first device after the second one attaches.
     "cedar@example.test": {
       password: "hunter2",
-      characters: ["Cedar Vale", "Bark Wren"],
+      characters: ["Cedar Vale"],
+    },
+    "bark@example.test": {
+      password: "hunter2",
+      characters: ["Bark Wren"],
     },
   },
   channels: [

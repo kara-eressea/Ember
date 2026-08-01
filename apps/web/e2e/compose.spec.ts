@@ -5,12 +5,13 @@
 // spec files run in parallel, so specs never share characters. Development
 // is shared but never member-counted (only chat.spec counts, on Frontpage).
 
-import { expect, test } from "@playwright/test";
 import {
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  test,
 } from "./helpers.js";
 
 test("markdown compose: preview = render, eicons, delayed send + recall", async ({

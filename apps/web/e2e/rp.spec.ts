@@ -1,12 +1,18 @@
 // The M6 RP-messages E2E: roleplay ads (LRP) render distinctly and obey the
 // ads-visibility preference (global default + per-channel override), /roll
 // and /bottle produce roll lines (RLL), and an op's RMO re-gates the
-// composer live. Owns ivy@example.test (Ivy Bramblewood; Moss Tinker is the
+// composer live. Owns ivy@example.test (Ivy Bramblewood) and tinker@example.test
+// (Moss Tinker, the
 // raw-SimClient "other side") and the hidden Greenhouse room — spec files
 // run in parallel, so specs never share characters or channels.
 
-import { expect, test } from "@playwright/test";
-import { SimClient, interceptAvatars, provisionAndConnect } from "./helpers.js";
+import {
+  expect,
+  interceptAvatars,
+  provisionAndConnect,
+  SimClient,
+  test,
+} from "./helpers.js";
 
 const GREENHOUSE = "ADH-77aa88bb99cc00dd11ee";
 
@@ -19,7 +25,7 @@ test("RP messages: ads with visibility prefs, dice and bottle, RMO gating", asyn
 
   // Moss (op) sits in the Greenhouse as the other member.
   const moss = await SimClient.connect(
-    "ivy@example.test",
+    "tinker@example.test",
     "hunter2",
     "Moss Tinker",
   );

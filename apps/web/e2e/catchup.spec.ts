@@ -2,17 +2,19 @@
 // the bouncer, and the reattached client shows the "new since you left"
 // divider and can scroll back through the full stored history (gateway
 // history.page). DMs behave identically to channels, so the DM flow stands
-// in for both. Owns ember@example.test (Ember Hollis + Coal Whitby): spec
+// in for both. Owns ember@example.test (Ember Hollis) and
+// whitby@example.test (Coal Whitby): spec
 // files run in parallel and a character can hold only one sim connection,
 // so specs never share characters.
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 /** Spec-unique hidden channel for the combined-reattach case (#268). */
@@ -33,7 +35,7 @@ test("detach → backlog → reattach: divider and full scroll-back", async ({
   await provisionAndConnect(page, "ember@example.test", "Ember Hollis");
 
   const coal = await SimClient.connect(
-    "ember@example.test",
+    "whitby@example.test",
     "hunter2",
     "Coal Whitby",
   );
@@ -109,7 +111,7 @@ test("reattach reconciles divider, seen-fold, and live presence together", async
   await joinChannel(page, CHANNEL_KEY, CHANNEL_TITLE);
 
   const coal = await SimClient.connect(
-    "ember@example.test",
+    "whitby@example.test",
     "hunter2",
     "Coal Whitby",
   );

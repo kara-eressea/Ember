@@ -15,17 +15,17 @@
 // boundaries, and asserts a tracked mid-viewport row never moves more than a
 // couple px across the entire load.
 //
-// Owns sedge@example.test (Sedge Fen + Rush Fen): spec files run in parallel
-// and a character can hold only one sim connection, so specs never share
-// characters.
+// Owns sedge@example.test (Sedge Fen) and rush@example.test (Rush Fen):
+// specs never share an account or a character (world.ts).
 
-import { expect, test } from "@playwright/test";
 import {
-  SimClient,
   delay,
+  expect,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
+  SimClient,
+  test,
 } from "./helpers.js";
 
 /** Spec-unique hidden channel. */
@@ -50,7 +50,7 @@ test("a server history page never lurches the reading position (#387)", async ({
   await joinChannel(page, CHANNEL_KEY, CHANNEL_TITLE);
 
   const rush = await SimClient.connect(
-    "sedge@example.test",
+    "rush@example.test",
     "hunter2",
     "Rush Fen",
   );
