@@ -1121,11 +1121,15 @@ function MessageLine({
   // the list and in the log. Unknown gender → default text colour, as in the
   // list.
   const nameColor = useGenderColorVar(identityId, message.senderCharacter);
+  // `sentByUs` rides the DTO, so the tint needs no name comparison — it is
+  // correct for renames and for every identity sharing the log.
+  const own = prefs.ownMessageTint && message.sentByUs;
   return (
     <div
-      className={`${styles.messageLine} ${
+      className={`${styles.messageLine} ${own ? (styles.ownLine ?? "") : ""} ${
         message.mention ? (styles.mentionLine ?? "") : ""
       }`}
+      data-own={own || undefined}
       data-mention={message.mention || undefined}
     >
       {time !== "" && (

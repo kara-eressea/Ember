@@ -48,6 +48,8 @@ Derivations: `meta = mix(dim, faint, {slate: 0.30, charcoal: 0.46, parchment: 0.
 | `accentMed` | `mix(accent, bg, 0.5)` | `#62566f` — unread badge bg, focus rings, borders |
 | `codebg` | `mix(text, bg, 0.90)` | `#302e2b` — inline code + code blocks |
 | `hoverMain` | `mix(text, bg, 0.95)` | row hover in main |
+| `ownSoft` | `mix(text, bg, 0.92)` | `#2c2927` — own-message row bg (hue-free, so it never competes with the accent-tinted mention row) |
+| `ownSoftHover` | `mix(text, bg, 0.885)` | `#33312e` — own-message row hover |
 | `hover` | `mix(text, side, 0.93)` | row hover in sidebar |
 
 ```js
@@ -171,6 +173,7 @@ Scroll region, `padding: 12px 0`. Four row types, all `display:flex; gap:9px; al
 - **SystemLine** (join/part/topic/etc.) — `[time]` · glyph · italic text (12.5px `dim`). Join `→` `ok`; topic `⚑` `accent`.
 - **MessageLine** — `[time]` (mono 11.5px `meta`, `tabular-nums`) · `<nick>` (mono 12.5px/600, per-nick color, nowrap) · body (13px/1.5 `text`). Padding `2px 16px`.
   - **Mention/highlight** (matches a highlight rule or your nick): `background: accentSoft` + `inset 3px 0 0 accent`, padding `4px 16px`.
+  - **Own message** ("Tint your own messages", default on): `background: ownSoft` (`ownSoftHover` on hover) — no edge bar and no padding change, so consecutive own rows read as one seamless block and the tint stays clearly quieter than a mention. Mention wins if a row were ever both. Ads, rolls, system and queued-send lines keep their own treatment.
 - **CodeBlock** (fenced) — its own line, `margin: 3px 16px 5px 76px` (the 76px left indent aligns it under the message body), `codebg` fill, `border`, mono 12px, `white-space: pre`, horizontal scroll.
 - Toggle "Show join/part/quit" (Preferences) hides SystemLines of that kind.
 

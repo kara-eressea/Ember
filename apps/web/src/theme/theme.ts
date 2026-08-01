@@ -130,6 +130,13 @@ export function themeVariables(
     "--eb-codebg": mix(text, bg, 0.9),
     "--eb-hover-main": mix(text, bg, 0.95),
     "--eb-hover": mix(text, side, 0.93),
+    // Own-message rows: a neutral text-on-bg wash, hue-free so it reads the
+    // same under every accent and never competes with the accent-tinted
+    // mention row. A step stronger than --eb-hover-main so the tint is legible
+    // at rest, with its own hover a step past that — otherwise pointing at
+    // your own row would wash the tint out instead of responding to it.
+    "--eb-own-soft": mix(text, bg, 0.92),
+    "--eb-own-soft-hover": mix(text, bg, 0.885),
     "--eb-ok": status.ok,
     "--eb-warn": accent === "moss" ? status.warnMoss : status.warn,
     "--eb-danger": status.danger,

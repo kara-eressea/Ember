@@ -180,6 +180,18 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
       <FieldRow
+        label="Tint your own messages"
+        help="A faint background on the messages you sent, so they stay findable in a busy channel"
+      >
+        <Toggle
+          label="Tint your own messages"
+          checked={prefs.ownMessageTint}
+          onChange={(ownMessageTint) => {
+            set({ ownMessageTint });
+          }}
+        />
+      </FieldRow>
+      <FieldRow
         label="Show join/part/quit"
         help="Live channel comings and goings — not kept in history"
       >
