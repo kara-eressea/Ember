@@ -587,29 +587,35 @@ describe("admin CLI", () => {
     },
   );
 
-  it("refuses duplicates and unknown emails with a nonzero exit", async () => {
-    const dupe = await run([
-      "create-user",
-      "--email",
-      "cli-admin@example.test",
-      "--username",
-      "cli-admin",
-      "--password",
-      "first password here",
-    ]);
-    expect(dupe.code).toBe(1);
-    expect(dupe.stderr).toContain("already taken");
+  it(
+    "refuses duplicates and unknown emails with a nonzero exit",
+    // Two CLI child processes with argon2 hashing — same loaded-CI-runner
+    // budget as the round-trip test above.
+    { timeout: 30_000 },
+    async () => {
+      const dupe = await run([
+        "create-user",
+        "--email",
+        "cli-admin@example.test",
+        "--username",
+        "cli-admin",
+        "--password",
+        "first password here",
+      ]);
+      expect(dupe.code).toBe(1);
+      expect(dupe.stderr).toContain("already taken");
 
-    const missing = await run([
-      "reset-password",
-      "--email",
-      "nobody-here@example.test",
-      "--password",
-      "does not matter 1",
-    ]);
-    expect(missing.code).toBe(1);
-    expect(missing.stderr).toContain("No user");
-  });
+      const missing = await run([
+        "reset-password",
+        "--email",
+        "nobody-here@example.test",
+        "--password",
+        "does not matter 1",
+      ]);
+      expect(missing.code).toBe(1);
+      expect(missing.stderr).toContain("No user");
+    },
+  );
 });
 
 describe("rate limiting", () => {
