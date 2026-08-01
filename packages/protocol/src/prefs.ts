@@ -138,6 +138,10 @@ const prefsShape = {
   groupConsecutive: z.boolean(),
   /** Fixed timestamp/name columns so message text lines up (M1 UAT). */
   alignedColumns: z.boolean(),
+  /** Tint the rows you sent yourself, so your own lines stay findable in a
+   * fast-moving channel. Deliberately fainter than the mention wash — it is
+   * ambient orientation, not an alert. */
+  ownMessageTint: z.boolean(),
   /** Render join/part/quit lines in channel logs (live-only lines). */
   showJoinPartQuit: z.boolean(),
   /** Composer input that styles Markdown as you type (#226): **bold**
@@ -317,6 +321,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   use24HourClock: true,
   groupConsecutive: false,
   alignedColumns: false,
+  ownMessageTint: true,
   showJoinPartQuit: false,
   inlineComposer: false,
   eiconDisplay: "inline",

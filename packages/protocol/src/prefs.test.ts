@@ -38,6 +38,24 @@ describe("userPrefsPatchSchema", () => {
   });
 });
 
+describe("ownMessageTint", () => {
+  it("defaults on", () => {
+    expect(PREFS_DEFAULTS.ownMessageTint).toBe(true);
+  });
+
+  it("round-trips a one-key patch without dragging siblings along", () => {
+    expect(userPrefsPatchSchema.parse({ ownMessageTint: false })).toEqual({
+      ownMessageTint: false,
+    });
+  });
+
+  it("resolves an absent or invalid stored value back to on", () => {
+    expect(resolvePrefs({}).ownMessageTint).toBe(true);
+    expect(resolvePrefs({ ownMessageTint: "yes" }).ownMessageTint).toBe(true);
+    expect(resolvePrefs({ ownMessageTint: false }).ownMessageTint).toBe(false);
+  });
+});
+
 describe("imagePreviewHosts (#215)", () => {
   it("defaults to the known-good allowlist", () => {
     expect(PREFS_DEFAULTS.imagePreviewHosts).toEqual([

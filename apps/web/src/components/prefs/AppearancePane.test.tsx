@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 //
-// #416: the sidebar-avatar switch lives with the other appearance prefs and
-// writes through the synced prefs patch like every control in the pane.
+// Appearance-pane switches: each lives with the other appearance prefs and
+// writes through the synced prefs patch like every control in the pane
+// (#416 sidebar avatars, and the own-message tint).
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -37,5 +38,28 @@ describe("AppearancePane sidebar avatars", () => {
     );
 
     expect(patchPrefs).toHaveBeenCalledWith("id-1", { sidebarAvatars: false });
+  });
+});
+
+describe("AppearancePane own-message tint", () => {
+  it("defaults to on", () => {
+    expect(PREFS_DEFAULTS.ownMessageTint).toBe(true);
+    renderPane();
+    expect(
+      screen
+        .getByRole("switch", { name: "Tint your own messages" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("patches the pref when switched off", () => {
+    renderPane();
+    patchPrefs.mockClear();
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Tint your own messages" }),
+    );
+
+    expect(patchPrefs).toHaveBeenCalledWith("id-1", { ownMessageTint: false });
   });
 });
