@@ -40,7 +40,10 @@ let app: FastifyInstance;
 let fakeNow = 1_000_000;
 
 beforeAll(async () => {
-  sim = new FchatSim();
+  // The sim enforces F-Chat's status gate (ERR 14); both it and the session's
+  // pacing window are scaled down so the away→hand-back pairs this suite
+  // exercises don't each cost five seconds.
+  sim = new FchatSim({ staFloodSeconds: 0.5 });
   await sim.start();
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
@@ -61,6 +64,7 @@ beforeAll(async () => {
       minRequestIntervalMs: 0,
     }),
     detachedAwayNow: () => fakeNow,
+    sessionTuning: { statusGateMs: 800 },
   });
 }, 180_000);
 
@@ -225,6 +229,50 @@ describe("detached auto-away", () => {
     fakeNow += 24 * 60 * MINUTE_MS;
     await app.detachedAway.sweep();
     await expectOwnStatus(session, "online", "");
+  });
+
+  it("hands back inside the status gate without earning an ERR", async () => {
+    // The bouncer's own STA rides the same pacing as a browser's: an away and
+    // the hand-back that follows it a moment later are one status change apart
+    // in F-Chat's eyes (ERR 14), so the restore waits out the window instead
+    // of being refused — and the refusal would have fanned out to every
+    // attached browser.
+    const { identityId, userId, session } = await startIdentity();
+    await setPrefs(userId, {
+      detachedAwayEnabled: true,
+      detachedAwayMinutes: 1,
+      autoAwayMessage: "Watering the moss",
+    });
+    const errors: number[] = [];
+    const restored: string[] = [];
+    session.events.on("command", (command) => {
+      if (command.cmd === "ERR") {
+        errors.push(command.payload.number);
+      }
+      // Own-status echoes only fire when the frame reaches the wire (the sim
+      // then broadcasts the same STA back, so a send shows up twice).
+      if (
+        command.cmd === "STA" &&
+        command.payload.character === CHARACTER &&
+        command.payload.status === "online"
+      ) {
+        restored.push(command.payload.statusmsg);
+      }
+    });
+
+    await app.detachedAway.sweep();
+    fakeNow += 2 * MINUTE_MS;
+    await app.detachedAway.sweep();
+    await expectOwnStatus(session, "away", "Watering the moss");
+
+    // Straight back — well inside the gate.
+    app.detachedAway.onAttach(identityId);
+    await expectOwnStatus(session, "online", ""); // accepted at once
+    expect(restored).toEqual([]); // …but not yet on the wire
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(restored.length).toBeGreaterThan(0);
+    expect(new Set(restored)).toEqual(new Set([""]));
+    expect(errors).toEqual([]);
   });
 
   it("does not restore a status the user changed meanwhile", async () => {

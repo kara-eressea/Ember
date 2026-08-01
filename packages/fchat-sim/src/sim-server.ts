@@ -71,6 +71,10 @@ export interface FchatSimOptions {
   /** FKS: result-count ceiling before ERR 72 ("too many results"). The
    * live ceiling is undocumented; tests lower it to trigger the refusal. */
   readonly fksResultCap?: number;
+  /** STA: required seconds between status changes (live: 5 — ERR 14, "You
+   * must wait five seconds between status changes"). No VAR carries it.
+   * Tests lower it to exercise the pacing without waiting. */
+  readonly staFloodSeconds?: number;
 }
 
 interface Connection {
@@ -89,6 +93,8 @@ interface Connection {
   readonly lastLrpAt: Map<string, number>;
   /** Last FKS, for the 5s search pace (ERR 50). */
   lastFksAt: number;
+  /** Last STA, for the 5s status pace (ERR 14). */
+  lastStaAt: number;
 }
 
 interface ChannelState {
@@ -217,6 +223,7 @@ export class FchatSim {
   #port: number | undefined;
   readonly #fksFloodSeconds: number;
   readonly #fksResultCap: number;
+  readonly #staFloodSeconds: number;
 
   constructor(options: FchatSimOptions = {}) {
     this.#world = options.world ?? DEFAULT_WORLD;
@@ -228,6 +235,7 @@ export class FchatSim {
     this.#log = options.log ?? (() => {});
     this.#fksFloodSeconds = options.fksFloodSeconds ?? 5;
     this.#fksResultCap = options.fksResultCap ?? 250;
+    this.#staFloodSeconds = options.staFloodSeconds ?? 5;
     this.#tickets = new TicketService(this.#world.accounts);
     this.#social = new SocialService(this.#world.accounts);
     this.#characters = new CharacterService(this.#world);
@@ -572,6 +580,7 @@ export class FchatSim {
       lastPriAt: 0,
       lastLrpAt: new Map(),
       lastFksAt: 0,
+      lastStaAt: 0,
     };
     this.#connections.add(connection);
     socket.on("message", (data: RawData) => {
@@ -844,6 +853,15 @@ export class FchatSim {
         this.#handleIgnore(connection, character, command.payload);
         return;
       case "STA": {
+        // "You must wait five seconds between status changes." (ERR 14) —
+        // the gate a multi-device client trips when two browsers restore
+        // the same status independently (#358 follow-up).
+        const now = Date.now();
+        if (now - connection.lastStaAt < this.#staFloodSeconds * 1000) {
+          this.#sendError(connection, FchatErrorCode.StatusFlood);
+          return;
+        }
+        connection.lastStaAt = now;
         const state = this.#online.get(character);
         if (state) {
           state.status = command.payload.status;

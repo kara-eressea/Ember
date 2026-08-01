@@ -37,6 +37,12 @@ const RESTORE_SCAN_INTERVAL_MS = 1_000;
  * surface to the user. Sat just past ~15 s so a post-window retry lands clear
  * of the server's gate. The guard is normally released far sooner — the moment
  * the server echo flips the store to our target status (see #statusPending).
+ *
+ * The bouncer now dedupes no-op status changes and paces real ones past
+ * F-Chat's gate itself (FchatSession.setStatus) — which is the only layer that
+ * can, since this guard is per browser and auto-away runs in each of them.
+ * This one stays as defence in depth: it still spares the wire a redundant
+ * round trip from the browser that already knows its send is outstanding.
  */
 const STATUS_SEND_COOLDOWN_MS = 16_000;
 const ACTIVITY_STORAGE_KEY = "eb.lastActivity";

@@ -7,6 +7,7 @@ import { createServer, type AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import {
+  FchatErrorCode,
   serializeClientCommand,
   serializeServerCommand,
   type ClientCommand,
@@ -971,6 +972,122 @@ describe("FchatSession against fchat-sim", () => {
       );
     },
   );
+
+  it("acks a duplicate status change without putting an STA on the wire", async () => {
+    // The sim's status gate is off here: a forwarded no-op would reach the
+    // observer as a second STA instead of being refused, so the assertion
+    // catches the redundant send itself rather than its rejection.
+    const sim = await startSim({ staFloodSeconds: 0 });
+    const session = makeSession(sim, { statusGateMs: 200 });
+    session.start();
+    await waitForStatus(session, "online");
+    const observer = makeSession(sim, { character: "Cindral" });
+    observer.start();
+    await waitForStatus(observer, "online");
+
+    const onWire: string[] = [];
+    observer.events.on("command", (command) => {
+      if (command.cmd === "STA" && command.payload.character === CHARACTER) {
+        onWire.push(command.payload.statusmsg);
+      }
+    });
+    const busy = waitForCommand(
+      observer,
+      (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
+    );
+    await session.setStatus("busy", "plotting");
+    await busy;
+
+    // The second browser's redundant restore: acked, and re-asserted to the
+    // subscribers (that stale view is exactly what needs healing) — but
+    // nothing new goes to F-Chat.
+    const echoed = waitForCommand(
+      session,
+      (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
+    );
+    await session.setStatus("busy", "plotting");
+    expect((await echoed).payload).toMatchObject({
+      status: "busy",
+      statusmsg: "plotting",
+    });
+    // Long enough that a deferred send would have fired by now.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(onWire).toEqual(["plotting"]);
+    expect(session.ownStatus).toEqual({
+      status: "busy",
+      statusmsg: "plotting",
+    });
+  });
+
+  it("paces status changes past the five-second gate, newest desire wins", async () => {
+    // Both gates are scaled down together: the sim refuses a second STA
+    // inside its window (ERR 14) exactly like F-Chat, and the session's
+    // window sits above it.
+    const sim = await startSim({ staFloodSeconds: 0.5 });
+    const session = makeSession(sim, { statusGateMs: 700 });
+    session.start();
+    await waitForStatus(session, "online");
+    const observer = makeSession(sim, { character: "Cindral" });
+    observer.start();
+    await waitForStatus(observer, "online");
+
+    const onWire: string[] = [];
+    observer.events.on("command", (command) => {
+      if (command.cmd === "STA" && command.payload.character === CHARACTER) {
+        onWire.push(command.payload.statusmsg);
+      }
+    });
+    const errors: number[] = [];
+    session.events.on("command", (command) => {
+      if (command.cmd === "ERR") {
+        errors.push(command.payload.number);
+      }
+    });
+
+    const first = waitForCommand(
+      observer,
+      (c) => c.cmd === "STA" && c.payload.character === CHARACTER,
+    );
+    await session.setStatus("busy", "one");
+    await first;
+
+    // Three changes inside the window: only the last one is worth sending.
+    const last = waitForCommand(
+      observer,
+      (c) =>
+        c.cmd === "STA" &&
+        c.payload.character === CHARACTER &&
+        c.payload.statusmsg === "three",
+    );
+    await session.setStatus("looking", "two");
+    await session.setStatus("away", "two and a half");
+    await session.setStatus("dnd", "three");
+    // Acked means accepted: the session already reads as the newest desire.
+    expect(session.ownStatus).toEqual({ status: "dnd", statusmsg: "three" });
+    expect(onWire).toEqual(["one"]); // still waiting out the gate
+
+    await last;
+    expect(onWire).toEqual(["one", "three"]);
+    // Nothing was rejected — the point of the exercise.
+    expect(errors).toEqual([]);
+  });
+
+  it("reproduces F-Chat's status gate: an unpaced second STA earns ERR 14", async () => {
+    // Guards the sim's fidelity — without this gate the bug it models is
+    // invisible in tests. statusGateMs: 0 opts the session out of pacing.
+    const sim = await startSim();
+    const session = makeSession(sim, { statusGateMs: 0 });
+    session.start();
+    await waitForStatus(session, "online");
+
+    const refused = waitForCommand(session, (c) => c.cmd === "ERR");
+    await session.setStatus("busy", "one");
+    await session.setStatus("looking", "two");
+    const err = await refused;
+    expect(err.cmd === "ERR" && err.payload.number).toBe(
+      FchatErrorCode.StatusFlood,
+    );
+  });
 
   it("auto-notifies the server about an ignored PRI, which still reaches the bus", async () => {
     const sim = await startSim();
