@@ -186,6 +186,16 @@ describe("social routes", () => {
   });
 
   it("accepts the seeded request and walks send → cancel", async () => {
+    // The sim bridges the accept back over the chat socket as RTB friendadd
+    // (like the site does when the other party accepts). The server refetches
+    // on it and fans the new lists out (#364) — wait that refetch out, or it
+    // lands in the middle of the cache assertions below.
+    const bridged = [
+      vi.spyOn(apiClient, "bookmarkList"),
+      vi.spyOn(apiClient, "friendList"),
+      vi.spyOn(apiClient, "requestList"),
+      vi.spyOn(apiClient, "requestPending"),
+    ];
     expect(
       (
         await post(`/api/identities/${identityId}/social/request`, {
@@ -194,6 +204,24 @@ describe("social routes", () => {
         })
       ).statusCode,
     ).toBe(200);
+    await vi.waitFor(
+      () => {
+        for (const spy of bridged) {
+          expect(spy).toHaveBeenCalled();
+        }
+      },
+      { timeout: 5000 },
+    );
+    await Promise.allSettled(
+      bridged.flatMap((spy) =>
+        spy.mock.results.map((result) => result.value as Promise<unknown>),
+      ),
+    );
+    // …and let the cache write behind those calls drain.
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const spy of bridged) {
+      spy.mockRestore();
+    }
     let body = (
       await get(`/api/identities/${identityId}/social`)
     ).json<SocialBody>();

@@ -18,9 +18,8 @@ import {
   upstreamStatus,
   withTicket as withTicketFor,
 } from "../flist-api/with-ticket.js";
-import type { GatewayHub } from "../gateway/gateway.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
-import { enrichSocial, type SocialCache, type SocialLists } from "./cache.js";
+import type { SocialCache } from "./cache.js";
+import type { SocialIdentity, SocialService } from "./service.js";
 
 const characterRow = z.object({
   name: z.string(),
@@ -41,22 +40,14 @@ const okResponse = z.object({ ok: z.literal(true) });
 
 export interface SocialRoutesOptions {
   db: Db;
-  sessions: SessionRegistry;
   tickets: TicketManagerRegistry;
   flistApi: FlistApiClient;
   /** Per-identity in-memory cache (#194) — also read by the gateway
    * snapshot, so a second device attaches without new F-List calls. */
   cache: SocialCache;
-  /** Fan-out for social.updated (#199) — every attached device sees
-   * bookmark changes instantly. */
-  hub: GatewayHub;
-}
-
-interface IdentityRow {
-  id: string;
-  character: string;
-  accountId: string;
-  accountName: string;
+  /** Owns the four-call fetch, the cache write and the social.updated
+   * fan-out — shared with the RTB refresh path (#364). */
+  service: SocialService;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -65,26 +56,14 @@ export async function socialRoutes(
   options: SocialRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, sessions, tickets, flistApi, cache, hub } = options;
-
-  /** Enriched lists from the live roster (case-insensitive — #218). */
-  function enriched(identityId: string, lists: SocialLists) {
-    return enrichSocial(lists, sessions.get(identityId)?.state.characters);
-  }
-
-  function broadcastSocial(identityId: string, lists: SocialLists): void {
-    hub.broadcast(identityId, {
-      kind: "social.updated",
-      d: { social: enriched(identityId, lists) },
-    });
-  }
+  const { db, tickets, flistApi, cache, service } = options;
 
   app.addHook("preHandler", app.authenticate);
 
   async function ownedIdentity(
     identityId: string,
     userId: string,
-  ): Promise<IdentityRow | undefined> {
+  ): Promise<SocialIdentity | undefined> {
     const [row] = await db
       .select({
         id: identities.id,
@@ -104,7 +83,7 @@ export async function socialRoutes(
   // Ticket-retry + upstream-error mapping shared with the profiles module
   // (extracted M8) — see flist-api/with-ticket.ts.
   function withTicket<T extends { error: string }>(
-    identity: IdentityRow,
+    identity: SocialIdentity,
     call: (auth: SocialAuth) => Promise<T>,
   ): Promise<T> {
     return withTicketFor(tickets, identity, call);
@@ -145,52 +124,19 @@ export async function socialRoutes(
       if (request.query.refresh !== "1" && cache.fresh(identity.id)) {
         // Cache hit inside the TTL: no upstream calls, presence re-read
         // from the live roster at serve time.
-        return enriched(identity.id, cache.get(identity.id)!);
+        return service.enriched(identity.id, cache.get(identity.id)!);
       }
-      let bookmarks, friends, incoming, outgoing;
+      let result;
       try {
-        [bookmarks, friends, incoming, outgoing] = await Promise.all([
-          withTicket(identity, (auth) => flistApi.bookmarkList(auth)),
-          withTicket(identity, (auth) => flistApi.friendList(auth)),
-          withTicket(identity, (auth) => flistApi.requestList(auth)),
-          withTicket(identity, (auth) => flistApi.requestPending(auth)),
-        ]);
+        result = await service.fetch(identity);
       } catch (error) {
         const mapped = upstreamStatus(error);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
-      const failed = [bookmarks, friends, incoming, outgoing].find(
-        (result) => result.error !== "",
-      );
-      if (failed) {
-        return reply.code(502).send({ error: failed.error });
+      if (result.error !== undefined) {
+        return reply.code(502).send({ error: result.error });
       }
-      // Cache the raw identity-scoped lists; enrichment happens at serve
-      // time against the live roster so presence stays current (#218).
-      // Account-wide pairs scoped to this identity: source is our
-      // character, dest the friend (same orientation as friend-remove).
-      // F-Chat resolves names case-insensitively, so the JSON API's casing
-      // for our own character may diverge from the identity's stored casing;
-      // fold before matching or a genuine friend/request silently drops
-      // (#265). Same convention as the rest of the social module.
-      const ownLower = identity.character.toLowerCase();
-      const lists: SocialLists = {
-        bookmarks: bookmarks.characters ?? [],
-        friends: (friends.friends ?? [])
-          .filter((pair) => pair.source.toLowerCase() === ownLower)
-          .map((pair) => pair.dest),
-        incoming: (incoming.requests ?? [])
-          .filter((entry) => entry.dest.toLowerCase() === ownLower)
-          .map((entry) => ({ id: entry.id, name: entry.source })),
-        outgoing: (outgoing.requests ?? [])
-          .filter((entry) => entry.source.toLowerCase() === ownLower)
-          .map((entry) => ({ id: entry.id, name: entry.dest })),
-      };
-      cache.set(identity.id, lists);
-      // Every upstream fetch fans out, so a forced refresh on one device
-      // syncs every other attached device too (#199).
-      broadcastSocial(identity.id, lists);
-      return enriched(identity.id, lists);
+      return service.enriched(identity.id, result.lists);
     },
   );
 
@@ -241,7 +187,7 @@ export async function socialRoutes(
       // means nothing was loaded yet; the first GET fetches the truth.
       const patched = cache.patchBookmark(identity.id, action, name);
       if (patched) {
-        broadcastSocial(identity.id, patched);
+        service.broadcast(identity.id, patched);
       }
       return { ok: true as const };
     },

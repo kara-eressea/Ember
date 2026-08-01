@@ -25,6 +25,10 @@ vi.mock("../lib/desktop-notify.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/desktop-notify.js")>()),
   showMessageNotification: vi.fn(),
 }));
+vi.mock("../lib/social.js", () => ({
+  loadSocial: vi.fn(() => Promise.resolve()),
+}));
+import { loadSocial } from "../lib/social.js";
 import { showMessageNotification } from "../lib/desktop-notify.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { hydrateTheme } from "../theme/theme.js";
@@ -124,6 +128,7 @@ beforeEach(() => {
   vi.mocked(playHighlightChime).mockClear();
   vi.mocked(flashTitle).mockClear();
   vi.mocked(showMessageNotification).mockClear();
+  vi.mocked(loadSocial).mockClear();
 });
 
 function session() {
@@ -158,6 +163,22 @@ describe("snapshot", () => {
     expect(session().channels["Frontpage"]?.members).toHaveLength(3);
     dispatchFrame(snapshot());
     expect(session().channels["Frontpage"]?.members).toHaveLength(2);
+  });
+
+  it("refetches social lists the snapshot could not carry (#364)", () => {
+    dispatchFrame(snapshot());
+    // Nothing held yet: the lazy load on mount covers it.
+    expect(loadSocial).not.toHaveBeenCalled();
+    dispatchFrame(
+      event("social.updated", {
+        social: { bookmarks: [], friends: [], incoming: [], outgoing: [] },
+      }),
+    );
+    // A reconnect racing the server-side cache drop (what an RTB friend
+    // event causes) carries social: null — the lists this tab kept are the
+    // stale ones the drop was about.
+    dispatchFrame(snapshot());
+    expect(loadSocial).toHaveBeenCalledWith(IDENTITY, true);
   });
 });
 
@@ -928,6 +949,22 @@ describe("catchup", () => {
   });
 });
 
+describe("rtb", () => {
+  it("notices a new friend and leaves the lists to the server (#364)", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("rtb", { type: "friendadd", character: "Tally Marsh" }),
+    );
+    expect(session().notice).toEqual({
+      kind: "sys",
+      text: "Tally Marsh is now your friend",
+    });
+    // The server refetches on the same RTB and pushes social.updated —
+    // fetching here too would double the upstream calls for nothing.
+    expect(loadSocial).not.toHaveBeenCalled();
+  });
+});
+
 describe("rtbNoticeText", () => {
   it("renders notes, friend requests, and comments; stays silent otherwise", () => {
     expect(
@@ -942,6 +979,9 @@ describe("rtbNoticeText", () => {
     );
     expect(rtbNoticeText({ type: "friendrequest", character: "Tally" })).toBe(
       "Tally sent a friend request",
+    );
+    expect(rtbNoticeText({ type: "friendadd", character: "Tally" })).toBe(
+      "Tally is now your friend",
     );
     expect(rtbNoticeText({ type: "trackadd" })).toBeUndefined();
   });

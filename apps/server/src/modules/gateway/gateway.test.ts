@@ -2423,6 +2423,64 @@ describe("gateway commands", () => {
     });
   });
 
+  it("refetches and fans out the friend lists when the other party accepts (#364)", async () => {
+    const FRIEND = "Thistle Reed";
+    const FRIEND_ACCOUNT = "thistlereed@example.test";
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+    const auth = { authorization: `Bearer ${token}` };
+
+    const sent = await app.inject({
+      method: "POST",
+      url: `/api/identities/${identityId}/social/request`,
+      headers: auth,
+      payload: { action: "send", character: FRIEND },
+    });
+    expect(sent.statusCode).toBe(200);
+    // The request id rides the next read (the send dropped the cache), which
+    // fans its own lists out — drained here so the assertion below can only
+    // match the refresh the accept triggers.
+    const listed = await app.inject({
+      method: "GET",
+      url: `/api/identities/${identityId}/social`,
+      headers: auth,
+    });
+    const outgoing = listed
+      .json<{ outgoing: { id: number; name: string }[] }>()
+      .outgoing.find((row) => row.name === FRIEND);
+    expect(outgoing).toBeDefined();
+    await client.nextEvent("social.updated");
+
+    // The other party accepts on the website; F-List bridges that to our
+    // chat socket as RTB friendadd, and nothing else tells us about it.
+    const accepted = await fetch(`${sim.httpUrl}/json/api/request-accept.php`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        account: FRIEND_ACCOUNT,
+        ticket: sim.issueTicketFor(FRIEND_ACCOUNT),
+        request_id: String(outgoing!.id),
+      }),
+    });
+    expect(await accepted.json()).toEqual({ error: "" });
+
+    expect(eventPayload<object>(await client.nextEvent("rtb"))).toEqual({
+      type: "friendadd",
+      character: FRIEND,
+    });
+    // The point of the fix: the sidebar's Friends section is driven by these
+    // lists, so without the refetch + fan-out the new friend would sit in
+    // Direct Messages until someone hit the manual ↻.
+    const refreshed = eventPayload<{
+      social: { friends: { name: string }[]; outgoing: unknown[] };
+    }>(await client.nextEvent("social.updated", 10_000));
+    expect(refreshed.social.friends.map((row) => row.name)).toContain(FRIEND);
+    expect(refreshed.social.outgoing).toEqual([]);
+  });
+
   it("opens a PM conversation and advances the read cursor across clients", async () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
