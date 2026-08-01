@@ -18,6 +18,13 @@ export interface FriendRequest {
   readonly dest: string;
 }
 
+export interface AcceptResult {
+  /** "" on success, mirroring the JSON API envelope. */
+  readonly error: string;
+  /** The accepter's side of the new friendship (absent on failure). */
+  readonly pair?: FriendPair;
+}
+
 interface AccountSocial {
   readonly bookmarks: Set<string>;
   friends: FriendPair[];
@@ -147,10 +154,15 @@ export class SocialService {
     return "";
   }
 
-  requestAccept(account: string, id: number): string {
+  /**
+   * Accepts an incoming request. On success the caller gets the new pair so
+   * it can bridge the friendship to both parties over chat (RTB friendadd),
+   * the way the real site does — clients learn about it without polling.
+   */
+  requestAccept(account: string, id: number): AcceptResult {
     const request = this.incoming(account).find((entry) => entry.id === id);
     if (!request) {
-      return "Invalid request.";
+      return { error: "Invalid request." };
     }
     this.#requests = this.#requests.filter((entry) => entry.id !== id);
     this.#social(account)?.friends.push({
@@ -164,7 +176,10 @@ export class SocialService {
         friend: request.dest,
       });
     }
-    return "";
+    return {
+      error: "",
+      pair: { own: request.dest, friend: request.source },
+    };
   }
 
   requestDeny(account: string, id: number): string {

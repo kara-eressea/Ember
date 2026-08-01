@@ -294,6 +294,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Nettle Fen"],
     },
+    // Reserved for the #364 friend-RTB round trip: the other party of a
+    // friend request, who accepts it through the JSON API (as the website
+    // does) so the sim bridges the new friendship back over chat.
+    "thistlereed@example.test": {
+      password: "hunter2",
+      characters: ["Thistle Reed"],
+    },
     // Reserved for the #329 sidebar offline-filtering E2E (same isolation
     // rules). Each browser identity has a raw-SimClient partner whose
     // presence (online → FLN offline) it observes, exactly like catchup's
