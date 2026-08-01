@@ -906,14 +906,18 @@ describe("FchatSession against fchat-sim", () => {
         backoffFloorMs: 200,
         backoffCapMs: 400,
       });
-      session.start();
-      await waitForStatus(session, "online");
       // "online" fires at IDN — wait for our own NLN so the roster holds us
-      // before the synthetic STA tries to fold into it.
-      await waitForCommand(
+      // before the synthetic STA tries to fold into it. The listener attaches
+      // BEFORE start(): on a fast loopback the whole greeting burst (IDN
+      // through NLN) is emitted synchronously, so an attach-after-online
+      // listener misses the NLN every time.
+      const selfListed = waitForCommand(
         session,
         (c) => c.cmd === "NLN" && c.payload.identity === CHARACTER,
       );
+      session.start();
+      await waitForStatus(session, "online");
+      await selfListed;
 
       // setStatus emits a synthetic self-STA so clients converge even if the
       // server never echoes; the sim's broadcast is the idempotent duplicate.
