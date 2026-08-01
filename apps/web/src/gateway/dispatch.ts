@@ -37,11 +37,23 @@ export function dispatchFrame(frame: ServerFrame): void {
         sessions.applySessionStatus(identity.id, identity.sessionStatus);
       }
       return;
-    case "snapshot":
+    case "snapshot": {
+      // Whatever this tab already holds survives a social-less snapshot
+      // (applySnapshot keeps it), so a reconnect that races a server-side
+      // cache drop — exactly what an RTB friend event causes — would leave
+      // the stale lists in place forever. Refetch instead (#364); a tab
+      // with nothing yet is left to the lazy load on mount.
+      const stale =
+        frame.d.self.social === null &&
+        sessions.sessions[frame.d.identityId]?.social !== undefined;
       sessions.applySnapshot(frame.d);
       hydrateTheme(frame.d.self.prefs);
       hydrateInterface(frame.d.self.prefs);
+      if (stale) {
+        void loadSocial(frame.d.identityId, true).catch(() => undefined);
+      }
       return;
+    }
     case "catchup":
       // Missed-while-away history; snapshot unread counts already include
       // these rows (both derive from lastReadMessageId), so no bump. A gap
@@ -282,18 +294,16 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;
     case "rtb": {
-      // Website events over the chat socket (M6 step 9): a notice always;
-      // a desktop notification for notes/friend requests behind its pref.
-      // The website stays the place to read and act.
+      // Website events over the chat socket (M6 step 9): a notice for the
+      // types worth one, a desktop notification for notes/friend requests
+      // behind its pref. The website stays the place to read and act.
+      // Friend/request list changes need no fetch here: the server refetches
+      // on the same RTB and pushes social.updated to every device (#364).
       const line = rtbNoticeText(event.d);
       if (line === undefined) {
         return; // an RTB type not worth a notice (e.g. silent list syncs)
       }
       sessions.applyNotice(identityId, "sys", line);
-      if (event.d.type === "friendrequest") {
-        // The sidebar's request rows should appear without a manual ↻.
-        void loadSocial(identityId, true).catch(() => undefined);
-      }
       const prefs = sessions.sessions[identityId]?.prefs;
       if (
         prefs?.desktopNotifyNotes === true &&
@@ -346,6 +356,10 @@ export function rtbNoticeText(d: {
       return `New note from ${who}${d.subject ? `: ${d.subject}` : ""} — read it on f-list.net`;
     case "friendrequest":
       return `${who} sent a friend request`;
+    case "friendadd":
+      // The move from the DM section to Friends happens on its own
+      // (social.updated) — the line is just so it does not look silent.
+      return `${who} is now your friend`;
     case "comment":
       return `${who} replied to a comment thread you follow — see f-list.net`;
     default:
