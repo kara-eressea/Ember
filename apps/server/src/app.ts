@@ -27,6 +27,7 @@ import {
 import { directoryRoutes } from "./modules/directory/routes.js";
 import { enrichSocial, SocialCache } from "./modules/social/cache.js";
 import { socialRoutes } from "./modules/social/routes.js";
+import { SocialService } from "./modules/social/service.js";
 import { FlistApiClient } from "./modules/flist-api/api-client.js";
 import { CharacterDataBudget } from "./modules/flist-api/character-data-budget.js";
 import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
@@ -134,6 +135,10 @@ export async function buildApp({
   // Per-identity social lists (#194) — in memory alongside the sessions;
   // a restart just means the first GET refetches.
   const socialCache = new SocialCache();
+  // Late-bound like the scheduler: the service needs the session registry,
+  // whose start callback needs the service (RTB refresh, #364).
+  // eslint-disable-next-line prefer-const -- forward declaration
+  let socialService: SocialService | undefined;
   // Departed-member rosters (#200) — persisted so "Seen recently" survives
   // restarts; the snapshot reads them straight from the table.
   const seenMembers = new SeenMembersStore({ db, logger: app.log });
@@ -175,9 +180,8 @@ export async function buildApp({
       campaignScheduler?.observeSession(identityId, session);
       // Website-side social changes arrive as RTB over the chat socket:
       // fold bookmark events into the cache and fan them out (#199);
-      // friend events change upstream rows we cannot patch — drop the
-      // cache so the next fetch (the client refreshes on friendrequest)
-      // serves and broadcasts fresh lists.
+      // friend events change upstream rows we cannot patch, so they drop
+      // the cache and refetch (coalesced) to fan out fresh lists (#364).
       session.events.on("command", (command) => {
         if (command.cmd !== "RTB") {
           return;
@@ -205,10 +209,24 @@ export async function buildApp({
           type === "friendremove" ||
           type === "friendrequest"
         ) {
+          // Invalidate first so nothing serves the list we know is stale;
+          // the refresh repopulates it and pushes social.updated, which is
+          // what moves the new friend out of the DM section without a
+          // manual ↻ (#364).
           socialCache.invalidate(identityId);
+          socialService?.refreshSoon(identityId);
         }
       });
     },
+  });
+  socialService = new SocialService({
+    db,
+    sessions,
+    tickets,
+    flistApi,
+    cache: socialCache,
+    hub,
+    logger: app.log,
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
@@ -272,6 +290,7 @@ export async function buildApp({
     seenMembers.stop();
     outbox.stop();
     campaignScheduler.stop();
+    socialService?.stop();
     sessions.stopAll();
   });
 
@@ -336,11 +355,10 @@ export async function buildApp({
   await app.register(socialRoutes, {
     prefix: "/api/identities",
     db,
-    sessions,
     tickets,
     flistApi,
     cache: socialCache,
-    hub,
+    service: socialService,
   });
   const profiles = new ProfileService({
     db,

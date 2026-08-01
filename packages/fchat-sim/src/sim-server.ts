@@ -557,8 +557,16 @@ export class FchatSim {
             form.get("dest_name") ?? "",
           ),
         };
-      case "/json/api/request-accept.php":
-        return { error: this.#social.requestAccept(account, requestId) };
+      case "/json/api/request-accept.php": {
+        const accepted = this.#social.requestAccept(account, requestId);
+        if (accepted.pair) {
+          // The real-time bridge: both sides of a new friendship hear about
+          // it over their chat socket, whoever clicked accept and wherever.
+          this.#sendRtb(accepted.pair.own, "friendadd", accepted.pair.friend);
+          this.#sendRtb(accepted.pair.friend, "friendadd", accepted.pair.own);
+        }
+        return { error: accepted.error };
+      }
       case "/json/api/request-deny.php":
         return { error: this.#social.requestDeny(account, requestId) };
       case "/json/api/request-cancel.php":
@@ -1778,6 +1786,16 @@ export class FchatSim {
         message: FCHAT_ERROR_MESSAGES[number] ?? "Unknown error.",
       },
     });
+  }
+
+  /** Website event bridged to a character's chat socket, if it is online.
+   * `name` carries the character the event is about, as the live server
+   * does for the friend types. */
+  #sendRtb(character: string, type: string, name: string): void {
+    const target = this.#online.get(character)?.connection;
+    if (target) {
+      this.#send(target, { cmd: "RTB", payload: { type, name } });
+    }
   }
 
   #broadcast(command: ServerCommand): void {

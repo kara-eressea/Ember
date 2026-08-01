@@ -42,7 +42,7 @@ function channel(key: string, title: string): ChannelView {
   };
 }
 
-function dm(partner: string): DmView {
+function dm(partner: string, pinned = false): DmView {
   return {
     convId: `dm-${partner}`,
     partner,
@@ -50,7 +50,7 @@ function dm(partner: string): DmView {
     online: true,
     status: "online",
     statusmsg: "",
-    pinned: false,
+    pinned,
     typing: "clear",
     unread: 0,
     highlightedAt: 0,
@@ -59,7 +59,10 @@ function dm(partner: string): DmView {
   };
 }
 
-function session(prefs: Partial<UserPrefs> = {}): IdentitySession {
+function session(
+  prefs: Partial<UserPrefs> = {},
+  dms: Record<string, DmView> = { "dm-Bea": dm("Bea") },
+): IdentitySession {
   return {
     identityId: "id-1",
     character: "Amber Vale",
@@ -79,7 +82,7 @@ function session(prefs: Partial<UserPrefs> = {}): IdentitySession {
       Frontpage: channel("Frontpage", "Frontpage"),
       "ADH-abc123": channel("ADH-abc123", "Quiet Room"),
     },
-    dms: { "dm-Bea": dm("Bea") },
+    dms,
     channelByConvId: {},
     synced: true,
     social: {
@@ -94,13 +97,19 @@ function session(prefs: Partial<UserPrefs> = {}): IdentitySession {
   };
 }
 
-function renderSidebar(prefs?: Partial<UserPrefs>) {
+function renderSidebar(
+  prefs?: Partial<UserPrefs>,
+  dms?: Record<string, DmView>,
+) {
   return render(
     <MemoryRouter>
-      <Sidebar session={session(prefs)} activeConvId={undefined} />
+      <Sidebar session={session(prefs, dms)} activeConvId={undefined} />
     </MemoryRouter>,
   );
 }
+
+const pins = (row: HTMLElement) =>
+  row.querySelectorAll("span[class*='navPin']");
 
 describe("Sidebar avatars (#416)", () => {
   it("gives DM, friend and bookmark rows an avatar with a status dot", () => {
@@ -147,5 +156,37 @@ describe("Sidebar avatars (#416)", () => {
     // Rows still render, with the text-only channel glyph.
     expect(screen.getByRole("link", { name: /Bea/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Frontpage/ })).toBeTruthy();
+  });
+});
+
+// A friend/bookmark with an open DM keeps only their social row (#290), so
+// that row has to carry the DM's pin marker too — otherwise pinning a DM and
+// then befriending the partner drops the cue, along with the visible reason
+// the row survives the offline filter.
+describe("Sidebar pin marker on social rows", () => {
+  it("marks a friend whose DM is pinned", () => {
+    renderSidebar(undefined, { "dm-Cy": dm("Cy", true) });
+
+    const row = screen.getByRole("button", { name: /Cy/ });
+    expect(pins(row)).toHaveLength(1);
+    // The friend row replaces the Direct messages row, not doubles it.
+    expect(screen.queryByRole("link", { name: /Cy/ })).toBeNull();
+  });
+
+  it("marks a bookmark whose DM is pinned and leaves unpinned rows bare", () => {
+    renderSidebar(undefined, {
+      "dm-Cy": dm("Cy"),
+      "dm-Dot": dm("Dot", true),
+    });
+
+    expect(pins(screen.getByRole("button", { name: /Dot/ }))).toHaveLength(1);
+    expect(pins(screen.getByRole("button", { name: /Cy/ }))).toHaveLength(0);
+  });
+
+  it("leaves a social row without a DM unmarked", () => {
+    renderSidebar();
+
+    expect(pins(screen.getByRole("button", { name: /Cy/ }))).toHaveLength(0);
+    expect(pins(screen.getByRole("button", { name: /Dot/ }))).toHaveLength(0);
   });
 });
