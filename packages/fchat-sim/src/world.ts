@@ -403,6 +403,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Teasel Crake"],
     },
+    // Reserved for the #408/#409 typography E2E (same isolation rules). Flint
+    // Barrow sends one chat line and one /roll in a room of his own, and the
+    // spec measures the computed type of both sender names.
+    "flint@example.test": {
+      password: "hunter2",
+      characters: ["Flint Barrow"],
+    },
   },
   channels: [
     {
@@ -432,6 +439,14 @@ export const DEFAULT_WORLD: SimWorld = {
       name: "Terrarium",
       mode: "both",
       description: "Small glass worlds.",
+      npcs: [],
+    },
+    // Reserved for the #408/#409 typography E2E: a room with no NPC chatter,
+    // so the only sender names in the log are the ones the spec measures.
+    {
+      name: "Typesetting",
+      mode: "both",
+      description: "Where the letters are counted.",
       npcs: [],
     },
     {
