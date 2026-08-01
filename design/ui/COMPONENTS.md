@@ -48,6 +48,8 @@ Derivations: `meta = mix(dim, faint, {slate: 0.30, charcoal: 0.46, parchment: 0.
 | `accentMed` | `mix(accent, bg, 0.5)` | `#62566f` — unread badge bg, focus rings, borders |
 | `codebg` | `mix(text, bg, 0.90)` | `#302e2b` — inline code + code blocks |
 | `hoverMain` | `mix(text, bg, 0.95)` | row hover in main |
+| `ownSoft` | `mix(text, bg, 0.92)` | `#2c2927` — own-message row bg (hue-free, so it never competes with the accent-tinted mention row) |
+| `ownSoftHover` | `mix(text, bg, 0.885)` | `#33312e` — own-message row hover |
 | `hover` | `mix(text, side, 0.93)` | row hover in sidebar |
 
 ```js
@@ -60,8 +62,9 @@ function mix(a, b, t) {            // a, b = "#rrggbb"
 
 ### Typography
 - **UI font:** `'IBM Plex Sans', system-ui, sans-serif`
-- **Mono font:** `'IBM Plex Mono', ui-monospace, monospace` — timestamps, nicks, code, server addresses, channel `#`, counts
-- **Message body:** UI sans (this is the "Slate Cozy" choice — the log is line-based but bodies are sans; only timestamp + `<nick>` are mono)
+- **Mono font:** `'IBM Plex Mono', ui-monospace, monospace` — timestamps, code, server addresses, channel `#`, counts
+- **Message body:** UI sans (this is the "Slate Cozy" choice — the log is line-based but bodies are sans; of the log's columns only the timestamp is mono)
+- **Sender names:** UI sans at the message font size, regular weight — *identical* type to the message body they label, distinguished by their nick colour alone. Applies everywhere a name is rendered: log gutter, ad heads, roll lines. (Amended 2026-08-01: nicks were originally specced mono, and a `font: inherit` bug rendered them sans for most of the project's life; when the bug was fixed the user chose the sans they had been living with. Don't put nicks back on mono.)
 - Scale: 10–11px uppercase labels (`.09em` tracking), 12.5–13px body/rows, 13–14px inputs, 15px section titles, 17–18px channel name, 22px dialog titles, 28–46px landing headings.
 
 ### Radius & elevation
@@ -170,6 +173,7 @@ Scroll region, `padding: 12px 0`. Four row types, all `display:flex; gap:9px; al
 - **SystemLine** (join/part/topic/etc.) — `[time]` · glyph · italic text (12.5px `dim`). Join `→` `ok`; topic `⚑` `accent`.
 - **MessageLine** — `[time]` (mono 11.5px `meta`, `tabular-nums`) · `<nick>` (mono 12.5px/600, per-nick color, nowrap) · body (13px/1.5 `text`). Padding `2px 16px`.
   - **Mention/highlight** (matches a highlight rule or your nick): `background: accentSoft` + `inset 3px 0 0 accent`, padding `4px 16px`.
+  - **Own message** ("Tint your own messages", default on): `background: ownSoft` (`ownSoftHover` on hover) — no edge bar and no padding change, so consecutive own rows read as one seamless block and the tint stays clearly quieter than a mention. Mention wins if a row were ever both. Ads, rolls, system and queued-send lines keep their own treatment.
 - **CodeBlock** (fenced) — its own line, `margin: 3px 16px 5px 76px` (the 76px left indent aligns it under the message body), `codebg` fill, `border`, mono 12px, `white-space: pre`, horizontal scroll.
 - Toggle "Show join/part/quit" (Preferences) hides SystemLines of that kind.
 
