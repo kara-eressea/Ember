@@ -438,6 +438,7 @@ describe("channels", () => {
           { name: "Development", mode: "both", characters: 1 },
           { name: "Gardening", mode: "chat", characters: 1 },
           { name: "Terrarium", mode: "both", characters: 0 },
+          { name: "Typesetting", mode: "both", characters: 0 },
           { name: "Orchard", mode: "chat", characters: 1 },
         ],
       },

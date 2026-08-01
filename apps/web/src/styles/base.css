@@ -58,7 +58,12 @@ button {
   cursor: pointer;
 }
 
-input {
+/* textarea belongs here too (#408): every other textarea in the app names a
+   family itself, so the omission only ever bit the composer — which then
+   silently ran on the browser's monospace UA font, at UA metrics the caret is
+   sized from. The design system has one body face (COMPONENTS.md §8). */
+input,
+textarea {
   font: inherit;
 }
 

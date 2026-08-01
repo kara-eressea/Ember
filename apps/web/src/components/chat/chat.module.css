@@ -195,19 +195,26 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   /* The sender name tracks the message body size (#338) — a name and the
      message it labels read as one line at one size. Only the weight sets it
-     apart. */
+     apart. Every sender name wears it: gutter names, the ad head, and the
+     roller mid-sentence in a die line (#409's sans exception for the latter
+     is gone — one name treatment, one size, everywhere). */
   font-size: var(--eb-msg-font, 13px);
   font-weight: 600;
   white-space: nowrap;
 }
 
 /* Reset for name triggers that open the mini profile card (M8): buttons
-   that must render exactly like the span/anchor they replaced. Defined
-   before .bodyMention so the mention styling wins its own properties. */
+   that must render exactly like the span/anchor they replaced. Declared
+   before its companion classes (.nick, .bodyMention) so theirs win at equal
+   specificity — and declaring NO font is part of that: base.css already
+   neutralises the UA font on every button at element specificity, so a `font`
+   shorthand here would buy nothing and silently wipe the companion's
+   family/size/weight. That is how every sender name lost .nick's mono/600 and
+   fell back to whatever size its row inherited (#380/#381, #409). Keep this
+   rule font-free. */
 .nameButton {
   padding: 0;
   border: 0;
-  font: inherit;
   color: inherit;
   text-align: left;
   background: none;
@@ -339,14 +346,6 @@
   color: var(--eb-dim);
   font-size: var(--eb-msg-font, 13px);
   line-height: 1.5;
-}
-
-/* The roller name sits mid-sentence inside the die line, so it takes the
-   body's sans face rather than the mono of a gutter sender name (#409): mono
-   and sans at one px size read as two different sizes inline. Colour and
-   weight still mark it as a name (#337/#338). */
-.rollLine .nick {
-  font-family: inherit;
 }
 
 /* Name-only eicon display: chip + hover preview (M5, decisions.md §8). */

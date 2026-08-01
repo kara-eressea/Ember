@@ -28,10 +28,10 @@ test("channel browser: browse, filter, join, hidden-by-name", async ({
   await expect(dialog).toBeVisible();
 
   // Header shows honest staleness + total room count once the directory
-  // loads (the sim world lists 5 official + 1 open room; the hidden Root
+  // loads (the sim world lists 6 official + 1 open room; the hidden Root
   // Cellar never counts).
   await expect(dialog.getByText(/updated just now/)).toBeVisible();
-  await expect(dialog.getByText("6 rooms")).toBeVisible();
+  await expect(dialog.getByText("7 rooms")).toBeVisible();
 
   // Official tab lists Orchard with a Join button; the open-rooms tab lists
   // Ember Lounge but never the hidden room.
