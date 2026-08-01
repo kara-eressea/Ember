@@ -713,6 +713,22 @@ describe("messages", () => {
     });
   });
 
+  it("enforces the status gate with ERR 14 and recovers after the window", async () => {
+    const sim = await startSim({ staFloodSeconds: 0.05 });
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({ cmd: "STA", payload: { status: "away", statusmsg: "afk" } });
+    await amber.waitFor("STA");
+    amber.send({ cmd: "STA", payload: { status: "online", statusmsg: "" } });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 14 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    amber.send({ cmd: "STA", payload: { status: "online", statusmsg: "" } });
+    expect(parseServerCommand(await amber.waitFor("STA"))).toMatchObject({
+      payload: { character: "Amber Vale", status: "online" },
+    });
+  });
+
   it("applies the same flood control to PRI", async () => {
     const sim = await startSim();
     const amber = await login(sim, "amber@example.test", "Amber Vale");

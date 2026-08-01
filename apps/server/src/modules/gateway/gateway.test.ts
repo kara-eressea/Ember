@@ -67,7 +67,10 @@ beforeAll(async () => {
   // lfrp_flood is zeroed: the RP-messages test sends several ads and would
   // otherwise wait out the live 10-minute pace (pacing itself is covered in
   // fchat-session.test.ts against a dedicated sim).
-  sim = new FchatSim({ serverVars: { lfrp_flood: 0 } });
+  // staFloodSeconds scales F-Chat's 5s status gate (ERR 14) down with the
+  // session's own pacing window below, so the multi-device status tests
+  // exercise a real gate without sitting out five seconds.
+  sim = new FchatSim({ serverVars: { lfrp_flood: 0 }, staFloodSeconds: 1 });
   await sim.start();
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
@@ -88,7 +91,11 @@ beforeAll(async () => {
       minRequestIntervalMs: 0,
     }),
     // The reconnect scenario can't wait out the 10s policy floor.
-    sessionTuning: { backoffFloorMs: 200, backoffCapMs: 400 },
+    sessionTuning: {
+      backoffFloorMs: 200,
+      backoffCapMs: 400,
+      statusGateMs: 1200,
+    },
     // The dead-socket test can't wait out the 30s production heartbeat.
     gatewayHeartbeatMs: 300,
   });
@@ -1516,6 +1523,72 @@ describe("gateway fan-out", () => {
     });
     const refused = await client.nextOfType("ack");
     expect(refused.d.ok).toBe(false);
+  });
+
+  it("two browsers racing the same status change earn no ERR on either", async () => {
+    // The multi-device bug: auto-away runs in every attached browser, so a
+    // second browser holding a stale view re-sent a status the session was
+    // already on. F-Chat answered ERR 14 ("wait five seconds between status
+    // changes") — session-scoped, so it surfaced in the browser that had sent
+    // nothing, whose client-side swallow guard could never cover it.
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const browserA = await connectClient();
+    await browserA.hello(token);
+    await browserA.subscribe(identityId);
+    const browserB = await connectClient();
+    await browserB.hello(token);
+    await browserB.subscribe(identityId);
+
+    const setStatus = (
+      client: typeof browserA,
+      id: number,
+      status: "away" | "busy" | "online",
+      statusmsg: string,
+    ) => {
+      client.send({
+        t: "cmd",
+        id,
+        d: {
+          identityId,
+          action: "status.set",
+          d: { status, statusmsg },
+        },
+      });
+    };
+    const presence = (client: typeof browserA, status: string) =>
+      client.next(
+        (frame): frame is Extract<ServerFrame, { t: "event" }> =>
+          frame.t === "event" &&
+          frame.d.kind === "presence" &&
+          frame.d.d.character === CHARACTER &&
+          frame.d.d.status === status,
+      );
+
+    setStatus(browserA, 1, "away", "afk");
+    expect((await browserA.nextOfType("ack")).d.ok).toBe(true);
+    await presence(browserA, "away");
+    await presence(browserB, "away");
+
+    // A's activity restores "online"; B, a beat behind, sends the same
+    // restore. The redundant one is acked and re-asserted, never forwarded.
+    setStatus(browserA, 2, "online", "");
+    expect((await browserA.nextOfType("ack")).d.ok).toBe(true);
+    setStatus(browserB, 1, "online", "");
+    expect((await browserB.nextOfType("ack")).d.ok).toBe(true);
+    await presence(browserA, "online");
+    await presence(browserB, "online");
+
+    // A real change inside the gate window: acked now, sent when it opens.
+    setStatus(browserB, 2, "busy", "heads down");
+    expect((await browserB.nextOfType("ack")).d.ok).toBe(true);
+    await presence(browserA, "busy");
+    await presence(browserB, "busy");
+
+    // The whole point: no error reached either browser.
+    for (const client of [browserA, browserB]) {
+      await expect(client.nextEvent("error", 0)).rejects.toThrow(/timed out/);
+    }
   });
 
   it("resolves DM presence case-insensitively and fans the LIS roster out as presence.bulk", async () => {

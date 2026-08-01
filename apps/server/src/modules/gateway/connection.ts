@@ -765,6 +765,9 @@ export class GatewayConnection {
         const session = this.#requireSession(identity.id, id);
         if (session) {
           try {
+            // "ok" means accepted, not necessarily already on the wire: the
+            // session drops a no-op and paces a real change past F-Chat's
+            // five-second status gate (ERR 14) — see FchatSession.setStatus.
             await session.setStatus(cmd.d.status, cmd.d.statusmsg);
             this.#ack(id, { ok: true });
           } catch (error) {
