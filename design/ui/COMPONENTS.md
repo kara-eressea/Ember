@@ -60,8 +60,9 @@ function mix(a, b, t) {            // a, b = "#rrggbb"
 
 ### Typography
 - **UI font:** `'IBM Plex Sans', system-ui, sans-serif`
-- **Mono font:** `'IBM Plex Mono', ui-monospace, monospace` — timestamps, nicks, code, server addresses, channel `#`, counts
-- **Message body:** UI sans (this is the "Slate Cozy" choice — the log is line-based but bodies are sans; only timestamp + `<nick>` are mono)
+- **Mono font:** `'IBM Plex Mono', ui-monospace, monospace` — timestamps, code, server addresses, channel `#`, counts
+- **Message body:** UI sans (this is the "Slate Cozy" choice — the log is line-based but bodies are sans; of the log's columns only the timestamp is mono)
+- **Sender names:** UI sans at the message font size, regular weight — *identical* type to the message body they label, distinguished by their nick colour alone. Applies everywhere a name is rendered: log gutter, ad heads, roll lines. (Amended 2026-08-01: nicks were originally specced mono, and a `font: inherit` bug rendered them sans for most of the project's life; when the bug was fixed the user chose the sans they had been living with. Don't put nicks back on mono.)
 - Scale: 10–11px uppercase labels (`.09em` tracking), 12.5–13px body/rows, 13–14px inputs, 15px section titles, 17–18px channel name, 22px dialog titles, 28–46px landing headings.
 
 ### Radius & elevation

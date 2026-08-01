@@ -190,16 +190,20 @@
   color: var(--eb-meta);
 }
 
+/* A sender name is the message body's own type — same sans face, same regular
+   weight, same size (#338: a name and the message it labels read as one line
+   at one size). Its nick colour is the only thing setting it apart, and that
+   is deliberate: the user chose this treatment on 2026-08-01, reversing the
+   design system's original mono-nick spec (design/ui/COMPONENTS.md, amended to
+   match). It is also what they had in practice — the pre-#434 `font: inherit`
+   bug produced it by accident and they preferred it to the mono the spec asked
+   for. So: declare no family and no weight here, inherit the row's. Every
+   sender name wears it — gutter names, the ad head, and the roller mid-
+   sentence in a die line — one name treatment everywhere. Timestamps stay
+   mono; this is about names only. Don't reintroduce mono nicks. */
 .nick {
   flex: none;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  /* The sender name tracks the message body size (#338) — a name and the
-     message it labels read as one line at one size. Only the weight sets it
-     apart. Every sender name wears it: gutter names, the ad head, and the
-     roller mid-sentence in a die line (#409's sans exception for the latter
-     is gone — one name treatment, one size, everywhere). */
   font-size: var(--eb-msg-font, 13px);
-  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -245,10 +249,28 @@
   line-height: 1.38;
 }
 
-/* Fixed timestamp/nick columns so message text lines up (M1 UAT). Long
-   names ellipsize inside the column instead of pushing the body around. */
+/* Fixed timestamp/nick columns so message text lines up (M1 UAT). Long names
+   ellipsize inside the column instead of pushing the body around.
+
+   The width is font-relative on purpose. It was a flat 132px until now — a
+   number quietly tuned against 13px sans, which is what .nick happened to be
+   rendering in. #434 changed .nick's font, the px width stayed put, and names
+   that had always fitted started ellipsizing. A device-pixel column silently
+   desyncs from the font it was sized against; an em column cannot, and it
+   tracks the S/M/L message-font ramp (13/14/15px) for free.
+
+   12em because names are sans and therefore proportional — "characters" is
+   not a width. No maximum name length is pinned anywhere authoritative (not
+   the F-Chat protocol or the JSON API notes in design/, not F-List's own
+   exported client and server, chat3client and fserv), so this is measured:
+   20 characters is the longest plausible name, and the widest 20-character
+   mixed-case name renders at ~11.5em in IBM Plex Sans across all three steps.
+   12em clears that with the 0.15em padding below still inside the box.
+   Anything longer ellipsizes — the overflow rules are the safety net, not the
+   common case. */
 .logAligned .messageLine .nick {
-  width: 132px;
+  /* border-box, so the padding below is inside this. */
+  width: 12em;
   /* Right-side breathing room so an italic name's overhang — the slanted top
      of a trailing letter like 'd' — isn't shaved off by the overflow clip at
      the right edge of this right-aligned column (#386). It sits in the padding
