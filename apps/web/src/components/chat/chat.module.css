@@ -171,9 +171,29 @@
   background: var(--eb-hover-main);
 }
 
+/* Rows you sent yourself (ownMessageTint pref): a bare neutral wash, no edge
+   bar and no padding change — ambient orientation in a fast channel, not an
+   alert, so it must stay clearly fainter than .mentionLine below. Keeping the
+   box model identical to .messageLine is what lets consecutive own rows read
+   as one block with no hairline seams. The :hover pair mirrors .mentionLine's
+   reason for existing: .messageLine:hover would otherwise outrank a lone
+   .ownLine and wash the tint away on pointer-over. Chat rows only — ads
+   already carry a bordered block, rolls and system lines are not "yours" in
+   the scanning sense, and a queued send is already set apart by its dimming
+   and countdown. */
+.ownLine {
+  background: var(--eb-own-soft);
+}
+
+.ownLine:hover {
+  background: var(--eb-own-soft-hover);
+}
+
 /* Mention rows (COMPONENTS.md §6): accentSoft wash + inset accent bar.
    --eb-hl* come from the highlightTint pref (set on the log root when a
-   fixed hue is chosen); the fallback follows the live theme accent. */
+   fixed hue is chosen); the fallback follows the live theme accent.
+   Declared AFTER .ownLine so a mention wins at equal specificity if a row
+   ever carries both. */
 .mentionLine,
 .mentionLine:hover {
   padding-top: 4px;
