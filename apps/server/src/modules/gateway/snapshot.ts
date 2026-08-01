@@ -251,9 +251,10 @@ export interface CatchupPlanEntry {
 }
 
 /**
- * Id-space ceiling on how much one conversation replays for a resuming
- * cursor (M7). Ids are global, so this is an upper bound, usually far fewer
- * rows — big enough that any realistic overnight gap replays in full.
+ * Ceiling on how much one conversation replays for a resuming cursor (M7):
+ * a row count on the cursor path (see `budgetFloor`), an id-space bound on
+ * the eager no-cursor path. Big enough that any realistic overnight gap
+ * replays in full.
  */
 export const CATCHUP_REPLAY_BUDGET = 2_000;
 
@@ -269,8 +270,9 @@ export const CATCHUP_EAGER_WINDOW_MS = 24 * 60 * 60 * 1000;
  * Which conversations to replay on sub, and from where. Two regimes:
  *
  * - The client sent a cursor: it holds a contiguous buffer up to that id, so
- *   replay everything past it — this is the headline catch-up path. Cursors
- *   for foreign or deleted conversations are silently dropped (the plan is
+ *   replay everything past it — this is the headline catch-up path, capped
+ *   at CATCHUP_REPLAY_BUDGET *rows* of this conversation. Cursors for
+ *   foreign or deleted conversations are silently dropped (the plan is
  *   built from the identity's own rows).
  * - No cursor (conversation created or first seen while this client was
  *   detached, or a fresh device, or a browser reload): replay the unread
@@ -318,23 +320,28 @@ export async function catchupPlan(
     .where(eq(conversations.identityId, identityId));
 
   const plan: CatchupPlanEntry[] = [];
+  /** Cursors the id-space pre-filter flagged, pending the exact row check. */
+  const overBudget: { convId: string; cursor: number }[] = [];
   for (const row of rows) {
     const cursor = cursors[row.id];
     if (cursor !== undefined) {
       // Replay budget (M2 audit backlog): a cursor from a device that was
-      // detached for weeks would otherwise replay everything since — floor
-      // it in id-space like the no-cursor path. Deeper history stays
-      // reachable through REST backfill on open. Clamp only, never drop:
-      // an up-to-date cursor still gets its empty done frame (the client's
-      // per-conversation sync marker). When the clamp actually moves the
-      // start above the cursor, flag it so the client resets rather than
-      // merging into an interior hole.
-      const clampedStart = Math.max(cursor, row.maxId - CATCHUP_REPLAY_BUDGET);
-      plan.push({
-        convId: row.id,
-        afterId: clampedStart,
-        gap: clampedStart > cursor,
-      });
+      // detached for weeks would otherwise replay everything since. Clamp
+      // only, never drop — an up-to-date cursor still gets its empty done
+      // frame (the client's per-conversation sync marker) — and when the
+      // clamp really moves the start above the cursor, flag it so the client
+      // resets rather than merging into an interior hole.
+      //
+      // Ids are global, so `maxId - BUDGET` is only a cheap PRE-filter here
+      // (#419): on a busy bouncer a long sleep pushes every conversation past
+      // it, including one that received five messages, and a spurious gap
+      // costs that conversation its whole client buffer. Only the conversations
+      // it flags pay for the exact row-count check.
+      if (row.maxId - CATCHUP_REPLAY_BUDGET <= cursor) {
+        plan.push({ convId: row.id, afterId: cursor, gap: false });
+        continue;
+      }
+      overBudget.push({ convId: row.id, cursor });
       continue;
     }
     // Eager floor: nothing older than the day window, and never more than
@@ -351,7 +358,34 @@ export async function catchupPlan(
       plan.push({ convId: row.id, afterId, gap: false });
     }
   }
+  for (const { convId, cursor } of overBudget) {
+    const floor = await budgetFloor(db, convId, cursor);
+    plan.push({ convId, afterId: floor ?? cursor, gap: floor !== null });
+  }
   return plan;
+}
+
+/**
+ * The id to replay strictly-after so a conversation sends at most
+ * CATCHUP_REPLAY_BUDGET rows — i.e. the id of the (budget + 1)-th newest
+ * message past `cursor`. `null` when the conversation holds no more than the
+ * budget since the cursor, which is the whole point: the client's buffer
+ * stays contiguous and no gap is flagged. Walks the
+ * (conversation_id, id desc) index and stops at the offset.
+ */
+async function budgetFloor(
+  db: Db,
+  convId: string,
+  cursor: number,
+): Promise<number | null> {
+  const [row] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.conversationId, convId), gt(messages.id, cursor)))
+    .orderBy(desc(messages.id))
+    .limit(1)
+    .offset(CATCHUP_REPLAY_BUDGET);
+  return row?.id ?? null;
 }
 
 /**

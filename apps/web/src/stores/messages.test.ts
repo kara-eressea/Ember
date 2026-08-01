@@ -201,6 +201,17 @@ describe("scroll-back paging (history.page, #254)", () => {
     expect(useMessagesStore.getState().buffers[CONV]?.messages).toHaveLength(2);
   });
 
+  it("shares one initial page between concurrent backfills", async () => {
+    const store = useMessagesStore.getState();
+    listMessages.mockResolvedValue({ messages: [message(1)], hasMore: false });
+    // The log asks on mount and again the moment `backfilled` clears under it.
+    await Promise.all([
+      store.backfill(IDENTITY, CONV),
+      store.backfill(IDENTITY, CONV),
+    ]);
+    expect(listMessages).toHaveBeenCalledTimes(1);
+  });
+
   it("back-to-present lands on the live tail after a capped scroll-back", async () => {
     const store = useMessagesStore.getState();
     store.resetTo(
@@ -224,5 +235,62 @@ describe("scroll-back paging (history.page, #254)", () => {
     const buffer = useMessagesStore.getState().buffers[CONV];
     expect(buffer?.detachedTail).toBe(false);
     expect(buffer?.messages.map((m) => m.id)).toEqual([11_498, 11_499]);
+  });
+});
+
+// Sleep → wake → reconnect (#419): the catch-up replay outran the budget, so
+// the server flags a gap and the client's prefix is non-contiguous with it.
+describe("catch-up gaps", () => {
+  const IDENTITY = "11111111-1111-7111-8111-111111111111";
+
+  it("keeps the reset buffer readable and the missed span one page away", async () => {
+    const store = useMessagesStore.getState();
+    listMessages.mockResolvedValueOnce({
+      messages: [message(1), message(2)],
+      hasMore: false,
+    });
+    await store.backfill(IDENTITY, CONV);
+
+    store.resetTo(CONV, [message(101), message(102)]);
+    const buffer = useMessagesStore.getState().buffers[CONV];
+    // The replayed window IS renderable. Clearing `backfilled` here dropped
+    // the mounted log to "Loading…" and disabled scroll-back and auto-fill
+    // with it, stranding the conversation until the user navigated away.
+    expect(buffer?.backfilled).toBe(true);
+    expect(buffer?.hasMoreBefore).toBe(true);
+    expect(buffer?.messages.map((m) => m.id)).toEqual([101, 102]);
+
+    cmd.mockResolvedValueOnce({
+      ok: true,
+      messages: [message(99), message(100)],
+      hasMore: true,
+    });
+    await store.loadOlder(IDENTITY, CONV);
+    expect(
+      useMessagesStore.getState().buffers[CONV]?.messages.map((m) => m.id),
+    ).toEqual([99, 100, 101, 102]);
+  });
+
+  it("still asks for a page when the replay is empty", () => {
+    useMessagesStore.getState().resetTo(CONV, []);
+    expect(useMessagesStore.getState().buffers[CONV]?.backfilled).toBe(false);
+  });
+
+  it("drops a replay that would hole a detached history view", async () => {
+    const store = useMessagesStore.getState();
+    listMessages.mockResolvedValueOnce({
+      messages: [message(10), message(11)],
+      hasMore: true,
+    });
+    await store.jumpTo(IDENTITY, CONV, 11);
+    expect(useMessagesStore.getState().buffers[CONV]?.detachedTail).toBe(true);
+    // A detached conversation advertises no cursor, so the server replays
+    // from the read cursor — a span nowhere near this window.
+    expect(resumeCursorsFor([CONV])).toEqual({});
+
+    store.appendMany(CONV, [message(900), message(901)]);
+    expect(
+      useMessagesStore.getState().buffers[CONV]?.messages.map((m) => m.id),
+    ).toEqual([10, 11]);
   });
 });
