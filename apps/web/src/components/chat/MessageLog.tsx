@@ -201,16 +201,10 @@ export function MessageLog({
     getItemKey: (index) => rows[index]!.key,
   });
 
-  // Initial page for this conversation (once; live events merge on top).
+  // Open at the tail on every mount / conversation switch.
   useEffect(() => {
     atBottomRef.current = true;
     stickBottomRef.current = true;
-    useMessagesStore
-      .getState()
-      .backfill(identityId, convId)
-      .catch((error: unknown) => {
-        console.error("history backfill failed", error);
-      });
   }, [identityId, convId]);
 
   // Search jump (M9): once the history page is in, scroll the target row
@@ -393,14 +387,36 @@ export function MessageLog({
     };
   }, [rows, virtualizer]);
 
-  // A short buffer never scrolls, so scroll-to-top could never trigger
-  // paging and the backlog would be unreachable (#254). Keep pulling older
-  // pages until the log overflows its viewport or history is exhausted —
-  // the store's hasMoreBefore/loadingOlder guards bound the loop.
   const hasMoreBefore = buffer?.hasMoreBefore === true;
   const backfilled = buffer?.backfilled === true;
   const loadingOlder = buffer?.loadingOlder === true;
-  // Auto-fill progress guard: the row count at the last auto-fill page and a
+
+  // Initial page (live events merge on top). Keyed by `backfilled`, not just
+  // by conversation: a catch-up gap or a back-to-present clears it under a
+  // MOUNTED log, and a conversation-keyed effect would never re-run — the log
+  // sat on "Loading…" with scroll-back and auto-fill both bailing, so the
+  // missed span was unreachable until the user navigated away and back
+  // (#419). The store dedupes concurrent callers onto one request.
+  useEffect(() => {
+    if (backfilled) {
+      return;
+    }
+    useMessagesStore
+      .getState()
+      .backfill(identityId, convId)
+      .catch((error: unknown) => {
+        console.error("history backfill failed", error);
+      });
+  }, [identityId, convId, backfilled]);
+
+  // A short buffer never scrolls, so scroll-to-top could never trigger
+  // paging and the backlog would be unreachable (#254). Keep pulling older
+  // pages until the log overflows its viewport or history is exhausted —
+  // the store's hasMoreBefore/loadingOlder guards bound the loop. This also
+  // heals a gap-reset buffer: the replayed window is short, so the log pages
+  // the missed span back in without the user touching the scrollbar.
+  //
+  // Progress guard: the row count at the last auto-fill page and a
   // run-length of pages that added no visible rows. A backlog of nothing but
   // ignored/merged messages must not page forever (#266).
   const autoFillRowsRef = useRef(0);

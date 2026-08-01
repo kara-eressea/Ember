@@ -33,6 +33,28 @@ const PING_INTERVAL_MS = 30_000;
 const PONG_TIMEOUT_MS = 10_000;
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
+/**
+ * Lifecycle events that mean "this tab may have just come back": the browser
+ * throttles — and around sleep/resume Firefox outright suspends — timers in a
+ * hidden or frozen tab, so the keepalive above can be hours late while the
+ * socket is already dead and the log silently stops updating (#419). These
+ * fire on the way back regardless of what the timers did.
+ */
+const WAKE_WINDOW_EVENTS = ["focus", "online", "pageshow"] as const;
+/** `resume` is Page Lifecycle: a frozen tab thawing. */
+const WAKE_DOCUMENT_EVENTS = ["resume", "visibilitychange"] as const;
+/** A resume fires several wake events at once; collapse them into one probe. */
+const PROBE_DEBOUNCE_MS = 250;
+/**
+ * A socket that has heard nothing for this long when the tab wakes is
+ * suspect — readyState says OPEN either way, so ask it. Well under the
+ * keepalive interval, so any recently-pinged socket answers for free.
+ */
+const PROBE_SILENCE_MS = 5_000;
+/** Pong deadline for a wake probe. Tighter than the keepalive's: the user is
+ * looking at the tab right now, and reconnecting to our own bouncer is cheap
+ * (the ≥10s F-List backoff binds the server's upstream socket, not this one). */
+const PROBE_PONG_TIMEOUT_MS = 3_000;
 
 export interface AckResult {
   ok: boolean;
@@ -66,10 +88,19 @@ export class GatewayClient {
   #pingTimer: ReturnType<typeof setInterval> | undefined;
   #pongTimer: ReturnType<typeof setTimeout> | undefined;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  #probeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Registered while connected, so the singleton owns its own listeners. */
+  #onWake: ((event: Event) => void) | undefined;
+  /** Timestamp of the last inbound frame — the wake probe's staleness test. */
+  #lastFrameAt = 0;
+  /** Timestamp of the last #open(), so a burst of wake events can never
+   * out-run the reconnect backoff it bypasses. */
+  #lastOpenAt = 0;
 
   /** Idempotent: safe to call from every AppShell mount. */
   connect(): void {
     this.#wanted = true;
+    this.#listenForWake();
     if (this.#ws || this.#reconnectTimer) {
       return;
     }
@@ -79,6 +110,7 @@ export class GatewayClient {
   /** Deliberate teardown (sign-out); no reconnect. */
   stop(): void {
     this.#wanted = false;
+    this.#stopListeningForWake();
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = undefined;
@@ -145,6 +177,8 @@ export class GatewayClient {
 
   #open(): void {
     useUiStore.getState().setGatewayStatus("connecting");
+    this.#lastOpenAt = Date.now();
+    this.#lastFrameAt = Date.now();
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${location.host}/gateway`);
     this.#ws = ws;
@@ -166,16 +200,16 @@ export class GatewayClient {
       }
       this.#pingTimer = setInterval(() => {
         this.#sendFrame({ t: "ping" });
-        this.#pongTimer ??= setTimeout(() => {
-          this.#pongTimer = undefined;
-          if (this.#ws === ws) {
-            ws.close(1000, "no pong");
-          }
-        }, PONG_TIMEOUT_MS);
+        // Never push out a deadline already running — a wake probe's is
+        // tighter on purpose.
+        if (this.#pongTimer === undefined) {
+          this.#awaitPong(ws, PONG_TIMEOUT_MS);
+        }
       }, PING_INTERVAL_MS);
     };
 
     ws.onmessage = (event: MessageEvent<string>) => {
+      this.#lastFrameAt = Date.now();
       let frame: ServerFrame;
       try {
         frame = JSON.parse(event.data) as ServerFrame;
@@ -243,6 +277,99 @@ export class GatewayClient {
       return;
     }
     this.#open();
+  }
+
+  // ── wake probing ───────────────────────────────────────────────────────────
+
+  #listenForWake(): void {
+    if (this.#onWake !== undefined || typeof window === "undefined") {
+      return;
+    }
+    const onWake = (event: Event) => {
+      // visibilitychange fires in both directions; going hidden is not a wake.
+      if (event.type === "visibilitychange" && document.hidden) {
+        return;
+      }
+      this.#scheduleProbe();
+    };
+    this.#onWake = onWake;
+    for (const type of WAKE_WINDOW_EVENTS) {
+      window.addEventListener(type, onWake);
+    }
+    for (const type of WAKE_DOCUMENT_EVENTS) {
+      document.addEventListener(type, onWake);
+    }
+  }
+
+  #stopListeningForWake(): void {
+    const onWake = this.#onWake;
+    if (onWake === undefined) {
+      return;
+    }
+    this.#onWake = undefined;
+    for (const type of WAKE_WINDOW_EVENTS) {
+      window.removeEventListener(type, onWake);
+    }
+    for (const type of WAKE_DOCUMENT_EVENTS) {
+      document.removeEventListener(type, onWake);
+    }
+    if (this.#probeTimer) {
+      clearTimeout(this.#probeTimer);
+      this.#probeTimer = undefined;
+    }
+  }
+
+  #scheduleProbe(): void {
+    this.#probeTimer ??= setTimeout(() => {
+      this.#probeTimer = undefined;
+      this.#probe();
+    }, PROBE_DEBOUNCE_MS);
+  }
+
+  /**
+   * The tab is back. Nothing here trusts a timer: whatever the browser did to
+   * them while we were away, this runs off the lifecycle event itself.
+   */
+  #probe(): void {
+    if (!this.#wanted) {
+      return;
+    }
+    const ws = this.#ws;
+    if (ws === undefined) {
+      // Parked in the reconnect backoff (up to 30s) with the user waiting.
+      // The rate floor keeps a flurry of wake events to one attempt.
+      if (Date.now() - this.#lastOpenAt < RECONNECT_MIN_MS) {
+        return;
+      }
+      if (this.#reconnectTimer) {
+        clearTimeout(this.#reconnectTimer);
+        this.#reconnectTimer = undefined;
+      }
+      this.#open();
+      return;
+    }
+    if (ws.readyState !== WebSocket.OPEN) {
+      return; // still opening (or already closing) — onopen/onclose decides
+    }
+    if (Date.now() - this.#lastFrameAt < PROBE_SILENCE_MS) {
+      return; // demonstrably alive
+    }
+    this.#sendFrame({ t: "ping" });
+    this.#awaitPong(ws, PROBE_PONG_TIMEOUT_MS);
+  }
+
+  /** Close `ws` unless some frame arrives within `timeoutMs` (onmessage
+   * clears the deadline — a pong is only the cheapest such frame). */
+  #awaitPong(ws: WebSocket, timeoutMs: number): void {
+    if (this.#pongTimer) {
+      clearTimeout(this.#pongTimer);
+    }
+    this.#pongTimer = setTimeout(() => {
+      this.#pongTimer = undefined;
+      if (this.#ws === ws) {
+        ws.close(1000, "no pong");
+      }
+    }, timeoutMs);
   }
 
   #scheduleReconnect(): void {

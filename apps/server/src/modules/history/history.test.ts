@@ -8,7 +8,7 @@ import {
   type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -1070,27 +1070,26 @@ describe("history pagination", () => {
     expect(remaining.map((r) => r.bbcode)).toEqual(["message 1", "message 2"]);
   });
 
-  it("caps a resuming cursor's replay at the budget (M7)", async () => {
+  it("measures a resuming cursor's budget in rows, not global ids (M7, #419)", async () => {
     const { identityId, conversationId } = await seedConversation(3);
     const [row] = await db
       .select({ maxId: sql<number>`max(${messages.id})`.mapWith(Number) })
       .from(messages)
       .where(eq(messages.conversationId, conversationId));
     const maxId = row!.maxId;
-    // A cursor far beyond the budget is floored AND flagged as a gap (the
-    // client must reset, not merge into the unreachable interior hole).
-    const plan = await catchupPlan(
+    // A quiet conversation on a busy bouncer: ids are global, so an overnight
+    // absence leaves the cursor far behind in id space while this
+    // conversation missed three messages. Nothing was actually clamped, so no
+    // gap — flagging one would cost the client its whole buffer for nothing.
+    const cursor = maxId - CATCHUP_REPLAY_BUDGET - 500;
+    const quiet = await catchupPlan(
       db,
       identityId,
-      { [conversationId]: maxId - CATCHUP_REPLAY_BUDGET - 500 },
+      { [conversationId]: cursor },
       50,
     );
-    expect(plan).toEqual([
-      {
-        convId: conversationId,
-        afterId: maxId - CATCHUP_REPLAY_BUDGET,
-        gap: true,
-      },
+    expect(quiet).toEqual([
+      { convId: conversationId, afterId: cursor, gap: false },
     ]);
     // A near cursor is honored verbatim and carries no gap.
     const near = await catchupPlan(
@@ -1102,6 +1101,43 @@ describe("history pagination", () => {
     expect(near).toEqual([
       { convId: conversationId, afterId: maxId - 1, gap: false },
     ]);
+  });
+
+  it("floors a genuinely over-budget replay and flags the gap (M7)", async () => {
+    const { identityId, conversationId } = await seedConversation(1);
+    const [seed] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId));
+    const cursor = seed!.id;
+    await db.insert(messages).values(
+      Array.from({ length: CATCHUP_REPLAY_BUDGET + 10 }, (_, i) => ({
+        conversationId,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `flood ${String(i)}`,
+      })),
+    );
+
+    const [entry, ...rest] = await catchupPlan(
+      db,
+      identityId,
+      { [conversationId]: cursor },
+      50,
+    );
+    expect(rest).toHaveLength(0);
+    // The client must reset rather than merge into an unreachable hole.
+    expect(entry?.gap).toBe(true);
+    const replayed = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          gt(messages.id, entry!.afterId),
+        ),
+      );
+    expect(replayed).toHaveLength(CATCHUP_REPLAY_BUDGET);
   });
 
   it("exports the whole log as txt, html and json (M5 Away & logs)", async () => {

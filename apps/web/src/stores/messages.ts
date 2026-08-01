@@ -67,7 +67,7 @@ interface MessagesState {
   /**
    * Replace a conversation's buffer with a fresh window (catchup gap): the
    * old prefix is non-contiguous with the replay and would be an unreachable
-   * hole, so drop it and mark older history as REST-backfillable.
+   * hole, so drop it and mark the missed span as scroll-back-reachable.
    */
   resetTo(convId: string, messages: MessageDto[]): void;
   appendPresence(
@@ -115,6 +115,11 @@ let presenceCounter = 0;
  * otherwise stitch disjoint history pages into one buffer with a silent,
  * unreachable hole. */
 const epochs = new Map<string, number>();
+
+/** In-flight initial backfills by conversation. The log asks on mount AND
+ * whenever `backfilled` clears under it, and back-to-present asks directly —
+ * they must share one REST page instead of racing two. */
+const backfilling = new Map<string, Promise<void>>();
 
 function epochOf(convId: string): number {
   return epochs.get(convId) ?? 0;
@@ -178,6 +183,14 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     },
 
     appendMany(convId, messages) {
+      // Same reasoning as appendLive, and it bites here too (#419): a
+      // detached conversation advertises no resume cursor, so the server
+      // replays from the read cursor — a span that need not touch this
+      // window at all. Merging it would stitch an unreachable interior hole
+      // into the history the user is reading; Back to present reloads it.
+      if (get().buffers[convId]?.detachedTail) {
+        return;
+      }
       put(convId, messages);
     },
 
@@ -186,10 +199,16 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       patch(convId, (buffer) => ({
         ...buffer,
         messages: messages.slice(-BUFFER_WINDOW),
-        // Older history is on the server but not in this window — let
-        // scroll-up backfill fetch it contiguously via REST.
+        // Older history is on the server but not in this window — scroll-up
+        // walks the missed span contiguously from the oldest replayed id.
         hasMoreBefore: true,
-        backfilled: false,
+        // The replay IS a usable window, so keep the buffer readable rather
+        // than dropping the log back to "Loading…" (#419): `backfilled`
+        // gates rendering AND every scroll-back path, and the log's initial
+        // fetch is keyed by conversation — clearing this under a MOUNTED log
+        // left the missed span unreachable until the user navigated away and
+        // back. An empty replay has nothing to render, so it still asks.
+        backfilled: messages.length > 0,
         // A catch-up replay IS the live tail — any detached view is over,
         // and a jump target pointing into the destroyed window with it.
         detachedTail: false,
@@ -214,24 +233,34 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     },
 
     async backfill(identityId, convId) {
-      const buffer = get().buffers[convId];
-      if (buffer?.backfilled) {
+      if (get().buffers[convId]?.backfilled) {
         return;
       }
-      const epoch = epochOf(convId);
-      const page = await api.listMessages(identityId, convId, {
-        limit: PAGE_SIZE,
-      });
-      if (epochOf(convId) !== epoch) {
-        return; // the buffer transitioned while we fetched — stale page
+      const inFlight = backfilling.get(convId);
+      if (inFlight) {
+        return inFlight;
       }
-      patch(convId, (current) => ({
-        ...current,
-        // Live events may have raced the fetch — merge, don't replace.
-        messages: merge(current.messages, page.messages),
-        hasMoreBefore: page.hasMore,
-        backfilled: true,
-      }));
+      const epoch = epochOf(convId);
+      const load = api
+        .listMessages(identityId, convId, { limit: PAGE_SIZE })
+        .then((page) => {
+          if (epochOf(convId) !== epoch) {
+            return; // the buffer transitioned while we fetched — stale page
+          }
+          patch(convId, (current) => ({
+            ...current,
+            // Live events may have raced the fetch — merge, don't replace.
+            messages: merge(current.messages, page.messages),
+            hasMoreBefore: page.hasMore,
+            backfilled: true,
+          }));
+        });
+      backfilling.set(convId, load);
+      try {
+        await load;
+      } finally {
+        backfilling.delete(convId);
+      }
     },
 
     async loadOlder(identityId, convId) {
@@ -344,6 +373,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
 
     reset() {
       epochs.clear();
+      backfilling.clear();
       set({ buffers: {}, jumpTarget: undefined });
     },
   };
