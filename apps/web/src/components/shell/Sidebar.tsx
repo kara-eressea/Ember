@@ -1396,6 +1396,7 @@ function SocialSections({
         character={character}
         glyph={glyph}
         unread={dm?.unread ?? 0}
+        pinned={dm?.pinned ?? false}
         active={dm !== undefined && dm.convId === activeConvId}
         drag={rowDrag(section, character.name)}
         onContextMenu={(event) => {
@@ -1492,6 +1493,7 @@ function SocialRow({
   character,
   glyph,
   unread,
+  pinned = false,
   active,
   drag,
   onContextMenu,
@@ -1500,6 +1502,9 @@ function SocialRow({
   character: SocialCharacter;
   glyph: string;
   unread: number;
+  /** The partner's DM pin (#290): the row moved out of Direct messages, so
+   * this is the only place the pin — and its offline keep-alive — shows. */
+  pinned?: boolean;
   active: boolean;
   drag?: RowDrag;
   onContextMenu: (event: ReactMouseEvent) => void;
@@ -1572,6 +1577,7 @@ function SocialRow({
         {glyph}
       </span>
       <span className={styles.navLabel}>{character.name}</span>
+      {pinned && <span className={styles.navPin}>⚲</span>}
       {unread > 0 && (
         <span className={styles.navTrail}>
           <span
