@@ -39,6 +39,20 @@ export function flashTitle(): void {
   window.addEventListener("focus", stopTitleFlash);
 }
 
+/**
+ * Set the tab title, keeping a running flash in step. The flash captured the
+ * title it must restore, so a new title mid-flash has to move that baseline —
+ * otherwise regaining focus would restore a stale unread count. While the
+ * flash owns `document.title` the next tick (≤1s) paints the new baseline.
+ */
+export function setBaseTitle(title: string): void {
+  if (flashTimer !== undefined) {
+    baseTitle = title;
+    return;
+  }
+  document.title = title;
+}
+
 export function stopTitleFlash(): void {
   if (flashTimer === undefined) {
     return;

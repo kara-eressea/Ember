@@ -6,7 +6,7 @@ import type {
   IdentitySession,
   IdentitySummary,
 } from "../stores/sessions.js";
-import { unreadBadgeCount } from "./favicon-badge.js";
+import { unreadIndicator } from "./favicon-badge.js";
 
 function summary(
   id: string,
@@ -46,11 +46,22 @@ function slice(overrides: Partial<IdentitySession>): IdentitySession {
   };
 }
 
-function channel(unread: number, mentions: number): ChannelView {
+function muted(
+  convIds: string[] = [],
+  identityIds: string[] = [],
+): IdentitySession["prefs"] {
   return {
-    convId: "c",
-    key: "c",
-    title: "c",
+    ...PREFS_DEFAULTS,
+    mutedConvIds: convIds,
+    mutedIdentityIds: identityIds,
+  };
+}
+
+function channel(unread: number, mentions: number, convId = "c"): ChannelView {
+  return {
+    convId,
+    key: convId,
+    title: convId,
     description: "",
     mode: "both",
     oplist: [],
@@ -66,9 +77,9 @@ function channel(unread: number, mentions: number): ChannelView {
   };
 }
 
-function dm(unread: number): DmView {
+function dm(unread: number, convId = "d"): DmView {
   return {
-    convId: "d",
+    convId,
     partner: "Nyx",
     title: "Nyx",
     online: true,
@@ -83,49 +94,147 @@ function dm(unread: number): DmView {
   };
 }
 
-describe("unreadBadgeCount", () => {
-  it("is zero with no identities", () => {
-    expect(unreadBadgeCount(undefined, {})).toBe(0);
-    expect(unreadBadgeCount([], {})).toBe(0);
+describe("unreadIndicator", () => {
+  it("is clear with no identities", () => {
+    expect(unreadIndicator(undefined, {})).toEqual({ count: 0, dot: false });
+    expect(unreadIndicator([], {})).toEqual({ count: 0, dot: false });
   });
 
   it("counts DM unreads plus channel mentions for a synced slice", () => {
     const sessions = {
       "id-1": slice({
-        channels: { a: channel(5, 2), b: channel(3, 1) },
-        dms: { d1: dm(4), d2: dm(1) },
+        channels: { a: channel(5, 2, "a"), b: channel(3, 1, "b") },
+        dms: { d1: dm(4, "d1"), d2: dm(1, "d2") },
       }),
     };
-    // 4 + 1 DM unreads, 2 + 1 channel mentions; plain channel unreads ignored.
-    expect(unreadBadgeCount([summary("id-1")], sessions)).toBe(8);
+    // 4 + 1 DM unreads, 2 + 1 channel mentions; plain channel unreads only
+    // matter when nothing is directed at the user.
+    expect(unreadIndicator([summary("id-1")], sessions)).toEqual({
+      count: 8,
+      dot: false,
+    });
   });
 
-  it("excludes channel unreads that never named the user", () => {
+  it("falls back to the dot for channel unreads that never named the user", () => {
     const sessions = {
-      "id-1": slice({ channels: { a: channel(9, 0) }, dms: {} }),
+      "id-1": slice({ channels: { a: channel(9, 0, "a") }, dms: {} }),
     };
-    expect(unreadBadgeCount([summary("id-1")], sessions)).toBe(0);
+    expect(unreadIndicator([summary("id-1")], sessions)).toEqual({
+      count: 0,
+      dot: true,
+    });
   });
 
-  it("falls back to the ready-frame mentions while a slice is unsynced", () => {
+  it("shows nothing when every conversation is read", () => {
+    const sessions = {
+      "id-1": slice({ channels: { a: channel(0, 0, "a") }, dms: { d: dm(0) } }),
+    };
+    expect(unreadIndicator([summary("id-1")], sessions)).toEqual({
+      count: 0,
+      dot: false,
+    });
+  });
+
+  it("drops a muted conversation from both tiers", () => {
+    const sessions = {
+      "id-1": slice({
+        prefs: muted(["a", "d1"]),
+        channels: { a: channel(9, 4, "a"), b: channel(2, 0, "b") },
+        dms: { d1: dm(3, "d1") },
+      }),
+    };
+    // The muted channel's 4 mentions and the muted DM's 3 unreads are gone;
+    // the unmuted channel's plain unread still earns the dot.
+    expect(unreadIndicator([summary("id-1")], sessions)).toEqual({
+      count: 0,
+      dot: true,
+    });
+  });
+
+  it("keeps unmuted conversations counting alongside muted ones", () => {
+    const sessions = {
+      "id-1": slice({
+        prefs: muted(["a"]),
+        channels: { a: channel(9, 4, "a"), b: channel(1, 2, "b") },
+        dms: { d1: dm(3, "d1") },
+      }),
+    };
+    expect(unreadIndicator([summary("id-1")], sessions)).toEqual({
+      count: 5,
+      dot: false,
+    });
+  });
+
+  it("drops a muted identity wholesale", () => {
+    const sessions = {
+      "id-1": slice({
+        prefs: muted([], ["id-1"]),
+        channels: { a: channel(9, 4, "a") },
+        dms: { d1: dm(3, "d1") },
+      }),
+    };
+    expect(unreadIndicator([summary("id-1")], sessions)).toEqual({
+      count: 0,
+      dot: false,
+    });
+  });
+
+  it("drops a muted identity that is still unsynced", () => {
+    const sessions = {
+      "id-1": slice({ prefs: muted([], ["id-2"]) }),
+      "id-2": slice({ identityId: "id-2", synced: false }),
+    };
+    const identities = [
+      summary("id-1"),
+      summary("id-2", { mentions: 7, unread: 9 }),
+    ];
+    expect(unreadIndicator(identities, sessions)).toEqual({
+      count: 0,
+      dot: false,
+    });
+  });
+
+  it("falls back to the ready-frame totals while a slice is unsynced", () => {
     expect(
-      unreadBadgeCount([summary("id-1", { mentions: 3, unread: 12 })], {}),
-    ).toBe(3);
+      unreadIndicator([summary("id-1", { mentions: 3, unread: 12 })], {}),
+    ).toEqual({ count: 3, dot: false });
     expect(
-      unreadBadgeCount([summary("id-1", { mentions: 3 })], {
+      unreadIndicator([summary("id-1", { mentions: 0, unread: 12 })], {
         "id-1": slice({ synced: false }),
       }),
-    ).toBe(3);
+    ).toEqual({ count: 0, dot: true });
   });
 
   it("sums across multiple identities", () => {
     const sessions = {
-      "id-1": slice({ dms: { d: dm(2) }, channels: { a: channel(0, 1) } }),
+      "id-1": slice({
+        dms: { d: dm(2) },
+        channels: { a: channel(0, 1, "a") },
+      }),
     };
     const identities = [
       summary("id-1"),
       summary("id-2", { mentions: 5 }), // unsynced
     ];
-    expect(unreadBadgeCount(identities, sessions)).toBe(2 + 1 + 5);
+    expect(unreadIndicator(identities, sessions)).toEqual({
+      count: 2 + 1 + 5,
+      dot: false,
+    });
+  });
+
+  it("reads the mute lists from any synced slice", () => {
+    // Prefs are per app account; the identity carrying the muted conversation
+    // need not be the one whose slice we happened to read them from.
+    const sessions = {
+      "id-1": slice({ prefs: muted(["a"]) }),
+      "id-2": slice({
+        identityId: "id-2",
+        prefs: muted(["a"]),
+        channels: { a: channel(4, 2, "a") },
+      }),
+    };
+    expect(
+      unreadIndicator([summary("id-1"), summary("id-2")], sessions),
+    ).toEqual({ count: 0, dot: false });
   });
 });
