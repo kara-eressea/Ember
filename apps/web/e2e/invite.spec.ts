@@ -61,7 +61,12 @@ test('character menu "Invite to →" sends CIU for an eligible private room', as
   const menu = page.getByRole("menu", { name: "Nettle Fen menu" });
   await expect(menu).toBeVisible();
 
-  await menu.getByRole("menuitem", { name: /^Invite to/ }).click();
+  // Hover, then click — the real mouse gesture, and the one that used to race:
+  // hover opens the submenu, so a click that toggled shut it again. Spelling
+  // the hover out keeps that ordering fixed instead of load-dependent.
+  const inviteTo = menu.getByRole("menuitem", { name: /^Invite to/ });
+  await inviteTo.hover();
+  await inviteTo.click();
   const submenu = page.getByRole("menu", {
     name: "Invite Nettle Fen to a channel",
   });

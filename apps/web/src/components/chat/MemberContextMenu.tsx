@@ -430,8 +430,12 @@ export function MemberContextMenu({
               role="menuitem"
               aria-haspopup="menu"
               aria-expanded={inviteOpen}
+              // Open-only, never a toggle: the pointer must enter the wrapper
+              // before it can click, so onMouseEnter has already opened the
+              // panel and a toggle would shut it again. Leaving the wrapper is
+              // the mouse's close path; ArrowLeft/Escape the keyboard's.
               onClick={() => {
-                setInviteOpen(!inviteOpen);
+                setInviteOpen(true);
               }}
               onKeyDown={(event) => {
                 if (event.key === "ArrowRight" || event.key === "Enter") {
