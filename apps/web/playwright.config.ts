@@ -4,8 +4,24 @@
 
 import { defineConfig } from "@playwright/test";
 
-export const API_PORT = 39311;
-export const WEB_PORT = 39312;
+function envPort(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${name} must be a port number, got "${raw}"`);
+  }
+  return port;
+}
+
+// Overridable so two working copies (parallel worktrees) can run the suite at
+// the same time instead of the second colliding with the first's stack. The
+// other two ports are already collision-free: fchat-sim binds 0 and
+// testcontainers maps Postgres to a free host port.
+export const API_PORT = envPort("E2E_API_PORT", 39311);
+export const WEB_PORT = envPort("E2E_WEB_PORT", 39312);
 
 export default defineConfig({
   testDir: "./e2e",
