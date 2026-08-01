@@ -10,7 +10,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 
 - Docker (and docker-compose) is available locally — used for Postgres, fchat-sim, and the prod image.
 - Playwright is available for E2E tests.
-- WSL2 (Linux) host.
+- Host OS varies between machines (macOS, Linux/WSL2) — keep scripts and tooling portable, no OS-specific assumptions.
 
 ## Document map
 
