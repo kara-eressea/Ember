@@ -37,7 +37,7 @@ const RECONNECT_MAX_MS = 30_000;
  * Lifecycle events that mean "this tab may have just come back": the browser
  * throttles — and around sleep/resume Firefox outright suspends — timers in a
  * hidden or frozen tab, so the keepalive above can be hours late while the
- * socket is already dead and the log silently stops updating (#419). These
+ * socket is already dead and the log silently stops updating (#432). These
  * fire on the way back regardless of what the timers did.
  */
 const WAKE_WINDOW_EVENTS = ["focus", "online", "pageshow"] as const;

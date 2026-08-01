@@ -4,7 +4,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 
 ## Current state
 
-**Milestones 1–11 shipped (v0.10.0, 2026-07-20)** — the bouncer, web client, self-host hardening, profile viewer/matcher/eicon search, client polish, ads + character search, and the rotation-campaigns + ratings round are implemented and released. Work follows the milestone plan in `design/`: check `design/milestones.md` for current status, then work the next unchecked step (next up: to be planned with the user — the remaining discovery-extras pool and the MX desktop client are the standing candidates). Update the tracker as steps complete.
+**Milestones 1–11 shipped; releases continue past the milestone plan (v0.18.0, 2026-08-01)** — the bouncer, web client, self-host hardening, profile viewer/matcher/eicon search, client polish, ads + character search, and the rotation-campaigns + ratings round are implemented and released; post-milestone work is production bug-fix/polish rounds driven by the user's reports. Check `design/milestones.md` for current status, then work the next unchecked step (next up: to be planned with the user — the remaining discovery-extras pool and the MX desktop client are the standing candidates). Update the tracker as steps complete. Don't trust the version in this paragraph over `git tag`/`gh release list` — check those for the truth, then update this line when cutting a release.
 
 ## Dev environment
 
@@ -40,6 +40,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 - **"EmberChat" is a working title** — keep product name and domains as config/tokens (including the IDN `cname`), never scattered string literals.
 - **Workflow:** `main` always shippable; short-lived `feat/`/`fix/`/`chore/`/`docs/` branches; Conventional Commits; everything via squash-merged PRs gated by CI; no develop/integration branches (see `design/decisions.md` §7).
 - **Code style: idiomatic, current-generation stack.** Write idiomatic TypeScript/React/SQL — follow each tool's own conventions rather than inventing house patterns. Adopt recent stable versions at scaffold time (e.g. TypeScript 7, Postgres 18, current Node LTS) and pin majors; prefer upgrading dependencies over pinning old ones.
+- **Releases:** `gh release create vX.Y.Z` on the main HEAD (lightweight tag; `release.yml` builds the ghcr image with the version baked into `/healthz`, `/api/meta` and the IDN `cversion`). Minor bump when the round includes a feature, patch for fixes-only; package.json versions stay `0.0.0`. Notes are hand-written in the `## New` / `## Fixed` / `## Notes` house style — user-facing phrasing, one line per change, `(#issue, #PR)` refs. Issues and PRs share one number sequence: verify any `#N` with `gh issue view` / `gh pr view` before citing it in notes or code comments. Test-only or docs-only changes don't warrant a release; app changes ship with the next one.
 - UI follows `design/ui/COMPONENTS.md` exactly — style against CSS custom-property tokens, never hard-coded hex; accents are user-swappable.
 
 ## Non-negotiable protocol constraints (F-List developer policy)

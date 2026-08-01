@@ -1070,7 +1070,7 @@ describe("history pagination", () => {
     expect(remaining.map((r) => r.bbcode)).toEqual(["message 1", "message 2"]);
   });
 
-  it("measures a resuming cursor's budget in rows, not global ids (M7, #419)", async () => {
+  it("measures a resuming cursor's budget in rows, not global ids (M7, #432)", async () => {
     const { identityId, conversationId } = await seedConversation(3);
     const [row] = await db
       .select({ maxId: sql<number>`max(${messages.id})`.mapWith(Number) })

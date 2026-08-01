@@ -9,7 +9,7 @@
 //
 // …but the keepalive is a timer, and a hidden or frozen tab's timers are
 // throttled — around sleep/resume Firefox suspends them outright — so nothing
-// runs to notice until the user interacts (#419). jsdom, not node, so the
+// runs to notice until the user interacts (#432). jsdom, not node, so the
 // lifecycle events that must drive the probe instead actually exist.
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -120,7 +120,7 @@ it("keeps a socket whose pongs arrive", async () => {
   expect(FakeSocket.instances).toHaveLength(1);
 });
 
-// ── wake probing (#419) ──────────────────────────────────────────────────────
+// ── wake probing (#432) ──────────────────────────────────────────────────────
 
 const pings = (socket: FakeSocket) =>
   socket.sent.filter((frame) => frame.includes('"ping"'));

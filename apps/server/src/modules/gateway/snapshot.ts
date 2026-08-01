@@ -333,7 +333,7 @@ export async function catchupPlan(
       // resets rather than merging into an interior hole.
       //
       // Ids are global, so `maxId - BUDGET` is only a cheap PRE-filter here
-      // (#419): on a busy bouncer a long sleep pushes every conversation past
+      // (#432): on a busy bouncer a long sleep pushes every conversation past
       // it, including one that received five messages, and a spurious gap
       // costs that conversation its whole client buffer. Only the conversations
       // it flags pay for the exact row-count check.

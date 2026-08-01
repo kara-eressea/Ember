@@ -396,7 +396,7 @@ export function MessageLog({
   // MOUNTED log, and a conversation-keyed effect would never re-run — the log
   // sat on "Loading…" with scroll-back and auto-fill both bailing, so the
   // missed span was unreachable until the user navigated away and back
-  // (#419). The store dedupes concurrent callers onto one request.
+  // (#432). The store dedupes concurrent callers onto one request.
   useEffect(() => {
     if (backfilled) {
       return;
