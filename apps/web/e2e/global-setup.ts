@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { FchatSim } from "@emberchat/fchat-sim";
-import { API_PORT, WEB_PORT } from "../playwright.config.js";
+import { API_PORT, PREVIEW_PORT, WEB_PORT } from "../playwright.config.js";
 
 const SERVER_ENTRY = fileURLToPath(
   new URL("../../server/dist/main.js", import.meta.url),
@@ -128,10 +128,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // The whole parallel suite arrives from one loopback IP; the
         // production per-IP backstop would 429 innocent specs.
         RATE_LIMIT_MAX: "100000",
-        // Browser pages originate from the Vite dev server; the gateway's
-        // WS origin check must know it (Vite proxies /api same-origin, but
-        // the Origin header still names the page's origin).
-        CORS_ORIGIN: `http://127.0.0.1:${String(WEB_PORT)}`,
+        // Browser pages originate from the Vite dev server — or from `vite
+        // preview` serving the built bundle, which the caret projects use.
+        // The gateway's WS origin check must know both (Vite proxies /api
+        // same-origin, but the Origin header still names the page's origin).
+        CORS_ORIGIN: [
+          `http://127.0.0.1:${String(WEB_PORT)}`,
+          `http://127.0.0.1:${String(PREVIEW_PORT)}`,
+        ].join(","),
         // M11 campaign E2E: shrunken rotation timings so a real posted ad
         // lands inside the test budget — legal only against the sim (the
         // config guard refuses these against real F-Chat).

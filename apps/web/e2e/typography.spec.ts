@@ -91,6 +91,32 @@ const diffBox = async ({ a, b }: { a: string; b: string }) => {
     : { top, height: bottom - top + 1, width: right - left + 1 };
 };
 
+/**
+ * The inline composer's caret, read off the DOM.
+ *
+ * The empty document is the hard case: its line holds no text node at all,
+ * only CM's placeholder widget and the zero-width `img` buffers CM wraps
+ * uneditable widgets in — and every engine sizes a *native* caret off a
+ * different piece of that scaffolding (Blink the line box, WebKit the
+ * widget's box, Gecko the buffer image's baseline). That is why the editor
+ * draws its own caret now, and why this reads `.cm-cursor` instead of filming
+ * pixels: an editor-drawn caret is one element with one height in every
+ * engine, so the assertion is the same everywhere and needs no compositor.
+ * The painted measurements below still run — they are what proves the drawn
+ * cursor is also the one on screen.
+ */
+async function drawnCaretHeight(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const cursors = document.querySelectorAll(".cm-cursor");
+    if (cursors.length !== 1) {
+      throw new Error(
+        `expected one drawn caret, found ${String(cursors.length)}`,
+      );
+    }
+    return cursors[0]!.getBoundingClientRect().height;
+  });
+}
+
 /** The message-font ramp, as the Appearance pane spells it (FONT_RAMP_PX). */
 const FONT_STEPS = [
   ["S", 13],
@@ -333,11 +359,19 @@ test("the empty composer's caret fills the line box in both input modes", async 
   await expect(page.getByTestId("inline-composer")).toBeVisible();
 
   const editor = page.getByLabel("Message", { exact: true });
-  await editor.click();
+  // Focus the way a user does — a click on the input bar's chrome, which the
+  // composer forwards through focusAtCoords (#317, #396) — not by driving the
+  // editor directly, so the selection lands where it lands in the app.
+  await page.getByTitle("Attachments arrive later").click();
   await expect(editor).toBeFocused();
+  // The whole point of an editor-drawn caret: empty and typed are the same
+  // caret, so an empty composer can never show a shorter one again.
+  const emptyDrawn = await drawnCaretHeight(page);
+  expect(emptyDrawn).toBeGreaterThanOrEqual(MIN_CARET_PX);
   const emptyEditor = await caretBox(page, editor);
   expect(emptyEditor.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
   await page.keyboard.type("x");
+  expect(await drawnCaretHeight(page)).toBeCloseTo(emptyDrawn, 1);
   expect(emptyEditor.height).toBeGreaterThanOrEqual(
     (await caretBox(page, editor)).height,
   );
@@ -472,8 +506,17 @@ test.describe("firefox", () => {
       }
 
       const input = page.getByLabel("Message", { exact: true });
-      await input.click();
+      // As in Chromium: the app's own focus path, a click on the bar chrome.
+      await page.getByTitle("Attachments arrive later").click();
       await expect(input).toBeFocused();
+      if (inline) {
+        // Gecko is the engine that made the empty caret's height depend on
+        // CM's widget scaffolding, so read the drawn caret here too: unlike
+        // the film below, it fails with a number rather than a blurred box.
+        expect(await drawnCaretHeight(page)).toBeGreaterThanOrEqual(
+          MIN_CARET_PX,
+        );
+      }
       const box = (await input.boundingBox())!;
       // The caret sits on the first column; a narrow strip keeps every other
       // moving pixel in the app out of the measurement.
