@@ -1,4 +1,4 @@
-// Notification inbox (#466) — the conversation toolbar's tray chip and the
+// Notification inbox (#467) — the conversation toolbar's tray chip and the
 // dropdown behind it.
 //
 // It is a LOG, not a to-do list: entries stay after they are read or acted

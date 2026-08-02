@@ -1,4 +1,4 @@
-// Notification-inbox REST (#466), shaped like the history routes: the same
+// Notification-inbox REST (#467), shaped like the history routes: the same
 // ownedIdentity guard and the same keyset cursor idiom — `?before=<id>`
 // walks toward older rows. Pages come back NEWEST FIRST here, unlike the
 // message pages: the inbox is a dropdown that reads top-down from the most

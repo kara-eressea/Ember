@@ -195,7 +195,7 @@ export async function buildApp({
           return;
         }
         const { type } = command.payload;
-        // The three website events worth keeping (#466): they used to flash
+        // The three website events worth keeping (#467): they used to flash
         // as a transient notice and vanish, so a friend request that arrived
         // while the browser was closed was simply lost. The notice still
         // fires — this only adds the durable log entry behind it.

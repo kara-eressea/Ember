@@ -37,7 +37,7 @@ export function dispatchFrame(frame: ServerFrame): void {
       for (const identity of frame.d.identities) {
         sessions.applySessionStatus(identity.id, identity.sessionStatus);
         // The inbox bell badges from `ready` alone — an identity this tab
-        // never subscribes to still shows what is waiting in it (#466).
+        // never subscribes to still shows what is waiting in it (#467).
         useNotificationsStore
           .getState()
           .applyUnseen(identity.id, identity.notificationsUnseen);
@@ -304,7 +304,7 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       sessions.applyIgnores(identityId, event.d.characters);
       return;
     case "notification.new":
-      // The durable half of an alert (#466). The transient notice, chime and
+      // The durable half of an alert (#467). The transient notice, chime and
       // desktop notification are unchanged and fire on their own paths —
       // this only appends to the log behind them.
       useNotificationsStore

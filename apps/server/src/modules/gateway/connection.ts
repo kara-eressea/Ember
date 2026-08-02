@@ -110,7 +110,7 @@ export interface GatewayConnectionContext {
   readonly hub: GatewayHub;
   readonly outbox: Outbox;
   readonly highlights: Pick<HighlightMatcher, "invalidate">;
-  /** Notification inbox (#466): unseen counts ride `ready` so the bell
+  /** Notification inbox (#467): unseen counts ride `ready` so the bell
    * badges before any sub, and a prefs patch drops its mute cache. */
   readonly notifications: Pick<
     NotificationStore,
@@ -1139,7 +1139,7 @@ export class GatewayConnection {
         prefs: userPreferences.prefs,
       });
     // The highlight matcher caches highlightOwnNick per user (M5); the
-    // notification store caches the mute lists it stamps rows with (#466).
+    // notification store caches the mute lists it stamps rows with (#467).
     this.#ctx.highlights.invalidate(this.#userId);
     this.#ctx.notifications.invalidatePrefs(this.#userId);
     // The CSP folds in every user's image-preview allowlist (#342); rebuild

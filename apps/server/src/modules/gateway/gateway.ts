@@ -44,7 +44,7 @@ const NOOP_LOGGER: SessionLogger = {
 
 export interface GatewayHubOptions {
   readonly history: HistorySink;
-  /** Notification inbox (#466) — its writes fan out as `notification.new`. */
+  /** Notification inbox (#467) — its writes fan out as `notification.new`. */
   readonly notifications?: NotificationStore;
   readonly logger?: SessionLogger;
 }
@@ -412,7 +412,7 @@ export interface GatewayRoutesOptions {
   hub: GatewayHub;
   outbox: Outbox;
   highlights: HighlightMatcher;
-  /** Notification inbox (#466) — unseen counts on `ready`, mute-cache
+  /** Notification inbox (#467) — unseen counts on `ready`, mute-cache
    * invalidation on a prefs patch. */
   notifications: NotificationStore;
   /** Live union of user image-preview allowlists, refreshed on pref writes so

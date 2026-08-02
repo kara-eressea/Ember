@@ -1,4 +1,4 @@
-// Notification-inbox integration tests (#466) against real Postgres
+// Notification-inbox integration tests (#467) against real Postgres
 // (testcontainers) and fchat-sim. Everything goes through the production
 // path — register → add F-List account → start the session — so the sink and
 // the RTB handler attach exactly as they do in production.

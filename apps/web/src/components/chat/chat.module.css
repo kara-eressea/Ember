@@ -2616,7 +2616,7 @@
   border: none;
 }
 
-/* ── Notification inbox (#466) ─────────────────────────────────────────────
+/* ── Notification inbox (#467) ─────────────────────────────────────────────
    The tray chip is an ordinary toolbar IconBtn; the anchor exists only so the
    dropdown can hang off it, exactly like the search field's .searchAnchor. */
 .inboxAnchor {

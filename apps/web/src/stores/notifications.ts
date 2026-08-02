@@ -1,4 +1,4 @@
-// Notification-inbox buffers (#466), one per identity. Same conventions as
+// Notification-inbox buffers (#467), one per identity. Same conventions as
 // the message buffers: a bounded window, dedupe by id, older pages loaded on
 // demand — only the axis is flipped. The inbox is newest-first (a dropdown
 // reads top-down from the latest entry) so live rows PREPEND and `loadOlder`

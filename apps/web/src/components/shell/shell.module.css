@@ -1086,7 +1086,7 @@
 }
 
 /* One-shot highlight when the notification inbox sends the user to the
-   friend-request rows (#466) — the same read as the log's jump flash. */
+   friend-request rows (#467) — the same read as the log's jump flash. */
 @keyframes request-flash {
   0%,
   55% {

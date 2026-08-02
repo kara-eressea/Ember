@@ -98,7 +98,7 @@ async function waitForJoin(
  * frame; the menu re-clamps against its measured size once rendered. */
 const MENU_WIDTH = 216;
 
-/** Friend-request reveal flash (#466) — matches the log's jump flash. */
+/** Friend-request reveal flash (#467) — matches the log's jump flash. */
 const FLASH_MS = 2400;
 
 /** Right-click target of a sidebar people row (DM / friend / bookmark). */
@@ -1412,7 +1412,7 @@ function SocialSections({
   const social = session.social;
   const [loadError, setLoadError] = useState<string>();
   // The notification inbox sends the user here when they click a friend
-  // request (#466). The rows already render regardless of the section's
+  // request (#467). The rows already render regardless of the section's
   // collapsed state, so revealing them is scroll + a one-shot flash.
   const requestsNonce = useUiStore((s) => s.friendRequestsNonce);
   const requestsRef = useRef<HTMLDivElement>(null);

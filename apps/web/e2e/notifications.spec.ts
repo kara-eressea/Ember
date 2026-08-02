@@ -1,4 +1,4 @@
-// Notification inbox (#466): a mention arrives while the user is elsewhere in
+// Notification inbox (#467): a mention arrives while the user is elsewhere in
 // the log, the toolbar's tray chip badges it, opening the inbox clears the
 // badge, and clicking the entry jumps the log back to that exact message —
 // through the same M9 search-jump machinery. Then a friend request sent over
@@ -20,7 +20,7 @@ import {
 } from "./helpers.js";
 
 /** Spec-unique hidden channel. */
-const CHANNEL_KEY = "ADH-466notificationinboxaa11bb22";
+const CHANNEL_KEY = "ADH-467notificationinboxaa11bb22";
 const CHANNEL_TITLE = "Hazelmere Inbox";
 const CHARACTER = "Hazelmere Fen";
 /** Enough ordinary chatter to bury the mention past the 50-row REST page,
@@ -59,7 +59,7 @@ async function sendFriendRequest(
   expect(body.error).toBe("");
 }
 
-test("the inbox logs a mention, badges it, and jumps back to it (#466)", async ({
+test("the inbox logs a mention, badges it, and jumps back to it (#467)", async ({
   page,
 }) => {
   test.setTimeout(180_000);

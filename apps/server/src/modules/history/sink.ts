@@ -78,7 +78,7 @@ export class HistorySink {
   readonly #maxConversationsPerIdentity: number;
   /** Stamps messages.mention at persist time (M5); absent = never mention. */
   readonly #highlights: Pick<HighlightMatcher, "mention"> | undefined;
-  /** Logs stamped mentions into the notification inbox (#466); absent = no
+  /** Logs stamped mentions into the notification inbox (#467); absent = no
    * inbox (tests that only care about persistence). */
   readonly #notifications: Pick<NotificationStore, "recordMention"> | undefined;
   /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */

@@ -579,7 +579,7 @@ export function ChannelHeader({
         <MembersGlyph />
         <span className={styles.headerCount}>{channel.members.length}</span>
       </button>
-      {/* The notification inbox (#466) is per identity, not per conversation
+      {/* The notification inbox (#467) is per identity, not per conversation
           — it rides the right-hand cluster beside search because that is the
           one row always on screen while a conversation is open. */}
       <InboxChip identityId={identityId} />

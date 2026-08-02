@@ -50,7 +50,7 @@ interface UiState {
   characterSearchOpen: boolean;
   /**
    * Bumped when something asks the sidebar to show its friend-request rows
-   * (the notification inbox, #466). A nonce rather than a boolean: asking
+   * (the notification inbox, #467). A nonce rather than a boolean: asking
    * twice in a row must reveal twice, and there is no "off" state to clear.
    */
   friendRequestsNonce: number;

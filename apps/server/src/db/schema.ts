@@ -192,7 +192,7 @@ export const notificationKind = pgEnum("notification_kind", [
 ]);
 
 /**
- * The notification inbox (#466): a per-identity LOG of things that wanted
+ * The notification inbox (#467): a per-identity LOG of things that wanted
  * the user's attention — mentions the sink stamped, and the three website
  * RTB events that used to flash past as transient notices. Rows persist
  * after they are read; "seen" is the watermark in `notificationSeen`, not a

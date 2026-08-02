@@ -446,7 +446,7 @@ export interface MessageDto {
   createdAt: string;
 }
 
-/** What produced a notification-inbox entry (#466). */
+/** What produced a notification-inbox entry (#467). */
 export type NotificationKind = "mention" | "friendrequest" | "note" | "comment";
 
 /**
@@ -691,7 +691,7 @@ export type GatewayEvent =
     }
   | {
       kind: "notification.new";
-      /** A row was appended to the identity's notification inbox (#466).
+      /** A row was appended to the identity's notification inbox (#467).
        * Exactly-once like `message.new` (the client dedupes by id anyway);
        * the badge only counts rows whose `muted` is false. */
       d: { notification: NotificationDto };
@@ -729,7 +729,7 @@ export type ServerFrame =
           unread: number;
           mentions: number;
           /** Notification-inbox rows past the identity's seen watermark,
-           * muted ones excluded (#466) — so the bell badges on a cold load
+           * muted ones excluded (#467) — so the bell badges on a cold load
            * without waiting for a sub or an inbox fetch. Capped like the
            * badge totals; the client clamps display. */
           notificationsUnseen: number;

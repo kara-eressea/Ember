@@ -1,4 +1,4 @@
-// Notification-inbox store (#466): the bounded newest-first buffer, downward
+// Notification-inbox store (#467): the bounded newest-first buffer, downward
 // paging, the live prepend, and what is (and is not) allowed to badge.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";

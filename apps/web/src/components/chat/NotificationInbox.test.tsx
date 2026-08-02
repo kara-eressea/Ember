@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The inbox chip and its dropdown (#466): the badge clears on open (the
+// The inbox chip and its dropdown (#467): the badge clears on open (the
 // Discord model), each kind renders its own line, and a mention row hands the
 // jump machinery the message it points at.
 

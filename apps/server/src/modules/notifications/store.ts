@@ -1,4 +1,4 @@
-// Notification inbox (#466) — the durable half of "things that wanted your
+// Notification inbox (#467) — the durable half of "things that wanted your
 // attention": mentions the history sink stamped, plus the three website RTB
 // events (friend requests, notes, comment replies) that used to flash past
 // as transient notices and vanish.

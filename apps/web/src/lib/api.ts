@@ -348,7 +348,7 @@ export const api = {
     );
   },
 
-  /** One page of the notification inbox (#466), NEWEST FIRST; `before`
+  /** One page of the notification inbox (#467), NEWEST FIRST; `before`
    * walks toward older entries. */
   listNotifications(
     identityId: string,
