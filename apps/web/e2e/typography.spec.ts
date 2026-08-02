@@ -92,40 +92,28 @@ const diffBox = async ({ a, b }: { a: string; b: string }) => {
 };
 
 /**
- * The engine-independent half of "the caret fills the line box", for the
- * inline composer's empty document.
+ * The inline composer's caret, read off the DOM.
  *
- * An empty CodeMirror line holds no text node at all — only the placeholder
- * widget and the zero-width `img` buffers CM draws around every uneditable
- * widget. With nothing to measure, each engine sizes the native caret off one
- * of those boxes, and they don't agree on which: Blink takes the line box,
- * WebKit the widget's own box, Gecko the atomic inline next to the caret.
- * Screenshot and video measurement can only ever pin down the engine in front
- * of us, and the two engines CI can film both happen to pick a full-height
- * box — which is how a caret that is two-thirds height in Gecko survived two
- * rounds of green measurement. So assert the property that makes *every*
- * engine's choice right: no box on the empty line is shorter than the line.
+ * The empty document is the hard case: its line holds no text node at all,
+ * only CM's placeholder widget and the zero-width `img` buffers CM wraps
+ * uneditable widgets in — and every engine sizes a *native* caret off a
+ * different piece of that scaffolding (Blink the line box, WebKit the
+ * widget's box, Gecko the buffer image's baseline). That is why the editor
+ * draws its own caret now, and why this reads `.cm-cursor` instead of filming
+ * pixels: an editor-drawn caret is one element with one height in every
+ * engine, so the assertion is the same everywhere and needs no compositor.
+ * The painted measurements below still run — they are what proves the drawn
+ * cursor is also the one on screen.
  */
-async function shortBoxesOnEmptyLine(page: Page): Promise<string[]> {
+async function drawnCaretHeight(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const line = document.querySelector(".cm-line");
-    if (!line) {
-      throw new Error("the inline composer has no line to measure");
+    const cursors = document.querySelectorAll(".cm-cursor");
+    if (cursors.length !== 1) {
+      throw new Error(
+        `expected one drawn caret, found ${String(cursors.length)}`,
+      );
     }
-    const lineBox = line.getBoundingClientRect().height;
-    return (
-      [...line.querySelectorAll(".cm-widgetBuffer, .cm-placeholder")]
-        .map((el) => ({
-          name: el.className,
-          height: el.getBoundingClientRect().height,
-        }))
-        // Sub-pixel slack: engines round widget boxes differently.
-        .filter((box) => box.height < lineBox - 0.5)
-        .map(
-          (box) =>
-            `${box.name} is ${String(box.height)}px of ${String(lineBox)}px`,
-        )
-    );
+    return cursors[0]!.getBoundingClientRect().height;
   });
 }
 
@@ -376,10 +364,14 @@ test("the empty composer's caret fills the line box in both input modes", async 
   // editor directly, so the selection lands where it lands in the app.
   await page.getByTitle("Attachments arrive later").click();
   await expect(editor).toBeFocused();
-  expect(await shortBoxesOnEmptyLine(page)).toEqual([]);
+  // The whole point of an editor-drawn caret: empty and typed are the same
+  // caret, so an empty composer can never show a shorter one again.
+  const emptyDrawn = await drawnCaretHeight(page);
+  expect(emptyDrawn).toBeGreaterThanOrEqual(MIN_CARET_PX);
   const emptyEditor = await caretBox(page, editor);
   expect(emptyEditor.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
   await page.keyboard.type("x");
+  expect(await drawnCaretHeight(page)).toBeCloseTo(emptyDrawn, 1);
   expect(emptyEditor.height).toBeGreaterThanOrEqual(
     (await caretBox(page, editor)).height,
   );
@@ -518,10 +510,12 @@ test.describe("firefox", () => {
       await page.getByTitle("Attachments arrive later").click();
       await expect(input).toBeFocused();
       if (inline) {
-        // Gecko is the engine that sizes the caret off the atomic inline next
-        // to it, so the structural check matters most here — and unlike the
-        // film below it says *why* a caret came out short.
-        expect(await shortBoxesOnEmptyLine(page)).toEqual([]);
+        // Gecko is the engine that made the empty caret's height depend on
+        // CM's widget scaffolding, so read the drawn caret here too: unlike
+        // the film below, it fails with a number rather than a blurred box.
+        expect(await drawnCaretHeight(page)).toBeGreaterThanOrEqual(
+          MIN_CARET_PX,
+        );
       }
       const box = (await input.boundingBox())!;
       // The caret sits on the first column; a narrow strip keeps every other
@@ -545,109 +539,6 @@ test.describe("firefox", () => {
       // else moving, and the height below would be measuring that instead.
       expect(caret.width).toBeLessThanOrEqual(4);
       expect(caret.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
-    });
-  }
-
-  // TEMPORARY diagnostic matrix — remove before merge.
-  const PROBES: [string, string][] = [
-    ["baseline", ""],
-    [
-      "buffer-base",
-      ".cm-widgetBuffer{height:1em !important;vertical-align:text-top !important}",
-    ],
-    ["buffer-hidden", ".cm-widgetBuffer{display:none !important}"],
-    ["ph-hidden", ".cm-placeholder{display:none !important}"],
-    [
-      "both-hidden",
-      ".cm-widgetBuffer{display:none !important}.cm-placeholder{display:none !important}",
-    ],
-    ["ph-inline", ".cm-placeholder{display:inline !important}"],
-  ];
-  for (const [name, css] of PROBES) {
-    test(`caret probe ${name}`, async ({
-      page,
-      context,
-      browser,
-    }, testInfo) => {
-      test.skip(testInfo.project.name !== "firefox", "gecko diagnostic");
-      test.setTimeout(120_000);
-      await interceptAvatars(page);
-      await provisionAndConnect(page, "kestrel@example.test", "Kestrel Vane");
-      await joinChannel(page, "Typesetting", "Typesetting");
-      await page.getByRole("button", { name: "Preferences" }).click();
-      const prefs = page.getByRole("dialog", { name: "Preferences" });
-      await prefs
-        .getByRole("switch", { name: "Style formatting as you type" })
-        .click();
-      await page.keyboard.press("Escape");
-      await expect(prefs).not.toBeVisible();
-      await expect(page.getByTestId("inline-composer")).toBeVisible();
-      const input = page.getByLabel("Message", { exact: true });
-      await page.getByTitle("Attachments arrive later").click();
-      await expect(input).toBeFocused();
-      if (css) {
-        await page.evaluate((rule) => {
-          const style = document.createElement("style");
-          style.textContent = rule;
-          document.head.append(style);
-        }, css);
-      }
-      await page.waitForTimeout(300);
-      const geom = await page.evaluate(() => {
-        const r = (s: string) => {
-          const el = document.querySelector(s);
-          if (!el) return null;
-          const b = el.getBoundingClientRect();
-          return {
-            top: +b.top.toFixed(2),
-            h: +b.height.toFixed(2),
-            left: +b.left.toFixed(2),
-          };
-        };
-        const line = document.querySelector(".cm-line");
-        const sel = document.getSelection();
-        const cs = line ? getComputedStyle(line) : undefined;
-        return {
-          editor: r(".cm-editor"),
-          content: r(".cm-content"),
-          line: r(".cm-line"),
-          ph: r(".cm-placeholder"),
-          buffer: r(".cm-widgetBuffer"),
-          font: cs
-            ? `${cs.fontFamily} / ${cs.fontSize} / ${cs.lineHeight}`
-            : "?",
-          plexLoaded: document.fonts.check('13.5px "IBM Plex Sans"'),
-          anchor: `${sel?.anchorNode?.nodeName ?? "?"}[${(sel?.anchorNode as Element | null)?.className ?? ""}]@${String(sel?.anchorOffset)}`,
-          html: line?.innerHTML.slice(0, 200),
-        };
-      });
-      const box = (await input.boundingBox())!;
-      const region = {
-        x: Math.floor(box.x) - 6,
-        y: Math.floor(box.y) - 10,
-        width: 34,
-        height: Math.ceil(box.height) + 20,
-      };
-      await page.waitForTimeout(2400);
-      const video = page.video()!;
-      await context.close();
-      const file = testInfo.outputPath(`probe-${name}.webm`);
-      await video.saveAs(file);
-      let caret: Box | undefined;
-      try {
-        caret = await caretBoxFromVideo(browser, file, region);
-      } catch {
-        caret = undefined;
-      }
-      const abs = caret
-        ? {
-            top: caret.top + region.y,
-            bottom: caret.top + region.y + caret.height - 1,
-            height: caret.height,
-            width: caret.width,
-          }
-        : null;
-      console.log(`\n##GECKO## ${name} ${JSON.stringify({ abs, geom })}`);
     });
   }
 });

@@ -26,6 +26,7 @@ import {
   Decoration,
   EditorView,
   keymap,
+  drawSelection,
   placeholder as cmPlaceholder,
   ViewPlugin,
   WidgetType,
@@ -120,8 +121,7 @@ const inlineDecorations = ViewPlugin.fromClass(
 );
 
 // Whole-pixel line box, exactly like the textarea's, so the caret is never
-// clipped against the scroller edge (#408). It is loose for the 13.5px face
-// (1.48em), which is why cm-widgetBuffer below has to be pinned to it.
+// clipped against the scroller edge (#408).
 const LINE_HEIGHT_PX = 20;
 
 // At rest the editor is the textarea (chat.module.css .composerInput): same
@@ -135,33 +135,25 @@ const theme = EditorView.theme({
     fontSize: "13.5px",
     lineHeight: `${String(LINE_HEIGHT_PX)}px`,
   },
-  ".cm-content": {
-    padding: "1px 2px",
-    fontFamily: "inherit",
-    caretColor: "var(--eb-text)",
-  },
+  ".cm-content": { padding: "1px 2px", fontFamily: "inherit" },
   ".cm-line": { padding: "0" },
-  // An empty document has no text node anywhere on the line — only CM's
-  // scaffolding: the placeholder widget and the zero-width `img` buffers CM
-  // draws around every uneditable widget. With no text to measure, each
-  // engine sizes the native caret off one of those boxes instead (Blink the
-  // line box, WebKit the widget's own box, Gecko the adjacent atomic
-  // inline), so a short one among them is a short caret — until the first
-  // keystroke makes a text node and the caret snaps to full height (#408
-  // round three). The buffer is the short one: CM's base theme gives it
-  // `1em` (13.5px) at `text-top`, which is a normal editor's line box but
-  // only 68% of ours. Pin it to the line box — top-aligned, so a buffer next
-  // to a taller widget (an eicon) still never grows the line.
-  ".cm-widgetBuffer": {
-    height: `${String(LINE_HEIGHT_PX)}px`,
-    verticalAlign: "top",
-  },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "inherit",
     lineHeight: "inherit",
     maxHeight: "160px",
     overflowY: "auto",
+  },
+  // The editor draws its own caret and selection (drawSelection below); these
+  // are the two elements that replaces them with. 1px to match the textarea's
+  // native caret, in the same ink.
+  ".cm-cursor": {
+    borderLeftColor: "var(--eb-text)",
+    borderLeftWidth: "1px",
+    marginLeft: "-0.5px",
+  },
+  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+    background: "var(--eb-accent-soft)",
   },
   ".cm-placeholder": { color: "var(--eb-meta)" },
   // Hide the placeholder on focus (#393), mirroring the textarea path so the
@@ -311,6 +303,33 @@ export default function InlineEditor(props: InlineEditorProps) {
             ...historyKeymap,
             ...defaultKeymap,
           ]),
+          // The caret is drawn by the editor, not by the browser (#408, four
+          // rounds). An empty document has no text node anywhere on the line
+          // — only CM's scaffolding: the placeholder widget and the
+          // zero-width `img` buffers CM wraps every uneditable widget in. With
+          // no text to measure, each engine sizes and places the *native*
+          // caret off a different part of that scaffolding, and none of them
+          // agrees:
+          //
+          //   Blink   takes the line box            → 20px
+          //   WebKit  takes the widget's own box    → 20px, 17.5px if that
+          //                                           box is made inline
+          //   Gecko   takes the buffer image frame, and draws the font's
+          //           ascent/descent around *that image's baseline*
+          //
+          // which makes the buffer's `vertical-align` load-bearing in Gecko
+          // alone: at CM's default `text-top` it lands on the text baseline
+          // (18px, correct), but round three pinned the buffer to the line box
+          // at `top` to satisfy Blink/WebKit reasoning, which moved its
+          // baseline to the bottom of the line box and dropped Gecko's caret
+          // to 15 visible pixels — measured on CI, three engines, one CSS
+          // declaration apart. There is no arrangement of that scaffolding
+          // that is right in all three by construction, so stop asking the
+          // browser: drawSelection() paints .cm-cursor from CM's own
+          // coordsAtPos and blanks the native caret. Empty and typed then
+          // measure identically in every engine, and the caret is a DOM
+          // element a test can read instead of pixels it has to film.
+          drawSelection(),
           EditorView.lineWrapping,
           inlineDecorations,
           theme,
