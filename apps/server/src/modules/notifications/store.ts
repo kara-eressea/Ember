@@ -280,8 +280,13 @@ export class NotificationStore {
    * (identity_id, id desc) index and stops at UNSEEN_CAP, so a neglected
    * inbox costs the same as a fresh one.
    */
-  async unseenCount(identityId: string): Promise<number> {
-    const watermark = await this.lastSeenId(identityId);
+  async unseenCount(
+    identityId: string,
+    knownWatermark?: number,
+  ): Promise<number> {
+    // Callers that just read or moved the watermark pass it in rather than
+    // paying for the same single-row lookup twice.
+    const watermark = knownWatermark ?? (await this.lastSeenId(identityId));
     const [row] = await this.#db
       .select({ total: sql<number>`count(*)::int` })
       .from(

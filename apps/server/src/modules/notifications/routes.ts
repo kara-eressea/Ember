@@ -105,11 +105,12 @@ export async function notificationsRoutes(
         ...(before === undefined ? {} : { before }),
         limit,
       });
+      const lastSeenId = await notifications.lastSeenId(identity.id);
       return reply.send({
         notifications: page.rows.map(notificationDto),
         hasMore: page.hasMore,
-        lastSeenId: await notifications.lastSeenId(identity.id),
-        unseen: await notifications.unseenCount(identity.id),
+        lastSeenId,
+        unseen: await notifications.unseenCount(identity.id, lastSeenId),
       });
     },
   );
@@ -144,7 +145,7 @@ export async function notificationsRoutes(
         identity.id,
         request.body.lastSeenId,
       );
-      const unseen = await notifications.unseenCount(identity.id);
+      const unseen = await notifications.unseenCount(identity.id, lastSeenId);
       // Multi-device: the inbox is server-held state like every unread
       // counter, so reading it on one browser must clear the bell on the
       // others rather than leaving them badging what the user just read.
