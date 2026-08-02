@@ -91,6 +91,44 @@ const diffBox = async ({ a, b }: { a: string; b: string }) => {
     : { top, height: bottom - top + 1, width: right - left + 1 };
 };
 
+/**
+ * The engine-independent half of "the caret fills the line box", for the
+ * inline composer's empty document.
+ *
+ * An empty CodeMirror line holds no text node at all — only the placeholder
+ * widget and the zero-width `img` buffers CM draws around every uneditable
+ * widget. With nothing to measure, each engine sizes the native caret off one
+ * of those boxes, and they don't agree on which: Blink takes the line box,
+ * WebKit the widget's own box, Gecko the atomic inline next to the caret.
+ * Screenshot and video measurement can only ever pin down the engine in front
+ * of us, and the two engines CI can film both happen to pick a full-height
+ * box — which is how a caret that is two-thirds height in Gecko survived two
+ * rounds of green measurement. So assert the property that makes *every*
+ * engine's choice right: no box on the empty line is shorter than the line.
+ */
+async function shortBoxesOnEmptyLine(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const line = document.querySelector(".cm-line");
+    if (!line) {
+      throw new Error("the inline composer has no line to measure");
+    }
+    const lineBox = line.getBoundingClientRect().height;
+    return (
+      [...line.querySelectorAll(".cm-widgetBuffer, .cm-placeholder")]
+        .map((el) => ({
+          name: el.className,
+          height: el.getBoundingClientRect().height,
+        }))
+        // Sub-pixel slack: engines round widget boxes differently.
+        .filter((box) => box.height < lineBox - 0.5)
+        .map(
+          (box) =>
+            `${box.name} is ${String(box.height)}px of ${String(lineBox)}px`,
+        )
+    );
+  });
+}
+
 /** The message-font ramp, as the Appearance pane spells it (FONT_RAMP_PX). */
 const FONT_STEPS = [
   ["S", 13],
@@ -333,8 +371,12 @@ test("the empty composer's caret fills the line box in both input modes", async 
   await expect(page.getByTestId("inline-composer")).toBeVisible();
 
   const editor = page.getByLabel("Message", { exact: true });
-  await editor.click();
+  // Focus the way a user does — a click on the input bar's chrome, which the
+  // composer forwards through focusAtCoords (#317, #396) — not by driving the
+  // editor directly, so the selection lands where it lands in the app.
+  await page.getByTitle("Attachments arrive later").click();
   await expect(editor).toBeFocused();
+  expect(await shortBoxesOnEmptyLine(page)).toEqual([]);
   const emptyEditor = await caretBox(page, editor);
   expect(emptyEditor.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
   await page.keyboard.type("x");
@@ -472,8 +514,15 @@ test.describe("firefox", () => {
       }
 
       const input = page.getByLabel("Message", { exact: true });
-      await input.click();
+      // As in Chromium: the app's own focus path, a click on the bar chrome.
+      await page.getByTitle("Attachments arrive later").click();
       await expect(input).toBeFocused();
+      if (inline) {
+        // Gecko is the engine that sizes the caret off the atomic inline next
+        // to it, so the structural check matters most here — and unlike the
+        // film below it says *why* a caret came out short.
+        expect(await shortBoxesOnEmptyLine(page)).toEqual([]);
+      }
       const box = (await input.boundingBox())!;
       // The caret sits on the first column; a narrow strip keeps every other
       // moving pixel in the app out of the measurement.

@@ -9,7 +9,9 @@
       "dependsOn": ["^build"]
     },
     "e2e": {
-      "dependsOn": ["^build", "@emberchat/server#build"],
+      // "build" (the web app's own) as well as its dependencies': the caret
+      // specs run against `vite preview`, i.e. the built bundle.
+      "dependsOn": ["build", "^build", "@emberchat/server#build"],
       "cache": false
     }
   }

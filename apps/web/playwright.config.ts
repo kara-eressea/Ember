@@ -22,6 +22,9 @@ function envPort(name: string, fallback: number): number {
 // testcontainers maps Postgres to a free host port.
 export const API_PORT = envPort("E2E_API_PORT", 39311);
 export const WEB_PORT = envPort("E2E_WEB_PORT", 39312);
+// `vite preview` serving apps/web/dist — the bundle a self-host actually
+// ships. The Firefox caret project runs against this one (see below).
+export const PREVIEW_PORT = envPort("E2E_PREVIEW_PORT", WEB_PORT + 1);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -53,6 +56,11 @@ export default defineConfig({
       // straight into a decoded frame.
       use: {
         browserName: "firefox",
+        // …and against `vite preview`, i.e. the bundle a self-host actually
+        // serves: the caret bug was reported off a production deployment and
+        // measured green on the dev server twice, so at least one of the two
+        // caret passes runs on the built output.
+        baseURL: `http://127.0.0.1:${String(PREVIEW_PORT)}`,
         viewport: { width: 1280, height: 720 },
         video: { mode: "on", size: { width: 1280, height: 720 } },
       },
@@ -62,15 +70,29 @@ export default defineConfig({
       grep: /caret/,
     },
   ],
-  webServer: {
-    command: `pnpm exec vite --host 127.0.0.1 --port ${String(WEB_PORT)} --strictPort`,
-    url: `http://127.0.0.1:${String(WEB_PORT)}`,
-    // Generous: on a cold CI runner this window also covers global-setup's
-    // first-time postgres image pull.
-    timeout: 300_000,
-    reuseExistingServer: !process.env.CI,
-    env: {
-      EMBERCHAT_API_PROXY: `http://127.0.0.1:${String(API_PORT)}`,
+  webServer: [
+    {
+      command: `pnpm exec vite --host 127.0.0.1 --port ${String(WEB_PORT)} --strictPort`,
+      url: `http://127.0.0.1:${String(WEB_PORT)}`,
+      // Generous: on a cold CI runner this window also covers global-setup's
+      // first-time postgres image pull.
+      timeout: 300_000,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        EMBERCHAT_API_PROXY: `http://127.0.0.1:${String(API_PORT)}`,
+      },
     },
-  },
+    {
+      // The built bundle, for the caret pass. `turbo e2e` depends on the web
+      // app's own build, so dist/ is always fresh; a bare `playwright test`
+      // needs `pnpm --filter @emberchat/web build` first.
+      command: `pnpm exec vite preview --host 127.0.0.1 --port ${String(PREVIEW_PORT)} --strictPort`,
+      url: `http://127.0.0.1:${String(PREVIEW_PORT)}`,
+      timeout: 300_000,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        EMBERCHAT_API_PROXY: `http://127.0.0.1:${String(API_PORT)}`,
+      },
+    },
+  ],
 });

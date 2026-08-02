@@ -119,6 +119,11 @@ const inlineDecorations = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+// Whole-pixel line box, exactly like the textarea's, so the caret is never
+// clipped against the scroller edge (#408). It is loose for the 13.5px face
+// (1.48em), which is why cm-widgetBuffer below has to be pinned to it.
+const LINE_HEIGHT_PX = 20;
+
 // At rest the editor is the textarea (chat.module.css .composerInput): same
 // font ramp, colors, caret and placeholder from the --eb-* tokens, and the
 // same 160px autogrow cap with the scroller taking over past it.
@@ -128,9 +133,7 @@ const theme = EditorView.theme({
     minWidth: "0",
     color: "var(--eb-text)",
     fontSize: "13.5px",
-    // Whole-pixel line box + a 1px/2px inset, exactly like the textarea, so
-    // the caret is never clipped against the scroller edge (#408).
-    lineHeight: "20px",
+    lineHeight: `${String(LINE_HEIGHT_PX)}px`,
   },
   ".cm-content": {
     padding: "1px 2px",
@@ -138,6 +141,21 @@ const theme = EditorView.theme({
     caretColor: "var(--eb-text)",
   },
   ".cm-line": { padding: "0" },
+  // An empty document has no text node anywhere on the line — only CM's
+  // scaffolding: the placeholder widget and the zero-width `img` buffers CM
+  // draws around every uneditable widget. With no text to measure, each
+  // engine sizes the native caret off one of those boxes instead (Blink the
+  // line box, WebKit the widget's own box, Gecko the adjacent atomic
+  // inline), so a short one among them is a short caret — until the first
+  // keystroke makes a text node and the caret snaps to full height (#408
+  // round three). The buffer is the short one: CM's base theme gives it
+  // `1em` (13.5px) at `text-top`, which is a normal editor's line box but
+  // only 68% of ours. Pin it to the line box — top-aligned, so a buffer next
+  // to a taller widget (an eicon) still never grows the line.
+  ".cm-widgetBuffer": {
+    height: `${String(LINE_HEIGHT_PX)}px`,
+    verticalAlign: "top",
+  },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "inherit",
