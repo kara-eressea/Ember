@@ -2615,3 +2615,12 @@
   background: none;
   border: none;
 }
+
+/* Blocked eicon: the name-chip stand-in for an image the user asked never
+   to see. Dimmed and struck so it reads as suppressed rather than as the
+   name-only display mode, which looks otherwise identical. */
+.eiconBlockedName {
+  color: var(--eb-faint);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}

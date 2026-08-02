@@ -297,6 +297,21 @@ export function useUserPrefs(): UserPrefs {
 }
 
 /**
+ * An identity to write prefs through from render code that has no identity
+ * context of its own (the eicon right-click menu in RichText). Prefs are per
+ * app account, so any synced slice persists for all of them; the active
+ * identity is preferred purely so the optimistic apply lands on the slice
+ * that is on screen. Undefined before anything has synced — callers no-op.
+ */
+export function prefsIdentityId(activeIdentityId?: string): string | undefined {
+  const { sessions } = useSessionsStore.getState();
+  if (activeIdentityId !== undefined && sessions[activeIdentityId]?.synced) {
+    return activeIdentityId;
+  }
+  return Object.entries(sessions).find(([, session]) => session.synced)?.[0];
+}
+
+/**
  * A character's gender as this session currently knows it — present channel
  * members first, then the "seen recently" roster. Undefined when no channel
  * holds the character, so a sender name without a known gender falls back to
