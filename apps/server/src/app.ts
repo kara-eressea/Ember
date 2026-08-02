@@ -60,7 +60,7 @@ import {
   type SessionTuning,
 } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
-import { webStatic } from "./plugins/web-static.js";
+import { runtimeConfigScript, webStatic } from "./plugins/web-static.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -332,8 +332,12 @@ export async function buildApp({
             // The extra-hosts source is a function helmet evaluates per
             // response, so a pref update (which calls registry.refresh())
             // widens the policy without a restart or a per-request DB read.
-            directives: contentSecurityDirectives(() =>
-              imagePreviewHosts.mediaSourceString(),
+            // The script hash is the runtime-config bootstrap webStatic
+            // injects below — derived from the same builder, so the two can
+            // never drift apart.
+            directives: contentSecurityDirectives(
+              () => imagePreviewHosts.mediaSourceString(),
+              [runtimeConfigScript(config.APP_NAME).cspSource],
             ),
           }
         : false,

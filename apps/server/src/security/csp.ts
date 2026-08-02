@@ -114,17 +114,22 @@ export function extraMediaSourceString(unionHosts: readonly string[]): string {
  * `extraMediaSource`, when supplied, is a helmet directive function appended to
  * `img-src` and `media-src` only — evaluated per response so the union of
  * user-added preview hosts (#342) can change (a pref update) without a restart.
- * Every other directive is unchanged.
+ *
+ * `scriptSources` names the inline scripts the served document actually
+ * carries, as `'sha256-…'` hashes — the only way `script-src 'self'` can permit
+ * one. Callers derive them from the script itself (see `runtimeConfigScript`),
+ * never by hand. Every other directive is unchanged.
  */
 export function contentSecurityDirectives(
   extraMediaSource?: (req: IncomingMessage, res: ServerResponse) => string,
+  scriptSources: readonly string[] = [],
 ): Record<string, CspDirectiveEntry[]> {
   const mediaHosts = mediaHostSources();
   const extra: CspDirectiveEntry[] =
     extraMediaSource === undefined ? [] : [extraMediaSource];
   return {
     "default-src": ["'self'"],
-    "script-src": ["'self'"],
+    "script-src": ["'self'", ...scriptSources],
     // React style attributes need inline styles allowed.
     "style-src": ["'self'", "'unsafe-inline'"],
     // Avatars/eicons hotlink from F-List's static host; link previews hotlink
