@@ -664,6 +664,7 @@ describe("message.new and unread", () => {
             autoConnect: true,
             unread: 3,
             mentions: 1,
+            notificationsUnseen: 0,
           },
         ],
       },
@@ -687,6 +688,7 @@ describe("message.new and unread", () => {
       autoConnect: true,
       unread: 0,
       mentions: 0,
+      notificationsUnseen: 0,
     });
     dispatchFrame({
       t: "ready",

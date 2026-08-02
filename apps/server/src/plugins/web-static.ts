@@ -3,6 +3,7 @@
 // index.html gets `window.__CONFIG__` injected at boot so the client never
 // needs a config fetch, and /config.json remains as the documented fallback.
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import fastifyStatic from "@fastify/static";
@@ -14,18 +15,38 @@ export interface WebStaticOptions {
   appName: string;
 }
 
+/**
+ * The `window.__CONFIG__` bootstrap injected into index.html, plus the CSP
+ * source that permits it.
+ *
+ * The script must be inline — it exists precisely so boot doesn't wait on a
+ * `/config.json` round-trip — and `script-src 'self'` blocks inline scripts, so
+ * the policy has to name its hash. Hash rather than nonce: the document is
+ * rendered once at boot and served byte-identical to everyone. Deriving both
+ * halves here is what keeps them paired: change the script and the hash follows
+ * (`web-static.test.ts` re-derives it from the served document as a guard).
+ */
+export function runtimeConfigScript(appName: string): {
+  js: string;
+  cspSource: string;
+} {
+  // <-escape so a hostile APP_NAME can't close the script tag.
+  const json = JSON.stringify({ appName }).replaceAll("<", "\\u003c");
+  const js = `window.__CONFIG__=${json}`;
+  const digest = createHash("sha256").update(js, "utf8").digest("base64");
+  return { js, cspSource: `'sha256-${digest}'` };
+}
+
 export async function webStatic(
   instance: FastifyInstance,
   options: WebStaticOptions,
 ): Promise<void> {
   const runtimeConfig = { appName: options.appName };
-  // <-escape so a hostile APP_NAME can't close the script tag.
-  const configJson = JSON.stringify(runtimeConfig).replaceAll("<", "\\u003c");
   const indexHtml = (
     await readFile(path.join(options.root, "index.html"), "utf8")
   ).replace(
     "</head>",
-    `<script>window.__CONFIG__=${configJson}</script></head>`,
+    `<script>${runtimeConfigScript(options.appName).js}</script></head>`,
   );
 
   await instance.register(fastifyStatic, {

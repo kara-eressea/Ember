@@ -134,6 +134,13 @@
       "when": 1785669774195,
       "tag": "0018_auth-rotation-grace",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785697087874,
+      "tag": "0019_notifications",
+      "breakpoints": true
     }
   ]
 }

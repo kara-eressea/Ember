@@ -51,6 +51,8 @@ import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
+import { NotificationStore } from "./modules/notifications/store.js";
+import { notificationsRoutes } from "./modules/notifications/routes.js";
 import { Outbox } from "./modules/outbox/outbox.js";
 import { SeenMembersStore } from "./modules/seen-members/store.js";
 import {
@@ -58,12 +60,13 @@ import {
   type SessionTuning,
 } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
-import { webStatic } from "./plugins/web-static.js";
+import { runtimeConfigScript, webStatic } from "./plugins/web-static.js";
 
 declare module "fastify" {
   interface FastifyInstance {
     sessions: SessionRegistry;
     history: HistorySink;
+    notifications: NotificationStore;
     outbox: Outbox;
     detachedAway: DetachedAway;
     directory: ChannelDirectory;
@@ -134,8 +137,9 @@ export async function buildApp({
   // Assigned once below; the session-start callback must close over it.
   // eslint-disable-next-line prefer-const -- forward declaration
   let campaignScheduler: CampaignScheduler | undefined;
-  const history = new HistorySink(db, app.log, { highlights });
-  const hub = new GatewayHub({ history, logger: app.log });
+  const notifications = new NotificationStore(db, app.log);
+  const history = new HistorySink(db, app.log, { highlights, notifications });
+  const hub = new GatewayHub({ history, notifications, logger: app.log });
   // Per-identity social lists (#194) — in memory alongside the sessions;
   // a restart just means the first GET refetches.
   const socialCache = new SocialCache();
@@ -191,6 +195,21 @@ export async function buildApp({
           return;
         }
         const { type } = command.payload;
+        // The three website events worth keeping (#467): they used to flash
+        // as a transient notice and vanish, so a friend request that arrived
+        // while the browser was closed was simply lost. The notice still
+        // fires — this only adds the durable log entry behind it.
+        if (type === "friendrequest" || type === "note" || type === "comment") {
+          void notifications.recordRtb(
+            identityId,
+            type,
+            command.payload.character ??
+              command.payload.name ??
+              command.payload.sender ??
+              "",
+            command.payload.subject,
+          );
+        }
         if (type === "bookmarkadd" || type === "bookmarkremove") {
           const name = command.payload.name ?? command.payload.character ?? "";
           if (name === "") {
@@ -234,6 +253,7 @@ export async function buildApp({
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
+  app.decorate("notifications", notifications);
   app.decorate("directory", directory);
   const outbox = new Outbox({ db, sessions, hub, logger: app.log });
   outbox.start();
@@ -312,8 +332,12 @@ export async function buildApp({
             // The extra-hosts source is a function helmet evaluates per
             // response, so a pref update (which calls registry.refresh())
             // widens the policy without a restart or a per-request DB read.
-            directives: contentSecurityDirectives(() =>
-              imagePreviewHosts.mediaSourceString(),
+            // The script hash is the runtime-config bootstrap webStatic
+            // injects below — derived from the same builder, so the two can
+            // never drift apart.
+            directives: contentSecurityDirectives(
+              () => imagePreviewHosts.mediaSourceString(),
+              [runtimeConfigScript(config.APP_NAME).cspSource],
             ),
           }
         : false,
@@ -351,6 +375,12 @@ export async function buildApp({
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(notificationsRoutes, {
+    prefix: "/api/identities",
+    db,
+    notifications,
+    hub,
+  });
   await app.register(directoryRoutes, {
     prefix: "/api/identities",
     db,
@@ -425,6 +455,7 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    notifications,
     imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
