@@ -50,10 +50,13 @@ test("offline DM row hides when read, and the header toggle shows it", async ({
     // unopened → the row hides.
     await page.goto("/app/Sorrel%20Ash");
     dusk.close();
+    // The sidebar has to be on screen for the absent row to mean anything (see
+    // the reattach test below).
+    const header = nav.getByRole("button", { name: "Direct messages" });
+    await expect(header).toBeVisible({ timeout: 15_000 });
     await expect(dmRow).toHaveCount(0, { timeout: 15_000 });
 
     // Right-click the Direct messages header → "Show offline" reveals it.
-    const header = nav.getByRole("button", { name: "Direct messages" });
     await header.click({ button: "right" });
     const menu = page.getByRole("menu", {
       name: "Direct messages section menu",
@@ -98,8 +101,15 @@ test("reattach shows a hidden offline DM row once unread arrives while detached"
 
     // Leave the conversation and take Moss offline: read + offline + unpinned
     // + unopened → the row hides.
-    await page.goto("/app/Bramble%20Fen");
+    await page.goto("/app/Bramble%20Holt");
     moss.close();
+    // Guard before the negative assertion: an identity route that doesn't
+    // resolve renders "This identity does not exist (anymore)" with no sidebar
+    // at all, and `toHaveCount(0)` would pass on the empty shell rather than on
+    // the row being filtered out (it did, for the wrong identity name).
+    await expect(
+      nav.getByRole("button", { name: "Direct messages" }),
+    ).toBeVisible({ timeout: 15_000 });
     await expect(dmRow).toHaveCount(0, { timeout: 15_000 });
 
     // ── Detach: the bouncer holds the session and keeps accruing state ────

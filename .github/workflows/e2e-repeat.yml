@@ -4,6 +4,15 @@
 # suspect specs N times in a row with retries off, and count failures before
 # and after a fix. This runs it on the CI runner instead, for the flakes that
 # only show up there.
+#
+# Use workers=1 for a repeat probe. Repeats of the same spec are independent
+# jobs, so above one worker two copies run at once and log the SAME sim
+# character in — they displace each other (ERR 31) and burn the account's
+# tickets (ERR 4), and every assertion that waits on a message fails. Measured
+# 2026-08-02: catchup+messagelog-tail at --repeat-each=10 --workers=4 gave 19
+# failures in 31 tests with 211 ERR-31/207 ERR-4 in the server log; the same
+# specs at --workers=1 were 20/20 green with zero of either. For parallel-load
+# evidence, repeat the WHOLE suite instead (each spec owns its own characters).
 name: E2E repeat
 
 on:
