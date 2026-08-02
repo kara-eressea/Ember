@@ -295,7 +295,10 @@ test("the empty composer's caret fills the line box in both input modes", async 
   // Gecko never paints the caret into a Playwright screenshot, so caretBox()
   // measures nothing there — Firefox gets the video-based tests at the bottom
   // of this file instead.
-  test.skip(browserName !== "chromium", "screenshot caret diffing is Blink-only");
+  test.skip(
+    browserName !== "chromium",
+    "screenshot caret diffing is Blink-only",
+  );
   test.setTimeout(120_000);
   await interceptAvatars(page);
   await provisionAndConnect(page, "flint@example.test", "Flint Barrow");
@@ -375,7 +378,11 @@ const swingBox = async ({
   const high = new Float64Array(count).fill(-Infinity);
   // The tail of the recording: the composer has been focused and idle since
   // long before it, and one second covers a full blink cycle.
-  for (let time = Math.max(0, video.duration - 1.6); time < video.duration - 0.1; time += 0.05) {
+  for (
+    let time = Math.max(0, video.duration - 1.6);
+    time < video.duration - 0.1;
+    time += 0.05
+  ) {
     video.currentTime = time;
     await new Promise((resolve) => (video.onseeked = resolve));
     context.drawImage(video, 0, 0);
@@ -447,8 +454,11 @@ test.describe("firefox", () => {
       test.skip(browserName !== "firefox", "Chromium is measured above");
       test.setTimeout(120_000);
       await interceptAvatars(page);
+      // Its own character (the Chromium half of this file can be running at
+      // the same time, in another worker), but the same quiet room: these
+      // tests never send a line, so the two halves can't disturb each other.
       await provisionAndConnect(page, "kestrel@example.test", "Kestrel Vane");
-      await joinChannel(page, "Kerning", "Kerning");
+      await joinChannel(page, "Typesetting", "Typesetting");
 
       if (inline) {
         await page.getByRole("button", { name: "Preferences" }).click();
@@ -482,6 +492,9 @@ test.describe("firefox", () => {
       await video.saveAs(file);
 
       const caret = await caretBoxFromVideo(browser, file, region);
+      // A caret is a hairline: anything wider means the strip caught something
+      // else moving, and the height below would be measuring that instead.
+      expect(caret.width).toBeLessThanOrEqual(4);
       expect(caret.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
     });
   }

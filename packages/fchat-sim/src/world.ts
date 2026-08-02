@@ -460,14 +460,6 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Where the letters are counted.",
       npcs: [],
     },
-    // Same, for the Firefox caret tests: their own room, so the two halves of
-    // the typography spec never share a member list.
-    {
-      name: "Kerning",
-      mode: "both",
-      description: "Where the gaps are counted.",
-      npcs: [],
-    },
     {
       name: "ADH-1a2b3c4d5e6f7a8b9c0d",
       title: "Ember Lounge",

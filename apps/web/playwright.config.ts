@@ -57,6 +57,9 @@ export default defineConfig({
         video: { mode: "on", size: { width: 1280, height: 720 } },
       },
       testMatch: ["typography.spec.ts"],
+      // Only the caret tests: the rest of the spec reads computed style, which
+      // no second engine can disagree about.
+      grep: /caret/,
     },
   ],
   webServer: {
