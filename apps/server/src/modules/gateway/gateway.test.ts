@@ -22,6 +22,7 @@ import {
 } from "vitest";
 import { FchatSim, rawDataToString } from "@emberchat/fchat-sim";
 import {
+  parseServerCommand,
   serializeClientCommand,
   serializeServerCommand,
   type ClientCommand,
@@ -3307,5 +3308,82 @@ describe("alert staff (SFC)", () => {
     expect(eventPayload<{ message: string }>(sys).message).toContain(
       "The moderators have been alerted.",
     );
+  });
+});
+
+// TPN dedup/pacing is covered against a dedicated sim in
+// fchat-session.test.ts; what's untested above this line is the gateway
+// plumbing — a browser's cmd reaching the wire, and an inbound TPN reaching
+// every browser attached to the same identity.
+describe("typing telemetry (TPN)", () => {
+  it("puts a browser's typing.set on the wire and fans an inbound TPN to every attached browser", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const browserA = await connectClient();
+    await browserA.hello(token);
+    await browserA.subscribe(identityId);
+    const browserB = await connectClient();
+    await browserB.hello(token);
+    await browserB.subscribe(identityId);
+    const birch = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+
+    // Outbound: the cmd reaches the partner as a TPN naming us.
+    browserA.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "typing.set",
+        d: { character: "Birch Rowan", status: "typing" },
+      },
+    });
+    expect((await browserA.nextOfType("ack")).d).toMatchObject({ ok: true });
+    expect(parseServerCommand(await birch.waitFor("TPN"))).toEqual({
+      cmd: "TPN",
+      payload: { character: CHARACTER, status: "typing" },
+    });
+
+    // Inbound: the partner's own TPN reaches BOTH attached browsers — a
+    // second device must not miss the status the first one sees.
+    birch.send({
+      cmd: "TPN",
+      payload: { character: CHARACTER, status: "paused" },
+    });
+    for (const browser of [browserA, browserB]) {
+      expect(
+        eventPayload<{ character: string; status: string }>(
+          await browser.nextEvent("typing"),
+        ),
+      ).toEqual({ character: "Birch Rowan", status: "paused" });
+    }
+
+    birch.close();
+  });
+
+  it("refuses typing.set for a disconnected session", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // No session started: the telemetry has nowhere to go, and the browser
+    // is told rather than left believing the partner saw it.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "typing.set",
+        d: { character: "Birch Rowan", status: "typing" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d).toMatchObject({
+      ok: false,
+      error: "session not connected",
+    });
   });
 });

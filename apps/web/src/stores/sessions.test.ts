@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { ConversationDto, MemberDto } from "@emberchat/protocol";
-import { useSessionsStore } from "./sessions.js";
+import { useSessionsStore, type IdentitySummary } from "./sessions.js";
 
 const IDENTITY = "11111111-1111-7111-8111-111111111111";
 const CONV = "22222222-2222-7222-8222-222222222222";
@@ -557,5 +557,102 @@ describe("removeConversation (#327)", () => {
     expect(
       useSessionsStore.getState().sessions[IDENTITY]?.channels[KEY],
     ).toBeDefined();
+  });
+});
+
+// The rail's local mirror for REST-driven identity CRUD: `ready` is the
+// authority but only arrives at socket connect, so the picker's own
+// creates/renames/deletes have to land in this tab straight away.
+describe("identity mirror maintenance", () => {
+  const OTHER = "33333333-3333-7333-8333-333333333333";
+
+  function summary(id: string, name: string): IdentitySummary {
+    return { id, name, autoConnect: false, unread: 0, mentions: 0 };
+  }
+
+  const identities = () => useSessionsStore.getState().identities;
+
+  it("appends an identity the ready frame never carried", () => {
+    useSessionsStore.getState().applyReady([summary(IDENTITY, "Amber Vale")]);
+    useSessionsStore.getState().upsertIdentity(summary(OTHER, "Nyx Firemane"));
+
+    expect(identities()?.map((i) => i.name)).toEqual([
+      "Amber Vale",
+      "Nyx Firemane",
+    ]);
+  });
+
+  it("updates an existing identity in place, keeping its rail position", () => {
+    useSessionsStore
+      .getState()
+      .applyReady([summary(IDENTITY, "Amber Vale"), summary(OTHER, "Nyx")]);
+    useSessionsStore.getState().upsertIdentity({
+      ...summary(IDENTITY, "Amber Vale"),
+      autoConnect: true,
+      unread: 4,
+    });
+
+    expect(identities()).toHaveLength(2);
+    expect(identities()?.[0]).toMatchObject({
+      id: IDENTITY,
+      autoConnect: true,
+      unread: 4,
+    });
+  });
+
+  it("seeds the list when an identity arrives before any ready frame", () => {
+    useSessionsStore.getState().upsertIdentity(summary(IDENTITY, "Amber Vale"));
+
+    expect(identities()).toEqual([summary(IDENTITY, "Amber Vale")]);
+  });
+
+  it("leaves the session slices alone on upsert", () => {
+    useSessionsStore.getState().applyReady([summary(IDENTITY, "Amber Vale")]);
+    useSessionsStore
+      .getState()
+      .applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+
+    useSessionsStore
+      .getState()
+      .upsertIdentity({ ...summary(IDENTITY, "Amber Vale"), unread: 1 });
+
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV],
+    ).toBeDefined();
+  });
+
+  it("drops the identity and its session slice together", () => {
+    useSessionsStore
+      .getState()
+      .applyReady([summary(IDENTITY, "Amber Vale"), summary(OTHER, "Nyx")]);
+    useSessionsStore
+      .getState()
+      .applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+
+    useSessionsStore.getState().removeIdentity(IDENTITY);
+
+    expect(identities()?.map((i) => i.id)).toEqual([OTHER]);
+    // A ghost slice would resurface stale state if the id came back.
+    expect(useSessionsStore.getState().sessions[IDENTITY]).toBeUndefined();
+  });
+
+  it("leaves other identities' slices untouched", () => {
+    useSessionsStore
+      .getState()
+      .applyReady([summary(IDENTITY, "Amber Vale"), summary(OTHER, "Nyx")]);
+    useSessionsStore.getState().applyConversation(OTHER, pmConversation("Bea"));
+
+    useSessionsStore.getState().removeIdentity(IDENTITY);
+
+    expect(
+      useSessionsStore.getState().sessions[OTHER]?.dms[CONV],
+    ).toBeDefined();
+  });
+
+  it("is a no-op for an unknown identity", () => {
+    useSessionsStore.getState().applyReady([summary(IDENTITY, "Amber Vale")]);
+    useSessionsStore.getState().removeIdentity(OTHER);
+
+    expect(identities()?.map((i) => i.id)).toEqual([IDENTITY]);
   });
 });
