@@ -212,6 +212,9 @@ export function parseServerCommand(raw: string): ServerCommand | RawCommand {
   if (!parsed.success) {
     return { cmd, raw };
   }
+  // Sound only because every schema is always-bare or never-bare, so
+  // "parsed to undefined" and "typed as payloadless" coincide. Guarded by
+  // src/bare-command-invariant.test.ts.
   return (
     parsed.data === undefined ? { cmd } : { cmd, payload: parsed.data }
   ) as ServerCommand;
