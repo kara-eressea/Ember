@@ -21,6 +21,11 @@ import {
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { FlistAuthError, TicketManager } from "../flist-api/ticket-manager.js";
 import {
+  FRAME_WAIT_MS,
+  INTEGRATION_MS,
+  INTEGRATION_SLOW_MS,
+} from "../../test-support/budgets.js";
+import {
   backoffDelayMs,
   FchatSession,
   MessageTooLongError,
@@ -39,7 +44,7 @@ const PASSWORD = "hunter2";
 
 // CI runners share the box with testcontainers-heavy suites; give the
 // loopback round trips generous room.
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 
@@ -105,7 +110,7 @@ function waitForStatus(
           `timed out waiting for status ${status} (currently ${session.status})`,
         ),
       );
-    }, options.timeoutMs ?? 5000);
+    }, options.timeoutMs ?? FRAME_WAIT_MS);
     const off = session.events.on("status", (event) => {
       if (event.status === status) {
         clearTimeout(timer);
@@ -119,7 +124,7 @@ function waitForStatus(
 function waitForCommand(
   session: FchatSession,
   match: (command: ServerCommand) => boolean,
-  timeoutMs = 5000,
+  timeoutMs = FRAME_WAIT_MS,
 ): Promise<ServerCommand> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -206,7 +211,7 @@ class SimClient {
     this.#socket.send(serializeClientCommand(command));
   }
 
-  async next(timeoutMs = 5000): Promise<string> {
+  async next(timeoutMs = FRAME_WAIT_MS): Promise<string> {
     const queued = this.#queue.shift();
     if (queued !== undefined) {
       return queued;
@@ -900,7 +905,7 @@ describe("FchatSession against fchat-sim", () => {
 
   it(
     "sets own status (STA) and restores it after a reconnect",
-    { timeout: 20_000 },
+    { timeout: INTEGRATION_SLOW_MS },
     async () => {
       const sim = await startSim();
       const session = makeSession(sim, {
@@ -963,7 +968,7 @@ describe("FchatSession against fchat-sim", () => {
             c.payload.status === "away"
           );
         },
-        15_000,
+        FRAME_WAIT_MS,
       );
       await waitForStatus(session, "online", { next: true });
       const restored = await restoredEcho;

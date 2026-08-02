@@ -14,15 +14,24 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { appUsers, authSessions, userPreferences } from "../../db/schema.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+  LOADED_RUNNER_MS,
+} from "../../test-support/budgets.js";
 import { MAX_SESSIONS_PER_USER } from "./routes.js";
 import { SessionJanitor } from "./session-janitor.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
+
+// Container-backed, and argon2 hashing runs on every register/login. The CLI
+// tests below need more still — see LOADED_RUNNER_MS.
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -51,7 +60,7 @@ beforeAll(async () => {
     db,
     logger: false,
   });
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();
@@ -531,7 +540,7 @@ describe("admin CLI", () => {
 
   it(
     "create-user then reset-password round-trips through login",
-    { timeout: 30_000 },
+    { timeout: LOADED_RUNNER_MS },
     async () => {
       const created = await run([
         "create-user",
@@ -591,7 +600,7 @@ describe("admin CLI", () => {
     "refuses duplicates and unknown emails with a nonzero exit",
     // Two CLI child processes with argon2 hashing — same loaded-CI-runner
     // budget as the round-trip test above.
-    { timeout: 30_000 },
+    { timeout: LOADED_RUNNER_MS },
     async () => {
       const dupe = await run([
         "create-user",
