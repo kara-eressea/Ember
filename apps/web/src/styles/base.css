@@ -12,6 +12,15 @@
   --eb-font-ui: calc(13px * var(--eb-font-ui-scale));
   --eb-font-ui-small: calc(12px * var(--eb-font-ui-scale));
   --eb-font-ui-tiny: calc(11px * var(--eb-font-ui-scale));
+
+  /* Height of the app's top bars, border included (border-box everywhere).
+     Defined once because two separate blocks make that line — the sidebar
+     head and the conversation toolbar — and they must end on the same pixel
+     or the hairline across the top of the app steps. Deliberately not
+     scaled by --eb-font-ui-scale: the fixed-size controls in the toolbar
+     (30px IconBtns, the 28px search pill) set the floor, and the chrome type
+     still fits at L. */
+  --eb-topbar-height: 46px;
 }
 
 *,

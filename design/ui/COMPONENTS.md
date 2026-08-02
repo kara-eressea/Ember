@@ -138,7 +138,7 @@ Far-left vertical switch between connected server identities. Background `side2`
 ### 2. Sidebar (unified nav)
 Vertical flex on `side`. Top→bottom: ServerHead · Search · NavScroll (sections) · MeBar.
 
-**ServerHead** — padding 14px, bottom border, baseline-aligned. App name (14px/700) + the running version beside it (mono 10.5px `meta`, e.g. `v0.19.1`). No presence here: the identity rail and the MeBar already carry it. When the server's update check has seen a newer release the version tints `accentText` and becomes the link to the releases page (title `vX.Y.Z available`) — the whole announcement, no banner.
+**ServerHead** — `--eb-topbar-height` tall (the same variable the conversation header uses, so the two bottom borders make one line across the top of the app), `padding: 0 14px`, bottom border, baseline-aligned. App name (14px/700) + the running version beside it (mono 10.5px `meta`, e.g. `v0.19.1`). No presence here: the identity rail and the MeBar already carry it. When the server's update check has seen a newer release the version tints `accentText` and becomes the link to the releases page (title `vX.Y.Z available`) — the whole announcement, no banner.
 
 **Search** — 30px pill, `bg` fill, `border`, `⌕` + "Jump to…" placeholder (`meta`).
 
@@ -160,7 +160,7 @@ One row component, variants by `glyph` + presence. Padding `5px 10px`, margin `1
 - **Data:** `{ kind:'channel'|'dm'|'friend'|'bookmark', label, pinned, muted, presence?, unread?, mention?, active }`.
 
 ### 5. ConversationHeader (channel + DM toolbar)
-One row, both conversation kinds, on `head` with a bottom border: fixed `46px` height, `padding: 0 10px 0 18px`, so the log never shifts when a conversation has no topic. It runs on the **composer toolbar's language** (component 8) — the same 30×30 IconBtn, the same 1×18px `border` cluster dividers — so the top and bottom edges of a conversation read as one instrument. No system emoji anywhere: every action is a stroked inline SVG in `currentColor`.
+One row, both conversation kinds, on `head` with a bottom border: fixed `--eb-topbar-height` (46px) height — shared with the sidebar's ServerHead, which is the other half of the same top line — and `padding: 0 10px 0 18px`, so the log never shifts when a conversation has no topic. It runs on the **composer toolbar's language** (component 8) — the same 30×30 IconBtn, the same 1×18px `border` cluster dividers — so the top and bottom edges of a conversation read as one instrument. No system emoji anywhere: every action is a stroked inline SVG in `currentColor`.
 
 **It is a shell row, not part of the chat column.** The shell grid gains a first row (`auto`, so it collapses to nothing with no conversation open) and the toolbar occupies `grid-column: 3 / -1` — the chat column *and* the right column — so it rides above the member list / profile panel and reaches the window's right edge. When `membersClosed` drops the 4th track it spans the chat column alone, unchanged. It carries `min-width: 0` (the `.main` trick) or its nowrap topic would force the `1fr` track wider than the window, and `position: relative; z-index: 7` so it stacks over the column resize handles instead of letting a 6px drag strip cross the row. The right column therefore has **no head of its own** — the member list opens straight into its filter, and the docked profile panel into its hero.
 
