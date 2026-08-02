@@ -6,12 +6,13 @@
 // so it never flashes away (#193). Dismiss: Esc / click-away; one preview
 // at a time (store).
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   placeBesideInWindow,
   popoverViewport,
   POPOVER_MARGIN,
 } from "../profile/popover.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useLinkPreviewStore } from "../../stores/link-preview.js";
 import styles from "./chat.module.css";
 
@@ -34,21 +35,7 @@ export function LinkPreview() {
   const state: "loading" | "ok" | "error" =
     failedSrc === src ? "error" : loadedSrc === src ? "ok" : "loading";
 
-  useEffect(() => {
-    if (!preview) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        close();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [preview, close]);
+  useEscapeToClose(close, preview !== undefined);
 
   useLayoutEffect(() => {
     const element = panelRef.current;

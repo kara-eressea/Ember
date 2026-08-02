@@ -10,6 +10,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { useAdsStore } from "../../stores/ads.js";
 import type { IdentitySession } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
@@ -102,18 +104,8 @@ export function PostAdsDialog({
     ? Math.min(...eligible.map((c) => c.cooldownUntil))
     : 0;
 
-  useEffect(() => {
-    windowRef.current?.focus();
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useFocusTrap(windowRef);
+  useEscapeToClose(onClose);
 
   // Library on open; the countdown ticks locally.
   useEffect(() => {

@@ -42,6 +42,7 @@ import { resumeStoredSessions } from "./modules/flist-accounts/boot-resume.js";
 import { CredentialStore } from "./modules/flist-accounts/credential-store.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
+import type { GatewayTuning } from "./modules/gateway/connection.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { UpdateChecker } from "./modules/meta/update-check.js";
 import { HighlightMatcher } from "./modules/highlights/matcher.js";
@@ -81,8 +82,8 @@ export interface BuildAppOptions {
   sessionTuning?: SessionTuning;
   /** Test-only clock for the detached-away sweep. */
   detachedAwayNow?: () => number;
-  /** Gateway heartbeat period (test-only; production uses HEARTBEAT_MS). */
-  gatewayHeartbeatMs?: number;
+  /** Test-only gateway connection knobs; production runs the defaults. */
+  gatewayTuning?: GatewayTuning;
   /** Test-only directory cooldown/timeout knobs. */
   directoryTuning?: ChannelDirectoryOptions;
   /** Injectable for tests (drain/inspect the profile budget). */
@@ -96,7 +97,7 @@ export async function buildApp({
   flistApiClient,
   sessionTuning,
   detachedAwayNow,
-  gatewayHeartbeatMs,
+  gatewayTuning,
   directoryTuning,
   characterDataBudget,
 }: BuildAppOptions): Promise<FastifyInstance> {
@@ -431,8 +432,8 @@ export async function buildApp({
     imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
-    ...(process.env.NODE_ENV === "test" && gatewayHeartbeatMs !== undefined
-      ? { heartbeatMs: gatewayHeartbeatMs }
+    ...(process.env.NODE_ENV === "test" && gatewayTuning !== undefined
+      ? { tuning: gatewayTuning }
       : {}),
     // Browsers may open the gateway from the app's own origin or any
     // configured CORS origin; anything else is a hostile page. The two

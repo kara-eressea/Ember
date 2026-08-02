@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import styles from "./modal.module.css";
 
 export function ModalWindow({
@@ -31,10 +32,9 @@ export function ModalWindow({
     onCloseRef.current = onClose;
   });
 
-  useEffect(() => {
-    // Focus the dialog once, on open — not on every parent render.
-    windowRef.current?.focus();
-  }, []);
+  // Focus once on open, keep Tab inside the window, and hand focus back to
+  // whatever opened it on close.
+  useFocusTrap(windowRef);
 
   // Topmost-overlay-wins Escape via the shared stack (nested pickers close
   // before this window does).

@@ -2,7 +2,7 @@
 // the slash commands, formatting markers, and search filters. Opened by the
 // composer's ? button or typing /help — nothing here is fetched.
 
-import { useEffect } from "react";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./chat.module.css";
 
 const SLASH_ROWS: [string, string][] = [
@@ -32,18 +32,8 @@ const SEARCH_ROWS: [string, string][] = [
 ];
 
 export function HelpPanel({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [onClose]);
+  // Shared Escape stack (#442): closes this panel alone, topmost first.
+  useEscapeToClose(onClose);
 
   return (
     <>

@@ -55,3 +55,52 @@ export function orderSocial<T>(
     return name(a).localeCompare(name(b));
   });
 }
+
+/** A row's DM activity: the highlight stamp, plus the newest message id as
+ * the tiebreaker for conversations no highlight ever stamped. */
+export interface RowActivity {
+  highlightedAt: number;
+  newestMessageId: number;
+}
+
+/**
+ * Activity bump for the people sections (#462): rows carrying unread DM
+ * traffic float to the top of their section, most recent first; everything
+ * else keeps the order it arrived in (presence groups + manual order). Same
+ * instinct as the Direct-messages bump above, extended to Friends/Bookmarks
+ * because one-row-per-character (#290) leaves the social row as the only
+ * surface a friend's unread has. Presence deliberately does not gate it — an
+ * offline friend who just wrote outranks idle online ones, consistent with
+ * unread already overriding the offline filter (#329).
+ *
+ * `activity` returns undefined for a row with nothing unread. highlightedAt
+ * leads (a live highlight is the strongest signal, and it is what the DM bump
+ * sorts on) but is 0 unless the bump pref stamped it, so newestMessageId —
+ * monotonic across conversations — decides the rest instead of leaving the
+ * order to jitter.
+ */
+export function bumpUnread<T>(
+  rows: readonly T[],
+  activity: (row: T) => RowActivity | undefined,
+): T[] {
+  return rows
+    .map((row, index) => ({ row, index, activity: activity(row) }))
+    .sort((a, b) => {
+      if ((a.activity === undefined) !== (b.activity === undefined)) {
+        return a.activity === undefined ? 1 : -1;
+      }
+      if (a.activity && b.activity) {
+        const byHighlight = b.activity.highlightedAt - a.activity.highlightedAt;
+        if (byHighlight !== 0) {
+          return byHighlight;
+        }
+        const byMessage =
+          b.activity.newestMessageId - a.activity.newestMessageId;
+        if (byMessage !== 0) {
+          return byMessage;
+        }
+      }
+      return a.index - b.index;
+    })
+    .map((entry) => entry.row);
+}

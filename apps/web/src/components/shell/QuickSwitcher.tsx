@@ -6,6 +6,7 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { IdentitySession } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
 import { rankCandidates, type SwitchCandidate } from "./quick-switch.js";
@@ -31,6 +32,10 @@ export function QuickSwitcher({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // On the shared Escape stack (#442) rather than the input alone: an armed
+  // ambient action behind the palette must not eat the dismissing press.
+  useEscapeToClose(onClose);
 
   const candidates = useMemo<SwitchCandidate[]>(() => {
     const channels = Object.values(session.channels)
@@ -104,9 +109,7 @@ export function QuickSwitcher({
             setActive(0);
           }}
           onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              onClose();
-            } else if (event.key === "ArrowDown") {
+            if (event.key === "ArrowDown") {
               event.preventDefault();
               setActive((index) => Math.min(index + 1, matches.length - 1));
             } else if (event.key === "ArrowUp") {

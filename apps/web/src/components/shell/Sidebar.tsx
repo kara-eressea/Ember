@@ -1,7 +1,8 @@
 // Sidebar (COMPONENTS.md §2–4): ServerHead · toolbar (filter + browser
 // entry points, #196) · sections (Pinned, Channels, Direct Messages,
 // Friends, Bookmarks) · MeBar. Section headings collapse (#168, per-device
-// localStorage); friends/bookmarks sort online-first (#164) and offline
+// localStorage); friends/bookmarks sort online-first (#164) — with unread DM
+// traffic bumping a row to the top of its section (#462) — and offline
 // rows hide behind each section's own show-offline pref (#165, #329), with
 // pinned/unread/open conversations always shown. The social
 // sections load lazily (four upstream F-List calls) and stay fresh via RTB;
@@ -29,6 +30,7 @@ import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { displayVersion, useServerMeta } from "../../lib/use-meta.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
@@ -54,7 +56,12 @@ import {
   showOfflineFor,
   type OfflineSection,
 } from "./offline-filter.js";
-import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
+import {
+  bumpUnread,
+  orderRows,
+  orderSocial,
+  socialNameSet,
+} from "./sidebar-order.js";
 import {
   applyManualOrder,
   clearLegacySidebarOrders,
@@ -376,14 +383,17 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   };
   // Presence grouping (#164) stays the primary key for the people sections —
   // a manual reorder (#391) holds within the online and offline groups, so a
-  // saved order never drags an offline row above the online ones.
+  // saved order never drags an offline row above the online ones. Unread DM
+  // traffic then bumps its row to the top of the section (#462), over both
+  // keys: display position only, the saved order in prefs is untouched, the
+  // same way pinned rows ride above the manual order in Channels/DMs (#169).
   const orderSocialRows = (
     rows: SocialCharacter[],
     section: SidebarSection,
   ): SocialCharacter[] => {
     const saved = sectionOrder(orders, session.identityId, section);
     const byName = (r: SocialCharacter) => r.name.toLowerCase();
-    return [
+    const grouped = [
       ...applyManualOrder(
         rows.filter((r) => r.online),
         byName,
@@ -395,6 +405,15 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         saved,
       ),
     ];
+    return bumpUnread(grouped, (row) => {
+      const dm = dmByPartner.get(row.name.toLowerCase());
+      return dm && dm.unread > 0
+        ? {
+            highlightedAt: dm.highlightedAt,
+            newestMessageId: dm.newestMessageId ?? 0,
+          }
+        : undefined;
+    });
   };
   const friends = orderSocialRows(
     socialRows(session.social?.friends, "friends"),
@@ -820,25 +839,22 @@ function MeStatus({
   const [error, setError] = useState<string>();
   const containerRef = useRef<HTMLSpanElement>(null);
 
-  // Escape / click-outside close the editor, like every other popover.
+  // Escape / click-outside close the editor, like every other popover — the
+  // key via the shared stack (#442) so it beats any armed ambient action.
+  useEscapeToClose(() => {
+    setOpen(false);
+  }, open);
   useEffect(() => {
     if (!open) {
       return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
     }
     function onPointerDown(event: PointerEvent) {
       if (!containerRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     }
-    window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointerDown);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onPointerDown);
     };
   }, [open]);

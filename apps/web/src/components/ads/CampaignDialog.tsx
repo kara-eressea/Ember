@@ -10,6 +10,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CampaignChannelDto } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { useAdsStore } from "../../stores/ads.js";
 import type { IdentitySession } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
@@ -55,22 +57,11 @@ export function CampaignDialog({
   const [now, setNow] = useState(() => Date.now());
   const windowRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    windowRef.current?.focus();
-    // Capture + stopPropagation (the HelpPanel layering pattern): one
-    // Escape must close only this topmost layer, never also consume the
-    // Ad Center's unsaved-draft warning underneath (audit MEDIUM).
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [onClose]);
+  useFocusTrap(windowRef);
+
+  // Topmost overlay on the shared Escape stack (#442): one press closes only
+  // this dialog, never also the Ad Center's unsaved-draft warning underneath.
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     if (!entry?.loaded) {
