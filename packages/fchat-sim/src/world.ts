@@ -410,6 +410,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Flint Barrow"],
     },
+    // The typography spec's Firefox half runs as its own Playwright project,
+    // so it can be in flight while the Chromium half runs — one file, two
+    // workers, which makes the two halves parallel specs for isolation.
+    "kestrel@example.test": {
+      password: "hunter2",
+      characters: ["Kestrel Vane"],
+    },
   },
   channels: [
     {
@@ -447,6 +454,14 @@ export const DEFAULT_WORLD: SimWorld = {
       name: "Typesetting",
       mode: "both",
       description: "Where the letters are counted.",
+      npcs: [],
+    },
+    // Same, for the Firefox caret tests: their own room, so the two halves of
+    // the typography spec never share a member list.
+    {
+      name: "Kerning",
+      mode: "both",
+      description: "Where the gaps are counted.",
       npcs: [],
     },
     {
