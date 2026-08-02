@@ -488,6 +488,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Verity Gracewell"],
     },
+    // Reserved for the sleep/wake give-up E2E (same isolation rules): Fallow
+    // Drowse survives a gateway refused with 4401 while the refresh that
+    // would fix it fails at the network level.
+    "drowse@example.test": {
+      password: "hunter2",
+      characters: ["Fallow Drowse"],
+    },
   },
   channels: [
     {

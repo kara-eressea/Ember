@@ -19,6 +19,14 @@ interface PersistedAuth {
   refreshToken: string;
 }
 
+/**
+ * Why a refresh ended, because "false" was never one answer: only `rejected`
+ * (the server refused the token) means the session is gone. `unavailable` —
+ * network down, 5xx, a proxy blip — is a verdict we never got, and callers
+ * must treat it as "try again later" rather than as a sign-out.
+ */
+export type RefreshOutcome = "ok" | "rejected" | "unavailable";
+
 interface AuthState {
   user: UserDto | undefined;
   accessToken: string | undefined;
@@ -33,8 +41,8 @@ interface AuthState {
     remember: boolean;
   }) => Promise<void>;
   logout: () => Promise<void>;
-  /** Rotates the refresh token; false means the session is gone. */
-  refreshSession: () => Promise<boolean>;
+  /** Rotates the refresh token. */
+  refreshSession: () => Promise<RefreshOutcome>;
   /** Boot: revalidate a persisted session, if any. */
   restore: () => Promise<void>;
 }
@@ -64,7 +72,7 @@ function persist(state: {
 }
 
 /** Single-flight guard: all concurrent callers await one rotation. */
-let refreshInFlight: Promise<boolean> | undefined;
+let refreshInFlight: Promise<RefreshOutcome> | undefined;
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
   user: undefined,
@@ -110,7 +118,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const persisted = loadPersisted();
       const refreshToken = persisted?.refreshToken ?? get().refreshToken;
       if (!refreshToken) {
-        return false;
+        return "rejected"; // nothing to rotate — as final as a refusal
       }
       try {
         const rotated = await api.refresh(refreshToken);
@@ -120,7 +128,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           status: "authenticated",
         });
         persist(get());
-        return true;
+        return "ok";
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 401) {
           // Only a 401 means the session is really gone. Any other failure —
@@ -134,8 +142,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             status: "anonymous",
           });
           localStorage.removeItem(STORAGE_KEY);
+          return "rejected";
         }
-        return false;
+        return "unavailable";
       }
     })().finally(() => {
       refreshInFlight = undefined;
@@ -154,8 +163,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       refreshToken: persisted.refreshToken,
       remember: true,
     });
-    const alive = await get().refreshSession();
-    if (!alive) {
+    // Boot has to reach a verdict either way: an unreachable server leaves
+    // the login form, but keeps the persisted token, so the next boot picks
+    // the session back up without a password.
+    if ((await get().refreshSession()) !== "ok") {
       set({ status: "anonymous" });
     }
   },

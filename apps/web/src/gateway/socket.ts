@@ -82,8 +82,9 @@ export class GatewayClient {
   readonly #acked = new Map<string, number>();
   #wanted = false;
   #backoffMs = RECONNECT_MIN_MS;
-  /** One token refresh per consecutive 4401 — a second one means the account
-   * really is signed out and the auth store redirect takes over. */
+  /** One token refresh per consecutive 4401 — a refused hello *after* a
+   * successful rotation means the account really is signed out. Cleared by
+   * the next `ready`, and by a refresh that never reached the server. */
   #authRetried = false;
   #pingTimer: ReturnType<typeof setInterval> | undefined;
   #pongTimer: ReturnType<typeof setTimeout> | undefined;
@@ -105,6 +106,35 @@ export class GatewayClient {
       return;
     }
     this.#open();
+  }
+
+  /**
+   * The user asked for a reconnect (the sidebar's offline chip). Overrides
+   * every internal reason we might have stopped — a click has to beat a page
+   * reload even for a bug we haven't found yet — and never waits out a
+   * backoff.
+   */
+  reconnectNow(): void {
+    this.#wanted = true;
+    this.#authRetried = false;
+    this.#backoffMs = RECONNECT_MIN_MS;
+    this.#listenForWake();
+    const ws = this.#ws;
+    if (ws === undefined) {
+      if (this.#reconnectTimer) {
+        clearTimeout(this.#reconnectTimer);
+        this.#reconnectTimer = undefined;
+      }
+      this.#open();
+      return;
+    }
+    if (ws.readyState === WebSocket.OPEN) {
+      // Looks connected but the user says otherwise: ask, and let the pong
+      // deadline hand a corpse over to the reconnect.
+      this.#sendFrame({ t: "ping" });
+      this.#awaitPong(ws, PROBE_PONG_TIMEOUT_MS);
+    }
+    // Still CONNECTING: onopen/onclose decides, seconds away.
   }
 
   /** Deliberate teardown (sign-out); no reconnect. */
@@ -259,24 +289,44 @@ export class GatewayClient {
     };
   }
 
-  /** Access token expired or session revoked: refresh once, then retry. */
+  /**
+   * Access token expired or session revoked: refresh once, then retry. Only
+   * the server refusing the refresh token ends this client's career — a
+   * refresh that never got an answer (the laptop woke before the Wi-Fi did)
+   * says nothing about the session, and parking on it left the tab offline
+   * forever with nothing but a reload to fix it.
+   */
   async #handleUnauthorized(): Promise<void> {
     if (this.#authRetried) {
       // Refresh already succeeded once and the gateway still refused —
       // treat as signed out rather than hammering the server.
-      this.#wanted = false;
-      useUiStore.getState().setGatewayStatus("offline");
+      this.#giveUp();
       return;
     }
     this.#authRetried = true;
-    const alive = await useAuthStore.getState().refreshSession();
-    if (!alive || !this.#wanted) {
-      // Really signed out; the auth store redirect handles the rest.
-      this.#wanted = false;
-      useUiStore.getState().setGatewayStatus("offline");
+    const outcome = await useAuthStore.getState().refreshSession();
+    if (!this.#wanted) {
+      return; // stopped under us (sign-out)
+    }
+    if (outcome === "rejected") {
+      this.#giveUp(); // the auth store's redirect takes it from here
+      return;
+    }
+    if (outcome === "unavailable") {
+      // Transient: back to the normal backoff, and let the next attempt's
+      // 4401 try the refresh again.
+      this.#authRetried = false;
+      this.#scheduleReconnect();
       return;
     }
     this.#open();
+  }
+
+  /** Signed out for real: nothing this client does can help until the auth
+   * store has a session again. */
+  #giveUp(): void {
+    this.#wanted = false;
+    useUiStore.getState().setGatewayStatus("offline");
   }
 
   // ── wake probing ───────────────────────────────────────────────────────────
