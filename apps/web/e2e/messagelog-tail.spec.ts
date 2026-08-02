@@ -262,6 +262,84 @@ test("scrolling down to the newest messages clears the unread bar (#415)", async
   }
 });
 
+test("sending from the backlog marks the conversation caught up (#415 family)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "quill@example.test", "Quill Marsh");
+
+  const reed = await SimClient.connect(
+    "wick@example.test",
+    "hunter2",
+    "Wick Marsh",
+  );
+  try {
+    const nav = page.getByRole("navigation");
+    const log = page.getByTestId("message-log");
+    const bar = page.getByTestId("new-messages-bar");
+    // exact: the sidebar's "Message a character" form would substring-match.
+    const input = page.getByLabel("Message", { exact: true });
+
+    // Same setup as the scroll-to-tail case above: a read baseline, then a
+    // tall backlog accrued while away, so the reattached view opens at the
+    // tail with the divider and the bar's unreads far above it.
+    reed.send("PRI", { recipient: "Quill Marsh", message: "baseline hello" });
+    await nav.getByRole("link", { name: /Wick Marsh/ }).click();
+    await expect(log.getByText("baseline hello")).toBeVisible();
+
+    await page.goto("about:blank");
+    for (let i = 1; i <= 40; i += 1) {
+      reed.send("PRI", {
+        recipient: "Quill Marsh",
+        message: `unseen ${seedLine(i)}`,
+      });
+      await delay(70);
+    }
+
+    await page.goto("/identities");
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\//);
+    await nav.getByRole("link", { name: /Wick Marsh/ }).click();
+    await expect(log.getByText("unseen A#40", { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(bar).toBeVisible();
+
+    // Wander up into the backlog, away from the tail.
+    await log.hover();
+    await page.mouse.wheel(0, -1500);
+    await expect(page.getByTestId("jump-to-recent")).toBeVisible();
+
+    // Now just… join in. Sending is the user saying "I am in the present now",
+    // so it counts as catching up exactly like Esc or scrolling down does.
+    await input.fill("never mind the backlog, hello");
+    await input.press("Enter");
+    await expect(
+      log.getByText("never mind the backlog, hello", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The view came back to the tail on its own …
+    await expect
+      .poll(() => distanceFromBottom(page), { timeout: 10_000 })
+      .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
+    await expect(page.getByTestId("jump-to-recent")).not.toBeVisible();
+    // … and the whole unread apparatus is gone: bar, in-log divider, badge.
+    await expect(bar).not.toBeVisible();
+    await expect(page.getByTestId("new-divider")).toHaveCount(0);
+    await expect(
+      nav.getByRole("link", { name: /Wick Marsh/ }).getByTestId("nav-badge"),
+    ).toHaveCount(0);
+    // And it stays gone — the acknowledgement is for the whole visit.
+    await delay(1500);
+    await expect(bar).not.toBeVisible();
+    await expect(page.getByTestId("new-divider")).toHaveCount(0);
+  } finally {
+    reed.close();
+  }
+});
+
 test("new-messages bar shows and jumps when the unreads are off screen (#363/#373)", async ({
   page,
 }) => {

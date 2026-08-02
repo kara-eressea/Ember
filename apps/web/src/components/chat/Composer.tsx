@@ -17,6 +17,7 @@ import {
 import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useMessagesStore } from "../../stores/messages.js";
 import {
   useSessionsStore,
   type IdentitySession,
@@ -621,6 +622,16 @@ export function Composer({
     if (!ack.ok) {
       setError(ack.error ?? "Send failed");
       return;
+    }
+    // Joining in is catching up (#415 family): the user is in the present now,
+    // so the log drops the "new messages" bar and divider, clears the badges,
+    // advances the read cursor and lands at the tail. The gesture is the
+    // SUBMIT — fired here on the hand-off ack rather than on the server echo,
+    // which can lag. A delayed send is excluded on purpose: it releases from
+    // the outbox minutes or hours later, which is no longer a present-tense
+    // gesture and must not silently eat unread the user never saw.
+    if (session.sendDelaySeconds === 0) {
+      useMessagesStore.getState().noteSendCatchUp(convId);
     }
     // Typed eicons count as "used" too — this is also how Recents (and from
     // there Favorites) bootstrap before eicon search exists.
