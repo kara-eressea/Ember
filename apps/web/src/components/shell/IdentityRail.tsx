@@ -20,6 +20,7 @@ import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import {
   useSessionsStore,
   type IdentitySummary,
@@ -178,17 +179,7 @@ function RailMenu({
   const index = identities.findIndex((i) => i.id === identity.id);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useEscapeToClose(onClose);
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {

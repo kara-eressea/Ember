@@ -108,4 +108,59 @@ describe("useEscapeToClose", () => {
     pressEscape();
     expect(handler).not.toHaveBeenCalled();
   });
+
+  // The composer stack from WP-7: the slash popover, the toolbar's colour /
+  // timer / link popover, and the eicon picker opened from inside it are three
+  // overlays that can be open at once over the same message box. Each press
+  // must peel exactly one of them off, innermost first.
+  it("unwinds nested composer layers one press at a time", () => {
+    const slashPopover = vi.fn();
+    const toolbarPopover = vi.fn();
+    const eiconPicker = vi.fn();
+    const view = render(
+      <>
+        <Layer onEscape={slashPopover} />
+        <Layer onEscape={toolbarPopover} />
+        <Layer onEscape={eiconPicker} />
+      </>,
+    );
+
+    pressEscape();
+    expect(eiconPicker).toHaveBeenCalledTimes(1);
+    expect(toolbarPopover).not.toHaveBeenCalled();
+    expect(slashPopover).not.toHaveBeenCalled();
+
+    view.rerender(
+      <>
+        <Layer onEscape={slashPopover} />
+        <Layer onEscape={toolbarPopover} />
+      </>,
+    );
+    pressEscape();
+    expect(toolbarPopover).toHaveBeenCalledTimes(1);
+    expect(slashPopover).not.toHaveBeenCalled();
+
+    view.rerender(<Layer onEscape={slashPopover} />);
+    pressEscape();
+    expect(slashPopover).toHaveBeenCalledTimes(1);
+  });
+
+  // Handlers are allowed not to close (the Ad Center's dirty-draft warning,
+  // the private note's collapse-to-peek): the entry stays on the stack and
+  // still owns the next press — it must not fall through to what is behind.
+  it("keeps the key when a handler collapses instead of closing", () => {
+    const behind = vi.fn();
+    const warnThenClose = vi.fn();
+    render(
+      <>
+        <Layer onEscape={behind} />
+        <Layer onEscape={warnThenClose} />
+      </>,
+    );
+
+    pressEscape();
+    pressEscape();
+    expect(warnThenClose).toHaveBeenCalledTimes(2);
+    expect(behind).not.toHaveBeenCalled();
+  });
 });
