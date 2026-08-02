@@ -1,0 +1,65 @@
+# Flake reproducer, manual trigger only — never on the PR path.
+#
+# The #427 diagnosis was made with exactly this pattern locally: run the
+# suspect specs N times in a row with retries off, and count failures before
+# and after a fix. This runs it on the CI runner instead, for the flakes that
+# only show up there.
+name: E2E repeat
+
+on:
+  workflow_dispatch:
+    inputs:
+      specs:
+        description: 'Spec filter(s), space-separated (e.g. "prefs.spec.ts rp.spec.ts"). Empty = whole suite.'
+        required: false
+        default: ""
+      repeat:
+        description: "Runs per test"
+        required: false
+        default: "5"
+      workers:
+        description: "Parallel workers (CI default is 2)"
+        required: false
+        default: "2"
+
+jobs:
+  repeat:
+    name: e2e-repeat
+    runs-on: ubuntu-latest
+    # Long by construction, but not 6h-of-billing long.
+    timeout-minutes: 90
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox
+      # Playwright directly rather than `turbo e2e`, so the flags reach it
+      # unmangled; `pnpm build` above already produced what the e2e task would
+      # have built. Retries off — a retry is what hides the flake we're
+      # counting. Inputs go through env, never interpolated into the script.
+      - name: Repeat E2E
+        env:
+          SPECS: ${{ inputs.specs }}
+          REPEAT: ${{ inputs.repeat }}
+          WORKERS: ${{ inputs.workers }}
+        run: >-
+          pnpm --filter @emberchat/web exec playwright test
+          --repeat-each="$REPEAT" --workers="$WORKERS" --retries=0
+          $SPECS
+      - name: Upload Playwright report + traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-repeat-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

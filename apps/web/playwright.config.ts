@@ -29,9 +29,20 @@ export const PREVIEW_PORT = envPort("E2E_PREVIEW_PORT", WEB_PORT + 1);
 export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",
-  reporter: process.env.CI ? [["github"], ["list"]] : "list",
+  // The HTML report is what makes a CI flake readable after the fact (which
+  // test, which retry, the attached trace) — the workflow uploads
+  // playwright-report/ unconditionally, so it has to actually be written.
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["html", { open: "never" }]]
+    : "list",
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // Pinned rather than left to default to the runner's core count: CI would
+  // otherwise change parallel load whenever GitHub resizes ubuntu-latest, and
+  // timing-sensitive flakes reproduce differently at different worker counts.
+  // 2 is what the runner gives today, so this is a no-op that stays one
+  // (standing to-do, 2026-08-01).
+  workers: process.env.CI ? 2 : "50%",
   use: {
     baseURL: `http://127.0.0.1:${String(WEB_PORT)}`,
     // Keep a full trace whenever a test fails (including the retry) so CI
