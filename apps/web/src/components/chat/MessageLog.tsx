@@ -60,6 +60,23 @@ const AT_BOTTOM_SLACK_PX = 60;
  * slack so a few pixels of post-jump measurement growth never releases it
  * (which would leave the jump landing short), while a real scroll-up does. */
 const STICK_RELEASE_PX = 120;
+/** How long a real input signal (wheel, touch, scroll key) keeps "the user is
+ * driving the scroll" true. Generous on purpose: trackpad momentum keeps
+ * firing scroll events for a while after the last wheel tick, and the failure
+ * mode of being too SHORT is the bad one — the log yanking a reader back to
+ * the tail mid-scroll. Being too long merely restores the old behaviour for
+ * that instant. */
+const SCROLL_INTENT_WINDOW_MS = 500;
+/** Keys that scroll a focused log. Space (and Shift+Space) page down/up. */
+const SCROLL_KEYS = new Set([
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  "ArrowUp",
+  "ArrowDown",
+  " ",
+]);
 /** Frames to keep re-applying a scroll correction while the newly rendered
  * variable-height rows (ads, grouped messages, dividers) settle their
  * measurements. Small — one paint is rarely enough, a dozen is plenty. */
@@ -187,6 +204,12 @@ export function MessageLog({
    * (scrollTop unchanged, the log grew around it) — only the former releases
    * the bottom-stick (#372). */
   const prevScrollTopRef = useRef(0);
+  /** When the user last gave a scroll input (wheel/touch/scroll key), and
+   * whether a pointer is currently held down on the log. Together these are the
+   * "the user is driving" signal the stick release gates on — see
+   * userDrivingScroll below for why scrollTop deltas alone are not evidence. */
+  const scrollIntentAtRef = useRef(0);
+  const pointerHeldRef = useRef(false);
   /** Anchor a history prepend: the id of the row to keep visually fixed and
    * its distance below the viewport top (in px) captured *before* the
    * prepend. We restore against measured offsets, not the 26px estimate, so
@@ -494,6 +517,72 @@ export function MessageLog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastKey, rows.length, newRowIndex, detachedTail]);
 
+  /** Is the user the one moving the scroll right now?
+   *
+   * A scroll event says the offset changed; it never says who changed it, and
+   * a scrollTop delta is NOT evidence of a reader. The browser moves the log's
+   * scroll constantly on its own: the virtualizer shifts scrollTop whenever a
+   * row re-measures against the flat 26px estimate (its own size-change
+   * adjustment), and any reflow — a width change, a font swap, a late inline
+   * image — does the same. Traces of a log parked exactly at the bottom show
+   * both halves of the old release rule occurring unprompted: scroll events
+   * moving scrollTop UP, and scroll events at a distance-from-bottom in the
+   * thousands. Whenever the two coincided the glue was dropped for good, and
+   * the log then sat at the old tail while messages piled up below it (#411).
+   *
+   * So release requires the one thing the browser cannot fake: a real input.
+   * We gate on the input events themselves rather than on any signal from the
+   * virtualizer — its `scrollAdjustments` is private, and it would only cover
+   * the adjustments IT makes, not reflow or a viewport change. Held pointer
+   * covers scrollbar drags and selection auto-scroll (one pointerdown, then a
+   * long drag); the timed window covers wheel/touch/keys, refreshed by each
+   * tick so trackpad momentum stays inside it.
+   *
+   * The asymmetry matters: too permissive here just restores the previous
+   * behaviour for an instant, while too strict would yank a reader back to the
+   * tail mid-scroll. Every real way to scroll a log is therefore covered. */
+  function userDrivingScroll(): boolean {
+    return (
+      pointerHeldRef.current ||
+      performance.now() - scrollIntentAtRef.current < SCROLL_INTENT_WINDOW_MS
+    );
+  }
+
+  function noteScrollIntent() {
+    scrollIntentAtRef.current = performance.now();
+  }
+
+  // Scroll keys are taken at the window: the log is not focusable itself, so a
+  // keydown that scrolls it lands on whatever inside it has focus (a nick
+  // button) or on the body. Over-broad on purpose — see userDrivingScroll.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (SCROLL_KEYS.has(event.key)) {
+        noteScrollIntent();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  // A pointer released outside the log (or over another element) still ends the
+  // drag, so the "up" side listens at the window rather than on the log.
+  useEffect(() => {
+    function onPointerUp() {
+      pointerHeldRef.current = false;
+      // The scroll a flick or drag started can still be settling.
+      noteScrollIntent();
+    }
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, []);
+
   function onScroll() {
     const el = scrollRef.current;
     if (!el) {
@@ -519,9 +608,9 @@ export function MessageLog({
     atBottomRef.current = bottom;
     setAtBottom(bottom);
     // Hysteresis: reaching the bottom engages the stick; only an upward user
-    // scroll past STICK_RELEASE_PX releases it. Growth-driven distance (scrollTop
-    // unchanged) keeps it engaged, so the bottom-stick closes the gap instead of
-    // the view landing short.
+    // scroll past STICK_RELEASE_PX, made BY THE USER, releases it. Growth-driven
+    // distance (scrollTop unchanged) keeps it engaged, so the bottom-stick closes
+    // the gap instead of the view landing short.
     if (bottom) {
       stickBottomRef.current = true;
       // Scrolling down to the newest messages under your own steam IS catching
@@ -531,7 +620,11 @@ export function MessageLog({
       if (userReachedTail) {
         acknowledgeTail();
       }
-    } else if (movedUp && distanceFromBottom > STICK_RELEASE_PX) {
+    } else if (
+      movedUp &&
+      distanceFromBottom > STICK_RELEASE_PX &&
+      userDrivingScroll()
+    ) {
       stickBottomRef.current = false;
     }
     if (el.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
@@ -870,6 +963,14 @@ export function MessageLog({
         style={styleVars}
         ref={scrollRef}
         onScroll={onScroll}
+        // The "a human is scrolling" evidence the stick release gates on
+        // (userDrivingScroll). These only ever record that an input happened —
+        // none of them touch the scroll position.
+        onWheel={noteScrollIntent}
+        onTouchMove={noteScrollIntent}
+        onPointerDown={() => {
+          pointerHeldRef.current = true;
+        }}
         data-testid="message-log"
       >
         {detachedTail && (

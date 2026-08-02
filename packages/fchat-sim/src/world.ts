@@ -456,6 +456,18 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Almond Fitch"],
     },
+    // Reserved for the stick-release-intent E2E (same isolation rules). Tussock
+    // Fen sits at the tail while the spec synthesizes scrolls with and without
+    // user intent; Haywick Pell is the raw-SimClient partner whose arrivals
+    // prove whether the bottom-stick survived.
+    "tussock@example.test": {
+      password: "hunter2",
+      characters: ["Tussock Fen"],
+    },
+    "haywick@example.test": {
+      password: "hunter2",
+      characters: ["Haywick Pell"],
+    },
   },
   channels: [
     {
@@ -769,6 +781,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Somewhere quiet to step away to.",
       oplist: ["Seedwright Vale"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the stick-release-intent E2E: Haywick Pell talks while
+    // Tussock Fen's log is pushed around with and without user intent. Hidden
+    // and NPC-free — the spec measures scroll geometry, so no other chatter.
+    {
+      name: "ADH-stickintent11aa22bb33",
+      title: "Glasshouse",
+      mode: "chat",
+      description: "Where the glue is tested.",
+      oplist: ["Tussock Fen"],
       npcs: [],
       listed: false,
     },
