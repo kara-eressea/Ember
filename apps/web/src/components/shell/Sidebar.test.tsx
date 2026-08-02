@@ -6,7 +6,7 @@
 // turns the whole treatment off, restoring the denser text-only rows.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
 import { Sidebar } from "./Sidebar.js";
@@ -226,16 +226,33 @@ describe("Sidebar head", () => {
   });
 
   // The head no longer carries "«Character» · online", so the E2E suite reads
-  // the session's presence off the MeBar instead. These hooks are that
-  // contract — renaming them breaks specs jsdom can't run.
-  it("leaves character and status to the MeBar, under stable test hooks", () => {
+  // "the session is online" off the MeBar: its character, plus the status
+  // control that unlocks only once the session connects. This pins that
+  // contract — the specs relying on it can't run in jsdom.
+  it("leaves the character and the session signal to the MeBar", () => {
     const { container } = renderSidebar();
 
-    const meBar = container.querySelector("[data-testid='me-bar']");
-    expect(meBar?.textContent).toContain("Amber Vale");
-    expect(meBar?.querySelector("[data-testid='me-status']")?.textContent).toBe(
-      "online",
+    const meBar = container.querySelector<HTMLElement>(
+      "[data-testid='me-bar']",
     );
+    expect(meBar).not.toBeNull();
+    expect(meBar?.textContent).toContain("Amber Vale");
+    expect(
+      within(meBar!).getByRole("button", { name: "Set status" }),
+    ).toBeEnabled();
+
+    // …and locked before then, or the E2E wait would pass instantly and stop
+    // testing anything.
+    cleanup();
+    render(
+      <MemoryRouter>
+        <Sidebar
+          session={{ ...session(), sessionStatus: "connecting" }}
+          activeConvId={undefined}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "Set status" })).toBeDisabled();
   });
 
   it("renders a dev version string as-is", () => {

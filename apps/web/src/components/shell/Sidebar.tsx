@@ -910,9 +910,7 @@ function MeStatus({
         aria-label="Set status"
       >
         <span className={`${styles.serverDot} ${DOT_CLASS[dot]}`} />
-        <span className={styles.meStatusText} data-testid="me-status">
-          {statusLine}
-        </span>
+        <span className={styles.meStatusText}>{statusLine}</span>
       </button>
       {open && online && (
         <form

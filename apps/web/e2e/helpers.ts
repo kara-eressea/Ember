@@ -220,9 +220,12 @@ export async function provisionAndConnect(
 }
 
 /**
- * "The shell reports this character's session online." The MeBar is where
- * the active identity's name and F-Chat status live — the sidebar head shows
- * the app name and running version instead.
+ * "The shell reports this character's server-held session online." The MeBar
+ * is where the active identity lives — the sidebar head shows the app name
+ * and running version instead. Read off the status control, which unlocks
+ * exactly when the session reaches online: the status *text* beside it is
+ * F-Chat presence (away, busy, …), a different thing that an online session
+ * is free to be.
  */
 export function expectCharacterOnline(
   page: Page,
@@ -230,7 +233,7 @@ export function expectCharacterOnline(
   timeout = 15_000,
 ) {
   const meBar = page.getByTestId("me-bar").filter({ hasText: character });
-  return expect(meBar.getByTestId("me-status")).toContainText("online", {
+  return expect(meBar.getByRole("button", { name: "Set status" })).toBeEnabled({
     timeout,
   });
 }
