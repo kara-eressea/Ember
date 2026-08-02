@@ -7,9 +7,9 @@
 // (stores/messages.ts jumpTo) and navigates first when the hit lives in
 // another conversation.
 
-import { useEffect } from "react";
 import { useNavigate } from "react-router";
 import { type SearchResultDto } from "../../lib/api.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { channelPath, dmPath } from "../../lib/routes.js";
 import { formatTime } from "../../lib/time.js";
 import { useMessagesStore } from "../../stores/messages.js";
@@ -39,20 +39,10 @@ export function SearchPanel({
   const navigate = useNavigate();
   const { everywhere, results, busy, error } = search;
 
-  useEffect(() => {
-    // Capture + stopPropagation (the HelpPanel pattern): one Escape closes
-    // one layer, not this panel plus whatever sits above it (M9 audit).
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [onClose]);
+  // On the shared Escape stack as an overlay (#442): one press closes this
+  // panel and nothing else, and an armed ambient action — MessageLog's "mark
+  // caught up" — cannot jump ahead of it.
+  useEscapeToClose(onClose);
 
   function jump(result: SearchResultDto) {
     // Mark + fetch the history page; the log scrolls once it lands.

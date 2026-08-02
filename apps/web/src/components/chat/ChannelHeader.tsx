@@ -22,6 +22,7 @@ import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
@@ -67,26 +68,6 @@ function chipClass(on = false, danger = false): string {
     .join(" ");
 }
 
-/** Closes a header layer on Escape without also closing whatever sits above
- * it — the capture + stopPropagation pattern the SearchPanel uses. */
-function useEscape(active: boolean, close: () => void) {
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        close();
-      }
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [active, close]);
-}
-
 /**
  * The topic slot — a channel's CDS description or a DM partner's status, set
  * inline beside the name and clipped to the row. The inline copy is inert:
@@ -102,9 +83,11 @@ function HeaderTopic({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  useEscape(open, () => {
+  // On the shared Escape stack as an overlay (#442), so an armed ambient
+  // action — MessageLog's "mark caught up" — cannot steal the first press.
+  useEscapeToClose(() => {
     setOpen(false);
-  });
+  }, open);
 
   function activate(event: ReactKeyboardEvent) {
     if (event.key === "Enter" || event.key === " ") {
@@ -584,8 +567,6 @@ export function ChannelHeader({
         )}
       </div>
       <span className={styles.tbDivider} aria-hidden />
-      <HeaderSearch identityId={identityId} convId={channel.convId} />
-      <span className={styles.tbDivider} aria-hidden />
       <button
         type="button"
         className={chipClass(membersOpen)}
@@ -597,6 +578,9 @@ export function ChannelHeader({
         <MembersGlyph />
         <span className={styles.headerCount}>{channel.members.length}</span>
       </button>
+      {/* Search sits last, flush to the app's right edge — the toolbar now
+          spans the member column, so this is where a search box belongs. */}
+      <HeaderSearch identityId={identityId} convId={channel.convId} />
     </header>
   );
 }
@@ -729,8 +713,6 @@ export function DmHeader({
         <IgnoreChip identityId={identityId} character={dm.partner} />
       </div>
       <span className={styles.tbDivider} aria-hidden />
-      <HeaderSearch identityId={identityId} convId={dm.convId} />
-      <span className={styles.tbDivider} aria-hidden />
       <button
         type="button"
         className={chipClass(sidebarOn)}
@@ -772,6 +754,9 @@ export function DmHeader({
       >
         <CloseGlyph />
       </button>
+      {/* Search sits last, flush to the app's right edge — the toolbar now
+          spans the profile column, so this is where a search box belongs. */}
+      <HeaderSearch identityId={identityId} convId={dm.convId} />
       {menuAt && (
         <MemberContextMenu
           identityId={identityId}

@@ -225,8 +225,10 @@
 
 /* Narrow windows: the field parks as a magnifier chip and grows back the
    moment it takes focus — taking the topic's room, not the conversation
-   name's. The chips never collapse; they are the row's whole point. */
-@media (max-width: 1080px) {
+   name's. The chips never collapse; they are the row's whole point.
+   The thresholds are window-wide but the row is (window − rail − sidebar),
+   since the toolbar spans the right column too. */
+@media (max-width: 940px) {
   .searchField {
     width: 32px;
     padding: 0 8px;
@@ -251,9 +253,12 @@
 /* Below this there is no honest room for a topic beside the name — it steps
    out entirely rather than shrinking to an ellipsis nobody can read. The
    popover it opened is reachable from the room-settings window instead. */
-@media (max-width: 880px) {
+@media (max-width: 820px) {
   .topicSlot,
-  .headerHairline {
+  .headerHairline,
+  /* The clock goes with it: at this width it was costing the partner's name
+     its last characters, and the profile panel carries the same reading. */
+  .headerClock {
     display: none;
   }
 }
@@ -806,22 +811,11 @@
   border-left: 1px solid var(--eb-border);
 }
 
-.membersHeader {
-  padding: 13px 12px;
-  border-bottom: 1px solid var(--eb-border);
-  font-size: var(--eb-font-ui);
-  font-weight: 700;
-}
-
-.membersCount {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-weight: 400;
-  color: var(--eb-meta);
-}
-
-/* One filter for every group, offline included (#200 §4). */
+/* One filter for every group, offline included (#200 §4). The column has no
+   head of its own any more, so this is its first row — it gets the padding
+   the head used to provide. */
 .memberFilter {
-  margin: 8px 12px 0;
+  margin: 10px 12px 2px;
   padding: 5px 8px;
   font: inherit;
   font-size: var(--eb-font-ui-small);

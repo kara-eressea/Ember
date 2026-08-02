@@ -357,6 +357,26 @@ export function AppShell() {
           onCommit={commitRightWidth}
         />
       )}
+      {/* The conversation toolbar is a shell row, not part of <main>: it
+          spans the chat column and the right column so it rides above the
+          member list / profile panel. Keyed like the log below — the toolbar
+          carries per-conversation state (search query and results, the room
+          window), none of which should survive a switch. */}
+      {conversation !== undefined && convId !== undefined ? (
+        conversation.kind === "channel" ? (
+          <ChannelHeader
+            key={`head:${convId}`}
+            identityId={activeId}
+            channel={conversation.channel}
+          />
+        ) : (
+          <DmHeader
+            key={`head:${convId}`}
+            identityId={activeId}
+            dm={conversation.dm}
+          />
+        )
+      ) : null}
       <main className={styles.main}>
         {session.notice && (
           <div
@@ -381,22 +401,6 @@ export function AppShell() {
           </div>
         ) : (
           <>
-            {/* Keyed like the log below: the header's toolbar carries
-                per-conversation state (search query and results, the room
-                window), none of which should survive a switch. */}
-            {conversation.kind === "channel" ? (
-              <ChannelHeader
-                key={`head:${convId}`}
-                identityId={activeId}
-                channel={conversation.channel}
-              />
-            ) : (
-              <DmHeader
-                key={`head:${convId}`}
-                identityId={activeId}
-                dm={conversation.dm}
-              />
-            )}
             {/* Keyed per conversation so both remount on switch — with
                 distinct prefixes, since they are siblings. */}
             <MessageLog

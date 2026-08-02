@@ -162,6 +162,8 @@ One row component, variants by `glyph` + presence. Padding `5px 10px`, margin `1
 ### 5. ConversationHeader (channel + DM toolbar)
 One row, both conversation kinds, on `head` with a bottom border: fixed `46px` height, `padding: 0 10px 0 18px`, so the log never shifts when a conversation has no topic. It runs on the **composer toolbar's language** (component 8) — the same 30×30 IconBtn, the same 1×18px `border` cluster dividers — so the top and bottom edges of a conversation read as one instrument. No system emoji anywhere: every action is a stroked inline SVG in `currentColor`.
 
+**It is a shell row, not part of the chat column.** The shell grid gains a first row (`auto`, so it collapses to nothing with no conversation open) and the toolbar occupies `grid-column: 3 / -1` — the chat column *and* the right column — so it rides above the member list / profile panel and reaches the window's right edge. When `membersClosed` drops the 4th track it spans the chat column alone, unchanged. It carries `min-width: 0` (the `.main` trick) or its nowrap topic would force the `1fr` track wider than the window, and `position: relative; z-index: 7` so it stacks over the column resize handles instead of letting a 6px drag strip cross the row. The right column therefore has **no head of its own** — the member list opens straight into its filter, and the docked profile panel into its hero.
+
 Left → right:
 
 - **Identity** (flex, takes the spare width): leading `#` (17px mono `faint`) for channels or a 9px presence dot for DMs · **name** (15px/700, ellipsis, capped at `24ch`, floored so it never vanishes) · 1×15px hairline · **topic**.
@@ -169,10 +171,10 @@ Left → right:
 - **Partner clock** (DMs, when a zone is known — #439): clock glyph + `HH:MM` in mono `faint`, `tabular-nums`, tooltip naming the zone and its source. It sits *outside* the topic slot and never shrinks — inside it, an overlong status would truncate it away.
 - **Action chips** (IconBtn, `aria-pressed` on the toggles): channel — pin, mute, room settings (op+ only, gear); DM — pin, mute, ignore. Toggled = `accentSoft` + `accentText` + `inset 0 -2px 0 accent`; ignore uses the same shape in `danger`.
 - **Campaign pill** (M11, conditional): a quiet accent pill with a pulsing `ok` dot, reading "Campaign".
-- **Divider** · **search field** — the sidebar filter's pill reused: 28px tall, 14px radius, `bg` fill, magnifier + "Search log" placeholder in `meta`. It **owns the query**; results drop out of a `side` card anchored under it — scope segments ("This conversation" / "Everywhere") and a close ✕ on a hairline-separated head, then the hit rows. Focus = `accent` border + `accentSoft` ring.
-- **Divider** · **view toggles**, rightmost because they act on the rail beside them: channel — members (people glyph + mono count); DM — profile panel, conversation menu (⋮), close (✕).
+- **Divider** · **view toggles**: channel — members (people glyph + mono count); DM — profile panel, conversation menu (⋮), close (✕).
+- **Search field**, last and flush to the window's right edge — the row spans the right column, so this is where a search box belongs. The sidebar filter's pill reused: 28px tall, 14px radius, `bg` fill, magnifier + "Search log" placeholder in `meta`. It **owns the query**; results drop out of a `side` card anchored under it — scope segments ("This conversation" / "Everywhere") and a close ✕ on a hairline-separated head, then the hit rows. Focus = `accent` border + `accentSoft` ring.
 
-**Narrow behaviour**, in the order things give way: the topic shrinks first, then (≤1080px) the search field parks as a magnifier chip and grows back on focus — taking the topic's room, not the name's — and (≤880px) the topic steps out entirely. The chips never collapse; they are the row's point.
+**Narrow behaviour**, in the order things give way: the topic shrinks first, then (≤940px) the search field parks as a magnifier chip and grows back on focus — taking the topic's room, not the name's — and (≤820px) the topic and the partner clock step out entirely. The chips never collapse; they are the row's point. (The thresholds are window-wide, but the row is `window − rail − sidebar`.)
 
 - **Data:** `{ conversation, memberCount, pinned, muted, ignored?, topic, canManageRoom }`.
 
@@ -215,8 +217,8 @@ Below the log, `padding: 0 20px 16px`. Toolbar + input read as **one bordered Me
 - **Behavior:** typing updates the preview live; toggle shows/hides the preview panel; Enter sends (schedules while the timer is armed), Shift+Enter breaks the line.
 
 ### 9. MemberList
-Right column on `side2`, `border-left`.
-- **Header:** "Members {count}" (13px/700, count mono `meta`), bottom border.
+Right column on `side2`, `border-left`, starting under the conversation toolbar (component 5) that spans it.
+- **No header of its own:** the toolbar above carries the count on its member-list chip, so the filter is the column's first row. (Same for the docked profile panel — it opens on its hero. The narrow DM *drawer* is a fixed overlay above the toolbar, so it keeps its own "Profile »" head and its way out.)
 - **Grouped** by presence/role: **Owner · Admins · Online · Idle · Offline**. Group head 10px/700 uppercase `meta`.
 - **MemberRow:** padding `4px 8px`, `radius`. 30px avatar (real F-List image, initial fallback) with presence dot (8px, `2px solid side2` ring); to its right a body column, vertically centred against the avatar: nick line (role glyph + nick 13px, weight per role, gender colour, ellipsis) and, when present, an italic status line beneath (`meta`, 11px, BBCode stripped to text, clamped to two lines with ellipsis). A status-less row centres the name against the avatar. Offline rows read as secondary: name on `dim` full opacity, avatar `.55`, dot `faint` — no blanket row opacity.
 - **Behavior:** left-click = open profile (server website, new tab); right-click = MemberContextMenu.
