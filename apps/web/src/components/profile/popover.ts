@@ -1,13 +1,27 @@
 // Popover anchoring & clamping (COMPONENTS-profile-viewer.md §13): pure
-// placement math for the mini profile card and any future click-popover
-// (eicon picker). Preferred below-start, flip above when it overflows,
-// clamp into the viewport with an 8px margin, cap height so the body
-// scrolls instead of the card leaving the viewport.
+// placement math for the mini profile card and every other click-popover
+// (eicon picker, rate editor, composer toolbar, link preview, context
+// menus). Preferred below-start, flip above when it overflows, clamp into
+// the viewport with an 8px margin, cap height so the body scrolls instead
+// of the card leaving the viewport.
+//
+// Coordinate spaces (#388 again): the interface-scale pref puts `zoom` on
+// :root, and every popover is `position: fixed` INSIDE that zoomed root, so
+// the inline top/left we write are scaled once more on paint. Client rects
+// (getBoundingClientRect) and window.innerWidth/Height are already in visual
+// pixels, while element metrics (offsetWidth, scrollHeight) and inline
+// lengths are in the root's own CSS pixels. The math therefore runs entirely
+// in root CSS pixels: the `*InWindow` wrappers divide the anchor rect and the
+// viewport by the zoom factor, and their result is what the style attribute
+// wants. Always place through a wrapper rather than reading `window` at the
+// call site.
 
 import type { CardAnchor } from "../../stores/profile.js";
 
 export const POPOVER_GAP = 6;
 export const POPOVER_MARGIN = 8;
+/** Docked ("corner") mini-card inset from the viewport edges. */
+export const POPOVER_CORNER_MARGIN = 16;
 
 export interface PopoverPlacement {
   top: number;
@@ -23,8 +37,12 @@ export function placePopover(
   viewport: { width: number; height: number },
 ): PopoverPlacement {
   const height = Math.min(size.height, viewport.height - 2 * POPOVER_MARGIN);
-  const fitsBelow = anchor.bottom + POPOVER_GAP + height <= viewport.height;
-  const fitsAbove = anchor.top - POPOVER_GAP - height >= 0;
+  // The fit tests must use the same margins as the clamps below, or a "just
+  // fits" anchor is placed and then clamped back over the trigger it was
+  // anchored to.
+  const fitsBelow =
+    anchor.bottom + POPOVER_GAP + height <= viewport.height - POPOVER_MARGIN;
+  const fitsAbove = anchor.top - POPOVER_GAP - height >= POPOVER_MARGIN;
   // Prefer below; flip when only above fits; if neither fully fits, pick
   // whichever side has more room (the clamp keeps it on screen).
   const below =
@@ -77,6 +95,107 @@ export function placeBeside(
     ),
     placement: right ? "right" : "left",
   };
+}
+
+/** Anchor-free placement for the docked ("corner") mini card: parked in the
+ * bottom-right of the viewport, stationary whatever the trigger was. */
+export function placeCorner(
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { top: number; left: number; maxHeight: number } {
+  const maxHeight = viewport.height - 2 * POPOVER_CORNER_MARGIN;
+  const height = Math.min(size.height, maxHeight);
+  return {
+    top: Math.max(
+      POPOVER_CORNER_MARGIN,
+      viewport.height - height - POPOVER_CORNER_MARGIN,
+    ),
+    left: Math.max(
+      POPOVER_CORNER_MARGIN,
+      viewport.width - size.width - POPOVER_CORNER_MARGIN,
+    ),
+    maxHeight,
+  };
+}
+
+/** Cursor-anchored placement for context menus: open at the pointer, pulled
+ * back inside the viewport by the shared margin. */
+export function placeAtPoint(
+  point: { x: number; y: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { top: number; left: number } {
+  return {
+    top: clamp(
+      point.y,
+      POPOVER_MARGIN,
+      viewport.height - size.height - POPOVER_MARGIN,
+    ),
+    left: clamp(
+      point.x,
+      POPOVER_MARGIN,
+      viewport.width - size.width - POPOVER_MARGIN,
+    ),
+  };
+}
+
+/** The interface-scale `zoom` factor on :root (theme.ts `applyInterface`). */
+export function uiZoom(): number {
+  const raw = Number.parseFloat(
+    document.documentElement.style.getPropertyValue("--eb-ui-zoom"),
+  );
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+/** The visual viewport expressed in the zoomed root's CSS pixels. */
+export function popoverViewport(): { width: number; height: number } {
+  const zoom = uiZoom();
+  return { width: window.innerWidth / zoom, height: window.innerHeight / zoom };
+}
+
+/** A client rect (visual pixels) expressed in the zoomed root's CSS pixels. */
+export function popoverSpace(rect: CardAnchor): CardAnchor {
+  const zoom = uiZoom();
+  if (zoom === 1) {
+    return rect;
+  }
+  return {
+    top: rect.top / zoom,
+    left: rect.left / zoom,
+    bottom: rect.bottom / zoom,
+    right: rect.right / zoom,
+  };
+}
+
+/** placePopover against the live, zoom-corrected viewport. `size` is in root
+ * CSS pixels (offsetWidth/scrollHeight already are). */
+export function placePopoverInWindow(
+  anchor: CardAnchor,
+  size: { width: number; height: number },
+): PopoverPlacement {
+  return placePopover(popoverSpace(anchor), size, popoverViewport());
+}
+
+/** placeBeside against the live, zoom-corrected viewport. */
+export function placeBesideInWindow(
+  anchor: CardAnchor,
+  size: { width: number; height: number },
+): { top: number; left: number; placement: "right" | "left" } {
+  return placeBeside(popoverSpace(anchor), size, popoverViewport());
+}
+
+/** placeAtPoint against the live, zoom-corrected viewport. `point` is a
+ * client coordinate (clientX/clientY). */
+export function placeAtPointInWindow(
+  point: { x: number; y: number },
+  size: { width: number; height: number },
+): { top: number; left: number } {
+  const zoom = uiZoom();
+  return placeAtPoint(
+    { x: point.x / zoom, y: point.y / zoom },
+    size,
+    popoverViewport(),
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {

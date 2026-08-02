@@ -527,6 +527,7 @@ export function AppShell() {
           ownCharacter={session.character}
           name={profileCard.name}
           anchor={profileCard.anchor}
+          anchorElement={profileCard.element}
           onClose={() => {
             useProfileStore.getState().closeCard();
           }}

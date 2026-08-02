@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Avatar } from "../common/Avatar.js";
 import { StarPicker } from "./StarRating.js";
-import { placePopover } from "../profile/popover.js";
+import { placePopoverInWindow } from "../profile/popover.js";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./ratings.module.css";
@@ -51,11 +51,10 @@ export function RateEditor({
     };
   }, [onClose]);
 
-  const placement = placePopover(
-    anchor,
-    { width: EDITOR_WIDTH, height: EDITOR_HEIGHT },
-    { width: window.innerWidth, height: window.innerHeight },
-  );
+  const placement = placePopoverInWindow(anchor, {
+    width: EDITOR_WIDTH,
+    height: EDITOR_HEIGHT,
+  });
 
   async function save(nextScore: number, nextNote: string) {
     const ok = await useRatingsStore

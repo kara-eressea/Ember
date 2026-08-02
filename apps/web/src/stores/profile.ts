@@ -31,12 +31,24 @@ export interface HistoryEntry {
 }
 
 /** Trigger bounding rect the mini card anchors to (§13: anchor to the
- * trigger, not the cursor, so repeated opens are stable). */
+ * trigger, not the cursor, so repeated opens are stable). Client-rect
+ * coordinates — visual pixels, see popover.ts on the zoom correction. */
 export interface CardAnchor {
   top: number;
   left: number;
   bottom: number;
   right: number;
+}
+
+/** The open mini card: the trigger's rect at open time plus the trigger
+ * itself, so the card can re-measure while the log scrolls underneath it
+ * (the rect alone goes stale the moment anything moves). */
+export interface OpenCard {
+  name: string;
+  anchor: CardAnchor;
+  /** Undefined when opened without a live element (tests, future call
+   * sites) — the card then keeps using the snapshot rect. */
+  element?: Element;
 }
 
 interface ProfileState {
@@ -51,7 +63,7 @@ interface ProfileState {
     | "images"
     | "guestbook";
   /** The mini profile card popover; undefined = closed. Only one at a time. */
-  card: { name: string; anchor: CardAnchor } | undefined;
+  card: OpenCard | undefined;
   /** Keyed by lowercased name — session-lifetime client cache. */
   profiles: Record<string, LoadedProfile>;
   /** Recently-viewed rail, most recent first (server is source of truth). */
@@ -69,11 +81,13 @@ interface ProfileState {
   open: (name: string) => void;
   close: () => void;
   setTab: (tab: ProfileState["activeTab"]) => void;
-  openCard: (name: string, anchor: CardAnchor) => void;
+  openCard: (name: string, anchor: CardAnchor, element?: Element) => void;
   closeCard: () => void;
+  /** Close from an outside pointerdown; `target` is what was pressed. */
+  dismissCard: (target: Node | undefined) => void;
 }
 
-export const useProfileStore = create<ProfileState>()((set) => ({
+export const useProfileStore = create<ProfileState>()((set, get) => ({
   viewing: undefined,
   activeTab: "overview",
   card: undefined,
@@ -94,23 +108,69 @@ export const useProfileStore = create<ProfileState>()((set) => ({
   setTab(tab) {
     set({ activeTab: tab });
   },
-  openCard(name, anchor) {
-    set({ card: { name, anchor } });
+  openCard(name, anchor, element) {
+    set({ card: { name, anchor, element } });
   },
   closeCard() {
+    dismissedTrigger = undefined;
+    set({ card: undefined });
+  },
+  dismissCard(target) {
+    const open = get().card;
+    // Remember only a dismissal that landed on the card's OWN trigger: the
+    // click that follows this pointerdown then re-opens nothing, so a second
+    // click on the same name toggles the card shut. A press on any other
+    // name still closes this card and opens that one in the one gesture
+    // (there is no click-eating overlay any more).
+    dismissedTrigger =
+      open?.element && target && open.element.contains(target)
+        ? open.element
+        : undefined;
     set({ card: undefined });
   },
 }));
 
-/** Open the mini card anchored to a trigger element's bounding rect. */
+/** Trigger whose own pointerdown just dismissed the card, consumed by the
+ * click that follows in the same gesture. */
+let dismissedTrigger: Element | undefined;
+
+/** Open the mini card anchored to a trigger element (§13: the trigger, not
+ * the cursor, so repeated opens are stable). */
 export function openCardFrom(element: Element, name: string): void {
+  const dismissed = dismissedTrigger;
+  dismissedTrigger = undefined;
+  if (dismissed === element) {
+    return;
+  }
   const rect = element.getBoundingClientRect();
-  useProfileStore.getState().openCard(name, {
+  useProfileStore.getState().openCard(
+    name,
+    {
+      top: rect.top,
+      left: rect.left,
+      bottom: rect.bottom,
+      right: rect.right,
+    },
+    element,
+  );
+}
+
+/** The trigger's live rect, or undefined once it has left the document
+ * (virtualized away, conversation switched) — the card closes then rather
+ * than floating at stale coordinates. */
+export function liveAnchor(
+  element: Element | undefined,
+): CardAnchor | undefined {
+  if (!element?.isConnected) {
+    return undefined;
+  }
+  const rect = element.getBoundingClientRect();
+  return {
     top: rect.top,
     left: rect.left,
     bottom: rect.bottom,
     right: rect.right,
-  });
+  };
 }
 
 const inflight = new Map<string, Promise<void>>();
