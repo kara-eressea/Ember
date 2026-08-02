@@ -414,6 +414,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Flint Barrow", "Marwenna Wolfhammers"],
     },
+    // The typography spec's Firefox half runs as its own Playwright project,
+    // so it can be in flight while the Chromium half runs — one file, two
+    // workers, which makes the two halves parallel specs for isolation.
+    "kestrel@example.test": {
+      password: "hunter2",
+      characters: ["Kestrel Vane"],
+    },
     // Reserved for the #440 focus-gated read-cursor E2E (same isolation
     // rules). Hollis Reeve keeps a room open while the window loses focus;
     // Linnet Crow is the raw-SimClient partner whose messages must accrue as

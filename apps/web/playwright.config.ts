@@ -36,6 +36,32 @@ export default defineConfig({
     // fact — uploaded as an artifact from the workflow.
     trace: "retain-on-failure",
   },
+  // The suite is Chromium's; Firefox runs the typography spec alone. Caret and
+  // font metrics are the one area where the engines genuinely disagree (#408,
+  // #434 were both metrics bugs a single engine could hide), and a caret is
+  // painted, not queryable — so it needs a real second engine rather than a
+  // second assertion. Everything else behaves the same in both, and a full
+  // second pass would roughly double the E2E leg of CI.
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    {
+      name: "firefox",
+      // Gecko leaves the caret out of every screenshot, so the caret tests
+      // film it instead and read the blink back out of the recording. Video
+      // has to be declared here (Playwright forbids test.use({ video })), and
+      // the size matches the viewport 1:1 so a DOM bounding box indexes
+      // straight into a decoded frame.
+      use: {
+        browserName: "firefox",
+        viewport: { width: 1280, height: 720 },
+        video: { mode: "on", size: { width: 1280, height: 720 } },
+      },
+      testMatch: ["typography.spec.ts"],
+      // Only the caret tests: the rest of the spec reads computed style, which
+      // no second engine can disagree about.
+      grep: /caret/,
+    },
+  ],
   webServer: {
     command: `pnpm exec vite --host 127.0.0.1 --port ${String(WEB_PORT)} --strictPort`,
     url: `http://127.0.0.1:${String(WEB_PORT)}`,
