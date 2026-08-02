@@ -27,6 +27,7 @@ import ratingsStyles from "../ratings/ratings.module.css";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
+import { isEditable } from "./composer-typeanywhere.js";
 import { buildRows } from "./log-rows.js";
 import {
   NewMessagesBar,
@@ -554,12 +555,24 @@ export function MessageLog({
 
   // Scroll keys are taken at the window: the log is not focusable itself, so a
   // keydown that scrolls it lands on whatever inside it has focus (a nick
-  // button) or on the body. Over-broad on purpose — see userDrivingScroll.
+  // button) or on the body.
+  //
+  // …but NOT when the keystroke is being typed. Space is both a page-scroll key
+  // and the most frequent keystroke in the composer, and ArrowUp there is the
+  // pending-message recall, not a scroll. Arming intent on those would hold the
+  // window open for as long as someone is writing, and re-open the exact
+  // coincidence this gate exists to close. The editable test is the composer's
+  // own (composer-typeanywhere), so the two guards can never disagree about
+  // what counts as typing.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (SCROLL_KEYS.has(event.key)) {
-        noteScrollIntent();
+      if (!SCROLL_KEYS.has(event.key)) {
+        return;
       }
+      if (isEditable(event.target instanceof Element ? event.target : null)) {
+        return;
+      }
+      noteScrollIntent();
     }
     window.addEventListener("keydown", onKey);
     return () => {
@@ -568,9 +581,15 @@ export function MessageLog({
   }, []);
 
   // A pointer released outside the log (or over another element) still ends the
-  // drag, so the "up" side listens at the window rather than on the log.
+  // drag, so the "up" side listens at the window rather than on the log. It
+  // only concerns a pointer that went DOWN on the log, though: every click in
+  // the app raises a window pointerup, and treating those as scroll intent
+  // would arm the release window from the composer, a nick, any button at all.
   useEffect(() => {
     function onPointerUp() {
+      if (!pointerHeldRef.current) {
+        return;
+      }
       pointerHeldRef.current = false;
       // The scroll a flick or drag started can still be settling.
       noteScrollIntent();

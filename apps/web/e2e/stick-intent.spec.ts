@@ -143,6 +143,52 @@ test("a scroll the user did not make must not release the bottom-stick", async (
   }
 });
 
+test("typing in the composer is not scroll intent", async ({ page }) => {
+  test.setTimeout(180_000);
+  await interceptAvatars(page);
+
+  await provisionAndConnect(page, "tussock@example.test", "Tussock Fen");
+  await joinChannel(page, ROOM, ROOM_TITLE);
+
+  const haywick = await SimClient.connect(
+    "haywick@example.test",
+    "hunter2",
+    "Haywick Pell",
+  );
+  try {
+    haywick.send("JCH", { channel: ROOM });
+    await delay(500);
+    const log = page.getByTestId("message-log");
+    await seedAndSettle(page, haywick);
+
+    // Space is a page-scroll key AND the commonest keystroke in a message;
+    // ArrowUp scrolls a log but in the composer it recalls a pending send. If
+    // either armed scroll intent, anyone mid-sentence would hold the release
+    // window permanently open and the browser's own scrolls would strand the
+    // log again — for exactly the people using the app hardest.
+    const input = page.getByLabel("Message", { exact: true });
+    await input.click();
+    await input.pressSequentially("writing a reply here");
+    await input.press("ArrowUp");
+
+    // Straight into a browser-made scroll, well inside the intent window.
+    await shoveScrollUpWithoutIntent(page, SHOVE_PX);
+    haywick.send("MSG", { channel: ROOM, message: "landed mid-sentence" });
+    await expect(
+      log.getByText("landed mid-sentence", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() => distanceFromBottom(page), { timeout: 10_000 })
+      .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
+    await expect(page.getByTestId("jump-to-recent")).not.toBeVisible();
+
+    // The draft is untouched by any of this.
+    await expect(input).toHaveValue("writing a reply here");
+  } finally {
+    haywick.close();
+  }
+});
+
 test("a scroll the user DID make still releases the bottom-stick (#415)", async ({
   page,
 }) => {

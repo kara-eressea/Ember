@@ -27,7 +27,13 @@ export interface TypeAnywhereContext {
   readonly modalOpen: boolean;
 }
 
-function isEditable(el: Element | null): boolean {
+/**
+ * Is this element one that takes typed input? Shared with the message log's
+ * scroll-intent gate (#411), which has the same question to answer about a
+ * keydown: Space and the arrows scroll a log, but inside the composer they are
+ * composition, not scrolling. One definition, one set of exclusions.
+ */
+export function isEditable(el: Element | null): boolean {
   if (el === null) {
     return false;
   }
