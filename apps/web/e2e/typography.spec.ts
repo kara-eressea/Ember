@@ -547,4 +547,107 @@ test.describe("firefox", () => {
       expect(caret.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
     });
   }
+
+  // TEMPORARY diagnostic matrix — remove before merge.
+  const PROBES: [string, string][] = [
+    ["baseline", ""],
+    [
+      "buffer-base",
+      ".cm-widgetBuffer{height:1em !important;vertical-align:text-top !important}",
+    ],
+    ["buffer-hidden", ".cm-widgetBuffer{display:none !important}"],
+    ["ph-hidden", ".cm-placeholder{display:none !important}"],
+    [
+      "both-hidden",
+      ".cm-widgetBuffer{display:none !important}.cm-placeholder{display:none !important}",
+    ],
+    ["ph-inline", ".cm-placeholder{display:inline !important}"],
+  ];
+  for (const [name, css] of PROBES) {
+    test(`caret probe ${name}`, async ({
+      page,
+      context,
+      browser,
+    }, testInfo) => {
+      test.skip(testInfo.project.name !== "firefox", "gecko diagnostic");
+      test.setTimeout(120_000);
+      await interceptAvatars(page);
+      await provisionAndConnect(page, "kestrel@example.test", "Kestrel Vane");
+      await joinChannel(page, "Typesetting", "Typesetting");
+      await page.getByRole("button", { name: "Preferences" }).click();
+      const prefs = page.getByRole("dialog", { name: "Preferences" });
+      await prefs
+        .getByRole("switch", { name: "Style formatting as you type" })
+        .click();
+      await page.keyboard.press("Escape");
+      await expect(prefs).not.toBeVisible();
+      await expect(page.getByTestId("inline-composer")).toBeVisible();
+      const input = page.getByLabel("Message", { exact: true });
+      await page.getByTitle("Attachments arrive later").click();
+      await expect(input).toBeFocused();
+      if (css) {
+        await page.evaluate((rule) => {
+          const style = document.createElement("style");
+          style.textContent = rule;
+          document.head.append(style);
+        }, css);
+      }
+      await page.waitForTimeout(300);
+      const geom = await page.evaluate(() => {
+        const r = (s: string) => {
+          const el = document.querySelector(s);
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return {
+            top: +b.top.toFixed(2),
+            h: +b.height.toFixed(2),
+            left: +b.left.toFixed(2),
+          };
+        };
+        const line = document.querySelector(".cm-line");
+        const sel = document.getSelection();
+        const cs = line ? getComputedStyle(line) : undefined;
+        return {
+          editor: r(".cm-editor"),
+          content: r(".cm-content"),
+          line: r(".cm-line"),
+          ph: r(".cm-placeholder"),
+          buffer: r(".cm-widgetBuffer"),
+          font: cs
+            ? `${cs.fontFamily} / ${cs.fontSize} / ${cs.lineHeight}`
+            : "?",
+          plexLoaded: document.fonts.check('13.5px "IBM Plex Sans"'),
+          anchor: `${sel?.anchorNode?.nodeName ?? "?"}[${(sel?.anchorNode as Element | null)?.className ?? ""}]@${String(sel?.anchorOffset)}`,
+          html: line?.innerHTML.slice(0, 200),
+        };
+      });
+      const box = (await input.boundingBox())!;
+      const region = {
+        x: Math.floor(box.x) - 6,
+        y: Math.floor(box.y) - 10,
+        width: 34,
+        height: Math.ceil(box.height) + 20,
+      };
+      await page.waitForTimeout(2400);
+      const video = page.video()!;
+      await context.close();
+      const file = testInfo.outputPath(`probe-${name}.webm`);
+      await video.saveAs(file);
+      let caret: Box | undefined;
+      try {
+        caret = await caretBoxFromVideo(browser, file, region);
+      } catch {
+        caret = undefined;
+      }
+      const abs = caret
+        ? {
+            top: caret.top + region.y,
+            bottom: caret.top + region.y + caret.height - 1,
+            height: caret.height,
+            width: caret.width,
+          }
+        : null;
+      console.log(`\n##GECKO## ${name} ${JSON.stringify({ abs, geom })}`);
+    });
+  }
 });
