@@ -23,13 +23,17 @@ import { GatewayHub } from "../gateway/gateway.js";
 import type { GatewayConnection } from "../gateway/connection.js";
 import type { HistorySink } from "../history/sink.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+} from "../../test-support/budgets.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 const MINUTE_MS = 60_000;
 
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -66,7 +70,7 @@ beforeAll(async () => {
     detachedAwayNow: () => fakeNow,
     sessionTuning: { statusGateMs: 800 },
   });
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();

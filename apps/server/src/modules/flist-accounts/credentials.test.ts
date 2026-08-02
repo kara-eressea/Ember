@@ -19,6 +19,11 @@ import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { flistCredentials, identities } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
+import {
+  CONTAINER_BOOT_MS,
+  FRAME_WAIT_MS,
+  LOADED_RUNNER_MS,
+} from "../../test-support/budgets.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "willow@example.test";
@@ -27,7 +32,10 @@ const CHARACTER_B = "Fern Ashwood";
 const PASSWORD = "hunter2";
 const KEY = Buffer.alloc(32, 7).toString("base64url");
 
-vi.setConfig({ testTimeout: 30_000 });
+// The boot-resume tests stand a *second* app up on the same database — a full
+// build plus argon2 unlock plus a reconnect — so this file sits at the
+// loaded-runner tier rather than the plain integration one.
+vi.setConfig({ testTimeout: LOADED_RUNNER_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -87,7 +95,7 @@ beforeAll(async () => {
   });
   expect(registered.statusCode).toBe(201);
   token = registered.json<{ accessToken: string }>().accessToken;
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();
@@ -183,7 +191,9 @@ it("boot resume reconnects autoConnect identities; the ceiling gates it", async 
   // fire-and-forget on build, so poll for the session to come online.
   const second = await makeApp();
   try {
-    const deadline = Date.now() + 15_000;
+    // Deliberately under the file's budget: this poll should report its own
+    // "never came online" diagnostic rather than a bare vitest timeout.
+    const deadline = Date.now() + FRAME_WAIT_MS;
     for (;;) {
       const session = second.sessions.get(resumable!.id);
       if (session?.status === "online") {

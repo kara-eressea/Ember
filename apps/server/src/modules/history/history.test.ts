@@ -18,6 +18,10 @@ import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { conversations, identities, messages } from "../../db/schema.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+} from "../../test-support/budgets.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { CATCHUP_REPLAY_BUDGET, catchupPlan } from "../gateway/snapshot.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
@@ -33,6 +37,9 @@ import {
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
+
+// Container- and sim-backed: real Postgres plus loopback WebSocket round trips.
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -62,7 +69,7 @@ beforeAll(async () => {
       minRequestIntervalMs: 0,
     }),
   });
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close(); // onClose stops all sessions
