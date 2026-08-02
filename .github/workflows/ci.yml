@@ -27,11 +27,16 @@ jobs:
       # Gecko disagree, and neither can be measured from the DOM.
       - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox
       - run: pnpm turbo e2e
-      - name: Upload Playwright report + traces on failure
-        if: failure()
+      # Not `if: failure()`: a flake that fails once and passes on the retry
+      # leaves a green job, and the first attempt's trace would die with the
+      # runner — exactly the evidence a flake hunt needs. Uploading always
+      # keeps it; `if-no-files-found: ignore` means a run with nothing to
+      # report (all green, or a failure before e2e) uploads nothing.
+      - name: Upload Playwright report + traces
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             apps/web/playwright-report/
             apps/web/test-results/
