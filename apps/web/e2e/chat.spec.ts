@@ -11,6 +11,7 @@ import {
   provisionAndConnect,
   SimClient,
   test,
+  userScrollTo,
 } from "./helpers.js";
 
 /** How many channel messages Birch pumps in to force history pagination
@@ -250,9 +251,7 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
     // Scroll to the top repeatedly; each pass pages older history in until
     // the very first message of the conversation is on screen.
     await expect(async () => {
-      await log.evaluate((el) => {
-        el.scrollTop = 0;
-      });
+      await userScrollTo(page, 0);
       await expect(log.getByText("Hello from the ember side")).toBeVisible({
         timeout: 1_000,
       });
@@ -271,9 +270,7 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
     await expect(jumpPill).not.toBeVisible();
     // Scroll back up and use the pill button itself.
     await expect(async () => {
-      await log.evaluate((el) => {
-        el.scrollTop = 0;
-      });
+      await userScrollTo(page, 0);
       await expect(jumpPill).toBeVisible({ timeout: 1_000 });
     }).toPass({ timeout: 20_000 });
     await jumpPill.click();

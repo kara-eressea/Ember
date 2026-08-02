@@ -15,6 +15,7 @@ import {
   provisionAndConnect,
   SimClient,
   test,
+  userScrollTo,
 } from "./helpers.js";
 
 const CHANNEL_KEY = "ADH-200fallow88ee99ff00";
@@ -130,9 +131,7 @@ test("member menu: Escape closes the menu without jumping the log", async ({
     // that we are no longer pinned to the newest messages.
     const jumpPill = page.getByTestId("jump-to-recent");
     await expect(async () => {
-      await log.evaluate((el) => {
-        el.scrollTop = 0;
-      });
+      await userScrollTo(page, 0);
       await expect(jumpPill).toBeVisible({ timeout: 1_000 });
     }).toPass({ timeout: 20_000 });
     const scrollTop = await log.evaluate((el) => el.scrollTop);

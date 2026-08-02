@@ -241,6 +241,28 @@ export async function joinChannel(
   });
 }
 
+/**
+ * Scroll the message log the way a reader does: a real wheel event, then the
+ * scroll position it produces.
+ *
+ * The log's bottom-stick only yields to a scroll the USER made (#411,
+ * MessageLog.userDrivingScroll). It has to: the browser moves this scroll on
+ * its own constantly — the virtualizer shifts scrollTop whenever a row
+ * re-measures, and any reflow does the same — and mistaking that for a reader
+ * leaving the tail is what stranded the log above the newest messages. A bare
+ * `el.scrollTop = …` assignment is precisely that shape, so it is correctly
+ * ignored: the pill may arm off the raw position, but the stick stays engaged
+ * and the next re-measure snaps the log back to the bottom.
+ *
+ * So a test that means "the user scrolled here" has to say so, and this is how.
+ */
+export async function userScrollTo(page: Page, top: number): Promise<void> {
+  await page.getByTestId("message-log").evaluate((el, to) => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true }));
+    el.scrollTop = to;
+  }, top);
+}
+
 /** A bare F-Chat client speaking straight to fchat-sim. */
 export class SimClient {
   #ws!: WebSocket;
