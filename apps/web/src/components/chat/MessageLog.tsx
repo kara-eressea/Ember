@@ -882,6 +882,14 @@ export function MessageLog({
     // the newest *buffered* id is an old message, so acknowledgeTail skips the
     // read-ack there; back at the live tail the shell's auto-ack advances it.
     acknowledgeTail();
+    returnToTail();
+  }
+
+  /** The movement half of the jump, without the acknowledgement: take the view
+   * to the newest messages. Split out so a caller that has already run its own
+   * flavour of catch-up (the send gesture below) can reuse the landing without
+   * acking the read cursor twice. */
+  function returnToTail() {
     if (detachedTail) {
       void useMessagesStore.getState().backToPresent(identityId, convId);
       return;
@@ -928,6 +936,30 @@ export function MessageLog({
     // Fully caught up: drop the in-log divider too, not just the bar.
     setNewSinceId((cursor) => dividerCursorAfter("dismiss", cursor));
   }
+
+  // Sending is itself a catch-up gesture (#415 family): the user has decided to
+  // participate in the present, so a send lands the view at the tail and clears
+  // the unread state exactly like Esc does — via the same two functions, so the
+  // paths cannot drift. Idempotent by construction (both halves are), which is
+  // what lets it overlap harmlessly with the shell's auto-ack. The composer
+  // raises the signal only for immediate sends; see `sendCatchUp` in the
+  // messages store for the boundary.
+  const sendCatchUp = useMessagesStore((s) => s.sendCatchUp);
+  useEffect(() => {
+    if (sendCatchUp?.convId !== convId) {
+      return;
+    }
+    useMessagesStore.getState().clearSendCatchUp();
+    markCaughtUp();
+    // markCaughtUp stays put — it assumes Esc at the tail. A send can come from
+    // anywhere in the backlog, so take the view to the newest messages too,
+    // through the shared stick machinery rather than a raw scroll (#454).
+    returnToTail();
+    // markCaughtUp/returnToTail close over per-conversation state that is
+    // stable for this mount (the component is keyed by convId); listing them
+    // would re-run this on every render instead of once per send.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendCatchUp, convId]);
 
   // Route the Esc "mark caught up" through the shared Escape stack so a modal
   // or popover above the log closes first (topmost wins). Enabled whenever we

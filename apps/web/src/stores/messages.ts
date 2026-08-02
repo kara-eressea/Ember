@@ -61,6 +61,21 @@ interface MessagesState {
   buffers: Record<string, ConvBuffer>;
   /** Search hit awaiting scroll-to-and-flash in the log (M9). */
   jumpTarget: { convId: string; messageId: number } | undefined;
+  /**
+   * A composer send the log has not yet treated as a catch-up gesture (#415
+   * family). Sending is the user saying "I don't care about the old history,
+   * I want to be in the new one", so the log lands at the tail and clears the
+   * unread state exactly like Esc / scrolling down does. The composer and the
+   * log are siblings — this is their seam, the same species of view intent as
+   * `jumpTarget` above.
+   *
+   * Only immediate sends raise it, on the gateway ack rather than the server
+   * echo: the gesture is the SUBMIT, and the echo can lag. Deliberately NOT
+   * raised by a delayed send releasing from the outbox later (nor by a recall,
+   * a preview, or typing) — a message scheduled hours ago is not a
+   * present-tense gesture and must not silently eat unread the user never saw.
+   */
+  sendCatchUp: { convId: string } | undefined;
 
   appendLive(convId: string, message: MessageDto): void;
   appendMany(convId: string, messages: MessageDto[]): void;
@@ -81,6 +96,10 @@ interface MessagesState {
   loadOlder(identityId: string, convId: string): Promise<number>;
   /** Land the log on the page containing a search hit (M9). */
   jumpTo(identityId: string, convId: string, messageId: number): Promise<void>;
+  /** The composer handed an immediate send off — see `sendCatchUp`. */
+  noteSendCatchUp(convId: string): void;
+  /** The log has acted on the send gesture; it must not fire again. */
+  clearSendCatchUp(): void;
   /** Leave the detached history view: reload the live tail. */
   backToPresent(identityId: string, convId: string): Promise<void>;
   /**
@@ -171,6 +190,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
   return {
     buffers: {},
     jumpTarget: undefined,
+    sendCatchUp: undefined,
 
     appendLive(convId, message) {
       // Detached history view: a live append would leave an unreachable
@@ -338,6 +358,14 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
       }));
     },
 
+    noteSendCatchUp(convId) {
+      set({ sendCatchUp: { convId } });
+    },
+
+    clearSendCatchUp() {
+      set({ sendCatchUp: undefined });
+    },
+
     async backToPresent(identityId, convId) {
       bumpEpoch(convId);
       patch(convId, (buffer) => ({
@@ -354,6 +382,11 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     leaveConversation(convId) {
       if (get().jumpTarget?.convId === convId) {
         set({ jumpTarget: undefined });
+      }
+      // A send gesture the log never got to consume (a send followed
+      // immediately by a switch) is spent — it must not fire on the next visit.
+      if (get().sendCatchUp?.convId === convId) {
+        set({ sendCatchUp: undefined });
       }
       if (get().buffers[convId]?.detachedTail !== true) {
         return;
@@ -374,7 +407,7 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
     reset() {
       epochs.clear();
       backfilling.clear();
-      set({ buffers: {}, jumpTarget: undefined });
+      set({ buffers: {}, jumpTarget: undefined, sendCatchUp: undefined });
     },
   };
 });
