@@ -195,6 +195,9 @@ describe("unreadIndicator", () => {
   });
 
   it("falls back to the ready-frame totals while a slice is unsynced", () => {
+    // Those totals arrive mute-aware: the server drops muted conversations
+    // before aggregating them (#430 follow-up), so there is no leak left to
+    // compensate for here — the fallback is simply trusted.
     expect(
       unreadIndicator([summary("id-1", { mentions: 3, unread: 12 })], {}),
     ).toEqual({ count: 3, dot: false });

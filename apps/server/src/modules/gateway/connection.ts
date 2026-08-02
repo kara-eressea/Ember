@@ -23,7 +23,6 @@ import {
   type MessageDto,
   type ResumeCursors,
   type ServerFrame,
-  type UserPrefs,
   type UserPrefsPatch,
 } from "@emberchat/protocol";
 import {
@@ -63,6 +62,7 @@ import {
   messageDto,
   pmPresence,
 } from "./snapshot.js";
+import type { ResolvedUserPrefs, UserPrefsCache } from "./user-prefs.js";
 
 /** Close the socket if no hello arrived within this window. */
 export const HELLO_TIMEOUT_MS = 10_000;
@@ -119,6 +119,9 @@ export interface GatewayConnectionContext {
   /** Live union of user image-preview allowlists; refreshed when a user's
    * imagePreviewHosts pref changes so the CSP admits the new host (#342). */
   readonly imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
+  /** Per-user prefs, cached across this user's connections — msg.send used to
+   * re-read the row for its send delay on every message (audit backlog). */
+  readonly userPrefs: Pick<UserPrefsCache, "get" | "invalidate">;
   readonly campaigns: CampaignScheduler;
   /** Cached social lists — served in the snapshot when present (#194). */
   readonly social: SocialCache;
@@ -402,8 +405,28 @@ export class GatewayConnection {
     // Rail badges must paint from ready alone — a background identity may
     // never be subscribed by this client. Each total walks capped
     // per-conversation windows, so the cost is bounded per identity.
-    const totals = await Promise.all(
-      rows.map((row) => identityBadgeTotals(this.#ctx.db, row.id)),
+    //
+    // Mute-aware at the source (#430 follow-up): the favicon indicator falls
+    // back to these totals for an identity whose slice hasn't synced, and a
+    // pre-aggregated total can't be decomposed per conversation in the
+    // browser — so a muted room (or a muted identity, which contributes
+    // nothing at all) would leak into the alert tiers until that identity
+    // subscribed. Prefs come from the shared cache, so this is free.
+    const { prefs } = await this.#userPrefs();
+    const mutedIdentityIds = new Set(prefs.mutedIdentityIds);
+    const mutedConvIds = new Set(prefs.mutedConvIds);
+    const totals = new Map(
+      await Promise.all(
+        rows
+          .filter((row) => !mutedIdentityIds.has(row.id))
+          .map(
+            async (row) =>
+              [
+                row.id,
+                await identityBadgeTotals(this.#ctx.db, row.id, mutedConvIds),
+              ] as const,
+          ),
+      ),
     );
     // Same reasoning for the inbox bell: a cold load must badge without an
     // inbox fetch. One capped count per identity.
@@ -420,8 +443,9 @@ export class GatewayConnection {
           sessionStatus:
             this.#ctx.sessions.get(row.id)?.status ?? ("offline" as const),
           autoConnect: row.autoConnect,
-          unread: totals[index]?.unread ?? 0,
-          mentions: totals[index]?.mentions ?? 0,
+          // Absent = muted identity: it contributes nothing at all.
+          unread: totals.get(row.id)?.unread ?? 0,
+          mentions: totals.get(row.id)?.mentions ?? 0,
           notificationsUnseen: unseen[index] ?? 0,
         })),
       },
@@ -1078,26 +1102,12 @@ export class GatewayConnection {
     }
   }
 
-  /** The user's preferences; absent row = all defaults. */
-  async #userPrefs(): Promise<{
-    sendDelaySeconds: number;
-    prefs: UserPrefs;
-  }> {
-    if (this.#userId === undefined) {
-      return { sendDelaySeconds: 0, prefs: resolvePrefs({}) };
-    }
-    const [row] = await this.#ctx.db
-      .select({
-        sendDelaySeconds: userPreferences.sendDelaySeconds,
-        prefs: userPreferences.prefs,
-      })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, this.#userId))
-      .limit(1);
-    return {
-      sendDelaySeconds: row?.sendDelaySeconds ?? 0,
-      prefs: resolvePrefs(row?.prefs),
-    };
+  /** The user's preferences; absent row = all defaults. Served from the
+   * shared per-user cache, which the prefs patch below drops. */
+  async #userPrefs(): Promise<ResolvedUserPrefs> {
+    return this.#userId === undefined
+      ? { sendDelaySeconds: 0, prefs: resolvePrefs({}) }
+      : this.#ctx.userPrefs.get(this.#userId);
   }
 
   /**
@@ -1139,9 +1149,12 @@ export class GatewayConnection {
         prefs: userPreferences.prefs,
       });
     // The highlight matcher caches highlightOwnNick per user (M5); the
-    // notification store caches the mute lists it stamps rows with (#467).
+    // notification store caches the mute lists it stamps rows with (#467);
+    // the gateway caches the whole resolved document (audit backlog). All
+    // three are dropped here — this is the only writer.
     this.#ctx.highlights.invalidate(this.#userId);
     this.#ctx.notifications.invalidatePrefs(this.#userId);
+    this.#ctx.userPrefs.invalidate(this.#userId);
     // The CSP folds in every user's image-preview allowlist (#342); rebuild
     // the cached union when this patch touched it so the next response admits
     // (or drops) the host. Cheap and rare — a full recompute is fine.
