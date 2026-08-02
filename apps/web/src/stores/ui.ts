@@ -16,6 +16,13 @@ interface UiState {
   lastConvByIdentity: Record<string, string>;
   /** The browser↔server socket, not the F-Chat session. */
   gatewayStatus: GatewayConnectionStatus;
+  /** Does the window have focus? Together with the active conversation this is
+   * "the user is looking at this" (#440) — the gate on marking messages read.
+   * Focus, not visibility: a visible but unfocused window is not attention,
+   * which is exactly what desktop-notify/highlight-notify already assume.
+   * Optimistic until startWindowFocusTracking() reads the real state at mount
+   * (a tab opened in the background never fires a blur to correct it). */
+  windowFocused: boolean;
   /** Members column visibility (header ☰ toggle). */
   membersOpen: boolean;
   /** DM profile sidebar — the persisted global open preference (header ◨ /
@@ -48,6 +55,7 @@ interface UiState {
   ) => void;
   setLastConv: (identityId: string, suffix: string) => void;
   setGatewayStatus: (status: GatewayConnectionStatus) => void;
+  setWindowFocused: (focused: boolean) => void;
   toggleMembers: () => void;
   toggleDmSidebar: () => void;
   setDmSidebarOpen: (open: boolean) => void;
@@ -68,6 +76,7 @@ export const useUiStore = create<UiState>()((set) => ({
   activeConvId: undefined,
   lastConvByIdentity: {},
   gatewayStatus: "offline",
+  windowFocused: true,
   membersOpen: true,
   dmSidebarOpen: savedDmSidebarOpen(),
   dmDrawerOpen: false,
@@ -93,6 +102,9 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setGatewayStatus(status) {
     set({ gatewayStatus: status });
+  },
+  setWindowFocused(focused) {
+    set({ windowFocused: focused });
   },
   toggleMembers() {
     set((state) => ({ membersOpen: !state.membersOpen }));

@@ -125,6 +125,7 @@ beforeEach(() => {
   useSessionsStore.getState().reset();
   useMessagesStore.getState().reset();
   useUiStore.getState().setActive(undefined, undefined);
+  useUiStore.getState().setWindowFocused(true);
   vi.mocked(playHighlightChime).mockClear();
   vi.mocked(flashTitle).mockClear();
   vi.mocked(showMessageNotification).mockClear();
@@ -572,7 +573,7 @@ describe("message.new and unread", () => {
     expect(session().channels["Frontpage"]?.unread).toBe(4);
   });
 
-  it("does not bump unread for the active conversation or our own sends", () => {
+  it("does not bump unread for the active, focused conversation or our own sends", () => {
     dispatchFrame(snapshot());
     useUiStore.getState().setActive(IDENTITY, CONV_CHANNEL);
     dispatchFrame(
@@ -588,6 +589,31 @@ describe("message.new and unread", () => {
       }),
     );
     expect(session().channels["Frontpage"]?.unread).toBe(3);
+  });
+
+  it("bumps the active conversation while the window is unfocused (#440)", () => {
+    dispatchFrame(snapshot());
+    useUiStore.getState().setActive(IDENTITY, CONV_CHANNEL);
+    useUiStore.getState().setWindowFocused(false);
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, { mention: true }),
+      }),
+    );
+    // Unread and mentions accrue exactly as for a background conversation —
+    // that is what feeds the sidebar badge and the favicon indicator.
+    const channel = session().channels["Frontpage"];
+    expect(channel?.unread).toBe(4);
+    expect(channel?.mentions).toBe(2); // 1 from the snapshot + 1 live
+    expect(channel?.newestMessageId).toBe(11);
+
+    // Focus back: the same conversation goes quiet again.
+    useUiStore.getState().setWindowFocused(true);
+    dispatchFrame(
+      event("message.new", { convId: CONV_CHANNEL, message: message(12) }),
+    );
+    expect(session().channels["Frontpage"]?.unread).toBe(4);
   });
 
   it("bumps mentions from the server-stamped flag, never by re-matching", () => {
@@ -786,7 +812,17 @@ describe("when-highlighted actions", () => {
     expect(session().channels["Frontpage"]?.highlightedAt).toBeGreaterThan(0);
   });
 
-  it("stays silent for the active conversation, own sends, and non-mentions", () => {
+  it("still fires on a mention in the active conversation while unfocused (#440)", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(setPrefs({ highlightSound: true, highlightBump: true }));
+    useUiStore.getState().setActive(IDENTITY, CONV_CHANNEL);
+    useUiStore.getState().setWindowFocused(false);
+    dispatchFrame(mention(11));
+    expect(playHighlightChime).toHaveBeenCalledTimes(1);
+    expect(session().channels["Frontpage"]?.highlightedAt).toBeGreaterThan(0);
+  });
+
+  it("stays silent for the active, focused conversation, own sends, and non-mentions", () => {
     dispatchFrame(snapshot());
     dispatchFrame(setPrefs({ highlightSound: true, highlightBump: true }));
 
