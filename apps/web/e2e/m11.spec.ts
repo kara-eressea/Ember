@@ -3,14 +3,19 @@
 // land in the log under the shrunken sim-only timings, see the channel
 // pause when its window closes, stop everything (kill switch), renew, and
 // then rate another poster's ad (editor popover, stars on later ads, the
-// ≤2★ collapse with in-place expand). Owns linden@example.test (Linden Frost),
+// ≤2★ collapse with in-place expand). A second test in this file — same
+// worker, so the same character is never held twice — covers the
+// `campaign.updated` fan-out across two devices on one identity.
+// Owns linden@example.test (Linden Frost),
 // orsolya@example.test (the raw-SimClient "other side") and the hidden
 // Borealis Lounge room: specs never share an account, a character, or a
 // channel.
 
 import {
   expect,
+  expectCharacterOnline,
   interceptAvatars,
+  joinChannel,
   provisionAndConnect,
   SimClient,
   test,
@@ -151,7 +156,20 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
     .filter({ hasText: "Wolfhound seeks winter partners." });
   await expect(orsolyaAd).toBeVisible();
 
-  // Hover reveals the quiet Rate pill; the editor saves on star pick.
+  // The Rate pill is invisible until its row is hovered — and a keyboard
+  // reader gets the same reveal from :focus-visible (ratings.module.css §6).
+  // Only a real keyboard focus answers that selector, so tab in from the
+  // row's own nick button rather than focusing the pill by script.
+  const pill = orsolyaAd.getByRole("button", { name: "Rate Orsolya" });
+  const pillOpacity = () =>
+    pill.evaluate((el) => globalThis.getComputedStyle(el).opacity);
+  await expect.poll(pillOpacity).toBe("0");
+  await orsolyaAd.getByRole("button", { name: "Orsolya", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(pill).toBeFocused();
+  await expect.poll(pillOpacity).toBe("1");
+
+  // Hover reveals the same pill; the editor saves on star pick.
   await orsolyaAd.hover();
   await orsolyaAd.getByRole("button", { name: "Rate Orsolya" }).click();
   const editor = page.getByRole("dialog", { name: "Rate Orsolya" });
@@ -185,4 +203,112 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
   await expect(page.getByText("YOUR NOTE")).toBeVisible();
 
   orsolya.close();
+});
+
+// A campaign belongs to the server-held session, not to the browser that
+// started it (M11 `campaign.updated` fan-out). Two devices on one identity:
+// whatever one does to the run, the other's open campaign surface has to
+// follow without a reload — including the flip from the setup surface to the
+// status one, which is where a stale second device would otherwise sit
+// offering to start a campaign that already exists.
+//
+// Same file as the campaign journey above, so it runs in the same worker:
+// linden@example.test and Linden Frost are never held by two tests at once.
+test("M11: campaign.updated converges across two devices on one identity", async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await interceptAvatars(page);
+  const creds = await provisionAndConnect(
+    page,
+    "linden@example.test",
+    "Linden Frost",
+  );
+  await joinChannel(page, POLAR, "Polar Court");
+
+  // Device A writes the ad the campaign will rotate.
+  await page.getByRole("button", { name: "Open the Ad Center" }).click();
+  const adCenter = page.getByRole("dialog", { name: "Ad Center" });
+  await adCenter.getByRole("button", { name: "Write your first ad" }).click();
+  await adCenter
+    .getByRole("textbox", { name: "Ad text" })
+    .fill("**Snow leopard** waits by the ice pillars.");
+  await adCenter.getByRole("textbox", { name: "Add tag" }).fill("aurora");
+  await adCenter.getByRole("textbox", { name: "Add tag" }).press("Enter");
+  await adCenter.getByRole("button", { name: "Save ad" }).click();
+  await expect(adCenter.getByText("Saved", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  /** Ad Center → Post ads… → the Rotate… slot, i.e. the campaign surface. */
+  const openCampaign = async (device: typeof page) => {
+    await device.getByRole("button", { name: "Open the Ad Center" }).click();
+    await device
+      .getByRole("dialog", { name: "Ad Center" })
+      .getByRole("button", { name: "Post ads…" })
+      .click();
+    await device
+      .getByRole("dialog", { name: "Post ads" })
+      .getByRole("button", { name: "↻ Rotate…" })
+      .click();
+  };
+
+  const contextB = await browser.newContext();
+  try {
+    // ── Device B attaches to the same server-held session ────────────────
+    const pageB = await contextB.newPage();
+    await interceptAvatars(pageB);
+    await pageB.goto("/login");
+    await pageB.getByLabel("Email").fill(creds.email);
+    await pageB.getByLabel("Password").fill(creds.password);
+    await pageB.getByRole("button", { name: "Log in" }).click();
+    await pageB.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(pageB).toHaveURL(/\/app\//);
+    await expectCharacterOnline(pageB, "Linden Frost");
+    // The Ad Center entry lives on the composer, so B needs a conversation
+    // open — the channel A joined is already in this identity's sidebar.
+    await pageB.getByRole("link", { name: /Polar Court/ }).click();
+
+    // …and parks on the campaign surface. No campaign yet → setup.
+    await openCampaign(pageB);
+    await expect(
+      pageB.getByRole("dialog", { name: "Set up a campaign" }),
+    ).toBeVisible();
+
+    // ── Device A starts one ──────────────────────────────────────────────
+    await openCampaign(page);
+    const setupA = page.getByRole("dialog", { name: "Set up a campaign" });
+    await setupA.getByRole("button", { name: /aurora/ }).click();
+    await setupA.getByRole("button", { name: /Polar Court/ }).click();
+    await setupA.getByRole("button", { name: "Start campaign" }).click();
+    const statusA = page.getByRole("dialog", { name: "Campaign", exact: true });
+    await expect(
+      statusA.getByText("Posting live", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // Device B's open dialog leaves setup for the live status surface by
+    // itself — no reload, no reopen.
+    const statusB = pageB.getByRole("dialog", {
+      name: "Campaign",
+      exact: true,
+    });
+    await expect(
+      statusB.getByText("Posting live", { exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(statusB.getByText(/expires in/)).toBeVisible();
+    await expect(
+      pageB.getByRole("dialog", { name: "Set up a campaign" }),
+    ).toBeHidden();
+
+    // ── …and the kill switch converges the other way ─────────────────────
+    await statusA.getByRole("button", { name: "■ Stop everything" }).click();
+    await expect(
+      statusB.getByText("Campaign stopped — posting has stopped"),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      statusB.getByRole("button", { name: "↻ Renew for 1 hour" }),
+    ).toBeVisible();
+  } finally {
+    await contextB.close();
+  }
 });
