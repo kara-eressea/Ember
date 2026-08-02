@@ -75,6 +75,9 @@ export interface FchatSimOptions {
    * must wait five seconds between status changes"). No VAR carries it.
    * Tests lower it to exercise the pacing without waiting. */
   readonly staFloodSeconds?: number;
+  /** How long an issued ticket stays valid (live: 30 minutes). Tests shorten
+   * it to exercise expiry without waiting. */
+  readonly ticketTtlMs?: number;
 }
 
 interface Connection {
@@ -236,7 +239,11 @@ export class FchatSim {
     this.#fksFloodSeconds = options.fksFloodSeconds ?? 5;
     this.#fksResultCap = options.fksResultCap ?? 250;
     this.#staFloodSeconds = options.staFloodSeconds ?? 5;
-    this.#tickets = new TicketService(this.#world.accounts);
+    this.#tickets = new TicketService(this.#world.accounts, {
+      ...(options.ticketTtlMs === undefined
+        ? {}
+        : { ttlMs: options.ticketTtlMs }),
+    });
     this.#social = new SocialService(this.#world.accounts);
     this.#characters = new CharacterService(this.#world);
     for (const seed of this.#world.channels) {
@@ -1655,7 +1662,7 @@ export class FchatSim {
     payload: { recipient: string; message: string },
   ): void {
     const target = this.#online.get(payload.recipient);
-    if (!target?.connection) {
+    if (!target) {
       this.#sendError(connection, FchatErrorCode.CharacterNotFound);
       return;
     }
@@ -1670,6 +1677,13 @@ export class FchatSim {
       return;
     }
     connection.lastPriAt = now;
+    // An #online entry with no connection is an NPC (teardown removes a
+    // real character's entry outright). NPCs are online in LIS, so the live
+    // server would accept the PRI and simply deliver it to someone who never
+    // answers — accept-and-drop, not ERR 6.
+    if (!target.connection) {
+      return;
+    }
     this.#send(target.connection, {
       cmd: "PRI",
       payload: { character, message: payload.message },
