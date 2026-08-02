@@ -27,6 +27,7 @@ import {
 } from "../../test-support/budgets.js";
 import { MAX_SESSIONS_PER_USER, ROTATION_GRACE_MS } from "./routes.js";
 import { SessionJanitor } from "./session-janitor.js";
+import { hashRefreshToken, REFRESH_TOKEN_TTL_MS } from "./tokens.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 
@@ -362,6 +363,39 @@ describe("session hygiene", () => {
       },
     });
     expect(refresh.statusCode).toBe(200);
+  });
+
+  it("a refresh token lives 30 days and every refresh slides the window", async () => {
+    // The user's decision in place of the never-built per-login "keep me
+    // signed in" server toggle: one fixed, generous life, re-extended on use,
+    // so a daily-used device never gets logged out and an abandoned one goes
+    // cold on its own.
+    const { user, refreshToken } = await registerUser();
+    const issued = async () => {
+      const [row] = await db
+        .select({ expiresAt: authSessions.expiresAt })
+        .from(authSessions)
+        .where(eq(authSessions.userId, user.id));
+      return row!.expiresAt.getTime();
+    };
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    expect(REFRESH_TOKEN_TTL_MS).toBe(thirtyDays);
+    expect(await issued()).toBeCloseTo(Date.now() + thirtyDays, -4);
+
+    // Wind the row back to a day from expiry, then refresh: the replacement
+    // must start its own full window, not inherit the remaining day.
+    const nearExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await db
+      .update(authSessions)
+      .set({ expiresAt: nearExpiry })
+      .where(eq(authSessions.refreshTokenHash, hashRefreshToken(refreshToken)));
+    const refresh = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(refresh.statusCode).toBe(200);
+    expect(await issued()).toBeCloseTo(Date.now() + thirtyDays, -4);
   });
 
   it("the janitor sweeps expired sessions and leaves live ones", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileRule, HighlightMatcher } from "./matcher.js";
+import { compileRule, HighlightMatcher, matchableText } from "./matcher.js";
 
 describe("compileRule", () => {
   it("word rules match at ASCII word boundaries, case-insensitively", () => {
@@ -54,6 +54,73 @@ describe("compileRule", () => {
     const started = Date.now();
     expect(rule.test(input)).toBe(false);
     expect(Date.now() - started).toBeLessThan(200);
+  });
+});
+
+describe("matchableText", () => {
+  it("drops the bracketed tags and keeps their bodies", () => {
+    expect(matchableText("[b]hello[/b] there")).toBe(" hello  there");
+    // The body of a [user] tag is exactly how a mention reaches the wire.
+    expect(matchableText("ping [user]Amber Vale[/user]!")).toContain(
+      "Amber Vale",
+    );
+    // Deliberate: an eicon name is content the sender chose, so it stays
+    // matchable.
+    expect(matchableText("[eicon]amberblush[/eicon]")).toContain("amberblush");
+  });
+
+  it("never fuses two words or erases a boundary (tags become a space)", () => {
+    expect(matchableText("foo[b]bar[/b]")).not.toContain("foobar");
+  });
+});
+
+describe("HighlightMatcher over BBCode (audit backlog)", () => {
+  /** A matcher whose user has one `word` rule and no own-nick highlight. */
+  function matcherWithRule(pattern: string): HighlightMatcher {
+    const results: unknown[][] = [
+      [{ userId: "user-1" }],
+      [{ prefs: { highlightOwnNick: false } }],
+      [{ kind: "word", pattern }],
+    ];
+    let index = 0;
+    const chain = {
+      from: () => chain,
+      innerJoin: () => chain,
+      where: () => chain,
+      limit: () => Promise.resolve(results[index++] ?? []),
+      then: (
+        onFulfilled?: (rows: unknown[]) => unknown,
+        onRejected?: (error: unknown) => unknown,
+      ) =>
+        Promise.resolve(results[index++] ?? []).then(onFulfilled, onRejected),
+    };
+    return new HighlightMatcher({
+      select: () => chain,
+    } as unknown as ConstructorParameters<typeof HighlightMatcher>[0]);
+  }
+
+  it("does not fire a word rule on a tag attribute", async () => {
+    // The reported false positive: a rule for "amber" matched the colour
+    // name in the markup, not anything anyone said.
+    const matcher = matcherWithRule("amber");
+    expect(
+      await matcher.mention(
+        "identity-1",
+        "Nyx Firemane",
+        "[color=amber]the sun sets[/color]",
+      ),
+    ).toBe(false);
+  });
+
+  it("still fires on the rendered text inside the tags", async () => {
+    const matcher = matcherWithRule("amber");
+    expect(
+      await matcher.mention(
+        "identity-1",
+        "Nyx Firemane",
+        "[color=red]hey Amber, over here[/color]",
+      ),
+    ).toBe(true);
   });
 });
 

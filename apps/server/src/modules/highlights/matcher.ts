@@ -36,6 +36,24 @@ function boundaryPattern(term: string): string {
 }
 
 /**
+ * What rules actually run against: the message with its BBCode tags removed
+ * (audit backlog — a word rule "amber" fired on `[color=amber]…[/color]`,
+ * markup nobody said). The wire grammar is `[name]`/`[name=arg]`/`[/name]`,
+ * so a bracket strip is exact for well-formed content and merely cosmetic for
+ * anything else — the same strip the notification excerpt uses.
+ *
+ * A tag becomes a SPACE, never nothing, so stripping can neither fuse two
+ * words into a term nor erase the boundary a `word` rule keys on.
+ *
+ * Tag BODIES stay, deliberately: `[user]Amber Vale[/user]` is exactly how a
+ * mention reaches the wire, and `[eicon]amberblush[/eicon]` stays matchable
+ * too — an eicon name is content the sender chose to put in the message.
+ */
+export function matchableText(bbcode: string): string {
+  return bbcode.replace(/\[[^\]]*\]/g, " ");
+}
+
+/**
  * Compile one rule. `word`/`nick` are literal terms matched at word
  * boundaries; `regex` runs as written. Case-insensitive throughout. Throws
  * on a pattern RE2 refuses — the PUT route turns that into a 422.
@@ -66,20 +84,23 @@ export class HighlightMatcher {
   }
 
   /**
-   * Persist-time verdict for an inbound channel message. Never throws — a
-   * matcher failure must degrade to "no mention", not take the history
-   * write down with it.
+   * Persist-time verdict for an inbound channel message. Takes the raw wire
+   * BBCode and matches the tag-stripped text (see matchableText) — this is
+   * the single boundary where that translation happens, so every caller gets
+   * it. Never throws — a matcher failure must degrade to "no mention", not
+   * take the history write down with it.
    */
   async mention(
     identityId: string,
     character: string,
-    text: string,
+    bbcode: string,
   ): Promise<boolean> {
     try {
       const userId = await this.#userId(identityId);
       if (userId === undefined) {
         return false;
       }
+      const text = matchableText(bbcode);
       if (
         (await this.#ownNick(userId)) &&
         this.#nickRegex(character).test(text)

@@ -44,6 +44,7 @@ import {
   authSessions,
   conversations,
   identities,
+  ignores,
   messages,
   outboxMessages,
 } from "../../db/schema.js";
@@ -975,6 +976,128 @@ describe("gateway handshake", () => {
       sessionStatus: "offline",
       unread: 3,
       mentions: 1,
+    });
+  });
+
+  it("leaves messages from ignored senders out of every count (audit backlog)", async () => {
+    const { identityId, token } = await createIdentity();
+    const [dev] = await db
+      .insert(conversations)
+      .values({ identityId, kind: "channel", channelKey: "Dev", title: "Dev" })
+      .returning();
+    // The identity ignores Spam Bot — the mirror the sink maintains from IGN.
+    await db
+      .insert(ignores)
+      .values({ identityId, character: "Spam Bot" })
+      .onConflictDoNothing();
+    await db.insert(messages).values([
+      {
+        conversationId: dev!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: "the one that counts",
+      },
+      {
+        conversationId: dev!.id,
+        // Cased differently on the wire: F-Chat resolves names
+        // case-insensitively, and so must the exclusion.
+        senderCharacter: "SPAM BOT",
+        kind: "msg" as const,
+        bbcode: `buy gold ${CHARACTER}`,
+        mention: true,
+      },
+    ]);
+
+    const client = await connectClient();
+    const ready = await client.hello(token);
+    // Only the unignored message: the ignored one is filtered out of the log
+    // client-side, so a badge for it could never be cleared by reading it.
+    expect(ready.d.identities[0]).toMatchObject({ unread: 1, mentions: 0 });
+
+    const snapshot = await client.subscribe(identityId);
+    expect(snapshot.d.channels[0]).toMatchObject({
+      key: "Dev",
+      unread: 1,
+      mentions: 0,
+    });
+  });
+
+  it("ready totals exclude muted conversations and muted identities (#430)", async () => {
+    const { identityId, token } = await createIdentity();
+    const [dev, lounge] = await db
+      .insert(conversations)
+      .values([
+        { identityId, kind: "channel", channelKey: "Dev", title: "Dev" },
+        { identityId, kind: "channel", channelKey: "Lounge", title: "Lounge" },
+      ])
+      .returning();
+    await db.insert(messages).values([
+      {
+        conversationId: dev!.id,
+        senderCharacter: "Nyx Firemane",
+        kind: "msg" as const,
+        bbcode: `oi ${CHARACTER}`,
+        mention: true,
+      },
+      {
+        conversationId: lounge!.id,
+        senderCharacter: "Tally Marsh",
+        kind: "msg" as const,
+        bbcode: `also oi ${CHARACTER}`,
+        mention: true,
+      },
+    ]);
+
+    // Baseline: both conversations feed the totals.
+    const before = await connectClient();
+    expect((await before.hello(token)).d.identities[0]).toMatchObject({
+      unread: 2,
+      mentions: 2,
+    });
+
+    const setter = await connectClient();
+    await setter.hello(token);
+    await setter.subscribe(identityId);
+    setter.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "prefs.set",
+        d: { prefs: { mutedConvIds: [dev!.id] } },
+      },
+    });
+    await setter.nextOfType("ack");
+
+    // The favicon indicator falls back to these totals for an unsynced
+    // identity and cannot decompose them, so the mute has to hold here.
+    const muted = await connectClient();
+    expect((await muted.hello(token)).d.identities[0]).toMatchObject({
+      unread: 1,
+      mentions: 1,
+    });
+    // Per-conversation snapshot counts stay mute-blind: sidebar badges keep
+    // accruing for a muted room (decisions.md §10).
+    const snapshot = await muted.subscribe(identityId);
+    expect(
+      snapshot.d.channels.find((channel) => channel.key === "Dev"),
+    ).toMatchObject({ unread: 1, mentions: 1 });
+
+    // A muted identity contributes nothing at all.
+    setter.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "prefs.set",
+        d: { prefs: { mutedIdentityIds: [identityId] } },
+      },
+    });
+    await setter.nextOfType("ack");
+    const silenced = await connectClient();
+    expect((await silenced.hello(token)).d.identities[0]).toMatchObject({
+      unread: 0,
+      mentions: 0,
     });
   });
 
