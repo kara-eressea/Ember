@@ -62,7 +62,7 @@ test("DM sidebar: renders the partner, note autosaves + persists, collapse persi
       .fill(NOTE_TEXT);
     await expect(sidebar.getByText("✓ Saved")).toBeVisible({ timeout: 10_000 });
 
-    // ── Collapse: the header ◨ toggle hides the panel ─────────────────────
+    // ── Collapse: the header panel toggle hides the panel ─────────────────────
     await page.getByRole("button", { name: "Toggle profile panel" }).click();
     await expect(sidebar).not.toBeVisible();
 

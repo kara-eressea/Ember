@@ -1,91 +1,272 @@
 /* ChannelHeader, MessageLog, Composer, MemberList (COMPONENTS.md §5–9). */
 
-/* ── ChannelHeader ───────────────────────────────────────────────────── */
+/* ── Conversation toolbar: ChannelHeader / DmHeader ───────────────────── */
 
+/* One row, both headers, fixed height: the log no longer shifts when a
+   channel has no description. Actions run on the composer toolbar's own
+   .iconBtn / .tbDivider language (further down this file), so the top and
+   bottom edges of a conversation read as the same instrument. */
 .header {
-  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 46px;
+  padding: 0 10px 0 18px;
   border-bottom: 1px solid var(--eb-border);
   background: var(--eb-head);
 }
 
-.headerRow {
+/* Name and topic share the row and take every spare pixel — everything to
+   their right is fixed-width, so the topic is what gives way first. The
+   floor is on the block, not the name inside it: a name that outgrew its
+   own box would paint over the chips instead of ellipsising. */
+.headerIdentity {
   display: flex;
+  flex: 1;
+  gap: 8px;
   align-items: center;
-  gap: 9px;
+  min-width: 9ch;
 }
 
 .headerGlyph {
+  flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(20px * var(--eb-font-ui-scale));
+  font-size: calc(17px * var(--eb-font-ui-scale));
   color: var(--eb-faint);
 }
 
+/* One step down from the old 18px: the row now carries the topic too, and
+   the name still wins on weight. Capped in ch (not a percentage, which would
+   shrink the name on a narrow row where it is the only thing left) so a very
+   long room name cannot eat the topic, and floored so it never vanishes. */
 .headerTitle {
-  font-size: calc(18px * var(--eb-font-ui-scale));
-  font-weight: 700;
-  white-space: nowrap;
+  flex: 0 1 auto;
+  max-width: 24ch;
+  min-width: 0;
   overflow: hidden;
+  font-size: calc(15px * var(--eb-font-ui-scale));
+  font-weight: 700;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.headerSpacer {
-  flex: 1;
+.headerHairline {
+  flex: none;
+  width: 1px;
+  height: 15px;
+  background: var(--eb-border);
 }
 
-.headerButton {
-  display: inline-grid;
-  grid-auto-flow: column;
-  place-items: center;
-  gap: 4px;
-  min-width: 30px;
-  min-height: 30px;
-  border: none;
-  background: none;
-  color: var(--eb-dim);
+.headerCluster {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+}
+
+/* Member count beside the toggle glyph — mono, like every other count. */
+.headerCount {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(12.5px * var(--eb-font-ui-scale));
-  padding: 4px 8px;
-  border-radius: var(--eb-radius);
-}
-
-.headerButton:hover {
-  background: var(--eb-hover-main);
+  font-size: var(--eb-font-ui-tiny);
+  font-variant-numeric: tabular-nums;
 }
 
 .headerDot {
+  flex: none;
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  flex: none;
 }
 
-.description {
-  margin-top: 4px;
-  color: var(--eb-meta);
+/* ── Topic slot (channel description / DM status) ─────────────────────── */
+
+/* Basis 0, not auto: the topic takes the free space that is left rather than
+   claiming its full text width and putting the whole row into overflow. That
+   is what keeps the name beside it un-shrunk — a shrink of even a fraction of
+   a pixel is enough to trip its ellipsis and drop a whole character. */
+.topicSlot {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.topic {
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  margin-left: -6px;
+  overflow: hidden;
   font-size: var(--eb-font-ui-small);
+  color: var(--eb-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 7px;
 }
 
-/* Partner's wall clock in the DM header's status line — same row, quieter,
-   and never the reason the row exists on its own. */
+.topic:hover {
+  color: var(--eb-dim);
+  background: var(--eb-hover-main);
+}
+
+/* The inline copy is a preview only — inert (React `inert`, so no tab stops
+   either), and any eicon it carries is pinned to the line height so a topic
+   can never grow the row. */
+.topicInline img {
+  max-height: 15px;
+  width: auto;
+  vertical-align: -3px;
+}
+
+.topicStatus {
+  text-transform: capitalize;
+}
+
+/* Partner's wall clock (#439): a fixed readout, not part of the topic — it
+   must survive the truncation that eats an overlong status message. */
 .headerClock {
+  display: flex;
+  flex: none;
+  gap: 5px;
+  align-items: center;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--eb-font-ui-tiny);
+  font-variant-numeric: tabular-nums;
   color: var(--eb-faint);
   white-space: nowrap;
 }
 
-.descriptionClamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.headerClock svg {
+  width: 13px;
+  height: 13px;
 }
 
-.showMore {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--eb-accent-text);
+/* Click-anywhere-else dismissal, the MemberContextMenu pattern. */
+.topicOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+}
+
+/* Clicking the slot opens the whole topic with its links live — this is what
+   replaced the old second row's Show more / Show less. */
+.topicPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -6px;
+  z-index: 32;
+  width: min(520px, 68vw);
+  max-height: 46vh;
+  padding: 11px 13px;
+  overflow-y: auto;
   font-size: var(--eb-font-ui-small);
-  font-weight: 600;
+  line-height: 1.55;
+  color: var(--eb-dim);
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 18px 44px -12px rgb(0 0 0 / 55%); /* popover shadow */
+}
+
+/* ── Header search field ──────────────────────────────────────────────── */
+
+.searchAnchor {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+/* The sidebar's filter pill, reused: same 28px height, same 14px radius. */
+.searchField {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 196px;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--eb-faint);
+  cursor: text;
+  background: var(--eb-bg);
+  border: 1px solid var(--eb-border);
+  border-radius: 14px;
+  transition: width 130ms ease;
+}
+
+.searchField:focus-within {
+  border-color: var(--eb-accent);
+  box-shadow: 0 0 0 3px var(--eb-accent-soft);
+}
+
+.searchField svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.searchFieldInput {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
+  color: var(--eb-text);
+  background: none;
+  border: 0;
+}
+
+.searchFieldInput::placeholder {
+  color: var(--eb-meta);
+}
+
+.searchFieldInput:focus {
+  outline: none;
+}
+
+/* Narrow windows: the field parks as a magnifier chip and grows back the
+   moment it takes focus — taking the topic's room, not the conversation
+   name's. The chips never collapse; they are the row's whole point.
+   The thresholds are window-wide but the row is (window − rail − sidebar),
+   since the toolbar spans the right column too. */
+@media (max-width: 940px) {
+  .searchField {
+    width: 32px;
+    padding: 0 8px;
+  }
+
+  .searchField:not(:focus-within) .searchFieldInput {
+    flex: none;
+    width: 0;
+  }
+
+  .searchField:focus-within {
+    width: 200px;
+    padding: 0 10px;
+  }
+
+  .header:has(.searchField:focus-within) .topicSlot,
+  .header:has(.searchField:focus-within) .headerHairline {
+    display: none;
+  }
+}
+
+/* Below this there is no honest room for a topic beside the name — it steps
+   out entirely rather than shrinking to an ellipsis nobody can read. The
+   popover it opened is reachable from the room-settings window instead. */
+@media (max-width: 820px) {
+  .topicSlot,
+  .headerHairline,
+  /* The clock goes with it: at this width it was costing the partner's name
+     its last characters, and the profile panel carries the same reading. */
+  .headerClock {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .searchField {
+    transition: none;
+  }
 }
 
 /* Typing status on the message bar (#336): a slim line resting directly above
@@ -630,22 +811,11 @@
   border-left: 1px solid var(--eb-border);
 }
 
-.membersHeader {
-  padding: 13px 12px;
-  border-bottom: 1px solid var(--eb-border);
-  font-size: var(--eb-font-ui);
-  font-weight: 700;
-}
-
-.membersCount {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-weight: 400;
-  color: var(--eb-meta);
-}
-
-/* One filter for every group, offline included (#200 §4). */
+/* One filter for every group, offline included (#200 §4). The column has no
+   head of its own any more, so this is its first row — it gets the padding
+   the head used to provide. */
 .memberFilter {
-  margin: 8px 12px 0;
+  margin: 10px 12px 2px;
   padding: 5px 8px;
   font: inherit;
   font-size: var(--eb-font-ui-small);
@@ -1007,34 +1177,6 @@
   content: "";
   flex: 1;
   border-top: 1px solid var(--eb-accent-med);
-}
-
-/* COMPONENTS.md §5: "⚲ pinned" chip — mono pill next to the title. */
-.pinChip {
-  flex: none;
-  border: 1px solid var(--eb-border);
-  background: none;
-  color: var(--eb-faint);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(10.5px * var(--eb-font-ui-scale));
-  padding: 2px 9px;
-  border-radius: 20px;
-}
-
-.pinChip:hover {
-  color: var(--eb-dim);
-  background: var(--eb-hover-main);
-}
-
-.pinChipActive {
-  color: var(--eb-accent);
-  border-color: var(--eb-accent-med);
-}
-
-/* Ignore is a danger action (COMPONENTS.md member menu), not an accent. */
-.ignoreChipActive {
-  color: var(--eb-danger);
-  border-color: color-mix(in srgb, var(--eb-danger) 50%, transparent);
 }
 
 /* Byte counter against the live server limit (never hardcoded). */
@@ -1759,15 +1901,17 @@
 
 /* ── In-log search (M9 step 3) ─────────────────────────────────────────── */
 
+/* Results hang under the header's search field, which owns the query. */
 .searchPanel {
   position: absolute;
-  top: 52px;
-  right: 8px;
-  bottom: 76px;
+  top: calc(100% + 8px);
+  right: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  width: 340px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: min(60vh, 560px);
   overflow: hidden;
   background: var(--eb-side);
   border: 1px solid var(--eb-border);
@@ -1779,47 +1923,67 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 8px;
+  padding: 7px 8px;
   border-bottom: 1px solid var(--eb-border);
 }
 
-.searchInput {
+.searchScopeGroup {
+  display: flex;
   flex: 1;
+  gap: 4px;
   min-width: 0;
-  padding: 6px 8px;
-  font: inherit;
-  font-size: calc(12.5px * var(--eb-font-ui-scale));
-  color: var(--eb-text);
-  background: var(--eb-bg);
-  border: 1px solid var(--eb-border);
-  border-radius: var(--eb-radius);
 }
 
 .searchScope {
   flex: none;
-  padding: 5px 8px;
-  font-family: var(--eb-mono, monospace);
-  font-size: calc(10.5px * var(--eb-font-ui-scale));
-  color: var(--eb-dim);
+  padding: 4px 9px;
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-meta);
   cursor: pointer;
   background: none;
-  border: 1px solid var(--eb-border);
-  border-radius: var(--eb-radius);
+  border: 1px solid transparent;
+  border-radius: 20px;
 }
 
-.searchScopeOn {
-  color: var(--eb-accent);
+.searchScope:hover:not(:disabled) {
+  color: var(--eb-dim);
+  background: var(--eb-hover-main);
+}
+
+.searchScope:disabled {
+  color: var(--eb-faint);
+  cursor: default;
+}
+
+.searchScopeOn,
+.searchScopeOn:hover:not(:disabled) {
+  color: var(--eb-accent-text);
   background: var(--eb-accent-soft);
-  border-color: var(--eb-accent);
+  border-color: var(--eb-accent-med);
 }
 
 .searchClose {
+  display: grid;
   flex: none;
-  padding: 4px 6px;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   color: var(--eb-faint);
   cursor: pointer;
   background: none;
   border: none;
+  border-radius: 7px;
+}
+
+.searchClose:hover {
+  color: var(--eb-text);
+  background: var(--eb-hover-main);
+}
+
+.searchClose svg {
+  width: 14px;
+  height: 14px;
 }
 
 .searchBody {
@@ -2041,6 +2205,15 @@
 .iconBtnArmed:hover:not(:disabled) {
   background: var(--eb-accent);
   color: var(--eb-bg);
+}
+
+/* Ignore is a danger action (COMPONENTS.md member menu), so its toggled-on
+   state borrows the accent shape in the danger hue instead. */
+.iconBtnDanger,
+.iconBtnDanger:hover:not(:disabled) {
+  color: var(--eb-danger);
+  background: color-mix(in srgb, var(--eb-danger) 16%, transparent);
+  box-shadow: inset 0 -2px 0 var(--eb-danger);
 }
 
 .iconBtn:disabled {

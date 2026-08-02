@@ -7,6 +7,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ChannelHeader, DmHeader } from "./ChannelHeader.js";
 import { useProfileStore } from "../../stores/profile.js";
@@ -22,12 +23,12 @@ afterEach(() => {
   useProfileStore.setState({ profiles: {} });
 });
 
-function channelTitled(title: string): ChannelView {
+function channelTitled(title: string, description = ""): ChannelView {
   return {
     convId: "c1",
     key: "Frontpage",
     title,
-    description: "",
+    description,
     mode: "both",
     // Owner is someone else → the viewer is a non-op, so no RoomChip.
     oplist: ["Someone Else"],
@@ -99,7 +100,7 @@ describe("DM header partner clock", () => {
         <DmHeader identityId="id1" dm={dm()} />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/Local time/).getAttribute("title")).toContain(
+    expect(screen.getByTitle(/local time/).getAttribute("title")).toContain(
       "Europe/Berlin (set by you)",
     );
   });
@@ -111,7 +112,7 @@ describe("DM header partner clock", () => {
         <DmHeader identityId="id1" dm={dm()} />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/Local time/).getAttribute("title")).toContain(
+    expect(screen.getByTitle(/local time/).getAttribute("title")).toContain(
       "UTC+2",
     );
     unmount();
@@ -122,6 +123,49 @@ describe("DM header partner clock", () => {
         <DmHeader identityId="id1" dm={dm()} />
       </MemoryRouter>,
     );
-    expect(screen.queryByText(/Local time/)).toBeNull();
+    expect(screen.queryByTitle(/local time/)).toBeNull();
+  });
+});
+
+describe("conversation toolbar", () => {
+  it("keeps every channel action on one row", () => {
+    render(
+      <MemoryRouter>
+        <ChannelHeader identityId="id1" channel={channelTitled("Frontpage")} />
+      </MemoryRouter>,
+    );
+    for (const name of ["Pin", "Mute conversation", "Toggle member list"]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
+    // Search is the row's one text field, not a button that opens one.
+    expect(
+      screen.getByRole("textbox", { name: "Search log" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the full description from the truncated topic", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <ChannelHeader
+          identityId="id1"
+          channel={channelTitled(
+            "Frontpage",
+            "Warm glass and [b]growing things[/b].",
+          )}
+        />
+      </MemoryRouter>,
+    );
+    const topic = screen.getByRole("button", {
+      name: "#Frontpage description — show in full",
+    });
+    expect(topic).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(topic);
+    expect(topic).toHaveAttribute("aria-expanded", "true");
+    const popover = screen.getByRole("dialog", {
+      name: "#Frontpage description",
+    });
+    expect(popover).toHaveTextContent("Warm glass and growing things.");
   });
 });

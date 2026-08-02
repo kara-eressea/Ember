@@ -112,18 +112,24 @@ export function DmProfile({
       aria-label={`Profile: ${partner}`}
       style={{ "--gender-accent": accent } as React.CSSProperties}
     >
-      <div className={styles.header}>
-        <span className={profileStyles.groupLabel}>Profile</span>
-        <button
-          type="button"
-          className={styles.collapse}
-          title="Hide the profile panel"
-          aria-label="Hide the profile panel"
-          onClick={onCollapse}
-        >
-          »
-        </button>
-      </div>
+      {/* Docked, the conversation toolbar spans this column and carries the
+          panel toggle — a "Profile »" head under it would just repeat both.
+          The narrow drawer is a fixed overlay *over* that toolbar, so it
+          keeps its own label and its own way out. */}
+      {overlay && (
+        <div className={styles.header}>
+          <span className={profileStyles.groupLabel}>Profile</span>
+          <button
+            type="button"
+            className={styles.collapse}
+            title="Hide the profile panel"
+            aria-label="Hide the profile panel"
+            onClick={onCollapse}
+          >
+            »
+          </button>
+        </div>
+      )}
 
       <div className={styles.body}>
         {/* ── Hero ── */}

@@ -377,14 +377,13 @@ test("re-opening a conversation left in a search-jump view lands at the tail (#4
 
     // Jump to the needle via the log search: the buffer detaches and the log
     // parks on the old page (the legitimate flow — it must still work).
-    await page.getByRole("button", { name: "Search log" }).first().click();
+    const searchField = page
+      .getByRole("textbox", { name: "Search log" })
+      .first();
+    await searchField.click();
     const search = page.getByRole("dialog", { name: "Search log" });
-    await search
-      .getByRole("textbox", { name: "Search messages" })
-      .fill("strandmark");
-    await search
-      .getByRole("textbox", { name: "Search messages" })
-      .press("Enter");
+    await searchField.fill("strandmark");
+    await searchField.press("Enter");
     await search
       .getByRole("button")
       .filter({ hasText: "strandmark anchor" })
@@ -394,7 +393,8 @@ test("re-opening a conversation left in a search-jump view lands at the tail (#4
       timeout: 15_000,
     });
     await expect(page.getByTestId("jump-to-recent")).toBeVisible();
-    await search.getByRole("button", { name: "Close search" }).click();
+    // Jumping dismisses the results panel — it hangs over the log.
+    await expect(search).not.toBeVisible();
 
     // Leave for another conversation, then take a few unreads — the exact
     // "channel with a couple of unreads" shape from #411.

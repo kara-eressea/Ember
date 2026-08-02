@@ -1,14 +1,28 @@
-// ChannelHeader (COMPONENTS.md §5). F-Chat channels carry one CDS
-// description — it fills the collapsed description row; the separate
-// editable TOPIC row has no wire counterpart and is omitted. For DMs the
-// header shows the partner with presence; the TPN typing state now rests on
-// the message bar (#336), rendered by the composer's typingLine.
+// ChannelHeader / DmHeader (COMPONENTS.md §5) — one compact toolbar row.
+//
+// Identity (glyph · name · topic) on the left, then icon-chip actions, the
+// inline search field and the view toggles on the right. The row runs on the
+// composer toolbar's own IconBtn + divider language (chat.module.css
+// .iconBtn/.tbDivider) so the top and bottom of a conversation read as the
+// same instrument.
+//
+// F-Chat channels carry one CDS description — that fills the topic slot; the
+// separate editable TOPIC row has no wire counterpart and is omitted. The TPN
+// typing state rests on the message bar (#336), rendered by the composer's
+// typingLine.
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
@@ -24,22 +38,179 @@ import { useUiStore } from "../../stores/ui.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { RoomSettingsWindow } from "./RoomSettingsWindow.js";
-import { SearchGlyph } from "../icons/Glyphs.js";
+import {
+  BanGlyph,
+  BellGlyph,
+  BellOffGlyph,
+  ClockGlyph,
+  CloseGlyph,
+  GearGlyph,
+  MembersGlyph,
+  MoreGlyph,
+  PanelRightGlyph,
+  PinGlyph,
+  SearchGlyph,
+} from "../icons/Glyphs.js";
 import { RichText } from "./RichText.js";
+import { SearchPanel } from "./SearchPanel.js";
+import { useLogSearch } from "./log-search.js";
 import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
 
-const DESCRIPTION_CLAMP = 140;
+/** Toolbar chip: the composer's IconBtn, with the toggled state spelled out. */
+function chipClass(on = false, danger = false): string {
+  return [
+    styles.iconBtn,
+    on ? styles.iconBtnOn : "",
+    on && danger ? styles.iconBtnDanger : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 /**
- * COMPONENTS.md §5 "⚲ pinned" chip, made interactive: pinned channels are
- * what an explicit reconnect rejoins (decisions.md §9), pinned DMs surface
- * under the sidebar's Pinned section.
+ * The topic slot — a channel's CDS description or a DM partner's status, set
+ * inline beside the name and clipped to the row. The inline copy is inert:
+ * BBCode topics carry links, `[user]` chips and eicons that are unusable at
+ * one truncated line, so clicking the slot opens the same content live in a
+ * popover (this replaces the old second row's Show more / Show less).
  */
+function HeaderTopic({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  // On the shared Escape stack as an overlay (#442), so an armed ambient
+  // action — MessageLog's "mark caught up" — cannot steal the first press.
+  useEscapeToClose(() => {
+    setOpen(false);
+  }, open);
+
+  function activate(event: ReactKeyboardEvent) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((value) => !value);
+    }
+  }
+
+  return (
+    <span className={styles.topicSlot}>
+      {/* A span, not a <button>: RichText renders its own buttons (link
+          chips, #channel, [user]) and nesting those is invalid HTML — the
+          SearchPanel hit rows solve it the same way. */}
+      <span
+        role="button"
+        tabIndex={0}
+        className={styles.topic}
+        aria-label={`${label} — show in full`}
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((value) => !value);
+        }}
+        onKeyDown={activate}
+      >
+        <span className={styles.topicInline} inert>
+          {children}
+        </span>
+      </span>
+      {open && (
+        <>
+          <div
+            className={styles.topicOverlay}
+            onClick={() => {
+              setOpen(false);
+            }}
+          />
+          <div className={styles.topicPopover} role="dialog" aria-label={label}>
+            {children}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
 /**
- * DM-header ignore toggle (M3). Ignoring is server-stored (IGN) and
- * render-side here: history keeps the messages, the log hides them. State
- * follows the `ignore.updated` fan-out, so no optimistic flip is needed.
+ * The inline search field (COMPONENTS.md §5), wearing the sidebar filter's
+ * pill so the app has one search shape. One input for one search: the field
+ * owns the query, the panel below it is the result list. Focusing the field
+ * opens the panel; the header is keyed per conversation, so leaving one
+ * closes its search.
+ */
+function HeaderSearch({
+  identityId,
+  convId,
+}: {
+  identityId: string;
+  convId: string;
+}) {
+  const open = useUiStore((s) => s.searchOpen);
+  const session = useSessionsStore((s) => s.sessions[identityId]);
+  const [query, setQuery] = useState("");
+  const search = useLogSearch(identityId, convId);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(
+    () => () => {
+      useUiStore.getState().setSearchOpen(false);
+    },
+    [],
+  );
+
+  return (
+    <div className={styles.searchAnchor}>
+      <form
+        className={styles.searchField}
+        role="search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          search.submit(query);
+        }}
+        // Collapsed to a magnifier on narrow windows the input has no width
+        // of its own, so the pill has to hand focus over.
+        onClick={() => {
+          inputRef.current?.focus();
+        }}
+      >
+        <SearchGlyph />
+        <input
+          ref={inputRef}
+          className={styles.searchFieldInput}
+          value={query}
+          placeholder="Search log"
+          aria-label="Search log"
+          title={
+            'Search this conversation — filters: from:"Name", before:/after:YYYY-MM-DD'
+          }
+          onFocus={() => {
+            useUiStore.getState().setSearchOpen(true);
+          }}
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+        />
+      </form>
+      {open && session !== undefined && (
+        <SearchPanel
+          session={session}
+          convId={convId}
+          search={search}
+          onClose={() => {
+            useUiStore.getState().setSearchOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * DM ignore toggle (M3). Ignoring is server-stored (IGN) and render-side
+ * here: history keeps the messages, the log hides them. State follows the
+ * `ignore.updated` fan-out, so no optimistic flip is needed.
  */
 function IgnoreChip({
   identityId,
@@ -82,18 +253,21 @@ function IgnoreChip({
 
   return (
     <button
-      className={`${styles.pinChip} ${ignored ? (styles.ignoreChipActive ?? "") : ""}`}
+      type="button"
+      className={chipClass(ignored, true)}
       onClick={() => {
         void toggle();
       }}
       disabled={busy}
+      aria-pressed={ignored}
+      aria-label={ignored ? "Unignore" : "Ignore"}
       title={
         ignored
           ? "Unignore — show their messages again"
           : "Ignore — hide their messages (history is kept)"
       }
     >
-      ⊘ {ignored ? "ignored" : "ignore"}
+      <BanGlyph />
     </button>
   );
 }
@@ -118,7 +292,8 @@ function MuteChip({
 
   return (
     <button
-      className={`${styles.pinChip} ${muted ? (styles.ignoreChipActive ?? "") : ""}`}
+      type="button"
+      className={chipClass(muted)}
       onClick={() => {
         // The prefs schema caps the list at 500; without this check the
         // patch is rejected server-side and the chip silently flips back
@@ -139,19 +314,26 @@ function MuteChip({
             : [...mutedConvIds, convId],
         });
       }}
+      aria-pressed={muted}
+      aria-label={muted ? "Unmute conversation" : "Mute conversation"}
       title={
         muted
           ? "Unmute — sounds and notifications again"
           : "Mute — no sounds or notifications (badges still count)"
       }
     >
-      {muted ? "🔕 muted" : "🔔 mute"}
+      {muted ? <BellOffGlyph /> : <BellGlyph />}
     </button>
   );
 }
 
 const EMPTY_MUTES = PREFS_DEFAULTS.mutedConvIds;
 
+/**
+ * COMPONENTS.md §5 pin chip: pinned channels are what an explicit reconnect
+ * rejoins (decisions.md §9), pinned DMs surface under the sidebar's Pinned
+ * section.
+ */
 function PinChip({
   identityId,
   convId,
@@ -192,14 +374,17 @@ function PinChip({
 
   return (
     <button
-      className={`${styles.pinChip} ${pinned ? (styles.pinChipActive ?? "") : ""}`}
+      type="button"
+      className={chipClass(pinned)}
       onClick={() => {
         void toggle();
       }}
       disabled={busy}
+      aria-pressed={pinned}
+      aria-label={pinned ? "Unpin" : "Pin"}
       title={pinned ? "Unpin — stop auto-rejoining" : "Pin — rejoin on connect"}
     >
-      ⚲ {pinned ? "pinned" : "pin"}
+      <PinGlyph />
     </button>
   );
 }
@@ -234,13 +419,15 @@ function RoomChip({
   return (
     <>
       <button
-        className={styles.pinChip}
+        type="button"
+        className={chipClass()}
         onClick={() => {
           setOpen(true);
         }}
+        aria-label="Room settings"
         title="Room settings — invites, visibility, bans"
       >
-        ⚙ room
+        <GearGlyph />
       </button>
       {open && (
         <RoomSettingsWindow
@@ -311,7 +498,7 @@ function CampaignChip({
       }}
     >
       <span className={styles.campaignChipDot} aria-hidden />
-      Campaign · posting here
+      Campaign
     </button>
   );
 }
@@ -323,8 +510,8 @@ export function ChannelHeader({
   identityId: string;
   channel: ChannelView;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const toggleMembers = useUiStore((s) => s.toggleMembers);
+  const membersOpen = useUiStore((s) => s.membersOpen);
   const ownCharacter = useSessionsStore(
     (s) => s.sessions[identityId]?.character ?? "",
   );
@@ -332,7 +519,6 @@ export function ChannelHeader({
     (s) => s.sessions[identityId]?.chatop ?? false,
   );
   const description = channel.description.trim();
-  const clampable = description.length > DESCRIPTION_CLAMP;
   // Room management is an op+ affair (the commands are chanop-restricted
   // wire-side; the UI simply doesn't offer them to others). Chatops manage
   // any channel; the private-room actions (invite, open/close) only render
@@ -341,15 +527,33 @@ export function ChannelHeader({
     roleFor(ownCharacter, channel.oplist) !== null || chatop;
 
   // Room titles are wire text the server entity-escapes (#350); decode for the
-  // plain-text header + chip tooltip. The description below goes through
-  // RichText, which decodes on its own path — so it is left untouched here.
+  // plain-text header + chip tooltip. The description goes through RichText,
+  // which decodes on its own path — so it is left untouched here.
   const title = decodeWireEntities(channel.title);
   return (
     <header className={styles.header}>
-      <div className={styles.headerRow}>
-        <span className={styles.headerGlyph}>#</span>
+      <div className={styles.headerIdentity}>
+        <span className={styles.headerGlyph} aria-hidden>
+          #
+        </span>
         <h1 className={styles.headerTitle}>{title}</h1>
-        <CampaignChip identityId={identityId} channelKey={channel.key} />
+        {description !== "" && (
+          <>
+            <span className={styles.headerHairline} aria-hidden />
+            <HeaderTopic label={`#${title} description`}>
+              <RichText bbcode={description} />
+            </HeaderTopic>
+          </>
+        )}
+      </div>
+      <CampaignChip identityId={identityId} channelKey={channel.key} />
+      <div className={styles.headerCluster}>
+        <PinChip
+          identityId={identityId}
+          convId={channel.convId}
+          pinned={channel.pinned}
+        />
+        <MuteChip identityId={identityId} convId={channel.convId} />
         {canManageRoom && (
           <RoomChip
             identityId={identityId}
@@ -361,52 +565,22 @@ export function ChannelHeader({
             description={channel.description}
           />
         )}
-        <span className={styles.headerSpacer} />
-        <button
-          className={styles.headerButton}
-          title="Search this channel's log"
-          aria-label="Search log"
-          onClick={() => {
-            useUiStore.getState().setSearchOpen(true);
-          }}
-        >
-          <SearchGlyph />
-        </button>
-        <button
-          className={styles.headerButton}
-          onClick={toggleMembers}
-          title="Toggle member list"
-        >
-          ☰ {channel.members.length}
-        </button>
       </div>
-      {description && (
-        <div
-          className={`${styles.description} ${expanded ? "" : (styles.descriptionClamped ?? "")}`}
-        >
-          <RichText bbcode={description} />{" "}
-          {clampable && expanded && (
-            <button
-              className={styles.showMore}
-              onClick={() => {
-                setExpanded(false);
-              }}
-            >
-              Show less
-            </button>
-          )}
-        </div>
-      )}
-      {clampable && !expanded && (
-        <button
-          className={styles.showMore}
-          onClick={() => {
-            setExpanded(true);
-          }}
-        >
-          Show more
-        </button>
-      )}
+      <span className={styles.tbDivider} aria-hidden />
+      <button
+        type="button"
+        className={chipClass(membersOpen)}
+        onClick={toggleMembers}
+        aria-pressed={membersOpen}
+        aria-label="Toggle member list"
+        title="Toggle member list"
+      >
+        <MembersGlyph />
+        <span className={styles.headerCount}>{channel.members.length}</span>
+      </button>
+      {/* Search sits last, flush to the app's right edge — the toolbar now
+          spans the member column, so this is where a search box belongs. */}
+      <HeaderSearch identityId={identityId} convId={channel.convId} />
     </header>
   );
 }
@@ -424,7 +598,7 @@ export function DmHeader({
     (s) => s.sessions[identityId]?.character ?? "",
   );
   // DM profile-sidebar toggle (#170): same header slot as the channel's
-  // "☰ members" button. On the wide layout it flips the persisted grid-column
+  // member-list button. On the wide layout it flips the persisted grid-column
   // pref; on narrow windows it opens/closes the overlay drawer.
   const narrow = useIsNarrow();
   const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
@@ -483,11 +657,13 @@ export function DmHeader({
     }
   }
 
+  const status = dm.online ? dm.status : "offline";
   return (
     <header className={styles.header}>
-      <div className={styles.headerRow}>
+      <div className={styles.headerIdentity}>
         <span
           className={styles.headerDot}
+          aria-hidden
           style={{
             background:
               dot === "ok"
@@ -498,6 +674,36 @@ export function DmHeader({
           }}
         />
         <h1 className={styles.headerTitle}>{dm.partner}</h1>
+        {(dm.statusmsg !== "" || dm.status !== "") && (
+          <>
+            <span className={styles.headerHairline} aria-hidden />
+            <HeaderTopic label={`${dm.partner} — status`}>
+              <span className={styles.topicStatus}>{status}</span>
+              {dm.online && dm.statusmsg ? (
+                <>
+                  {" — "}
+                  <RichText bbcode={dm.statusmsg} />
+                </>
+              ) : null}
+            </HeaderTopic>
+          </>
+        )}
+        {/* Their local time (#439) sits outside the topic slot on purpose: it
+            is a two-glance fact, and inside the slot it would be the first
+            thing an overlong status truncated away. */}
+        {clock && (
+          <span
+            className={styles.headerClock}
+            title={clockTitle(clock, dm.partner)}
+          >
+            <ClockGlyph />
+            {clock.time}
+          </span>
+        )}
+      </div>
+      {/* Typing status moved onto the message bar (#336) — see the composer's
+          typingLine. Showing it here too would duplicate the same info. */}
+      <div className={styles.headerCluster}>
         <PinChip
           identityId={identityId}
           convId={dm.convId}
@@ -505,68 +711,52 @@ export function DmHeader({
         />
         <MuteChip identityId={identityId} convId={dm.convId} />
         <IgnoreChip identityId={identityId} character={dm.partner} />
-        {/* Typing status moved onto the message bar (#336) — see the composer's
-            typingLine. Showing it here too would duplicate the same info. */}
-        <span className={styles.headerSpacer} />
-        <button
-          className={styles.headerButton}
-          title="Search this conversation's log"
-          aria-label="Search log"
-          onClick={() => {
-            useUiStore.getState().setSearchOpen(true);
-          }}
-        >
-          <SearchGlyph />
-        </button>
-        <button
-          className={styles.headerButton}
-          title={
-            sidebarOn ? "Hide the profile panel" : "Show the profile panel"
-          }
-          aria-label="Toggle profile panel"
-          aria-pressed={sidebarOn}
-          style={
-            sidebarOn
-              ? {
-                  color: "var(--eb-accent)",
-                  background: "var(--eb-accent-soft)",
-                }
-              : undefined
-          }
-          onClick={() => {
-            if (narrow) {
-              useUiStore.getState().toggleDmDrawer();
-            } else {
-              useUiStore.getState().toggleDmSidebar();
-            }
-          }}
-        >
-          ◨
-        </button>
-        <button
-          className={styles.headerButton}
-          title={`Actions for ${dm.partner}`}
-          aria-label={`Actions for ${dm.partner}`}
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            setMenuAt({ x: rect.left, y: rect.bottom + 4 });
-          }}
-        >
-          ⋮
-        </button>
-        <button
-          className={styles.headerButton}
-          title="Close this conversation — history is kept"
-          aria-label={`Close conversation with ${dm.partner}`}
-          disabled={closing}
-          onClick={() => {
-            void close();
-          }}
-        >
-          ✕
-        </button>
       </div>
+      <span className={styles.tbDivider} aria-hidden />
+      <button
+        type="button"
+        className={chipClass(sidebarOn)}
+        title={sidebarOn ? "Hide the profile panel" : "Show the profile panel"}
+        aria-label="Toggle profile panel"
+        aria-pressed={sidebarOn}
+        onClick={() => {
+          if (narrow) {
+            useUiStore.getState().toggleDmDrawer();
+          } else {
+            useUiStore.getState().toggleDmSidebar();
+          }
+        }}
+      >
+        <PanelRightGlyph />
+      </button>
+      <button
+        type="button"
+        className={chipClass()}
+        title={`Actions for ${dm.partner}`}
+        aria-label={`Actions for ${dm.partner}`}
+        aria-haspopup="menu"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setMenuAt({ x: rect.left, y: rect.bottom + 4 });
+        }}
+      >
+        <MoreGlyph />
+      </button>
+      <button
+        type="button"
+        className={chipClass()}
+        title="Close this conversation — history is kept"
+        aria-label={`Close conversation with ${dm.partner}`}
+        disabled={closing}
+        onClick={() => {
+          void close();
+        }}
+      >
+        <CloseGlyph />
+      </button>
+      {/* Search sits last, flush to the app's right edge — the toolbar now
+          spans the profile column, so this is where a search box belongs. */}
+      <HeaderSearch identityId={identityId} convId={dm.convId} />
       {menuAt && (
         <MemberContextMenu
           identityId={identityId}
@@ -583,31 +773,6 @@ export function DmHeader({
             setMenuAt(undefined);
           }}
         />
-      )}
-      {(dm.statusmsg || dm.status || clock) && (
-        <div className={styles.description}>
-          {dm.online ? (
-            <>
-              {dm.status}
-              {dm.statusmsg ? (
-                <>
-                  {" — "}
-                  <RichText bbcode={dm.statusmsg} />
-                </>
-              ) : null}
-            </>
-          ) : (
-            "offline"
-          )}
-          {clock && (
-            <span
-              className={styles.headerClock}
-              title={clockTitle(clock, dm.partner)}
-            >
-              {" · "}Local time {clock.time}
-            </span>
-          )}
-        </div>
       )}
     </header>
   );

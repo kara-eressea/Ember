@@ -180,12 +180,11 @@ export function MemberList({
     [],
   );
 
+  // No "Members N" head of its own: the conversation toolbar now spans this
+  // column and carries the count on its member-list chip, so the filter is
+  // the column's first row.
   return (
     <aside className={styles.members} aria-label="Members">
-      <div className={styles.membersHeader}>
-        Members{" "}
-        <span className={styles.membersCount}>{channel.members.length}</span>
-      </div>
       <input
         className={styles.memberFilter}
         type="search"

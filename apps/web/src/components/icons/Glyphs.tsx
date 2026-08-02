@@ -53,3 +53,98 @@ export function PowerGlyph(): ReactNode {
     </>,
   );
 }
+
+/* The conversation toolbar (COMPONENTS.md §5) runs on the same IconBtn spec
+ * as the composer toolbar, which forbids system emoji — these replace the
+ * ⚲ 🔔 ⊘ ☰ ◨ ⋮ ✕ characters the header used to render. */
+
+/** Pin — a thumbtack, for "rejoin/reopen this on connect". */
+export function PinGlyph(): ReactNode {
+  return svg(
+    <>
+      <path d="M9 3.6h6" />
+      <path d="M10 3.6v6.2l-2.8 3v1.1h9.6v-1.1l-2.8-3V3.6" />
+      <path d="M12 13.9v6.5" />
+    </>,
+  );
+}
+
+/** Bell — per-conversation alerts on. */
+export function BellGlyph(): ReactNode {
+  return svg(
+    <>
+      <path d="M6.2 10a5.8 5.8 0 0 1 11.6 0c0 3.6 1.2 5 1.9 5.8H4.3c.7-.8 1.9-2.2 1.9-5.8Z" />
+      <path d="M10.1 18.6a2 2 0 0 0 3.8 0" />
+    </>,
+  );
+}
+
+/** Bell with a slash — muted. A distinct glyph, not just a toggled bell:
+ * the off state has to read without relying on the accent fill alone. */
+export function BellOffGlyph(): ReactNode {
+  return svg(
+    <>
+      <path d="M6.2 10a5.8 5.8 0 0 1 11.6 0c0 3.6 1.2 5 1.9 5.8H4.3c.7-.8 1.9-2.2 1.9-5.8Z" />
+      <path d="M10.1 18.6a2 2 0 0 0 3.8 0" />
+      <path d="M4 4l16 16" />
+    </>,
+  );
+}
+
+/** Circle-slash — the ignore toggle (a danger action, tinted by CSS). */
+export function BanGlyph(): ReactNode {
+  return svg(
+    <>
+      <circle cx="12" cy="12" r="8.4" />
+      <path d="M6.1 6.1l11.8 11.8" />
+    </>,
+  );
+}
+
+/** Two figures — the member-list toggle, paired with the mono count. */
+export function MembersGlyph(): ReactNode {
+  return svg(
+    <>
+      <circle cx="9.6" cy="8.4" r="3.2" />
+      <path d="M3.8 19v-1.2a4 4 0 0 1 4-4h3.6a4 4 0 0 1 4 4V19" />
+      <path d="M16.4 5.6a3.2 3.2 0 0 1 0 5.6" />
+      <path d="M17.6 13.9a4 4 0 0 1 2.6 3.7V19" />
+    </>,
+  );
+}
+
+/** A panel with its right column split off — the DM profile-panel toggle. */
+export function PanelRightGlyph(): ReactNode {
+  return svg(
+    <>
+      <rect x="3.4" y="4.4" width="17.2" height="15.2" rx="2.4" />
+      <path d="M14.6 4.4v15.2" />
+    </>,
+  );
+}
+
+/** Vertical ellipsis — opens the conversation's context menu. */
+export function MoreGlyph(): ReactNode {
+  return svg(
+    <>
+      <circle cx="12" cy="5.6" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18.4" r="1.35" fill="currentColor" stroke="none" />
+    </>,
+  );
+}
+
+/** Clock face — the DM partner's local time (#439). */
+export function ClockGlyph(): ReactNode {
+  return svg(
+    <>
+      <circle cx="12" cy="12" r="8.4" />
+      <path d="M12 7.4V12l3.1 2" />
+    </>,
+  );
+}
+
+/** Cross — closes the conversation window. */
+export function CloseGlyph(): ReactNode {
+  return svg(<path d="M6.4 6.4l11.2 11.2M17.6 6.4L6.4 17.6" />);
+}
