@@ -162,10 +162,16 @@ const prefsShape = {
   /** Off = eicons freeze on their first frame. */
   animateEicons: z.boolean(),
   /** Composer ☺ picker quick-inserts (decisions.md §8 — no search API,
-   * favorites are a manual list). Patches replace the whole array. */
+   * favorites are a manual list): the picker's ☆ and the right-click menu
+   * on any rendered eicon write here. Patches replace the whole array. */
   eiconFavorites: z
     .array(z.string().min(1).max(100).regex(EICON_NAME))
     .max(100),
+  /** Eicons the user never wants to see: they render as the name chip
+   * (without the hover preview) wherever a message would show the image,
+   * and as bare names in the picker. Names are matched case-insensitively,
+   * mirroring the eicon index. Patches replace the whole array. */
+  eiconBlocked: z.array(z.string().min(1).max(100).regex(EICON_NAME)).max(200),
   /** EiconPicker Recents tab (M8): most-recent-first, written on insert
    * and on send (typed eicons count too). Patches replace the array. */
   eiconRecents: z.array(z.string().min(1).max(100).regex(EICON_NAME)).max(50),
@@ -337,6 +343,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   eiconDisplay: "inline",
   animateEicons: true,
   eiconFavorites: [],
+  eiconBlocked: [],
   eiconRecents: [],
   eiconSearchEnabled: false,
   linkPreviewMode: "click",

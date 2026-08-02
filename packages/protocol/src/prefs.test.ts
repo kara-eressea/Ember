@@ -112,6 +112,62 @@ describe("imagePreviewHosts (#215)", () => {
   });
 });
 
+describe("eiconBlocked / eiconFavorites", () => {
+  it("default to empty lists", () => {
+    expect(PREFS_DEFAULTS.eiconBlocked).toEqual([]);
+    expect(PREFS_DEFAULTS.eiconFavorites).toEqual([]);
+  });
+
+  it("round-trips a one-key patch without dragging siblings along", () => {
+    const patch = userPrefsPatchSchema.parse({ eiconBlocked: ["Sparkle"] });
+    expect(patch).toEqual({ eiconBlocked: ["Sparkle"] });
+    expect(resolvePrefs(patch).eiconBlocked).toEqual(["Sparkle"]);
+    // A sibling eicon pref the patch never mentioned keeps its default.
+    expect(resolvePrefs(patch).eiconFavorites).toEqual([]);
+    expect(resolvePrefs(patch).eiconDisplay).toBe(PREFS_DEFAULTS.eiconDisplay);
+  });
+
+  it("accepts the eicon-name charset and rejects anything outside it", () => {
+    expect(
+      userPrefsPatchSchema.safeParse({
+        eiconBlocked: ["sparkle", "Big Grin", "foo_bar-1.gif"],
+      }).success,
+    ).toBe(true);
+    for (const bad of ["", "no/slash", "brackets[]", "a".repeat(101)]) {
+      expect(
+        userPrefsPatchSchema.safeParse({ eiconBlocked: [bad] }).success,
+        bad,
+      ).toBe(false);
+    }
+  });
+
+  it("caps the lists — blocked at 200, favourites at 100", () => {
+    const names = (count: number) =>
+      Array.from({ length: count }, (_, index) => `e${String(index)}`);
+    expect(
+      userPrefsPatchSchema.safeParse({ eiconBlocked: names(200) }).success,
+    ).toBe(true);
+    expect(
+      userPrefsPatchSchema.safeParse({ eiconBlocked: names(201) }).success,
+    ).toBe(false);
+    expect(
+      userPrefsPatchSchema.safeParse({ eiconFavorites: names(100) }).success,
+    ).toBe(true);
+    expect(
+      userPrefsPatchSchema.safeParse({ eiconFavorites: names(101) }).success,
+    ).toBe(false);
+  });
+
+  it("resolves an over-cap or garbage stored list back to empty", () => {
+    expect(resolvePrefs({ eiconBlocked: "nope" }).eiconBlocked).toEqual([]);
+    expect(
+      resolvePrefs({
+        eiconBlocked: Array.from({ length: 201 }, (_, i) => `e${String(i)}`),
+      }).eiconBlocked,
+    ).toEqual([]);
+  });
+});
+
 describe("prefs.set frame", () => {
   const frame = (d: unknown) => ({
     t: "cmd",

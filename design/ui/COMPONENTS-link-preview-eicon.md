@@ -13,6 +13,9 @@ style against the design-system tokens in `COMPONENTS.md`, **never hard-code
 hex outside the token table**, derived colors via the documented `mix(a, b, t)` lerp,
 IBM Plex Sans UI / IBM Plex Mono for times/nicks/counts, radius 9 (modals 14).
 
+§4 (the eicon right-click menu — favourites & blocking) is a later addition, built on the
+member/channel context-menu grammar rather than on a design-agent frame.
+
 Prototype: `Link Preview & Eicon Picker.dc.html` (frames `L·A`–`L·D`, `K·A`–`K·E`).
 Reuses the message-log row, composer, and popover-anchoring rules already specced for the
 client shell (`COMPONENTS.md` §6/§8) and the profile bundle (`COMPONENTS-profile-viewer.md` §13).
@@ -96,7 +99,8 @@ footer hint.
   `mix(accent,bg,.86)` fill, `border`; the eicon image fills it (mono name fallback).
   Name shows **on hover** (title/tooltip). **Star affordance** top-right: `★` (`warn`)
   favorited / `☆` (`faint`) not — click to (un)favorite. **Click the tile = insert** the
-  `[eicon]name[/eicon]` at the cursor.
+  `[eicon]name[/eicon]` at the cursor. **Right-click = the eicon menu** (§4). A **blocked**
+  eicon's tile shows its bare name instead of the image — still insertable, never rendered.
 - **Grid** — `repeat(5, 60px)`, gap 6, vertical scroll (`.lpscroll`).
 - **Footer** — mono 9.5px `faint` hint: "click to insert · ☆ to favorite".
 
@@ -124,6 +128,47 @@ Data: picker = {
 }
 // insert → emits `[eicon]{name}[/eicon]` at the composer caret
 ```
+
+---
+
+## 4. Eicon menu (right-click) — favourites & blocking
+
+Right-clicking an eicon **wherever it renders** — a message body, the composer preview, a
+picker tile — opens a context menu on the eicon itself. The handler `preventDefault()`s and
+`stopPropagation()`s so it wins over the surrounding surface's own menu (and the browser's)
+**on the eicon element only**; every other part of that surface keeps the menu it had.
+
+Same popover grammar as the member/channel menus (`COMPONENTS.md` §10): fixed panel over a
+click-away overlay, placed at the pointer and re-clamped after measuring, Escape closes,
+arrows walk the items. Head: `☺` glyph + the eicon's name. Items:
+
+- **Favourite / Unfavourite** — writes `eiconFavorites`, the same list the picker's `☆`
+  writes and its **Favorites** tab shows. That tab opens selected, so a favourite is one
+  click away when composing. Capped at 100; at the cap the oldest entry drops.
+- **Block / Unblock** — writes `eiconBlocked`. Capped at 200; at the cap the toggle
+  **refuses** with a notice (dropping the oldest would put a suppressed image back on
+  screen) — the mute-list pattern.
+- **Copy name** — the eicon's name to the clipboard.
+
+**Blocked rendering.** A blocked eicon never draws its image. It falls back to the M5
+name-chip treatment (`.eiconChip`) with the label `faint` + `line-through`, `title`
+"`{name}` — blocked eicon", and — unlike the `eiconDisplay: 'name'` chip — **no hover
+preview**: a block that still previews on hover is not a block. Blocking **outranks** the
+`eiconDisplay` pref in both directions. Right-clicking the chip still reaches the menu,
+which is how it gets unblocked in place.
+
+Names match **case-insensitively** everywhere (the server's eicon index keys on
+`name.toLowerCase()`); the stored entry keeps the casing the user acted on, which is what
+the review lists show.
+
+**Management surface** — *Preferences → Appearance → Eicons*, below the display/animate/
+search controls: two compact review lists (**Favourite eicons**, **Blocked eicons**) reusing
+the muted-conversations chip list (`.ruleList`/`.ruleChip`/`.ruleRemove`), each with a
+per-item `✕` and an empty-state line pointing back at the right-click affordance.
+
+Both prefs fan out like every other (`prefs.set` → `prefs.updated` → every device), and the
+log repaints live: `RichText` memoizes only the prefs-independent BBCode parse, while the
+per-eicon component subscribes to prefs itself.
 
 ---
 
