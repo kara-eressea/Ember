@@ -94,6 +94,32 @@ describe("checkIdle", () => {
     expect(cmdMock).toHaveBeenCalledTimes(1);
   });
 
+  it("aways a session that came online mid-idle (audit backlog)", () => {
+    seedSession(A);
+    checkIdle(10 * MIN);
+    expect(cmdMock).toHaveBeenCalledTimes(1);
+    cmdMock.mockClear();
+
+    // B connects while the user is still idle. The scan used to early-return
+    // on "something is already applied", so B stayed online until the user
+    // touched the page and idled all over again.
+    seedSession(B);
+    checkIdle(11 * MIN);
+    expect(cmdMock.mock.calls).toEqual([
+      [
+        {
+          identityId: B,
+          action: "status.set",
+          d: { status: "away", statusmsg: "brb — idle" },
+        },
+      ],
+    ]);
+
+    // And neither identity is re-sent on the tick after that.
+    checkIdle(12 * MIN);
+    expect(cmdMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing while the pref is off (the default)", () => {
     seedSession(A, { prefs: PREFS_DEFAULTS });
     checkIdle(24 * 60 * MIN);

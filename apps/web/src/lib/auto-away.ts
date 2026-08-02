@@ -163,13 +163,21 @@ function currentPrefs(): UserPrefs {
 /** The interval body — exported for tests. */
 export function checkIdle(now = Date.now()): void {
   const prefs = currentPrefs();
-  if (!prefs.autoAwayEnabled || applied.size > 0) {
+  if (!prefs.autoAwayEnabled) {
     return;
   }
   if (now - sharedLastActivity() < prefs.autoAwayMinutes * 60_000) {
     return;
   }
   for (const session of Object.values(useSessionsStore.getState().sessions)) {
+    // "Already awayed" is per session, not collective (audit backlog): one
+    // applied away used to short-circuit the whole scan, so a session that
+    // came online mid-idle was never awayed until the user re-idled. The
+    // record is what stops a resend once the cooldown lapses — noteActivity
+    // clears it, which is exactly when re-awaying becomes right again.
+    if (applied.has(session.identityId)) {
+      continue;
+    }
     if (
       !session.synced ||
       session.sessionStatus !== "online" ||
