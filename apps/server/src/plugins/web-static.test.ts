@@ -1,12 +1,13 @@
 // The production static mode: files served, SPA routes falling back to an
 // index.html carrying the injected runtime config, API 404s staying JSON.
 
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { webStatic } from "./web-static.js";
+import { runtimeConfigScript, webStatic } from "./web-static.js";
 
 let root: string;
 let app: FastifyInstance;
@@ -76,5 +77,23 @@ describe("webStatic", () => {
     const response = await app.inject({ method: "GET", url: "/config.json" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ appName: "Testline </script>" });
+  });
+});
+
+// Under `script-src 'self'` the injected bootstrap was silently blocked in
+// every browser for as long as the CSP has existed, and nothing failed — the
+// client just fell back to fetching /config.json. The hash the policy carries
+// therefore has to come from the script itself, and stay that way.
+describe("runtimeConfigScript", () => {
+  it("hashes exactly the script the document carries", async () => {
+    const { js, cspSource } = runtimeConfigScript("Testline </script>");
+    const body = (await app.inject({ method: "GET", url: "/" })).body;
+    const inline = [
+      ...body.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g),
+    ].map(([, script]) => script ?? "");
+
+    expect(inline).toEqual([js]);
+    const digest = createHash("sha256").update(js, "utf8").digest("base64");
+    expect(cspSource).toBe(`'sha256-${digest}'`);
   });
 });

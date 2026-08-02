@@ -45,6 +45,11 @@ describe("contentSecurityDirectives (#335)", () => {
     expect(directives["frame-ancestors"]).toEqual(["'none'"]);
     expect(directives["object-src"]).toEqual(["'none'"]);
   });
+
+  it("admits an inline script only as a hash alongside 'self'", () => {
+    const hashed = contentSecurityDirectives(undefined, ["'sha256-abc123='"]);
+    expect(hashed["script-src"]).toEqual(["'self'", "'sha256-abc123='"]);
+  });
 });
 
 describe("mediaHostSources", () => {

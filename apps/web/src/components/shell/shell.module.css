@@ -1084,3 +1084,20 @@
   gap: 2px;
   align-items: center;
 }
+
+/* One-shot highlight when the notification inbox sends the user to the
+   friend-request rows (#467) — the same read as the log's jump flash. */
+@keyframes request-flash {
+  0%,
+  55% {
+    background: var(--eb-accent-med);
+  }
+
+  100% {
+    background: var(--eb-accent-soft);
+  }
+}
+
+.requestsFlash .inviteRow {
+  animation: request-flash 2.4s ease-out 1;
+}

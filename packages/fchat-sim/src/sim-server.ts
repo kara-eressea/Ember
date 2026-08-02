@@ -549,14 +549,18 @@ export class FchatSim {
         return { error: "", requests: this.#social.incoming(account) };
       case "/json/api/request-pending.php":
         return { error: "", requests: this.#social.outgoing(account) };
-      case "/json/api/request-send.php":
-        return {
-          error: this.#social.requestSend(
-            account,
-            form.get("source_name") ?? "",
-            form.get("dest_name") ?? "",
-          ),
-        };
+      case "/json/api/request-send.php": {
+        const source = form.get("source_name") ?? "";
+        const dest = form.get("dest_name") ?? "";
+        const error = this.#social.requestSend(account, source, dest);
+        if (error === "") {
+          // The real-time bridge, recipient side: the live server pushes an
+          // RTB `friendrequest` to the addressed character so a client learns
+          // about it without polling request-list.
+          this.#sendRtb(dest, "friendrequest", source);
+        }
+        return { error };
+      }
       case "/json/api/request-accept.php": {
         const accepted = this.#social.requestAccept(account, requestId);
         if (accepted.pair) {

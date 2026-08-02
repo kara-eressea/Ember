@@ -495,6 +495,24 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Fallow Drowse"],
     },
+    // Reserved for the #467 notification-inbox E2E (same isolation rules).
+    // Hazelmere Fen owns the inbox under test; Larkspur Wend is the
+    // raw-SimClient partner whose mention (then a wall of ordinary chatter
+    // burying it) the inbox has to jump back to; Bindweed Ash never joins
+    // chat at all — it only sends the friend request over the sim's JSON API,
+    // which bridges an RTB to Hazelmere's socket.
+    "hazelmere@example.test": {
+      password: "hunter2",
+      characters: ["Hazelmere Fen"],
+    },
+    "larkspur@example.test": {
+      password: "hunter2",
+      characters: ["Larkspur Wend"],
+    },
+    "bindweed@example.test": {
+      password: "hunter2",
+      characters: ["Bindweed Ash"],
+    },
   },
   channels: [
     {
@@ -842,6 +860,19 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Somewhere to step out to.",
       oplist: ["Loam Whitby"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #467 notification-inbox E2E: Larkspur Wend mentions
+    // Hazelmere Fen and then buries it under a wall of chatter, so the inbox
+    // has to page the message back in to jump to it. Hidden and NPC-free —
+    // any other speaker would change what the inbox logs.
+    {
+      name: "ADH-467notificationinboxaa11bb22",
+      title: "Hazelmere Inbox",
+      mode: "chat",
+      description: "Where the mentions get buried.",
+      oplist: ["Hazelmere Fen"],
       npcs: [],
       listed: false,
     },
