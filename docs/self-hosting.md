@@ -203,6 +203,7 @@ release, that version tints and links to the releases page — no banners.
 The check is server-side and runs at most once a day; set
 `UPDATE_CHECK_ENABLED=false` to switch the phone-home off entirely, or
 point `UPDATE_CHECK_REPO` at your own fork's releases.
+
 Heads-up: unless you've set `CREDENTIALS_KEY` and opted in to "Remember on
 this server", **every server restart logs your characters out of F-Chat**
 until you re-enter your F-List password — credentials live only in memory
