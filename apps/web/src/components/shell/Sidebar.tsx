@@ -30,6 +30,7 @@ import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { displayVersion, useServerMeta } from "../../lib/use-meta.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
@@ -838,25 +839,22 @@ function MeStatus({
   const [error, setError] = useState<string>();
   const containerRef = useRef<HTMLSpanElement>(null);
 
-  // Escape / click-outside close the editor, like every other popover.
+  // Escape / click-outside close the editor, like every other popover — the
+  // key via the shared stack (#442) so it beats any armed ambient action.
+  useEscapeToClose(() => {
+    setOpen(false);
+  }, open);
   useEffect(() => {
     if (!open) {
       return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
     }
     function onPointerDown(event: PointerEvent) {
       if (!containerRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     }
-    window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointerDown);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onPointerDown);
     };
   }, [open]);

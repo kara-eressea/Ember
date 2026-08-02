@@ -10,6 +10,7 @@ import type { ProfileDto } from "@emberchat/protocol";
 import { nickColor } from "../../theme/tokens.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { useRailCollapsed } from "../../lib/rail-collapse.js";
 import { api } from "../../lib/api.js";
 import {
@@ -93,10 +94,7 @@ export function ProfileViewer({
   // next profile they open. Persisted to localStorage on every toggle.
   const [fullscreen, setFullscreen] = useState(savedViewerFullscreen);
 
-  useEffect(() => {
-    windowRef.current?.focus();
-  }, []);
-
+  useFocusTrap(windowRef);
   useEscapeToClose(onClose);
 
   useEffect(() => {

@@ -16,6 +16,7 @@ import {
 } from "react";
 import { analyzeMarkdown, mdToBBCode } from "@emberchat/markdown-bbcode";
 import { gateway } from "../../gateway/socket.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import {
   useSessionsStore,
   type IdentitySession,
@@ -244,6 +245,15 @@ export function Composer({
   // input value in onKeyDown (below) to stay correct under fast input.
   const showSlash = !slashDismissed && slashSuggestions.length > 0;
   const slashIndex = Math.min(slashActive, slashSuggestions.length - 1);
+
+  // The open popover is an overlay on the shared Escape stack (#442), so an
+  // armed ambient action (MessageLog's "mark caught up") cannot eat the press
+  // that was meant to dismiss it. The in-input branch in onKeyDown stays as
+  // the fallback for the one frame where render state trails the live text —
+  // the stack claims the event whenever it is registered, so only one runs.
+  useEscapeToClose(() => {
+    setSlashDismissed(true);
+  }, showSlash);
 
   function completeSlash(hint: SlashHint) {
     const next = `/${hint.name} `;

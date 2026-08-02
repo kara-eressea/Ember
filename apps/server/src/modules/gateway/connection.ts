@@ -88,6 +88,20 @@ export const MAX_FRAMES_PER_MINUTE = 600;
  */
 export const HEARTBEAT_MS = 30_000;
 
+/**
+ * Test-only connection knobs (an integration test can neither wait out a 10s
+ * handshake window nor push a megabyte into a stalled socket). Never wired to
+ * config — production always runs the constants above.
+ */
+export interface GatewayTuning {
+  /** Handshake window; defaults to HELLO_TIMEOUT_MS. */
+  readonly helloTimeoutMs?: number;
+  /** Slow-consumer backlog cap; defaults to MAX_BUFFERED_BYTES. */
+  readonly maxBufferedBytes?: number;
+  /** Heartbeat period; defaults to HEARTBEAT_MS. */
+  readonly heartbeatMs?: number;
+}
+
 export interface GatewayConnectionContext {
   readonly db: Db;
   readonly sessions: SessionRegistry;
@@ -112,8 +126,7 @@ export interface GatewayConnectionContext {
    * multiplies them unmetered. False = over budget, close the connection.
    */
   readonly helloBudget: (userId: string) => boolean;
-  /** Heartbeat period; test-only knob, defaults to HEARTBEAT_MS. */
-  readonly heartbeatMs?: number;
+  readonly tuning?: GatewayTuning;
   readonly log: SessionLogger;
 }
 
@@ -154,15 +167,18 @@ export class GatewayConnection {
   #awaitingPong = false;
   #frameWindowStart = 0;
   #framesInWindow = 0;
+  readonly #maxBufferedBytes: number;
 
   constructor(socket: WebSocket, ctx: GatewayConnectionContext) {
     this.#socket = socket;
     this.#ctx = ctx;
     this.#log = ctx.log;
+    const tuning = ctx.tuning ?? {};
+    this.#maxBufferedBytes = tuning.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
 
     this.#helloTimer = setTimeout(() => {
       this.#close(GATEWAY_CLOSE.helloTimeout, "no hello");
-    }, HELLO_TIMEOUT_MS);
+    }, tuning.helloTimeoutMs ?? HELLO_TIMEOUT_MS);
 
     socket.on("message", (data: WebSocket.RawData) => {
       this.#awaitingPong = false; // any traffic proves the peer is alive
@@ -187,7 +203,7 @@ export class GatewayConnection {
         this.#teardown();
         socket.terminate();
       }
-    }, ctx.heartbeatMs ?? HEARTBEAT_MS);
+    }, tuning.heartbeatMs ?? HEARTBEAT_MS);
     socket.on("error", (error) => {
       this.#log.warn({ err: error }, "gateway socket error");
     });
@@ -1295,7 +1311,7 @@ export class GatewayConnection {
     if (this.#socket.readyState !== this.#socket.OPEN) {
       return;
     }
-    if (this.#socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+    if (this.#socket.bufferedAmount > this.#maxBufferedBytes) {
       this.#close(GATEWAY_CLOSE.slowConsumer, "send buffer overflow");
       return;
     }
