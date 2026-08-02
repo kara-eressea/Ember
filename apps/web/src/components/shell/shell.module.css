@@ -12,11 +12,46 @@
   grid-template-columns:
     var(--eb-rail-width, 60px) var(--eb-left-width, 244px)
     1fr var(--eb-right-width, 232px);
-  /* The implicit row would auto-size to content, un-constraining every
-     internal scroll region — pin it to the viewport instead. */
-  grid-template-rows: minmax(0, 1fr);
+  /* Two rows: the conversation toolbar, then everything under it. The
+     toolbar row is `auto` because it is only there when a conversation is
+     open — with none, it collapses to nothing and the landing pane fills the
+     shell as before. The second row is pinned to the viewport; an implicit
+     auto row would un-constrain every internal scroll region. */
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
+}
+
+/* The rail and sidebar are full-height: the toolbar starts after them, the
+   way the sidebar's own head does. */
+.rail,
+.sidebar {
+  grid-row: 1 / -1;
+}
+
+/* The conversation toolbar spans the chat column *and* the right column, so
+   it rides above the member list / profile panel instead of stopping at the
+   log's edge. `3 / -1` covers both tracks when the right column is open and
+   collapses to the chat column alone when membersClosed drops that track.
+   Positioned so it stacks over the resize handles (z-index 6), which would
+   otherwise put a 6px drag strip across the middle of the row. */
+.shell > header {
+  grid-column: 3 / -1;
+  grid-row: 1;
+  /* Defeats the grid item's automatic minimum size, exactly as .main does:
+     the toolbar's topic is a nowrap run, and its min-content would otherwise
+     push the 1fr chat track wider than the window. */
+  min-width: 0;
+  position: relative;
+  z-index: 7;
+}
+
+/* MemberList and DmProfile — the only <aside>s the shell owns. The docked
+   pair sits under the toolbar in the right column; the narrow DM drawer is
+   fixed-position, so this placement simply does not apply to it. */
+.shell > aside {
+  grid-column: 4;
+  grid-row: 2;
 }
 
 .shell.membersClosed {
@@ -233,7 +268,10 @@
 }
 
 .main {
-  /* Anchor for the absolutely-positioned search panel (M9). */
+  grid-column: 3;
+  grid-row: 2;
+  /* Anchor for the log's own floating pieces (the loading pill, the history
+     banner's stacking). The search panel moved onto the toolbar's field. */
   position: relative;
   display: flex;
   flex-direction: column;

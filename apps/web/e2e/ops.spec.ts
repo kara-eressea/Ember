@@ -56,10 +56,12 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
     page.getByRole("heading", { name: "Potting Shed" }),
   ).toBeVisible();
 
-  // Non-op viewer: no ⚙ room chip, and the member menu has no admin items.
+  // Non-op viewer: no room-settings chip, and the member menu has no admin items.
   const members = page.getByRole("complementary", { name: "Members" });
   await expect(members.getByText("Sorrel Vane")).toBeVisible();
-  await expect(page.getByRole("button", { name: "⚙ room" })).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Room settings" }),
+  ).not.toBeVisible();
   await members.getByText("Sorrel Vane").click({ button: "right" });
   const menu = page.getByRole("menu", { name: "Sorrel Vane menu" });
   await expect(menu).toBeVisible();
@@ -80,15 +82,17 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
   // The owner promotes Rue live (COA → channel.info): the admin
   // affordances appear without a reload.
   alder.send("COA", { channel: SHED, character: "Rue Alder" });
-  await expect(page.getByRole("button", { name: "⚙ room" })).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(page.getByRole("button", { name: "Room settings" })).toBeVisible(
+    {
+      timeout: 15_000,
+    },
+  );
 
   // Room settings window: a Preferences-style modal with labeled groups and
   // segmented controls, not a wall of identical buttons (#312/#314). The ADH
   // room shows the invite + visibility groups; every room shows message mode
   // and description; the banlist is its own pane (see below).
-  await page.getByRole("button", { name: "⚙ room" }).click();
+  await page.getByRole("button", { name: "Room settings" }).click();
   const roomDialog = page.getByRole("dialog", {
     name: "Room settings — Potting Shed",
   });
@@ -146,7 +150,7 @@ test("op tooling: role-gated admin menu, kick with SystemLine, slash ban + banli
   // Banned-characters pane (#314 follow-up): the banlist is now a proper list
   // with a per-row unban, reusing the same CBL/CUB commands. Opening the pane
   // requests the list; the freshly-banned Sorrel appears; "Lift ban" unbans.
-  await page.getByRole("button", { name: "⚙ room" }).click();
+  await page.getByRole("button", { name: "Room settings" }).click();
   await roomDialog
     .getByRole("button", { name: "Banned characters", exact: true })
     .click();
