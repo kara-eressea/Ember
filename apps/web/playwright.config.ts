@@ -50,12 +50,13 @@ export default defineConfig({
     // fact — uploaded as an artifact from the workflow.
     trace: "retain-on-failure",
   },
-  // The suite is Chromium's; Firefox runs the typography spec alone. Caret and
-  // font metrics are the one area where the engines genuinely disagree (#408,
-  // #434 were both metrics bugs a single engine could hide), and a caret is
-  // painted, not queryable — so it needs a real second engine rather than a
-  // second assertion. Everything else behaves the same in both, and a full
-  // second pass would roughly double the E2E leg of CI.
+  // The suite is Chromium's; Firefox runs two small, named slices of it. Both
+  // are areas where the engines genuinely disagree and one engine can hide a
+  // real bug: caret/font metrics (#408, #434 — a caret is painted, not
+  // queryable, so it needs a second engine rather than a second assertion) and
+  // message-log scroll geometry (#411, reported off Firefox three times and
+  // never reproduced on Chromium). Everything else behaves the same in both,
+  // and a full second pass would roughly double the E2E leg of CI.
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
     {
@@ -79,6 +80,23 @@ export default defineConfig({
       // Only the caret tests: the rest of the spec reads computed style, which
       // no second engine can disagree about.
       grep: /caret/,
+    },
+    {
+      // The open-at-the-tail family on Gecko (#411). This bug was reported off
+      // a Firefox deployment three times and reproduced on Chromium none of
+      // them — the scroll geometry it depends on (when a re-measure shifts
+      // scrollTop, when a scroll event is dispatched relative to a
+      // ResizeObserver delivery) is exactly where the engines are free to
+      // differ. A separate project rather than more testMatch on the caret one
+      // above, because that project is scoped by `grep: /caret/` and carries
+      // video for the film-the-caret trick; neither applies here.
+      name: "firefox-tail",
+      use: { browserName: "firefox" },
+      testMatch: [
+        "open-at-tail.spec.ts",
+        "focus-read.spec.ts",
+        "stick-intent.spec.ts",
+      ],
     },
   ],
   webServer: [

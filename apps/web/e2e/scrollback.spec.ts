@@ -131,6 +131,13 @@ test("scrolling up through history keeps the anchor row fixed (#360)", async ({
         const heightBefore = el.scrollHeight;
         // Scroll to the top of the loaded content → onScroll pages the next
         // older block in. The prepend lands a few async frames later.
+        // The wheel is not decoration: the log's bottom-stick only yields to a
+        // scroll the USER made, so a bare `scrollTop = 0` reads as one of the
+        // browser's own re-measure shifts and is correctly ignored. This models
+        // a real wheel — the input event, then the scroll it produces.
+        el.dispatchEvent(
+          new WheelEvent("wheel", { deltaY: -120, bubbles: true }),
+        );
         el.scrollTop = 0;
         // Let the virtualizer render the top-of-content window before the
         // page arrives, so the pre-prepend anchor read is real.
@@ -205,6 +212,10 @@ test("scrolling up through history keeps the anchor row fixed (#360)", async ({
     // The oldest message is reachable and the jump home still lands cleanly.
     await expect(async () => {
       await log.evaluate((el) => {
+        // A user wheel, not a bare assignment — see the note above.
+        el.dispatchEvent(
+          new WheelEvent("wheel", { deltaY: -120, bubbles: true }),
+        );
         el.scrollTop = 0;
       });
       await expect(log.getByText("spool 0001", { exact: true })).toBeVisible({

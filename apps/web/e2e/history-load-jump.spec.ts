@@ -128,6 +128,13 @@ test("a server history page never lurches the reading position (#387)", async ({
         // Scroll to the top of the loaded content → onScroll pages the next
         // older block in. The loading note appears synchronously (before the
         // async page arrives); the prepend lands a few frames later.
+        // The wheel is not decoration: the log's bottom-stick only yields to a
+        // scroll the USER made, so a bare `scrollTop = 0` reads as one of the
+        // browser's own re-measure shifts and is correctly ignored. This models
+        // a real wheel — the input event, then the scroll it produces.
+        el.dispatchEvent(
+          new WheelEvent("wheel", { deltaY: -120, bubbles: true }),
+        );
         el.scrollTop = 0;
         await raf();
         await raf();
@@ -183,6 +190,10 @@ test("a server history page never lurches the reading position (#387)", async ({
     // The oldest message is still reachable and the jump home lands cleanly.
     await expect(async () => {
       await log.evaluate((el) => {
+        // A user wheel, not a bare assignment — see the note above.
+        el.dispatchEvent(
+          new WheelEvent("wheel", { deltaY: -120, bubbles: true }),
+        );
         el.scrollTop = 0;
       });
       await expect(log.getByText("drift 0001", { exact: true })).toBeVisible({
