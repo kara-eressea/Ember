@@ -356,7 +356,6 @@
   font-size: calc(10.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
   white-space: nowrap;
-  flex: none;
 }
 
 /* An update is waiting: the version tints and becomes the link. */
