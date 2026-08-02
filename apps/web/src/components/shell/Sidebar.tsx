@@ -900,7 +900,7 @@ function MeStatus({
   }
 
   return (
-    <span className={styles.meMeta} ref={containerRef}>
+    <span className={styles.meMeta} ref={containerRef} data-testid="me-bar">
       <div className={styles.meNick}>{session.character || "—"}</div>
       <button
         className={styles.meStatusButton}
@@ -910,7 +910,9 @@ function MeStatus({
         aria-label="Set status"
       >
         <span className={`${styles.serverDot} ${DOT_CLASS[dot]}`} />
-        <span className={styles.meStatusText}>{statusLine}</span>
+        <span className={styles.meStatusText} data-testid="me-status">
+          {statusLine}
+        </span>
       </button>
       {open && online && (
         <form

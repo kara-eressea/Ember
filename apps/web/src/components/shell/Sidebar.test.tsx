@@ -225,6 +225,19 @@ describe("Sidebar head", () => {
     expect(head(container)?.textContent).not.toContain("Amber Vale");
   });
 
+  // The head no longer carries "«Character» · online", so the E2E suite reads
+  // the session's presence off the MeBar instead. These hooks are that
+  // contract — renaming them breaks specs jsdom can't run.
+  it("leaves character and status to the MeBar, under stable test hooks", () => {
+    const { container } = renderSidebar();
+
+    const meBar = container.querySelector("[data-testid='me-bar']");
+    expect(meBar?.textContent).toContain("Amber Vale");
+    expect(meBar?.querySelector("[data-testid='me-status']")?.textContent).toBe(
+      "online",
+    );
+  });
+
   it("renders a dev version string as-is", () => {
     meta.current = {
       version: "0.0.0-dev",

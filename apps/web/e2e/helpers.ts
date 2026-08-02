@@ -215,10 +215,24 @@ export async function provisionAndConnect(
   await page.getByRole("listitem").filter({ hasText: character }).click();
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page).toHaveURL(/\/app\//);
-  await expect(page.getByText(`${character} · online`)).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, character);
   return creds;
+}
+
+/**
+ * "The shell reports this character's session online." The MeBar is where
+ * the active identity's name and F-Chat status live — the sidebar head shows
+ * the app name and running version instead.
+ */
+export function expectCharacterOnline(
+  page: Page,
+  character: string,
+  timeout = 15_000,
+) {
+  const meBar = page.getByTestId("me-bar").filter({ hasText: character });
+  return expect(meBar.getByTestId("me-status")).toContainText("online", {
+    timeout,
+  });
 }
 
 /**

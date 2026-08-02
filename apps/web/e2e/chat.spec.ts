@@ -6,6 +6,7 @@
 import {
   delay,
   expect,
+  expectCharacterOnline,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
@@ -246,7 +247,7 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
     await expect(
       log.getByText(`seed #${String(SEED_COUNT)}`, { exact: true }),
     ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("Cindral · online")).toBeVisible();
+    await expectCharacterOnline(page, "Cindral");
 
     // Scroll to the top repeatedly; each pass pages older history in until
     // the very first message of the conversation is on screen.
