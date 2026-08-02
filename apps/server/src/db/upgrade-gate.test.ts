@@ -8,7 +8,8 @@ import {
 } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CONTAINER_BOOT_MS, INTEGRATION_MS } from "../test-support/budgets.js";
 import { createDb } from "./index.js";
 import {
   assertUpgradeSafe,
@@ -18,6 +19,9 @@ import {
 } from "./upgrade-gate.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../drizzle", import.meta.url));
+
+// Container-backed: every test runs migrations against real Postgres.
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let pool: ReturnType<typeof createDb>["pool"];
@@ -29,7 +33,7 @@ beforeAll(async () => {
   pool = created.pool;
   manifest = await loadUpgradeManifest(MIGRATIONS);
   await migrate(created.db, { migrationsFolder: MIGRATIONS });
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await pool.end();

@@ -7,11 +7,15 @@ import { FchatSim } from "@emberchat/fchat-sim";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
 import { CredentialVault } from "../flist-accounts/vault.js";
+import { FRAME_WAIT_MS, INTEGRATION_MS } from "../../test-support/budgets.js";
 import type { FchatSession } from "./fchat-session.js";
 import { SessionRegistry } from "./registry.js";
 import type { SessionStatus } from "./session-state.js";
 
 const ACCOUNT = "amber@example.test";
+
+// Sim-backed: real loopback WebSocket handshakes, not in-process fakes.
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -52,7 +56,7 @@ async function makeRegistry(): Promise<{
 function waitForStatus(
   session: FchatSession,
   status: SessionStatus,
-  timeoutMs = 5000,
+  timeoutMs = FRAME_WAIT_MS,
 ): Promise<void> {
   if (session.status === status) {
     return Promise.resolve();
