@@ -30,6 +30,14 @@ export const UNREAD_CAP = 99;
  * ads never affect unread in any view (M10). Mentions read the stored
  * `messages.mention` flag the sink stamped at persist time (M5) — no
  * matching happens here anymore.
+ *
+ * Ignored senders are excluded (audit backlog): the client hides their rows
+ * from the log, so a badge they raised would point at something invisible
+ * and could never be cleared by reading it. The exclusion sits INSIDE the
+ * capped window, so the cap now bounds counted rows rather than scanned ones
+ * — an identity that ignores a firehose pays a longer index walk. The
+ * alternative (filter after the cap) would silently report zero unread
+ * whenever the newest 99 rows all came from ignored characters.
  */
 async function conversationCounts(
   db: Db,
@@ -50,6 +58,12 @@ async function conversationCounts(
           and m.id > coalesce(c.last_read_message_id, 0)
           and not m.sent_by_us
           and m.kind <> 'lrp'
+          and not exists (
+            select 1
+            from ignores ig
+            where ig.identity_id = c.identity_id
+              and lower(ig.character) = lower(m.sender_character)
+          )
         order by m.id desc
         limit ${UNREAD_CAP}
       ) t
@@ -79,15 +93,27 @@ export interface SnapshotData {
  * any sub). Sums the same capped per-conversation windows the snapshot uses,
  * so a busy identity costs the same as a quiet one; the sum can exceed the
  * per-conversation cap and the client clamps display.
+ *
+ * `mutedConvIds` drops muted conversations from the totals (#430 follow-up).
+ * The favicon indicator falls back to these totals for an identity whose
+ * slice has not synced, and a pre-aggregated total cannot be decomposed per
+ * conversation client-side — so a mute had to hold HERE or leak into the
+ * alert surface. Per-conversation snapshot counts stay mute-blind on purpose:
+ * sidebar badges and tint keep accruing for muted rooms (decisions.md §10 —
+ * mutes silence alerts, they do not hide traffic).
  */
 export async function identityBadgeTotals(
   db: Db,
   identityId: string,
+  mutedConvIds: ReadonlySet<string> = new Set(),
 ): Promise<{ unread: number; mentions: number }> {
   const counts = await conversationCounts(db, identityId);
   let unread = 0;
   let mentions = 0;
-  for (const count of counts.values()) {
+  for (const [convId, count] of counts) {
+    if (mutedConvIds.has(convId)) {
+      continue;
+    }
     unread += count.unread;
     mentions += count.mentions;
   }

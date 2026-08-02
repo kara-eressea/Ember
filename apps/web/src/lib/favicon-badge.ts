@@ -44,8 +44,10 @@ export function unreadIndicator(
     const slice = sessions[identity.id];
     if (!slice?.synced) {
       // Ready-frame totals are pre-aggregated server-side and cannot be
-      // decomposed per conversation, so a per-conversation mute inside an
-      // unsynced identity leaks into the tiers until its slice syncs.
+      // decomposed per conversation here — so the server applies the mute
+      // lists before aggregating (identityBadgeTotals): a muted conversation
+      // is already out of these numbers, and a muted identity contributes
+      // zero. Nothing left to leak while a slice is unsynced.
       count += identity.mentions;
       activity ||= identity.unread > 0;
       continue;

@@ -59,15 +59,23 @@ class TestClient {
     if (queued !== undefined) {
       return queued;
     }
+    const waiters = this.#waiters;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("timed out waiting for a frame")),
-        timeoutMs,
-      );
-      this.#waiters.push((raw) => {
+      const timer = setTimeout(() => {
+        // Drop the waiter on timeout, or the next frame to arrive would be
+        // handed to this dead promise and vanish — negative assertions
+        // ("no frame arrives") must not eat the frames that follow.
+        const index = waiters.indexOf(waiter);
+        if (index >= 0) {
+          waiters.splice(index, 1);
+        }
+        reject(new Error("timed out waiting for a frame"));
+      }, timeoutMs);
+      const waiter = (raw: string) => {
         clearTimeout(timer);
         resolve(raw);
-      });
+      };
+      waiters.push(waiter);
     });
   }
 
@@ -302,6 +310,33 @@ describe("login handshake", () => {
       cmd: "IDN",
       payload: { character: "Amber Vale" },
     });
+  });
+
+  it("rejects an expired ticket wherever tickets are checked", async () => {
+    // Live tickets last 30 minutes; the TTL is shortened here rather than
+    // waited out (unit coverage of the clock is in ticket-service.test.ts).
+    const sim = await startSim({ ticketTtlMs: 20 });
+    const ticket = sim.issueTicketFor("amber@example.test");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    const stale = await TestClient.connect(sim);
+    stale.send(idn("amber@example.test", ticket, "Amber Vale"));
+    expect(parseServerCommand(await stale.next())).toEqual({
+      cmd: "ERR",
+      payload: { number: 4, message: "Identification failed." },
+    });
+    await stale.closed;
+
+    // Same envelope as any other stale ticket on the JSON side.
+    const response = await fetch(`${sim.httpUrl}/json/api/character-data.php`, {
+      method: "POST",
+      body: new URLSearchParams({
+        account: "amber@example.test",
+        ticket,
+        name: "Nyx Firemane",
+      }),
+    });
+    expect(await response.json()).toEqual({ error: "Invalid ticket." });
   });
 
   it("rejects a character that does not belong to the account", async () => {
@@ -788,6 +823,28 @@ describe("messages", () => {
       cmd: "PRI",
       payload: { character: "Amber Vale", message: "psst" },
     });
+    amber.send({
+      cmd: "PRI",
+      payload: { recipient: "Nobody Here", message: "hello?" },
+    });
+    expect(parseServerCommand(await amber.waitFor("ERR"))).toMatchObject({
+      payload: { number: 6 },
+    });
+  });
+
+  it("accepts and drops a PRI to an NPC", async () => {
+    const sim = await startSim();
+    const amber = await login(sim, "amber@example.test", "Amber Vale");
+    amber.send({
+      cmd: "PRI",
+      payload: { recipient: "Nyx Firemane", message: "hello?" },
+    });
+    // NPCs are online in LIS, so ERR 6 ("The character requested was not
+    // found.") would be a lie — they are characters who never answer.
+    // Deliberate timeout, so this wait carries its own short budget.
+    await expect(amber.next(250)).rejects.toThrow(/timed out/);
+    // Control: a name nobody holds is still not found (and the connection
+    // is demonstrably still delivering frames).
     amber.send({
       cmd: "PRI",
       payload: { recipient: "Nobody Here", message: "hello?" },
