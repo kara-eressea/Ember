@@ -75,6 +75,41 @@ describe("FlistApiClient", () => {
     expect(second!.at - first!.at).toBeGreaterThanOrEqual(1000);
   });
 
+  it("bounds a stalled request so the shared chain is not wedged forever", async () => {
+    // AbortSignal.timeout runs on Node-internal timers the fake clock
+    // cannot drive — this one test uses the real clock with a tiny budget.
+    vi.useRealTimers();
+    let callCount = 0;
+    const fetchImpl = vi.fn(
+      (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        callCount += 1;
+        if (callCount === 1) {
+          // Never settles on its own — only the per-request signal ends it.
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(init.signal?.reason as Error);
+            });
+          });
+        }
+        return Promise.resolve(
+          Response.json({ error: "", ticket: "fct_after" }),
+        );
+      },
+    ) as unknown as typeof fetch;
+    const client = new FlistApiClient({
+      baseUrl: "http://sim.test",
+      fetchImpl,
+      minRequestIntervalMs: 0,
+      requestTimeoutMs: 30,
+    });
+    const params = { account: "a@example.test", password: "p" };
+    const stalled = client.getApiTicket(params);
+    const queued = client.getApiTicket(params);
+    await expect(stalled).rejects.toThrow();
+    // The queued caller proceeds once the stall is cut — the chain survives.
+    await expect(queued).resolves.toEqual({ error: "", ticket: "fct_after" });
+  });
+
   it("throws on non-2xx responses", async () => {
     const fetchImpl = vi.fn(() =>
       Promise.resolve(new Response("nope", { status: 500 })),

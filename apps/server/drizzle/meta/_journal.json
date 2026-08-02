@@ -127,6 +127,13 @@
       "when": 1785613242328,
       "tag": "0017_character-timezone-activity",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785669774195,
+      "tag": "0018_auth-rotation-grace",
+      "breakpoints": true
     }
   ]
 }

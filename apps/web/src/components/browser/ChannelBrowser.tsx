@@ -82,6 +82,8 @@ export function ChannelBrowser({
   const [query, setQuery] = useState("");
   const [data, setData] = useState<DirectoryData>();
   const [loadError, setLoadError] = useState(false);
+  /** Bumped by Try again — the load effect's other input. */
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Autofocus the filter on open — mount-only on purpose. Tying this to a
@@ -121,7 +123,7 @@ export function ChannelBrowser({
     return () => {
       cancelled = true;
     };
-  }, [session.identityId]);
+  }, [session.identityId, loadAttempt]);
 
   const channels = data?.channels ?? [];
   const official = channels.filter((c) => c.kind === "official");
@@ -197,8 +199,21 @@ export function ChannelBrowser({
         </div>
 
         {loadError ? (
+          // A dead end without this button: one transient failure (a blip, a
+          // 429) left the dialog permanently empty until the user thought to
+          // close and reopen it (E2E hang diagnosis, 2026-08-02).
           <p className={styles.notice} role="alert">
-            Could not load the channel list — try again in a moment.
+            Could not load the channel list.{" "}
+            <button
+              type="button"
+              className={styles.retryButton}
+              onClick={() => {
+                setLoadError(false);
+                setLoadAttempt((attempt) => attempt + 1);
+              }}
+            >
+              Try again
+            </button>
           </p>
         ) : (
           <ChannelRows rows={rows} session={session} />

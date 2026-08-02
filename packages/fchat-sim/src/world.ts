@@ -468,6 +468,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Haywick Pell"],
     },
+    // Reserved for the auth-refresh rotation-grace E2E (same isolation
+    // rules): Verity Gracewell reattaches after a refresh response was
+    // deliberately lost mid-rotation.
+    "gracewell@example.test": {
+      password: "hunter2",
+      characters: ["Verity Gracewell"],
+    },
   },
   channels: [
     {

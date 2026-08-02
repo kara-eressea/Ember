@@ -24,7 +24,10 @@ import {
   ChannelDirectory,
   type ChannelDirectoryOptions,
 } from "./modules/directory/directory.js";
-import { directoryRoutes } from "./modules/directory/routes.js";
+import {
+  directoryRoutes,
+  DIRECTORY_RATE_LIMIT_MAX,
+} from "./modules/directory/routes.js";
 import { enrichSocial, SocialCache } from "./modules/social/cache.js";
 import { socialRoutes } from "./modules/social/routes.js";
 import { SocialService } from "./modules/social/service.js";
@@ -351,6 +354,13 @@ export async function buildApp({
     db,
     sessions,
     directory,
+    // A tenth of the instance's backstop, never below the production value:
+    // the default config leaves this at 30, and an operator who raised the
+    // backstop for many-clients-per-address gets a route cap that follows.
+    rateLimitMax: Math.max(
+      DIRECTORY_RATE_LIMIT_MAX,
+      Math.floor(config.RATE_LIMIT_MAX / 10),
+    ),
   });
   await app.register(socialRoutes, {
     prefix: "/api/identities",

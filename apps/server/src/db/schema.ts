@@ -36,6 +36,11 @@ export const authSessions = pgTable("auth_sessions", {
     .notNull()
     .references(() => appUsers.id, { onDelete: "cascade" }),
   refreshTokenHash: text().notNull().unique(),
+  // The pre-rotation hash, honoured for ROTATION_GRACE_MS after rotatedAt: a
+  // client whose refresh response was lost mid-flight (page navigated away)
+  // still holds the old token, and without the grace that session is dead.
+  prevRefreshTokenHash: text(),
+  rotatedAt: timestamp({ withTimezone: true }),
   deviceLabel: text(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

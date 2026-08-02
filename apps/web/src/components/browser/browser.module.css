@@ -258,6 +258,17 @@
   color: var(--eb-dim);
 }
 
+/* The notice's way out of a failed load. */
+.retryButton {
+  padding: 0;
+  font: inherit;
+  color: var(--eb-accent);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
 /* ── Footer ───────────────────────────────────────────────────────────── */
 
 .footer {

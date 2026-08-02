@@ -26,10 +26,20 @@ const directoryResponse = z.object({
 
 const errorResponse = z.object({ error: z.string() });
 
+/** Production per-IP cap on directory reads (the cooldown already bounds
+ * wire traffic; this bounds the DB reads a scripted client could force). */
+export const DIRECTORY_RATE_LIMIT_MAX = 30;
+
 export interface DirectoryRoutesOptions {
   db: Db;
   sessions: SessionRegistry;
   directory: ChannelDirectory;
+  /** Per-IP cap; defaults to DIRECTORY_RATE_LIMIT_MAX. Derived from the
+   * instance's global backstop so an operator who deliberately raises that
+   * (many clients behind one address — the E2E suite is the extreme case,
+   * one loopback IP for every worker) doesn't leave this route silently
+   * 429ing the channel browser (E2E hang diagnosis, 2026-08-02). */
+  rateLimitMax?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -39,6 +49,7 @@ export async function directoryRoutes(
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const { db, sessions, directory } = options;
+  const rateLimitMax = options.rateLimitMax ?? DIRECTORY_RATE_LIMIT_MAX;
 
   app.addHook("preHandler", app.authenticate);
 
@@ -49,9 +60,7 @@ export async function directoryRoutes(
         params: z.object({ identityId: z.uuid() }),
         response: { 200: directoryResponse, 404: errorResponse },
       },
-      // The cooldown already bounds wire traffic; this bounds the DB reads
-      // a scripted client could still force.
-      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      config: { rateLimit: { max: rateLimitMax, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
       const [identity] = await db

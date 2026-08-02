@@ -85,8 +85,16 @@ export function CharacterSearch({
   const lastSeenResultsRef = useRef<string[] | undefined>(undefined);
   const windowRef = useRef<HTMLDivElement>(null);
 
+  // Focus once, on mount ONLY. This must not share the [onClose] effect
+  // below: the shell passes an inline closure, so that effect re-runs on
+  // every shell re-render (any gateway event) — and re-running focus() here
+  // stole focus mid-typing, which dismissed the blur-cancelled save-name
+  // input under load (E2E hang diagnosis, 2026-08-02).
   useEffect(() => {
     windowRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
