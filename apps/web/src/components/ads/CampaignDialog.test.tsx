@@ -8,15 +8,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { CampaignDto } from "@emberchat/protocol";
+import userEvent from "@testing-library/user-event";
+import type { AdDto, CampaignDto } from "@emberchat/protocol";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { CampaignDialog } from "./CampaignDialog.js";
 import { useAdsStore } from "../../stores/ads.js";
 import type { ChannelView, IdentitySession } from "../../stores/sessions.js";
 
-vi.mock("../../gateway/socket.js", () => ({
-  gateway: { cmd: vi.fn().mockResolvedValue({ ok: true }) },
-}));
+const cmd = vi.hoisted(() => vi.fn());
+vi.mock("../../gateway/socket.js", () => ({ gateway: { cmd } }));
 vi.mock("../../lib/api.js", () => ({
   api: { getAds: vi.fn().mockResolvedValue({ ads: [] }) },
 }));
@@ -87,6 +87,7 @@ const renderDialog = (dto: CampaignDto) =>
   render(<CampaignDialog session={session(dto)} onClose={vi.fn()} />);
 
 beforeEach(() => {
+  cmd.mockResolvedValue({ ok: true });
   useAdsStore.setState({
     byIdentity: { [IDENTITY]: { ads: [], loaded: true } },
     cooldownsByIdentity: {},
@@ -185,5 +186,99 @@ describe("CampaignDialog expiry bar — expired", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Campaign stopped");
     // Only an expiry earns the "· 1 hour" tail.
     expect(screen.queryByText(/· 1 hour/)).not.toBeInTheDocument();
+  });
+});
+
+// One identity runs at most one campaign, so setting a second one up has to
+// end in a REPLACE — never a duplicate. The setup surface is reachable with a
+// live campaign the way it happens in practice: Change tags off a finished
+// run, and then the run comes back under you (another device renewed or
+// started one) while you are still picking.
+describe("CampaignDialog replace flow", () => {
+  const AD: AdDto = {
+    id: "ad-1",
+    content: "Looking for a slow burn",
+    tags: ["slow"],
+    disabled: false,
+  };
+
+  const stopped = () => campaign({ stoppedAt: Date.now() - MINUTE });
+
+  /** Renders a finished run and takes Change tags into setup. */
+  async function changeTags(user: ReturnType<typeof userEvent.setup>) {
+    const view = render(
+      <CampaignDialog session={session(stopped())} onClose={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Change tags" }));
+    expect(
+      screen.getByRole("dialog", { name: "Set up a campaign" }),
+    ).toBeInTheDocument();
+    // The finished run's tags and still-joined channels come along.
+    expect(screen.getByRole("button", { name: /slow/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /Amber Room/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    return view;
+  }
+
+  beforeEach(() => {
+    useAdsStore.setState({
+      byIdentity: { [IDENTITY]: { ads: [AD], loaded: true } },
+      cooldownsByIdentity: {},
+    });
+  });
+
+  it("warns that a running campaign would be replaced, and replaces it on confirm", async () => {
+    const user = userEvent.setup();
+    const { rerender } = await changeTags(user);
+
+    // The run comes back while setup is open.
+    rerender(
+      <CampaignDialog session={session(campaign())} onClose={vi.fn()} />,
+    );
+
+    const banner = screen.getByRole("alert");
+    expect(banner).toHaveTextContent(
+      "A campaign is already running as Amber Vale",
+    );
+    expect(banner).toHaveTextContent("Starting a new one replaces it");
+    // The plain Start is closed off while one runs — replacing is the only
+    // way forward, so there is no path to two campaigns.
+    expect(
+      screen.getByRole("button", { name: "Start campaign" }),
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Replace" }));
+
+    expect(cmd).toHaveBeenCalledTimes(1);
+    expect(cmd).toHaveBeenCalledWith({
+      identityId: IDENTITY,
+      action: "campaign.start",
+      d: { tags: ["slow"], channels: ["ADH-a"], replace: true },
+    });
+    // Confirmed → back to watching the (new) run.
+    expect(
+      await screen.findByRole("dialog", { name: "Campaign" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the running campaign when the warning is declined", async () => {
+    const user = userEvent.setup();
+    const { rerender } = await changeTags(user);
+    rerender(
+      <CampaignDialog session={session(campaign())} onClose={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Keep current" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "Campaign" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Posting live")).toBeInTheDocument();
+    expect(cmd).not.toHaveBeenCalled();
   });
 });
