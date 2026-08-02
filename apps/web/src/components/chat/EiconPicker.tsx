@@ -14,7 +14,7 @@ import {
 import type { UserPrefs } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
 import { eiconUrl } from "../../lib/avatar.js";
-import { placePopover } from "../profile/popover.js";
+import { placePopoverInWindow } from "../profile/popover.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { CardAnchor } from "../../stores/profile.js";
@@ -71,11 +71,10 @@ export function EiconPicker({
     if (!element) {
       return;
     }
-    const placed = placePopover(
-      anchor,
-      { width: PICKER_WIDTH, height: element.offsetHeight },
-      { width: window.innerWidth, height: window.innerHeight },
-    );
+    const placed = placePopoverInWindow(anchor, {
+      width: PICKER_WIDTH,
+      height: element.offsetHeight,
+    });
     setPos({ top: placed.top, left: placed.left });
     setPlacement(placed.placement === "below" ? "below" : "above");
   }, [anchor, tab]);

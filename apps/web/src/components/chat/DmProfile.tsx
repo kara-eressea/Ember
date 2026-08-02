@@ -76,7 +76,10 @@ export function DmProfile({
 
   // Dismiss the overlay drawer on Escape (click-away is the backdrop). Only
   // the overlay drawer claims Escape; the docked panel leaves it alone.
-  useEscapeToClose(onCollapse, overlay);
+  // "ambient": the drawer is part of the layout rather than something the
+  // user just opened, and its gating flips with the viewport — a popover on
+  // top of it must still get Escape first.
+  useEscapeToClose(onCollapse, overlay, "ambient");
 
   const response = loaded?.response;
   const note = response?.note ?? null;
