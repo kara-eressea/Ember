@@ -127,6 +127,23 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
 
+      <FieldRow
+        label="Profile card position"
+        help="Anchored opens the card under the name you clicked; docked parks it in the bottom-right corner, out of the conversation"
+      >
+        <Segmented
+          label="Profile card position"
+          options={[
+            { value: "anchored", label: "Anchored" },
+            { value: "corner", label: "Docked" },
+          ]}
+          value={prefs.miniCardPlacement}
+          onChange={(miniCardPlacement) => {
+            set({ miniCardPlacement });
+          }}
+        />
+      </FieldRow>
+
       <GroupLabel>Messages</GroupLabel>
       <FieldRow label="Message density">
         <Segmented

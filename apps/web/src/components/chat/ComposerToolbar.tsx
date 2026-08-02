@@ -14,7 +14,10 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { placePopover, type PopoverPlacement } from "../profile/popover.js";
+import {
+  placePopoverInWindow,
+  type PopoverPlacement,
+} from "../profile/popover.js";
 import type { ComposerInputHandle } from "./composer-input.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import {
@@ -392,11 +395,10 @@ function ToolbarPopover({
       return;
     }
     setPlacement(
-      placePopover(
-        anchor,
-        { width: element.offsetWidth, height: element.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight },
-      ),
+      placePopoverInWindow(anchor, {
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+      }),
     );
   }, [anchor]);
   useEffect(() => {

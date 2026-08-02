@@ -7,7 +7,11 @@
 // at a time (store).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { placeBeside, POPOVER_MARGIN } from "../profile/popover.js";
+import {
+  placeBesideInWindow,
+  popoverViewport,
+  POPOVER_MARGIN,
+} from "../profile/popover.js";
 import { useLinkPreviewStore } from "../../stores/link-preview.js";
 import styles from "./chat.module.css";
 
@@ -55,14 +59,10 @@ export function LinkPreview() {
     // edge would otherwise be pushed off-screen. Cap the height we hand the
     // placement math (so `top` clamps against the *capped* box) and cap the
     // panel itself, letting the media area scroll inside it.
-    const maxHeight = window.innerHeight - 2 * POPOVER_MARGIN;
+    const maxHeight = popoverViewport().height - 2 * POPOVER_MARGIN;
     const height = Math.min(element.offsetHeight, maxHeight);
     setPos({
-      ...placeBeside(
-        preview.anchor,
-        { width: PANEL_WIDTH, height },
-        { width: window.innerWidth, height: window.innerHeight },
-      ),
+      ...placeBesideInWindow(preview.anchor, { width: PANEL_WIDTH, height }),
       maxHeight,
     });
   }, [preview, state]);

@@ -56,6 +56,21 @@ describe("ownMessageTint", () => {
   });
 });
 
+describe("miniCardPlacement", () => {
+  it("defaults to the anchored card", () => {
+    expect(PREFS_DEFAULTS.miniCardPlacement).toBe("anchored");
+  });
+
+  it("accepts the docked corner and rejects anything else", () => {
+    expect(
+      userPrefsPatchSchema.safeParse({ miniCardPlacement: "corner" }).success,
+    ).toBe(true);
+    expect(
+      userPrefsPatchSchema.safeParse({ miniCardPlacement: "topleft" }).success,
+    ).toBe(false);
+  });
+});
+
 describe("imagePreviewHosts (#215)", () => {
   it("defaults to the known-good allowlist", () => {
     expect(PREFS_DEFAULTS.imagePreviewHosts).toEqual([

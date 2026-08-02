@@ -433,6 +433,17 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Linnet Crow"],
     },
+    // Reserved for the mini-profile-card E2E (same isolation rules). Tern
+    // Ashby is the raw-SimClient "other side": the nick Hollyhock opens the
+    // card from, and the sender whose message lands while it is open.
+    "hollyhock@example.test": {
+      password: "hunter2",
+      characters: ["Hollyhock Vane"],
+    },
+    "tern@example.test": {
+      password: "hunter2",
+      characters: ["Tern Ashby"],
+    },
   },
   channels: [
     {
@@ -704,6 +715,28 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Where nobody marks your place for you.",
       oplist: ["Hollis Reeve"],
+      listed: false,
+    },
+    // Reserved for the mini-profile-card E2E: Tern Ashby sends a message
+    // while Hollyhock Vane has the card open, and the side room is only
+    // somewhere to switch to so the log remounts with a read cursor.
+    // Hidden and NPC-free for the usual isolation reasons.
+    {
+      name: "ADH-cardsunroom44cc55dd1",
+      title: "Card Sun Room",
+      mode: "chat",
+      description: "Where the light lands first.",
+      oplist: ["Tern Ashby"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-cardsideroom77ee88ff",
+      title: "Card Side Room",
+      mode: "chat",
+      description: "Somewhere else to be, briefly.",
+      oplist: ["Tern Ashby"],
+      npcs: [],
       listed: false,
     },
   ],

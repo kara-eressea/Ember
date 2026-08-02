@@ -1324,23 +1324,21 @@
 
 /* ── Mini profile card (§13 + Mini Profile Viewer.dc.html M8·B–G) ─────── */
 
-.cardOverlay {
-  position: fixed;
-  inset: 0;
-  /* Above the chat shell + member list, below the profile modal (45). */
-  z-index: 40;
-}
-
+/* No click-catching overlay: the card dismisses on an outside pointerdown,
+   so a click on another name closes this card and opens that one in the same
+   gesture (§13 "opening another popover" dismisses). */
 .card {
   position: fixed;
+  /* Above the chat shell + member list, below the profile modal (45). */
   z-index: 41;
   display: flex;
   flex-direction: column;
   width: 300px;
   /* Reserve a stable height so the card doesn't jump as content loads in
-     (#182): the skeleton and the loaded card settle at a similar size. */
+     (#182): the skeleton and the loaded card settle at a similar size. The
+     placement re-applies this inline, capped by the computed max height. */
   min-height: 232px;
-  overflow: auto;
+  overflow: hidden;
   color: var(--eb-text);
   background: var(--eb-side);
   border: 1px solid var(--eb-border);
@@ -1348,8 +1346,18 @@
   box-shadow: 0 20px 50px -10px rgb(0 0 0 / 70%); /* popover shadow */
 }
 
+/* §13 max size: only the body scrolls once the card is capped — the header
+   and the actions stay pinned. */
+.cardBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
 .cardHeader {
   display: flex;
+  flex: none;
   gap: 13px;
   padding: 16px 14px 12px;
   background: linear-gradient(
@@ -1421,16 +1429,12 @@
 }
 
 .cardActions {
-  /* Pin the actions to the card's bottom edge and let them sit above any
-     scrolling content, so the "Open profile" action stays reachable even
-     when a tall card has to scroll (#182). margin-top:auto keeps them at
-     the bottom when the card is taller than its content. */
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
+  /* Pinned to the card's bottom edge by the flex layout (the body above is
+     the only scroller), so "Open profile" stays reachable however tall the
+     content gets (#182). */
   display: flex;
+  flex: none;
   gap: 8px;
-  margin-top: auto;
   padding: 12px 14px 14px;
   background: var(--eb-side);
 }

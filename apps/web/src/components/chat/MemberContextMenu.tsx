@@ -23,6 +23,7 @@ import { markConversationRead } from "../../lib/mark-read.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { placeAtPointInWindow } from "../profile/popover.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
@@ -89,12 +90,12 @@ export function MemberContextMenu({
     if (!el) {
       return;
     }
-    const margin = 8;
-    const rect = el.getBoundingClientRect();
-    const left = Math.min(position.x, window.innerWidth - rect.width - margin);
-    const top = Math.min(position.y, window.innerHeight - rect.height - margin);
-    el.style.left = `${String(Math.max(margin, left))}px`;
-    el.style.top = `${String(Math.max(margin, top))}px`;
+    const { top, left } = placeAtPointInWindow(position, {
+      width: el.offsetWidth,
+      height: el.offsetHeight,
+    });
+    el.style.left = `${String(left)}px`;
+    el.style.top = `${String(top)}px`;
   }, [position, reporting]);
   const self = member.character.toLowerCase() === ownCharacter.toLowerCase();
   const powers = modPowers({

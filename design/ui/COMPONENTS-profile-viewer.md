@@ -289,7 +289,17 @@ row, `[user]` mention) and applies to future click-popovers (eicon picker). Popo
   body scrolls (`.pvscroll`) — the header/actions stay pinned.
 - **Dismiss:** click-away, Escape, or opening another popover. Only one profile popover
   open at a time. Opening **Open profile** hands off to the full viewer modal (§1) and
-  closes the popover.
+  closes the popover. Click-away is an outside *pointerdown* with no overlay behind the
+  card, so clicking another name closes this card and opens that one in one gesture;
+  clicking the open card's own trigger toggles it shut.
+- **Follows its anchor:** the card re-places on scroll and resize (the log keeps scrolling
+  behind it), and closes if its trigger leaves the DOM.
+- **Placement pref** (`miniCardPlacement`, Appearance → Interface): `anchored` (default,
+  all of the above) or `corner` — docked in the bottom-right with a 16px inset, stationary
+  whatever the trigger was, anchor-following disabled; dismissal is unchanged.
+- **Interface scale:** the card is `position: fixed` inside the zoomed root, so anchor
+  rects and the viewport are divided by `--eb-ui-zoom` before the math (cf. #388) — the
+  card lands on the name at every scale.
 - **Layering:** above the chat shell and member list, below the profile modal + its
   lightbox.
 

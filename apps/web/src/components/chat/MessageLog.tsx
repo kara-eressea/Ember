@@ -687,7 +687,14 @@ export function MessageLog({
   // screen and the bar stayed hidden (the live #373.2 miss: the old handler
   // lived on the bar and never registered in that case). newRowIndex < 0 once
   // the divider is gone, which disables it again.
-  useEscapeToClose(markCaughtUp, !detachedTail && atBottom && newRowIndex >= 0);
+  // "ambient": this registers the moment a new message arrives, which would
+  // otherwise put it on top of an already-open card or menu and eat that
+  // overlay's Escape (the user then had to press twice).
+  useEscapeToClose(
+    markCaughtUp,
+    !detachedTail && atBottom && newRowIndex >= 0,
+    "ambient",
+  );
 
   // Whether there is a newer position to jump to. Detached tail always
   // qualifies; otherwise it is the "scrolled up past the slack" state.
