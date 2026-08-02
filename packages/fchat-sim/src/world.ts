@@ -414,6 +414,18 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Flint Barrow", "Marwenna Wolfhammers"],
     },
+    // Reserved for the #440 focus-gated read-cursor E2E (same isolation
+    // rules). Hollis Reeve keeps a room open while the window loses focus;
+    // Linnet Crow is the raw-SimClient partner whose messages must accrue as
+    // unread instead of being marked read behind the user's back.
+    "hollisreeve@example.test": {
+      password: "hunter2",
+      characters: ["Hollis Reeve"],
+    },
+    "linnet@example.test": {
+      password: "hunter2",
+      characters: ["Linnet Crow"],
+    },
     // Reserved for the mini-profile-card E2E (same isolation rules). Tern
     // Ashby is the raw-SimClient "other side": the nick Hollyhock opens the
     // card from, and the sender whose message lands while it is open.
@@ -685,6 +697,17 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Where the shape of things is checked.",
       oplist: ["Nyx Firemane"],
       npcs: ["Tally Marsh"],
+      listed: false,
+    },
+    // Reserved for the #440 focus-gated read-cursor E2E: Hollis Reeve reads
+    // here while Linnet Crow talks into an unfocused window. No NPCs — the
+    // only chatter must be the spec's own, since it counts unread badges.
+    {
+      name: "ADH-440focusgate11cc22dd33",
+      title: "Quiet Study",
+      mode: "chat",
+      description: "Where nobody marks your place for you.",
+      oplist: ["Hollis Reeve"],
       listed: false,
     },
     // Reserved for the mini-profile-card E2E: Tern Ashby sends a message
