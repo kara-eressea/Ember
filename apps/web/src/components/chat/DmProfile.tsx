@@ -16,7 +16,7 @@ import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
-import { useMinuteClock } from "../../lib/useMinuteClock.js";
+import { useMinuteClock } from "../../lib/clock.js";
 import { nickColor } from "../../theme/tokens.js";
 import {
   loadOwnProfile,
