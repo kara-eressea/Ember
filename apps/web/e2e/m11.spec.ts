@@ -101,9 +101,7 @@ test("M11: campaign start → live post → window pause → kill → renew; rat
   ).toBeVisible({ timeout: 20_000 });
 
   // The channel header carries the quiet live-campaign chip.
-  await expect(
-    page.getByRole("button", { name: /Campaign · posting here/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Campaign$/ })).toBeVisible();
 
   // ── Kill switch, then renew ───────────────────────────────────────────
   await page.getByRole("button", { name: "Open the Ad Center" }).click();

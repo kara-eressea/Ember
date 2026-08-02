@@ -35,7 +35,6 @@ import { DmProfile } from "../chat/DmProfile.js";
 import { MemberList } from "../chat/MemberList.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
 import { MessageLog } from "../chat/MessageLog.js";
-import { SearchPanel } from "../chat/SearchPanel.js";
 import { CharacterSearch } from "../search/CharacterSearch.js";
 import { AdCenter } from "../ads/AdCenter.js";
 import { CampaignDialog } from "../ads/CampaignDialog.js";
@@ -107,7 +106,6 @@ export function AppShell() {
   const profileViewing = useProfileStore((s) => s.viewing);
   const profileCard = useProfileStore((s) => s.card);
   const channelBrowserOpen = useUiStore((s) => s.channelBrowserOpen);
-  const searchOpen = useUiStore((s) => s.searchOpen);
   const switcherOpen = useUiStore((s) => s.switcherOpen);
   const adCenterOpen = useUiStore((s) => s.adCenterOpen);
   const postAdsOpen = useUiStore((s) => s.postAdsOpen);
@@ -369,13 +367,21 @@ export function AppShell() {
           </div>
         ) : (
           <>
+            {/* Keyed like the log below: the header's toolbar carries
+                per-conversation state (search query and results, the room
+                window), none of which should survive a switch. */}
             {conversation.kind === "channel" ? (
               <ChannelHeader
+                key={`head:${convId}`}
                 identityId={activeId}
                 channel={conversation.channel}
               />
             ) : (
-              <DmHeader identityId={activeId} dm={conversation.dm} />
+              <DmHeader
+                key={`head:${convId}`}
+                identityId={activeId}
+                dm={conversation.dm}
+              />
             )}
             {/* Keyed per conversation so both remount on switch — with
                 distinct prefixes, since they are siblings. */}
@@ -428,15 +434,8 @@ export function AppShell() {
             />
           </>
         )}
-        {searchOpen && (
-          <SearchPanel
-            session={session}
-            convId={convId}
-            onClose={() => {
-              useUiStore.getState().setSearchOpen(false);
-            }}
-          />
-        )}
+        {/* In-log search now hangs off the header toolbar's search field
+            (ChannelHeader), which owns the query — no shell-level mount. */}
       </main>
       {showMembers && channel && (
         <MemberList

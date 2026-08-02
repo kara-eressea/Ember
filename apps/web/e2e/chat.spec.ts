@@ -295,17 +295,20 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
       .toBeLessThanOrEqual(2);
 
     // ── In-log search + jump-to-context (M9 step 3) ───────────────────────
-    await page.getByRole("button", { name: "Search log" }).click();
+    // The search field lives on the header toolbar and owns the query;
+    // focusing it drops the results panel underneath.
+    const searchInput = page.getByRole("textbox", { name: "Search log" });
+    await searchInput.click();
     const searchPanel = page.getByRole("dialog", { name: "Search log" });
-    const searchInput = searchPanel.getByRole("textbox", {
-      name: "Search messages",
-    });
+    await expect(searchPanel).toBeVisible();
     // The from: filter rides along to prove the mini-language end to end.
     await searchInput.fill('seed #33 from:"birch rowan"');
     await searchInput.press("Enter");
     const hit = searchPanel.getByRole("button", { name: /seed #33/ });
     await expect(hit).toBeVisible({ timeout: 10_000 });
     await hit.click();
+    // Jumping dismisses the panel — it hangs over the log it just moved.
+    await expect(searchPanel).not.toBeVisible();
     // The log lands on the history page containing the hit and detaches
     // from the live tail.
     await expect(
@@ -316,6 +319,9 @@ test("full slice: connect, join, chat both ways, PMs, live members, history scro
     await expect(
       log.getByText(`seed #${String(SEED_COUNT)}`, { exact: true }),
     ).toBeVisible({ timeout: 10_000 });
+    // Reopening keeps the query, and Escape closes the panel again.
+    await searchInput.click();
+    await expect(searchPanel).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(searchPanel).not.toBeVisible();
   } finally {

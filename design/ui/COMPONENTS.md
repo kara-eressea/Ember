@@ -159,12 +159,22 @@ One row component, variants by `glyph` + presence. Padding `5px 10px`, margin `1
 - **Active:** `background: accentSoft` + `inset 2px 0 0 accent`.
 - **Data:** `{ kind:'channel'|'dm'|'friend'|'bookmark', label, pinned, muted, presence?, unread?, mention?, active }`.
 
-### 5. ChannelHeader
-On `head`, bottom border, padding `12px 20px`.
-- **Row 1:** `#` (20px mono `faint`) · channel name (18px/700) · "⚲ pinned" chip (mono 10.5px, pill border) · spacer · header buttons `☆` (favorite) `⌕` (search) `☰ {count}` (toggle members). Buttons `dim`, mono.
-- **Row 2 — Topic:** `TOPIC` tag (mono 9.5px/700, `accent` on `accentSoft`, 4px radius) + topic text (13px `dim`, single-line ellipsis). The short, editable IRC topic.
-- **Row 3 — Description:** longer server-provided blurb (12px `meta`), collapsed by default with a trailing **Show more / Show less** toggle (`accentText`, 600). Expands to full text inline.
-- **Data:** `{ channel, memberCount, pinned, topic, descShort, descFull, descExpanded }`.
+### 5. ConversationHeader (channel + DM toolbar)
+One row, both conversation kinds, on `head` with a bottom border: fixed `46px` height, `padding: 0 10px 0 18px`, so the log never shifts when a conversation has no topic. It runs on the **composer toolbar's language** (component 8) — the same 30×30 IconBtn, the same 1×18px `border` cluster dividers — so the top and bottom edges of a conversation read as one instrument. No system emoji anywhere: every action is a stroked inline SVG in `currentColor`.
+
+Left → right:
+
+- **Identity** (flex, takes the spare width): leading `#` (17px mono `faint`) for channels or a 9px presence dot for DMs · **name** (15px/700, ellipsis, capped at `24ch`, floored so it never vanishes) · 1×15px hairline · **topic**.
+- **Topic slot** — the channel's CDS description or the DM partner's status line (`{status} — {statusmsg}`), inline at 12px `meta`, one line, ellipsis. The inline copy is `inert` (no tab stops, no clicks reaching its BBCode chips); clicking the slot opens a **popover** under it with the whole thing live, links included. This replaces the old Show more / Show less row. Eicons in the inline copy are clamped to 15px so a topic can never grow the row.
+- **Partner clock** (DMs, when a zone is known — #439): clock glyph + `HH:MM` in mono `faint`, `tabular-nums`, tooltip naming the zone and its source. It sits *outside* the topic slot and never shrinks — inside it, an overlong status would truncate it away.
+- **Action chips** (IconBtn, `aria-pressed` on the toggles): channel — pin, mute, room settings (op+ only, gear); DM — pin, mute, ignore. Toggled = `accentSoft` + `accentText` + `inset 0 -2px 0 accent`; ignore uses the same shape in `danger`.
+- **Campaign pill** (M11, conditional): a quiet accent pill with a pulsing `ok` dot, reading "Campaign".
+- **Divider** · **search field** — the sidebar filter's pill reused: 28px tall, 14px radius, `bg` fill, magnifier + "Search log" placeholder in `meta`. It **owns the query**; results drop out of a `side` card anchored under it — scope segments ("This conversation" / "Everywhere") and a close ✕ on a hairline-separated head, then the hit rows. Focus = `accent` border + `accentSoft` ring.
+- **Divider** · **view toggles**, rightmost because they act on the rail beside them: channel — members (people glyph + mono count); DM — profile panel, conversation menu (⋮), close (✕).
+
+**Narrow behaviour**, in the order things give way: the topic shrinks first, then (≤1080px) the search field parks as a magnifier chip and grows back on focus — taking the topic's room, not the name's — and (≤880px) the topic steps out entirely. The chips never collapse; they are the row's point.
+
+- **Data:** `{ conversation, memberCount, pinned, muted, ignored?, topic, canManageRoom }`.
 
 ### 6. MessageLog (IRC-compact)
 Scroll region, `padding: 12px 0`. Four row types, all `display:flex; gap:9px; align-items:baseline`:
