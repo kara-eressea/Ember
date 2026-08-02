@@ -93,6 +93,16 @@ export class NotificationStore {
   >();
   /** Inserts since each identity's last prune pass. */
   readonly #sincePrune = new Map<string, number>();
+  /**
+   * Per-identity serial write queue, like the history sink's. Inbox ids are
+   * the keyset cursor AND the seen watermark's unit, so they must follow
+   * arrival order — and the RTB writers are fire-and-forget from the
+   * session's command handler, so without this two website events milliseconds
+   * apart land in whatever order their mute lookups happened to resolve (one
+   * cached, one not). Per identity: a conversation belongs to exactly one, so
+   * identities never queue behind each other.
+   */
+  readonly #queues = new Map<string, Promise<unknown>>();
 
   constructor(
     db: Db,
@@ -116,22 +126,24 @@ export class NotificationStore {
    * serial task, so inbox ids follow message ids in arrival order. Never
    * throws: an inbox failure must not take the history write with it.
    */
-  async recordMention(entry: {
+  recordMention(entry: {
     identityId: string;
     conversationId: string;
     messageId: number;
     senderCharacter: string;
     bbcode: string;
   }): Promise<NotificationRow | undefined> {
-    return this.#insert({
-      identityId: entry.identityId,
-      kind: "mention",
-      conversationId: entry.conversationId,
-      messageId: entry.messageId,
-      character: entry.senderCharacter,
-      excerpt: excerptOf(entry.bbcode),
-      muted: await this.#isMuted(entry.identityId, entry.conversationId),
-    });
+    return this.#enqueue(entry.identityId, async () =>
+      this.#insert({
+        identityId: entry.identityId,
+        kind: "mention",
+        conversationId: entry.conversationId,
+        messageId: entry.messageId,
+        character: entry.senderCharacter,
+        excerpt: excerptOf(entry.bbcode),
+        muted: await this.#isMuted(entry.identityId, entry.conversationId),
+      }),
+    );
   }
 
   /**
@@ -139,23 +151,44 @@ export class NotificationStore {
    * a place to go are logged — everything else RTB carries stays the
    * transient notice it always was.
    */
-  async recordRtb(
+  recordRtb(
     identityId: string,
     kind: Exclude<NotificationKind, "mention">,
     character: string,
     subject?: string,
   ): Promise<NotificationRow | undefined> {
-    return this.#insert({
-      identityId,
-      kind,
-      conversationId: null,
-      messageId: null,
-      character,
-      excerpt: subject === undefined ? "" : excerptOf(subject),
-      // RTB events are account-level: a muted conversation says nothing
-      // about them, and a muted identity's own alerts stay silenced.
-      muted: await this.#isMuted(identityId),
+    return this.#enqueue(identityId, async () =>
+      this.#insert({
+        identityId,
+        kind,
+        conversationId: null,
+        messageId: null,
+        character,
+        excerpt: subject === undefined ? "" : excerptOf(subject),
+        // RTB events are account-level: a muted conversation says nothing
+        // about them, and a muted identity's own alerts stay silenced.
+        muted: await this.#isMuted(identityId),
+      }),
+    );
+  }
+
+  #enqueue<T>(identityId: string, task: () => Promise<T>): Promise<T> {
+    const prior = this.#queues.get(identityId) ?? Promise.resolve();
+    // The chain never rejects — a failed write must not wedge the queue for
+    // every later notification on this identity.
+    const run = prior.then(task, task);
+    const chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#queues.set(identityId, chain);
+    void chain.then(() => {
+      // Drop drained chains so the map doesn't grow with every identity.
+      if (this.#queues.get(identityId) === chain) {
+        this.#queues.delete(identityId);
+      }
     });
+    return run;
   }
 
   async #insert(values: {

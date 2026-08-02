@@ -66,6 +66,7 @@ declare module "fastify" {
   interface FastifyInstance {
     sessions: SessionRegistry;
     history: HistorySink;
+    notifications: NotificationStore;
     outbox: Outbox;
     detachedAway: DetachedAway;
     directory: ChannelDirectory;
@@ -252,6 +253,7 @@ export async function buildApp({
   });
   app.decorate("sessions", sessions);
   app.decorate("history", history);
+  app.decorate("notifications", notifications);
   app.decorate("directory", directory);
   const outbox = new Outbox({ db, sessions, hub, logger: app.log });
   outbox.start();
