@@ -444,6 +444,18 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Tern Ashby"],
     },
+    // Reserved for the #411 open-at-the-tail-on-return E2E (same isolation
+    // rules). Seedwright Vale leaves a room, takes a few unreads there, and
+    // comes back to it — by sidebar click and by regaining window focus.
+    // Almond Fitch is the raw-SimClient partner talking into the empty room.
+    "seedwright@example.test": {
+      password: "hunter2",
+      characters: ["Seedwright Vale"],
+    },
+    "almond@example.test": {
+      password: "hunter2",
+      characters: ["Almond Fitch"],
+    },
   },
   channels: [
     {
@@ -736,6 +748,27 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Somewhere else to be, briefly.",
       oplist: ["Tern Ashby"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #411 open-at-the-tail-on-return E2E: Almond Fitch keeps
+    // talking into the Potting Bench while Seedwright Vale is away in the
+    // Cold Frame. Hidden and NPC-free — the spec counts unreads.
+    {
+      name: "ADH-411pottingbench66aa77bb",
+      title: "Potting Bench",
+      mode: "chat",
+      description: "Where you left off.",
+      oplist: ["Seedwright Vale"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-411coldframe88cc99dd",
+      title: "Cold Frame",
+      mode: "chat",
+      description: "Somewhere quiet to step away to.",
+      oplist: ["Seedwright Vale"],
       npcs: [],
       listed: false,
     },
