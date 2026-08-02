@@ -12,12 +12,17 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
-import type { ProfileInsights, ProfileResponse } from "@emberchat/protocol";
+import type {
+  ProfileActivity,
+  ProfileInsights,
+  ProfileResponse,
+} from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import {
   characterCache,
+  characterNotes,
   conversations,
   flistAccounts,
   identities,
@@ -354,6 +359,62 @@ describe("notes", () => {
       }>().note,
     ).toBeNull();
   });
+
+  it("note and timezone clear independently, and the row goes when both do", async () => {
+    const noteUrl = `${base()}/profile/Fern Ashwood/note`;
+    const tzUrl = `${base()}/profile/Fern Ashwood/timezone`;
+    const stored = async () =>
+      (await get(noteUrl)).json<{
+        note: string | null;
+        timezone: string | null;
+      }>();
+    const rows = async () =>
+      (
+        await db
+          .select()
+          .from(characterNotes)
+          .where(eq(characterNotes.characterLower, "fern ashwood"))
+      ).length;
+
+    // A timezone with no note at all: the row exists for the zone's sake.
+    expect(
+      (await request("PUT", tzUrl, { timezone: "Asia/Tokyo" })).statusCode,
+    ).toBe(200);
+    expect(await stored()).toEqual({ note: null, timezone: "Asia/Tokyo" });
+
+    await request("PUT", noteUrl, { note: "met at the lantern market" });
+    expect(await stored()).toEqual({
+      note: "met at the lantern market",
+      timezone: "Asia/Tokyo",
+    });
+    // Both halves ride the profile response.
+    const profile = (
+      await get(`${base()}/profile/Fern Ashwood`)
+    ).json<ProfileResponse>();
+    expect(profile.timezone).toBe("Asia/Tokyo");
+    expect(profile.note).toContain("lantern market");
+
+    // Clearing the note keeps the zone…
+    await request("PUT", noteUrl, { note: "" });
+    expect(await stored()).toEqual({ note: null, timezone: "Asia/Tokyo" });
+    expect(await rows()).toBe(1);
+
+    // …and clearing the zone with no note left drops the row entirely.
+    await request("PUT", tzUrl, { timezone: null });
+    expect(await stored()).toEqual({ note: null, timezone: null });
+    expect(await rows()).toBe(0);
+  });
+
+  it("refuses a timezone the runtime doesn't know", async () => {
+    const refused = await request(
+      `PUT`,
+      `${base()}/profile/Fern Ashwood/timezone`,
+      {
+        timezone: "Mars/Olympus_Mons",
+      },
+    );
+    expect(refused.statusCode).toBe(400);
+  });
 });
 
 describe("insights", () => {
@@ -435,6 +496,136 @@ describe("insights", () => {
       timesViewed: 0,
       firstViewedAt: null,
     });
+  });
+});
+
+describe("activity heatmap", () => {
+  // Everything is seeded relative to "now" — the window is a rolling 90 days.
+  const DAY = 86_400_000;
+  const ago = (days: number, hours = 0) =>
+    new Date(Date.now() - days * DAY - hours * 3_600_000);
+  /** Grid coordinates a UTC instant lands on, with the DTO's Monday origin. */
+  const slot = (at: Date, offsetHours = 0) => {
+    const shifted = new Date(at.getTime() + offsetHours * 3_600_000);
+    return {
+      dow: (shifted.getUTCDay() + 6) % 7,
+      hour: shifted.getUTCHours(),
+    };
+  };
+
+  const inWindow = ago(10, 3);
+  const alsoInWindow = ago(3, 7);
+  const tooOld = ago(120);
+
+  beforeAll(async () => {
+    const [dm] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "pm",
+        partnerCharacter: "Rowan Sage",
+        title: "Rowan Sage",
+      })
+      .returning({ id: conversations.id });
+    const [channel] = await db
+      .insert(conversations)
+      .values({
+        identityId,
+        kind: "channel",
+        channelKey: "Lantern Market",
+        title: "Lantern Market",
+      })
+      .returning({ id: conversations.id });
+    await db.insert(messages).values([
+      // Counted: a channel line and a DM from them, both inside the window.
+      {
+        conversationId: channel!.id,
+        senderCharacter: "Rowan Sage",
+        kind: "msg",
+        bbcode: "evening all",
+        createdAt: inWindow,
+      },
+      {
+        conversationId: dm!.id,
+        senderCharacter: "Rowan Sage",
+        kind: "pm",
+        bbcode: "hello again",
+        createdAt: alsoInWindow,
+      },
+      // Not counted: an ad (rotation tools post those unattended), our own
+      // message, a system line, and anything past the window.
+      {
+        conversationId: channel!.id,
+        senderCharacter: "Rowan Sage",
+        kind: "lrp",
+        bbcode: "[b]LFRP[/b]",
+        createdAt: inWindow,
+      },
+      {
+        conversationId: channel!.id,
+        senderCharacter: "Rowan Sage",
+        kind: "sys",
+        bbcode: "Rowan Sage has joined.",
+        createdAt: inWindow,
+      },
+      {
+        conversationId: dm!.id,
+        senderCharacter: CHARACTER,
+        kind: "pm",
+        bbcode: "hi rowan",
+        sentByUs: true,
+        createdAt: inWindow,
+      },
+      {
+        conversationId: channel!.id,
+        senderCharacter: "Rowan Sage",
+        kind: "msg",
+        bbcode: "ancient history",
+        createdAt: tooOld,
+      },
+    ]);
+  });
+
+  it("buckets by weekday and hour in the requested zone", async () => {
+    const response = await get(`${base()}/profile/rowan sage/activity?tz=UTC`);
+    expect(response.statusCode).toBe(200);
+    const activity = response.json<ProfileActivity>();
+    expect(activity.windowDays).toBe(90);
+    expect(activity.timezone).toBe("UTC");
+    expect(activity.grid).toHaveLength(7);
+    expect(activity.grid[0]).toHaveLength(24);
+
+    // Ads, system lines, our own messages and pre-window rows are all out.
+    expect(activity.total).toBe(2);
+    const first = slot(inWindow);
+    const second = slot(alsoInWindow);
+    expect(activity.grid[first.dow]![first.hour]).toBe(1);
+    expect(activity.grid[second.dow]![second.hour]).toBe(1);
+  });
+
+  it("re-buckets in another zone rather than shifting labels client-side", async () => {
+    const activity = (
+      await get(`${base()}/profile/Rowan Sage/activity?tz=Asia/Tokyo`)
+    ).json<ProfileActivity>();
+    expect(activity.total).toBe(2);
+    // Tokyo is a fixed UTC+9 — no DST to complicate the expectation.
+    const first = slot(inWindow, 9);
+    expect(activity.grid[first.dow]![first.hour]).toBe(1);
+  });
+
+  it("is empty, not absent, for someone we've never seen talk", async () => {
+    const activity = (
+      await get(`${base()}/profile/Willow Reed/activity?tz=UTC`)
+    ).json<ProfileActivity>();
+    expect(activity.total).toBe(0);
+    expect(activity.grid.flat().every((count) => count === 0)).toBe(true);
+  });
+
+  it("refuses an unknown zone instead of handing it to Postgres", async () => {
+    const refused = await get(
+      `${base()}/profile/Rowan Sage/activity?tz=Mars/Olympus_Mons`,
+    );
+    expect(refused.statusCode).toBe(400);
   });
 });
 

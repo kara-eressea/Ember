@@ -169,6 +169,15 @@
   font-size: calc(11.5px * var(--eb-font-ui-scale));
 }
 
+/* Their wall clock, under the presence word — deliberately dimmer: it is
+   context, not state. */
+.localTime {
+  font-family: var(--eb-mono, monospace);
+  font-size: calc(11px * var(--eb-font-ui-scale));
+  color: var(--eb-meta);
+  white-space: nowrap;
+}
+
 .presenceMini {
   width: 7px;
   height: 7px;

@@ -92,6 +92,10 @@ export const profileResponseSchema = z.object({
   stale: z.boolean(),
   budgetExhausted: z.boolean(),
   note: z.string().nullable(),
+  /** The viewer's own IANA zone for this character (stored beside the note),
+   * which takes precedence over the profile's numeric `timezone` offset when
+   * showing their local clock. Null = fall back to F-List's value. */
+  timezone: z.string().nullable(),
 });
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 
@@ -129,6 +133,23 @@ export const profileInsightsSchema = z.object({
   firstViewedAt: z.number().nullable(),
 });
 export type ProfileInsights = z.infer<typeof profileInsightsSchema>;
+
+/** GET .../profile/:name/activity?tz=<IANA> — when this character talks,
+ * bucketed weekday × hour in the *requested* zone (the viewer's own, so the
+ * grid reads in their time). Counts only what this bouncer observed while
+ * connected; roleplay ads and system lines are excluded. */
+export const profileActivitySchema = z.object({
+  /** Length of the look-back window in days. */
+  windowDays: z.number(),
+  /** Messages counted across the whole grid. */
+  total: z.number(),
+  /** 7 rows × 24 columns. Row 0 = Monday … row 6 = Sunday; column = hour
+   * 0–23 in `timezone`. */
+  grid: z.array(z.array(z.number())),
+  /** The IANA zone the buckets were computed in. */
+  timezone: z.string(),
+});
+export type ProfileActivity = z.infer<typeof profileActivitySchema>;
 
 export const guestbookPageSchema = z.object({
   posts: z.array(

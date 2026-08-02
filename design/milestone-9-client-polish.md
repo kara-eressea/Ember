@@ -145,8 +145,12 @@ Per decisions.md §15 (amending §3; custody resolved disclosure-only):
 
 ## Parked (not in M9)
 
-- **Activity heatmap on Insights** — user-flagged "a much later thing";
+- ~~**Activity heatmap on Insights**~~ — user-flagged "a much later thing";
   candidate for M10 alongside the other insights-adjacent ideas.
+  **Shipped 2026-08-01 (#439)**: a 7×24 weekday × hour grid over the last 90
+  days, bucketed server-side in the viewer's own zone, `lrp` excluded (ads
+  are posted unattended). Landed with the per-character timezone that the
+  DM header and sidebar clocks read from.
 
 ## Explicitly elsewhere
 

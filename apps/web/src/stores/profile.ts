@@ -5,7 +5,11 @@
 // dedups in-flight loads and keeps what the session already saw.
 
 import { create } from "zustand";
-import type { ProfileInsights, ProfileResponse } from "@emberchat/protocol";
+import type {
+  ProfileActivity,
+  ProfileInsights,
+  ProfileResponse,
+} from "@emberchat/protocol";
 import { api, ApiError } from "../lib/api.js";
 
 /** "error" = network/server trouble, distinct from a genuine 404 — a
@@ -54,6 +58,8 @@ interface ProfileState {
   history: HistoryEntry[];
   /** "error" = the fetch failed; the tab offers a Retry (audit M2). */
   insights: Record<string, ProfileInsights | "error">;
+  /** Activity heatmap buckets, same keying and "error" sentinel as insights. */
+  activity: Record<string, ProfileActivity | "error">;
   /** The viewing identity's own profile, for kink tints + the matcher. */
   ownProfile: ProfileResponse | undefined;
   /** Why the last own-profile load failed — the Compare tab surfaces this
@@ -74,6 +80,7 @@ export const useProfileStore = create<ProfileState>()((set) => ({
   profiles: {},
   history: [],
   insights: {},
+  activity: {},
   ownProfile: undefined,
   ownProfileError: undefined,
 
@@ -241,6 +248,61 @@ export function resetInsights(name: string): void {
     delete next[name.toLowerCase()];
     return { insights: next };
   });
+}
+
+/** The viewer's own zone — the axis the heatmap is drawn on, so the server
+ * buckets in it rather than the client re-bucketing UTC counts. */
+export function viewerTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+export async function loadActivity(
+  identityId: string,
+  name: string,
+): Promise<void> {
+  const lower = name.toLowerCase();
+  try {
+    const activity = await api.getProfileActivity(
+      identityId,
+      name,
+      viewerTimeZone(),
+    );
+    useProfileStore.setState((state) => ({
+      activity: { ...state.activity, [lower]: activity },
+    }));
+  } catch {
+    useProfileStore.setState((state) => ({
+      activity: { ...state.activity, [lower]: "error" },
+    }));
+  }
+}
+
+/** Clear a failed activity entry so the grid retries from the shimmer. */
+export function resetActivity(name: string): void {
+  useProfileStore.setState((state) => {
+    const next = { ...state.activity };
+    delete next[name.toLowerCase()];
+    return { activity: next };
+  });
+}
+
+/** Save (or clear, with null) the timezone the user set for a character.
+ * Mirrors the note's write-through so every surface repaints without a
+ * refetch (#170). */
+export async function saveTimezone(
+  identityId: string,
+  name: string,
+  timezone: string | null,
+): Promise<void> {
+  await api.putProfileTimezone(identityId, name, timezone);
+  const lower = name.toLowerCase();
+  const cached = useProfileStore.getState().profiles[lower];
+  if (cached?.response) {
+    setProfile(lower, {
+      ...cached,
+      response: { ...cached.response, timezone },
+    });
+  }
 }
 
 const ownInflight = new Map<string, Promise<void>>();

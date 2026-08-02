@@ -8,6 +8,7 @@ import type {
   GuestbookPage,
   HighlightRuleDto,
   HighlightRuleInput,
+  ProfileActivity,
   ProfileHistoryEntry,
   ProfileInsights,
   ProfileResponse,
@@ -431,9 +432,29 @@ export const api = {
       { method: "PUT", auth: true, body: { note } },
     );
   },
+  /** The timezone the user set for this character; null forgets it and falls
+   * back to the offset F-List's own profile carries. */
+  putProfileTimezone(
+    identityId: string,
+    name: string,
+    timezone: string | null,
+  ) {
+    return apiRequest<{ ok: true }>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/timezone`,
+      { method: "PUT", auth: true, body: { timezone } },
+    );
+  },
   getProfileInsights(identityId: string, name: string) {
     return apiRequest<ProfileInsights>(
       `/identities/${identityId}/profile/${encodeURIComponent(name)}/insights`,
+      { auth: true },
+    );
+  },
+  /** Weekday × hour activity buckets. `tz` is the viewer's own zone — the
+   * server buckets in it so the grid reads on the viewer's clock. */
+  getProfileActivity(identityId: string, name: string, tz: string) {
+    return apiRequest<ProfileActivity>(
+      `/identities/${identityId}/profile/${encodeURIComponent(name)}/activity?tz=${encodeURIComponent(tz)}`,
       { auth: true },
     );
   },
