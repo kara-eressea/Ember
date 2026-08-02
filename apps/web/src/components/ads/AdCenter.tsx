@@ -21,6 +21,8 @@ import {
   type AdDto,
 } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { knownIdsFor, useAdsStore } from "../../stores/ads.js";
 import type { IdentitySession } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
@@ -98,9 +100,7 @@ export function AdCenter({
   const diags = useMemo(() => analyzeMarkdown(draft.content), [draft.content]);
   const strip = stripModel(diags);
 
-  useEffect(() => {
-    windowRef.current?.focus();
-  }, []);
+  useFocusTrap(windowRef);
 
   function guardedClose() {
     if (dirty && !closeArmed.current) {
@@ -111,22 +111,17 @@ export function AdCenter({
     onClose();
   }
 
-  useEffect(() => {
-    function onKey(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        if (dirty && !closeArmed.current) {
-          closeArmed.current = true;
-          setError("Unsaved changes — press Escape again to discard them");
-          return;
-        }
-        onClose();
-      }
+  // On the shared Escape stack (#442) — a dialog opened over the Ad Center
+  // (Post ads, Rotate…) is topmost and closes alone. The handler need not
+  // close: the first press on a dirty draft only arms the warning.
+  useEscapeToClose(() => {
+    if (dirty && !closeArmed.current) {
+      closeArmed.current = true;
+      setError("Unsaved changes — press Escape again to discard them");
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose, dirty]);
+    onClose();
+  });
 
   const externalChange =
     typeof selected === "number" && baseAds !== undefined && ads !== baseAds;

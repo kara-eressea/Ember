@@ -24,7 +24,11 @@ import type {
 import type { Outbox } from "../outbox/outbox.js";
 import type { SocialCache } from "../social/cache.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
-import { GatewayConnection, conversationDto } from "./connection.js";
+import {
+  GatewayConnection,
+  conversationDto,
+  type GatewayTuning,
+} from "./connection.js";
 import { memberDto, messageDto } from "./snapshot.js";
 
 const NOOP_LOGGER: SessionLogger = {
@@ -408,8 +412,8 @@ export interface GatewayRoutesOptions {
    * what stops a hostile page from riding a victim's network position.
    */
   allowedOrigins: readonly string[];
-  /** Heartbeat period for gateway sockets; test-only knob (HEARTBEAT_MS). */
-  heartbeatMs?: number;
+  /** Test-only connection knobs; production runs the connection.ts defaults. */
+  tuning?: GatewayTuning;
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
@@ -428,7 +432,7 @@ export async function gatewayRoutes(
     campaigns,
     social,
     allowedOrigins,
-    heartbeatMs,
+    tuning,
   } = options;
   const originAllowList = new Set(
     allowedOrigins.map((origin) => origin.toLowerCase()),
@@ -504,7 +508,7 @@ export async function gatewayRoutes(
       verifyToken,
       sessionAlive,
       helloBudget,
-      ...(heartbeatMs !== undefined ? { heartbeatMs } : {}),
+      ...(tuning !== undefined ? { tuning } : {}),
       log: instance.log,
     });
   });

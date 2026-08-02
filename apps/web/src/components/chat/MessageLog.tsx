@@ -949,29 +949,12 @@ export function MessageLog({
   // qualifies; otherwise it is the "scrolled up past the slack" state.
   const canJumpToRecent = detachedTail || !atBottom;
 
-  // Escape returns to the newest messages (Discord parity). This listens in
-  // the bubble phase with no stopPropagation, so any open popover/menu —
-  // which consume Escape in the capture phase — closes first and only an
-  // otherwise-unhandled Escape reaches here. Focus in the composer is fine:
-  // the composer does not swallow a bare Escape.
-  useEffect(() => {
-    if (!canJumpToRecent) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        event.preventDefault();
-        jumpToRecent();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-    // jumpToRecent closes over identityId/convId/detachedTail, all stable
-    // for the effect's lifetime aside from detachedTail (in the deps).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canJumpToRecent, detachedTail, identityId, convId]);
+  // Escape returns to the newest messages (Discord parity) — "ambient" like
+  // mark-caught-up above (the two enabling conditions are disjoint: one wants
+  // the tail, the other wants to be away from it), so any open popover, menu
+  // or modal takes the press first and this only sees an otherwise-unhandled
+  // Escape. Focus in the composer is fine: it does not swallow a bare Escape.
+  useEscapeToClose(jumpToRecent, canJumpToRecent, "ambient");
 
   /** Snapshot the anchor row before a prepend: the id of the topmost message
    * row at the viewport top plus the pixel gap between its top and that edge.

@@ -11,6 +11,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSearchStore } from "../../stores/search.js";
 import type { IdentitySession } from "../../stores/sessions.js";
@@ -90,21 +92,15 @@ export function CharacterSearch({
   // every shell re-render (any gateway event) — and re-running focus() here
   // stole focus mid-typing, which dismissed the blur-cancelled save-name
   // input under load (E2E hang diagnosis, 2026-08-02).
-  useEffect(() => {
-    windowRef.current?.focus();
-  }, []);
+  useFocusTrap(windowRef);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useEscapeToClose(onClose);
+  // The name-this-search input is a layer of its own: while it is open Escape
+  // abandons the naming, not the whole window (it registers later, so the
+  // shared stack hands it the key first and claims it).
+  useEscapeToClose(() => {
+    setSavingName(undefined);
+  }, savingName !== undefined);
 
   useEffect(() => {
     if (vocab !== undefined) {
@@ -487,11 +483,10 @@ export function CharacterSearch({
                   setSavingName(event.target.value);
                 }}
                 onKeyDown={(event) => {
+                  // Escape is handled on the shared stack above, which claims
+                  // the event before it ever reaches this input.
                   if (event.key === "Enter") {
                     saveCurrent(savingName);
-                  } else if (event.key === "Escape") {
-                    event.stopPropagation();
-                    setSavingName(undefined);
                   }
                 }}
                 onBlur={() => {

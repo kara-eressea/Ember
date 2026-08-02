@@ -12,6 +12,8 @@ import { gateway } from "../../gateway/socket.js";
 import { api, type DirectoryChannelDto } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { channelPath } from "../../lib/routes.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import {
   useSessionsStore,
@@ -85,26 +87,15 @@ export function ChannelBrowser({
   /** Bumped by Try again — the load effect's other input. */
   const [loadAttempt, setLoadAttempt] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const windowRef = useRef<HTMLDivElement>(null);
 
-  // Autofocus the filter on open — mount-only on purpose. Tying this to a
+  // Autofocus the filter on open, trap Tab in the dialog, and give focus back
+  // to the toolbar button on close — mount-only on purpose. Tying this to a
   // dependency (the old version keyed it on `onClose`, an inline prop that
   // changes identity whenever the shell re-renders) makes the effect re-run
   // mid-typing and yank focus away from the input.
-  useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useFocusTrap(windowRef, searchRef);
+  useEscapeToClose(onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,6 +137,8 @@ export function ChannelBrowser({
         role="dialog"
         aria-modal="true"
         aria-label="Browse channels"
+        tabIndex={-1}
+        ref={windowRef}
       >
         <header className={styles.head}>
           <div>

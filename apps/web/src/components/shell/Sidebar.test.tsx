@@ -16,6 +16,8 @@ import type {
   ChannelView,
   DmView,
   IdentitySession,
+  SocialCharacter,
+  SocialData,
 } from "../../stores/sessions.js";
 
 // The social sections fetch on mount; the rows under test come from the
@@ -51,7 +53,11 @@ function channel(key: string, title: string): ChannelView {
   };
 }
 
-function dm(partner: string, pinned = false): DmView {
+function dm(
+  partner: string,
+  pinned = false,
+  extra: Partial<DmView> = {},
+): DmView {
   return {
     convId: `dm-${partner}`,
     partner,
@@ -65,12 +71,14 @@ function dm(partner: string, pinned = false): DmView {
     highlightedAt: 0,
     lastReadMessageId: null,
     newestMessageId: null,
+    ...extra,
   };
 }
 
 function session(
   prefs: Partial<UserPrefs> = {},
   dms: Record<string, DmView> = { "dm-Bea": dm("Bea") },
+  social: Partial<SocialData> = {},
 ): IdentitySession {
   return {
     identityId: "id-1",
@@ -102,6 +110,7 @@ function session(
       incoming: [],
       outgoing: [],
       fetchedAt: 0,
+      ...social,
     },
   };
 }
@@ -109,10 +118,11 @@ function session(
 function renderSidebar(
   prefs?: Partial<UserPrefs>,
   dms?: Record<string, DmView>,
+  social?: Partial<SocialData>,
 ) {
   return render(
     <MemoryRouter>
-      <Sidebar session={session(prefs, dms)} activeConvId={undefined} />
+      <Sidebar session={session(prefs, dms, social)} activeConvId={undefined} />
     </MemoryRouter>,
   );
 }
@@ -197,6 +207,94 @@ describe("Sidebar pin marker on social rows", () => {
 
     expect(pins(screen.getByRole("button", { name: /Cy/ }))).toHaveLength(0);
     expect(pins(screen.getByRole("button", { name: /Dot/ }))).toHaveLength(0);
+  });
+});
+
+// Unread DM traffic floats a friend/bookmark to the top of its own section
+// (#462) — with one row per character (#290) that social row is the only
+// surface the unread has, so it must not stay buried in the alphabet.
+describe("Sidebar activity bump on social rows (#462)", () => {
+  const person = (name: string, online = true): SocialCharacter => ({
+    name,
+    online,
+    status: online ? "online" : "offline",
+    statusmsg: "",
+  });
+
+  /** Friend then bookmark rows, in rendered order. */
+  const socialNames = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll("button[class*='socialRow']")).map(
+      (row) => row.querySelector("span[class*='navLabel']")?.textContent,
+    );
+
+  const trio = {
+    friends: [person("Ana"), person("Bo"), person("Cass")],
+    bookmarks: [],
+  };
+
+  it("floats an unread friend above the online ones, offline or not", () => {
+    const { container } = renderSidebar(
+      undefined,
+      { "dm-Zed": dm("Zed", false, { unread: 2, online: false }) },
+      {
+        friends: [person("Ana"), person("Bo"), person("Zed", false)],
+        bookmarks: [],
+      },
+    );
+
+    // Presence would have put the offline Zed last (#164) — and hidden them
+    // outright but for the unread exemption (#329).
+    expect(socialNames(container)).toEqual(["Zed", "Ana", "Bo"]);
+  });
+
+  it("orders several unread rows by their DM's highlight recency", () => {
+    const { container } = renderSidebar(
+      undefined,
+      {
+        "dm-Ana": dm("Ana", false, { unread: 1, highlightedAt: 200 }),
+        "dm-Cass": dm("Cass", false, { unread: 3, highlightedAt: 100 }),
+      },
+      trio,
+    );
+
+    expect(socialNames(container)).toEqual(["Ana", "Cass", "Bo"]);
+  });
+
+  it("falls back to the newest message id when no highlight stamped", () => {
+    const { container } = renderSidebar(
+      undefined,
+      {
+        "dm-Ana": dm("Ana", false, { unread: 1, newestMessageId: 5 }),
+        "dm-Cass": dm("Cass", false, { unread: 1, newestMessageId: 9 }),
+      },
+      trio,
+    );
+
+    expect(socialNames(container)).toEqual(["Cass", "Ana", "Bo"]);
+  });
+
+  it("bumps a bookmark within its own section only", () => {
+    const { container } = renderSidebar(
+      undefined,
+      { "dm-Fen": dm("Fen", false, { unread: 1 }) },
+      {
+        friends: [person("Ana")],
+        bookmarks: [person("Dee"), person("Eve"), person("Fen")],
+      },
+    );
+
+    // The friend section keeps its own order; Fen rises inside Bookmarks.
+    expect(socialNames(container)).toEqual(["Ana", "Fen", "Dee", "Eve"]);
+  });
+
+  it("returns the row to its base order once the DM is read", () => {
+    const { container } = renderSidebar(
+      undefined,
+      { "dm-Cass": dm("Cass", false, { unread: 0, highlightedAt: 0 }) },
+      trio,
+    );
+
+    expect(socialNames(container)).toEqual(["Ana", "Bo", "Cass"]);
   });
 });
 
