@@ -17,11 +17,17 @@ import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { userPreferences } from "../../db/schema.js";
 import { EiconIndexService } from "./index-service.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_SLOW_MS,
+} from "../../test-support/budgets.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-vi.setConfig({ testTimeout: 20_000 });
+// Above INTEGRATION_MS: each test chains sim JSON fetches through the shared
+// throttled FlistApiClient on top of the container round trips.
+vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -72,7 +78,7 @@ beforeAll(async () => {
   }>();
   token = body.accessToken;
   userId = body.user.id;
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();

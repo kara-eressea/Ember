@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, staging]
   pull_request:
+  # The merge queue's speculative merge commits — without this trigger, a
+  # queued PR waits forever for a required check that never starts.
+  merge_group:
 
 jobs:
   ci:

@@ -28,12 +28,16 @@ import { FlistApiClient } from "../flist-api/api-client.js";
 import { SessionEventBus } from "../session-engine/event-bus.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { ChannelDirectory, type DirectorySession } from "./directory.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+} from "../../test-support/budgets.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -66,7 +70,7 @@ beforeAll(async () => {
     // instances below where the clock is controllable.
     directoryTuning: { cooldownMs: 0, responseTimeoutMs: 5000 },
   });
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();

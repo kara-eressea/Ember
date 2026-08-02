@@ -31,12 +31,18 @@ import {
 } from "../../db/schema.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import { CharacterDataBudget } from "./../flist-api/character-data-budget.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_SLOW_MS,
+} from "../../test-support/budgets.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "birch@example.test";
 const CHARACTER = "Birch Rowan";
 
-vi.setConfig({ testTimeout: 20_000 });
+// Above INTEGRATION_MS: each test chains sim JSON fetches through the shared
+// throttled FlistApiClient on top of the container round trips.
+vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -127,7 +133,7 @@ beforeAll(async () => {
     .values({ flistAccountId: accountId, characterName: CHARACTER })
     .returning({ id: identities.id });
   identityId = identity!.id;
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();

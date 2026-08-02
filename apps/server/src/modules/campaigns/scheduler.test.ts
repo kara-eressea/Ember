@@ -25,10 +25,14 @@ import {
   type FchatSession,
 } from "../session-engine/fchat-session.js";
 import { CampaignError, CampaignScheduler } from "./scheduler.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+} from "../../test-support/budgets.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -38,7 +42,7 @@ beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:18-alpine").start();
   ({ db, pool } = createDb(container.getConnectionUri()));
   await migrate(db, { migrationsFolder: MIGRATIONS });
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await pool.end();

@@ -16,9 +16,16 @@ import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { conversations, identities } from "../../db/schema.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+} from "../../test-support/budgets.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
+
+// Container- and sim-backed: real Postgres plus loopback WebSocket round trips.
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -63,7 +70,7 @@ beforeAll(async () => {
   ({ db, pool } = createDb(container.getConnectionUri()));
   await migrate(db, { migrationsFolder: MIGRATIONS });
   app = await makeApp();
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();

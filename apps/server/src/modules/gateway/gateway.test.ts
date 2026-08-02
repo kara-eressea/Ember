@@ -22,6 +22,7 @@ import {
 } from "vitest";
 import { FchatSim, rawDataToString } from "@emberchat/fchat-sim";
 import {
+  parseServerCommand,
   serializeClientCommand,
   serializeServerCommand,
   type ClientCommand,
@@ -45,6 +46,12 @@ import {
   messages,
   outboxMessages,
 } from "../../db/schema.js";
+import {
+  CONTAINER_BOOT_MS,
+  FRAME_WAIT_MS,
+  INTEGRATION_MS,
+  INTEGRATION_SLOW_MS,
+} from "../../test-support/budgets.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
@@ -54,7 +61,7 @@ const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 
 // Sim-backed round trips (connect → IDN → join → relay) outgrow the 5s default.
-vi.setConfig({ testTimeout: 15_000 });
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -101,7 +108,7 @@ beforeAll(async () => {
   });
   const address = await app.listen({ port: 0, host: "127.0.0.1" });
   gatewayUrl = `${address.replace(/^http/, "ws")}/gateway`;
-}, 180_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close(); // onClose stops all sessions
@@ -150,7 +157,7 @@ class TestClient {
    * order; waits for it if it has not arrived yet. */
   async next<T extends ServerFrame>(
     predicate: (frame: ServerFrame) => frame is T,
-    timeoutMs = 5000,
+    timeoutMs = FRAME_WAIT_MS,
   ): Promise<T> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
@@ -180,14 +187,14 @@ class TestClient {
     }
   }
 
-  nextOfType<T extends ServerFrame["t"]>(t: T, timeoutMs = 5000) {
+  nextOfType<T extends ServerFrame["t"]>(t: T, timeoutMs = FRAME_WAIT_MS) {
     return this.next(
       (frame): frame is Extract<ServerFrame, { t: T }> => frame.t === t,
       timeoutMs,
     );
   }
 
-  nextEvent<K extends string>(kind: K, timeoutMs = 5000) {
+  nextEvent<K extends string>(kind: K, timeoutMs = FRAME_WAIT_MS) {
     return this.next(
       (
         frame,
@@ -215,7 +222,9 @@ class TestClient {
     return this.nextOfType("snapshot");
   }
 
-  waitForClose(timeoutMs = 5000): Promise<{ code: number; reason: string }> {
+  waitForClose(
+    timeoutMs = FRAME_WAIT_MS,
+  ): Promise<{ code: number; reason: string }> {
     if (this.#closed) {
       return Promise.resolve(this.#closed);
     }
@@ -310,7 +319,7 @@ class SimClient {
     this.#socket.send(serializeClientCommand(command));
   }
 
-  async next(timeoutMs = 5000): Promise<string> {
+  async next(timeoutMs = FRAME_WAIT_MS): Promise<string> {
     const queued = this.#queue.shift();
     if (queued !== undefined) {
       return queued;
@@ -393,7 +402,7 @@ function waitForOnline(session: FchatSession): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`timed out waiting for online (${session.status})`));
-    }, 10_000);
+    }, FRAME_WAIT_MS);
     session.events.on("status", (event) => {
       if (event.status === "online") {
         clearTimeout(timer);
@@ -423,7 +432,7 @@ function joinAndSettle(session: FchatSession, channel: string): Promise<void> {
   const settled = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`timed out joining ${channel}`));
-    }, 5000);
+    }, FRAME_WAIT_MS);
     const off = session.events.on("command", (command) => {
       if (command.cmd === "CDS" && command.payload.channel === channel) {
         clearTimeout(timer);
@@ -637,7 +646,7 @@ describe("channel rejoin semantics (decisions.md §9)", () => {
 
     // Subscribed browsers watch the outage and recovery as status events.
     for (;;) {
-      const frame = await client.nextEvent("session.status", 15_000);
+      const frame = await client.nextEvent("session.status", FRAME_WAIT_MS);
       if (eventPayload<{ status: string }>(frame).status === "online") {
         break;
       }
@@ -1585,7 +1594,9 @@ describe("gateway fan-out", () => {
     await presence(browserA, "busy");
     await presence(browserB, "busy");
 
-    // The whole point: no error reached either browser.
+    // The whole point: no error reached either browser. A deliberate 0 — this
+    // is a negative assertion over the already-buffered frames, so it must not
+    // inherit FRAME_WAIT_MS and idle for it.
     for (const client of [browserA, browserB]) {
       await expect(client.nextEvent("error", 0)).rejects.toThrow(/timed out/);
     }
@@ -2446,7 +2457,7 @@ describe("gateway commands", () => {
       kind: "lrp",
       releaseAt: new Date(Date.now() - 1000),
     });
-    const released = await client.nextEvent("message.new", 15_000);
+    const released = await client.nextEvent("message.new", FRAME_WAIT_MS);
     expect(eventPayload<{ message: object }>(released).message).toMatchObject({
       kind: "lrp",
       bbcode: "delayed ad",
@@ -2549,7 +2560,7 @@ describe("gateway commands", () => {
     // Direct Messages until someone hit the manual ↻.
     const refreshed = eventPayload<{
       social: { friends: { name: string }[]; outgoing: unknown[] };
-    }>(await client.nextEvent("social.updated", 10_000));
+    }>(await client.nextEvent("social.updated", FRAME_WAIT_MS));
     expect(refreshed.social.friends.map((row) => row.name)).toContain(FRIEND);
     expect(refreshed.social.outgoing).toEqual([]);
   });
@@ -2935,7 +2946,7 @@ describe("gateway commands", () => {
       ok: boolean;
       characters?: string[];
       kinks?: string[];
-    }>(await client.nextEvent("character.search", 15_000));
+    }>(await client.nextEvent("character.search", FRAME_WAIT_MS));
     expect(hit.ok).toBe(true);
     expect(hit.characters).toContain("Nyx Firemane");
     expect(hit.characters).not.toContain(CHARACTER);
@@ -2958,7 +2969,7 @@ describe("gateway commands", () => {
       d: { ok: true },
     });
     const miss = eventPayload<{ ok: boolean; code?: number }>(
-      await client.nextEvent("character.search", 20_000),
+      await client.nextEvent("character.search", INTEGRATION_SLOW_MS),
     );
     expect(miss.ok).toBe(false);
     expect(miss.code).toBe(18);
@@ -3053,7 +3064,7 @@ describe("gateway commands", () => {
       bbcode: "overdue",
       releaseAt: new Date(Date.now() - 1000),
     });
-    const released = await client.nextEvent("message.new", 15_000);
+    const released = await client.nextEvent("message.new", FRAME_WAIT_MS);
     expect(
       eventPayload<{ message: { bbcode: string; sentByUs: boolean } }>(released)
         .message,
@@ -3149,8 +3160,8 @@ describe("gateway commands", () => {
         releaseAt: new Date(Date.now() - 1000),
       },
     ]);
-    const a = await client.nextEvent("message.new", 15_000);
-    const b = await client.nextEvent("message.new", 15_000);
+    const a = await client.nextEvent("message.new", FRAME_WAIT_MS);
+    const b = await client.nextEvent("message.new", FRAME_WAIT_MS);
     expect(
       eventPayload<{ message: { bbcode: string } }>(a).message.bbcode,
     ).toBe("first");
@@ -3189,7 +3200,7 @@ describe("gateway commands", () => {
       releaseAt: new Date(Date.now() - 1000),
     });
     for (;;) {
-      const update = await client.nextEvent("outbox.updated", 15_000);
+      const update = await client.nextEvent("outbox.updated", FRAME_WAIT_MS);
       const items = eventPayload<{
         items: { state: string; failureReason?: string }[];
       }>(update).items;
@@ -3297,5 +3308,82 @@ describe("alert staff (SFC)", () => {
     expect(eventPayload<{ message: string }>(sys).message).toContain(
       "The moderators have been alerted.",
     );
+  });
+});
+
+// TPN dedup/pacing is covered against a dedicated sim in
+// fchat-session.test.ts; what's untested above this line is the gateway
+// plumbing — a browser's cmd reaching the wire, and an inbound TPN reaching
+// every browser attached to the same identity.
+describe("typing telemetry (TPN)", () => {
+  it("puts a browser's typing.set on the wire and fans an inbound TPN to every attached browser", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const browserA = await connectClient();
+    await browserA.hello(token);
+    await browserA.subscribe(identityId);
+    const browserB = await connectClient();
+    await browserB.hello(token);
+    await browserB.subscribe(identityId);
+    const birch = await SimClient.connect(
+      sim,
+      "birch@example.test",
+      "Birch Rowan",
+    );
+
+    // Outbound: the cmd reaches the partner as a TPN naming us.
+    browserA.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "typing.set",
+        d: { character: "Birch Rowan", status: "typing" },
+      },
+    });
+    expect((await browserA.nextOfType("ack")).d).toMatchObject({ ok: true });
+    expect(parseServerCommand(await birch.waitFor("TPN"))).toEqual({
+      cmd: "TPN",
+      payload: { character: CHARACTER, status: "typing" },
+    });
+
+    // Inbound: the partner's own TPN reaches BOTH attached browsers — a
+    // second device must not miss the status the first one sees.
+    birch.send({
+      cmd: "TPN",
+      payload: { character: CHARACTER, status: "paused" },
+    });
+    for (const browser of [browserA, browserB]) {
+      expect(
+        eventPayload<{ character: string; status: string }>(
+          await browser.nextEvent("typing"),
+        ),
+      ).toEqual({ character: "Birch Rowan", status: "paused" });
+    }
+
+    birch.close();
+  });
+
+  it("refuses typing.set for a disconnected session", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // No session started: the telemetry has nowhere to go, and the browser
+    // is told rather than left believing the partner saw it.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "typing.set",
+        d: { character: "Birch Rowan", status: "typing" },
+      },
+    });
+    expect((await client.nextOfType("ack")).d).toMatchObject({
+      ok: false,
+      error: "session not connected",
+    });
   });
 });
