@@ -696,6 +696,13 @@ export type GatewayEvent =
        * the badge only counts rows whose `muted` is false. */
       d: { notification: NotificationDto };
     }
+  | {
+      kind: "notification.seen";
+      /** The identity's inbox watermark moved — one device opened the inbox,
+       * so every other attached device drops its bell badge too. An
+       * idempotent overwrite; the watermark only ever moves forward. */
+      d: { lastSeenId: number; unseen: number };
+    }
   | { kind: "sys"; d: { message: string } }
   // Real-time bridge: website events (notes, friend requests, comment
   // replies) pushed over the chat socket. Volatile — the website remains

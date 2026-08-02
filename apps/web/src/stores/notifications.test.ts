@@ -169,6 +169,21 @@ describe("useNotificationsStore", () => {
     expect(mocked.putNotificationsSeen.mock.calls).toHaveLength(1);
   });
 
+  it("drops the badge when another device opens the inbox", async () => {
+    mocked.listNotifications.mockResolvedValue({
+      notifications: [entry(9), entry(8)],
+      hasMore: false,
+      lastSeenId: 0,
+      unseen: 2,
+    });
+    await useNotificationsStore.getState().load(IDENTITY);
+    useNotificationsStore.getState().applySeen(IDENTITY, 9, 0);
+    expect(inbox()).toMatchObject({ unseen: 0, lastSeenId: 9 });
+    // The watermark only moves forward, so a late/replayed event is inert.
+    useNotificationsStore.getState().applySeen(IDENTITY, 4, 0);
+    expect(inbox().lastSeenId).toBe(9);
+  });
+
   it("never marks an empty buffer seen", async () => {
     useNotificationsStore.getState().applyUnseen(IDENTITY, 3);
     await useNotificationsStore.getState().markSeen(IDENTITY);

@@ -375,6 +375,7 @@ export async function buildApp({
     prefix: "/api/identities",
     db,
     notifications,
+    hub,
   });
   await app.register(directoryRoutes, {
     prefix: "/api/identities",

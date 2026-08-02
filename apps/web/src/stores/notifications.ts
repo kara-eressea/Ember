@@ -48,6 +48,8 @@ interface NotificationsState {
   applyUnseen(identityId: string, unseen: number): void;
   /** A live `notification.new` event. */
   applyLive(identityId: string, notification: NotificationDto): void;
+  /** A `notification.seen` event — another device opened the inbox. */
+  applySeen(identityId: string, lastSeenId: number, unseen: number): void;
   /** First (or refreshed) page. */
   load(identityId: string): Promise<void>;
   /** One older page, appended below the current tail. */
@@ -113,6 +115,16 @@ export const useNotificationsStore = create<NotificationsState>()((
           notification.id <= inbox.lastSeenId
             ? inbox.unseen
             : inbox.unseen + 1,
+      }));
+    },
+
+    applySeen(identityId, lastSeenId, unseen) {
+      // The watermark only ever moves forward server-side, so this is an
+      // idempotent overwrite — including the echo of this tab's own PUT.
+      patch(identityId, (inbox) => ({
+        ...inbox,
+        lastSeenId: Math.max(inbox.lastSeenId, lastSeenId),
+        unseen,
       }));
     },
 

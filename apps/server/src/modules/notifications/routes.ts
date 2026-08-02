@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
+import type { GatewayHub } from "../gateway/gateway.js";
 import { notificationDto, type NotificationStore } from "./store.js";
 
 const notificationResponse = z.object({
@@ -28,6 +29,9 @@ const errorResponse = z.object({ error: z.string() });
 export interface NotificationRoutesOptions {
   db: Db;
   notifications: NotificationStore;
+  /** Fans the moved watermark out, so opening the inbox on one device drops
+   * the bell badge on every other one. */
+  hub: Pick<GatewayHub, "broadcast">;
 }
 
 /**
@@ -43,7 +47,7 @@ export async function notificationsRoutes(
   options: NotificationRoutesOptions,
 ): Promise<void> {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  const { db, notifications } = options;
+  const { db, notifications, hub } = options;
 
   app.addHook("preHandler", app.authenticate);
 
@@ -140,10 +144,15 @@ export async function notificationsRoutes(
         identity.id,
         request.body.lastSeenId,
       );
-      return reply.send({
-        lastSeenId,
-        unseen: await notifications.unseenCount(identity.id),
+      const unseen = await notifications.unseenCount(identity.id);
+      // Multi-device: the inbox is server-held state like every unread
+      // counter, so reading it on one browser must clear the bell on the
+      // others rather than leaving them badging what the user just read.
+      hub.broadcast(identity.id, {
+        kind: "notification.seen",
+        d: { lastSeenId, unseen },
       });
+      return reply.send({ lastSeenId, unseen });
     },
   );
 }

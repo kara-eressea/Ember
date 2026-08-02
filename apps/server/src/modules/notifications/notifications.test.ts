@@ -361,6 +361,7 @@ describe("notification inbox — writers", () => {
 describe("notification inbox — REST", () => {
   it("pages by keyset newest-first and round-trips the seen watermark", async () => {
     const { identityId, token } = await startIdentity();
+    const broadcasts = vi.spyOn(app.gatewayHub, "broadcast");
     const store = app.notifications;
     for (let i = 1; i <= 5; i += 1) {
       await store.recordRtb(
@@ -421,6 +422,14 @@ describe("notification inbox — REST", () => {
       payload: { lastSeenId: 1 },
     });
     expect(stale.json<{ lastSeenId: number }>().lastSeenId).toBe(newest);
+
+    // Multi-device: the moved watermark is fanned out, so another attached
+    // browser's bell drops with this one instead of badging what was read.
+    expect(broadcasts.mock.calls).toContainEqual([
+      identityId,
+      { kind: "notification.seen", d: { lastSeenId: newest, unseen: 0 } },
+    ]);
+    broadcasts.mockRestore();
 
     // A newer entry badges again, past the watermark.
     await store.recordRtb(identityId, "friendrequest", "Nyx Firemane");

@@ -311,6 +311,13 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         .getState()
         .applyLive(identityId, event.d.notification);
       return;
+    case "notification.seen":
+      // Another device (or this one) opened the inbox — every tab's bell
+      // drops together, the way unread counters already converge.
+      useNotificationsStore
+        .getState()
+        .applySeen(identityId, event.d.lastSeenId, event.d.unseen);
+      return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;
