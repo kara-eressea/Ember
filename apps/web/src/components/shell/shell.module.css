@@ -318,11 +318,20 @@
   border-right: 1px solid var(--eb-border);
 }
 
+/* The sidebar's own top bar. It takes its height from --eb-topbar-height, the
+   same variable the conversation toolbar uses, so the two bottom borders meet
+   as one line across the top of the app. Grid, not flex: align-content centres
+   the baseline-aligned row inside the fixed height, where a single flex line
+   would stretch and leave the text sitting at the top. */
 .serverHead {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  justify-content: start;
   align-items: baseline;
+  align-content: center;
   gap: 8px;
-  padding: 14px;
+  height: var(--eb-topbar-height);
+  padding: 0 14px;
   border-bottom: 1px solid var(--eb-border);
 }
 
@@ -347,7 +356,6 @@
   font-size: calc(10.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
   white-space: nowrap;
-  flex: none;
 }
 
 /* An update is waiting: the version tints and becomes the link. */
