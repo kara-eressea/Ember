@@ -32,6 +32,7 @@ import {
   PREFS_DEFAULTS,
   PROTOCOL_VERSION,
   type ClientFrame,
+  type NotificationDto,
   type ResumeCursors,
   type ServerFrame,
   type UserPrefs,
@@ -916,6 +917,7 @@ describe("gateway handshake", () => {
         autoConnect: false,
         unread: 0,
         mentions: 0,
+        notificationsUnseen: 0,
       },
     ]);
 
@@ -1414,6 +1416,51 @@ describe("gateway fan-out", () => {
         await client.nextEvent("message.new"),
       ).message.mention,
     ).toBe(false);
+  });
+
+  it("fans notification.new to every attached device and badges the ready frame", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+    const one = await connectClient();
+    const two = await connectClient();
+    await one.hello(token);
+    await two.hello(token);
+    await one.subscribe(identityId);
+    await two.subscribe(identityId);
+
+    await inject(session, {
+      cmd: "MSG",
+      payload: {
+        character: "Nyx Firemane",
+        message: `${CHARACTER}, look at this`,
+        channel: "Frontpage",
+      },
+    });
+
+    // Multi-device: the inbox is server-held state, so both attached tabs
+    // learn about the entry, not just whichever one happens to be focused.
+    for (const client of [one, two]) {
+      const { notification } = eventPayload<{
+        notification: NotificationDto;
+      }>(await client.nextEvent("notification.new"));
+      expect(notification).toMatchObject({
+        kind: "mention",
+        character: "Nyx Firemane",
+        muted: false,
+        excerpt: `${CHARACTER}, look at this`,
+      });
+      expect(notification.messageId).toBeGreaterThan(0);
+      expect(notification.convId).toBeDefined();
+    }
+
+    // A cold load badges off `ready` alone — no sub, no inbox fetch.
+    const fresh = await connectClient();
+    const ready = await fresh.hello(token);
+    expect(
+      ready.d.identities.find((identity) => identity.id === identityId)
+        ?.notificationsUnseen,
+    ).toBe(1);
   });
 
   it("ignore.add/remove drive IGN, fan out the list, persist the mirror, and keep messages", async () => {

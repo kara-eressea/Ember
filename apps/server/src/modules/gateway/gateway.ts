@@ -21,6 +21,10 @@ import type {
   FchatSession,
   SessionLogger,
 } from "../session-engine/fchat-session.js";
+import {
+  notificationDto,
+  type NotificationStore,
+} from "../notifications/store.js";
 import type { Outbox } from "../outbox/outbox.js";
 import type { SocialCache } from "../social/cache.js";
 import type { SessionRegistry } from "../session-engine/registry.js";
@@ -40,6 +44,8 @@ const NOOP_LOGGER: SessionLogger = {
 
 export interface GatewayHubOptions {
   readonly history: HistorySink;
+  /** Notification inbox (#467) — its writes fan out as `notification.new`. */
+  readonly notifications?: NotificationStore;
   readonly logger?: SessionLogger;
 }
 
@@ -75,6 +81,15 @@ export class GatewayHub {
         this.broadcast(identityId, {
           kind: "conversation.removed",
           d: { convId: conversationId },
+        });
+      },
+    );
+    options.notifications?.events.on(
+      "notification",
+      ({ identityId, notification }) => {
+        this.broadcast(identityId, {
+          kind: "notification.new",
+          d: { notification: notificationDto(notification) },
         });
       },
     );
@@ -397,6 +412,9 @@ export interface GatewayRoutesOptions {
   hub: GatewayHub;
   outbox: Outbox;
   highlights: HighlightMatcher;
+  /** Notification inbox (#467) — unseen counts on `ready`, mute-cache
+   * invalidation on a prefs patch. */
+  notifications: NotificationStore;
   /** Live union of user image-preview allowlists, refreshed on pref writes so
    * the CSP keeps up with user-added hosts (#342). */
   imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
@@ -428,6 +446,7 @@ export async function gatewayRoutes(
     hub,
     outbox,
     highlights,
+    notifications,
     imagePreviewHosts,
     campaigns,
     social,
@@ -502,6 +521,7 @@ export async function gatewayRoutes(
       hub,
       outbox,
       highlights,
+      notifications,
       imagePreviewHosts,
       campaigns,
       social,

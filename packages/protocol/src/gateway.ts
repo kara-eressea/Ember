@@ -446,6 +446,38 @@ export interface MessageDto {
   createdAt: string;
 }
 
+/** What produced a notification-inbox entry (#467). */
+export type NotificationKind = "mention" | "friendrequest" | "note" | "comment";
+
+/**
+ * One notification-inbox row. The inbox is a LOG, not a to-do list: rows
+ * persist after they are read, and "seen" is a per-identity watermark over
+ * `id` rather than a per-row flag.
+ */
+export interface NotificationDto {
+  /** notifications.id — the keyset cursor and the seen watermark's unit. */
+  id: number;
+  kind: NotificationKind;
+  /** mention only: the conversation to navigate to. */
+  convId?: string;
+  /** mention only: the messages.id to jump to. */
+  messageId?: number;
+  /** The message sender, or the character the website event is about. */
+  character: string;
+  /** Short plain excerpt (mention) or the note subject; may be empty. */
+  excerpt: string;
+  /**
+   * The mention landed in a muted conversation or a muted identity, judged
+   * at write time (immutable, like `messages.mention`). Still logged — the
+   * inbox is a log — but it never bumps the unseen badge, because mutes
+   * silence alerts (decisions.md §10), exactly as the favicon indicator
+   * already treats them.
+   */
+  muted: boolean;
+  /** ISO timestamp. */
+  createdAt: string;
+}
+
 /** A message waiting in the delayed-send outbox (M4). */
 export interface OutboxItemDto {
   id: string;
@@ -657,6 +689,20 @@ export type GatewayEvent =
        * full resolved state after the patch — an idempotent overwrite. */
       d: { sendDelaySeconds: number; prefs: UserPrefs };
     }
+  | {
+      kind: "notification.new";
+      /** A row was appended to the identity's notification inbox (#467).
+       * Exactly-once like `message.new` (the client dedupes by id anyway);
+       * the badge only counts rows whose `muted` is false. */
+      d: { notification: NotificationDto };
+    }
+  | {
+      kind: "notification.seen";
+      /** The identity's inbox watermark moved — one device opened the inbox,
+       * so every other attached device drops its bell badge too. An
+       * idempotent overwrite; the watermark only ever moves forward. */
+      d: { lastSeenId: number; unseen: number };
+    }
   | { kind: "sys"; d: { message: string } }
   // Real-time bridge: website events (notes, friend requests, comment
   // replies) pushed over the chat socket. Volatile — the website remains
@@ -689,6 +735,11 @@ export type ServerFrame =
            * initial values. */
           unread: number;
           mentions: number;
+          /** Notification-inbox rows past the identity's seen watermark,
+           * muted ones excluded (#467) — so the bell badges on a cold load
+           * without waiting for a sub or an inbox fetch. Capped like the
+           * badge totals; the client clamps display. */
+          notificationsUnseen: number;
         }[];
       };
     }

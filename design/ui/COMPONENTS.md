@@ -172,11 +172,23 @@ Left → right:
 - **Action chips** (IconBtn, `aria-pressed` on the toggles): channel — pin, mute, room settings (op+ only, gear); DM — pin, mute, ignore. Toggled = `accentSoft` + `accentText` + `inset 0 -2px 0 accent`; ignore uses the same shape in `danger`.
 - **Campaign pill** (M11, conditional): a quiet accent pill with a pulsing `ok` dot, reading "Campaign".
 - **Divider** · **view toggles**: channel — members (people glyph + mono count); DM — profile panel, conversation menu (⋮), close (✕).
+- **Inbox chip** (#467), between the view toggles and the search field — the notification inbox, per *identity* rather than per conversation, parked here because this row is the one thing always on screen while a conversation is open. An IconBtn like the rest, carrying a **paper-tray** glyph (deliberately not a bell: the bell two chips left is the mute toggle) and, when anything is unseen, a `accentSoft`/`accentText` count pill on its top-right corner — mono, `tabular-nums`, 9.5px, "99+" past the cap. Opening it marks everything seen, so the pill clears on the click.
 - **Search field**, last and flush to the window's right edge — the row spans the right column, so this is where a search box belongs. The sidebar filter's pill reused: 28px tall, 14px radius, `bg` fill, magnifier + "Search log" placeholder in `meta`. It **owns the query**; results drop out of a `side` card anchored under it — scope segments ("This conversation" / "Everywhere") and a close ✕ on a hairline-separated head, then the hit rows. Focus = `accent` border + `accentSoft` ring.
 
 **Narrow behaviour**, in the order things give way: the topic shrinks first, then (≤940px) the search field parks as a magnifier chip and grows back on focus — taking the topic's room, not the name's — and (≤820px) the topic and the partner clock step out entirely. The chips never collapse; they are the row's point. (The thresholds are window-wide, but the row is `window − rail − sidebar`.)
 
-- **Data:** `{ conversation, memberCount, pinned, muted, ignored?, topic, canManageRoom }`.
+- **Data:** `{ conversation, memberCount, pinned, muted, ignored?, topic, canManageRoom, notificationsUnseen }`.
+
+#### 5a. Notification inbox (dropdown)
+Drops out of the inbox chip on the search panel's card: `side` fill, 1px `border`, `radius`, the same 18/44px shadow, 340px wide, `max-height: min(60vh, 520px)`, anchored `top: calc(100% + 8px); right: 0`. A hairline-separated head reads **Notifications** (13px/600) with **Newest first** in `faint` on the right — the direction has to be stated, because it is the opposite of the log underneath: newest at the top, **older paging in as you scroll DOWN**. (A dropdown that grew upward from its anchor would push its own newest row off the top edge on every page.)
+
+Rows are 6/8px buttons, `radius`, `hover` on hover and focus: a **kind glyph** in mono `accentText` (`@` mention · `♥` friend request · `✉` note · `❝` comment reply) · a two-line text column — the headline ("Nyx mentioned you in #Frontpage", "Tally sent a friend request", "New note from …") over an optional excerpt in `tiny`/`meta`, one line, ellipsis — · a relative timestamp in mono `faint` (`ago`). Rows **unseen at the moment the panel opened** carry `inset 2px 0 0 accent`; they keep it for that open, then read as ordinary log entries.
+
+It is a **log, not a to-do list**: entries persist after they are read or acted on. Clicking one closes the panel first (it covers exactly the part of the log a jump lands in), then acts: a mention jumps the log to that message through the M9 search-jump path; a friend request goes to that identity and flashes the sidebar's request rows, where accept/deny live; notes and comment replies open f-list.net. Escape and an outside pointerdown dismiss — a light popover, no focus trap, the same ceremony as the search panel.
+
+Muted conversations still get their entries — mutes silence alerts, not history (decisions.md §10) — they simply never count toward the chip's pill.
+
+- **Data:** `{ entries: [{ id, kind, character, excerpt, convId?, messageId?, muted, createdAt }], unseen, lastSeenId, hasMore }`.
 
 ### 6. MessageLog (IRC-compact)
 Scroll region, `padding: 12px 0`. Four row types, all `display:flex; gap:9px; align-items:baseline`:

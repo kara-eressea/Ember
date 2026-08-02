@@ -184,6 +184,74 @@ export const messages = pgTable(
   ],
 );
 
+export const notificationKind = pgEnum("notification_kind", [
+  "mention",
+  "friendrequest",
+  "note",
+  "comment",
+]);
+
+/**
+ * The notification inbox (#467): a per-identity LOG of things that wanted
+ * the user's attention — mentions the sink stamped, and the three website
+ * RTB events that used to flash past as transient notices. Rows persist
+ * after they are read; "seen" is the watermark in `notificationSeen`, not a
+ * per-row flag, so marking the inbox read is one write however deep it is.
+ *
+ * Both mention foreign keys cascade on purpose: the retention sweep deletes
+ * messages in batches and a conversation close deletes its rows, and a
+ * notification pointing at history that no longer exists would be a dead
+ * jump target. Their indexes exist for that cascade as much as for reads.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    /** bigserial — the keyset cursor AND the seen watermark's unit. */
+    id: bigserial({ mode: "number" }).primaryKey(),
+    identityId: uuid()
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    kind: notificationKind().notNull(),
+    /** mention only: where to navigate. */
+    conversationId: uuid().references(() => conversations.id, {
+      onDelete: "cascade",
+    }),
+    /** mention only: the message to jump to. */
+    messageId: bigint({ mode: "number" }).references(() => messages.id, {
+      onDelete: "cascade",
+    }),
+    /** The sender, or the character a website event is about. */
+    character: text().notNull().default(""),
+    /** Plain-text excerpt (mention) or note subject; may be empty. */
+    excerpt: text().notNull().default(""),
+    /** Judged at write time against the user's mute lists and immutable
+     * after, like messages.mention: logged, but never badged
+     * (decisions.md §10). */
+    muted: boolean().notNull().default(false),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // The inbox page + the unseen count: one identity, newest first.
+    index("notifications_identity_id_idx").on(t.identityId, t.id.desc()),
+    // Referencing-side indexes for the two cascades (Postgres creates none).
+    index("notifications_message_idx").on(t.messageId),
+    index("notifications_conversation_idx").on(t.conversationId),
+  ],
+);
+
+/**
+ * Per-identity "everything up to here has been seen" watermark for the
+ * notification inbox — the Discord model the user chose: opening the inbox
+ * marks the whole thing seen. Absent row = nothing seen yet.
+ */
+export const notificationSeen = pgTable("notification_seen", {
+  identityId: uuid()
+    .primaryKey()
+    .references(() => identities.id, { onDelete: "cascade" }),
+  lastSeenId: bigint({ mode: "number" }).notNull().default(0),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
 // Delayed-send queue. Rows live only while pending: released and recalled
 // messages are deleted (the messages table holds what actually went out).
 // A row that could not be sent at release keeps state="failed" so the user
