@@ -15,6 +15,7 @@ import {
   provisionAndConnect,
   SimClient,
   test,
+  userScrollTo,
 } from "./helpers.js";
 
 /** Spec-unique hidden channel for the combined-reattach case (#268). */
@@ -71,10 +72,20 @@ test("detach → backlog → reattach: divider and full scroll-back", async ({
     // Scroll to the top repeatedly; each pass pages older history in until
     // the divider marking "since you were last here" — and beyond it, the
     // message read before detaching — is on screen.
+    //
+    // userScrollTo, not a bare `scrollTop = 0`: the bottom-stick only yields to
+    // a scroll the user made (#411), so a bare assignment is ignored and the
+    // log re-sticks to the tail on the next re-measure — the block then passed
+    // on a view that was already sliding back, and the `wave #1` assertion
+    // below caught it mid-slide.
+    //
+    // Two moves per retry, not one: `loadOlder` fires from onScroll, and
+    // re-writing 0 on a log already parked at 0 dispatches nothing — paging
+    // stalls one page short of the pre-detach message. Nudge down, scroll back
+    // up, exactly like a reader working through history.
     await expect(async () => {
-      await log.evaluate((el) => {
-        el.scrollTop = 0;
-      });
+      await userScrollTo(page, 240);
+      await userScrollTo(page, 0);
       await expect(page.getByTestId("new-divider")).toBeVisible({
         timeout: 1_000,
       });
@@ -169,10 +180,10 @@ test("reattach reconciles divider, seen-fold, and live presence together", async
     await expect(
       log.getByText(`wave #${String(WAVE_COUNT)}`, { exact: true }),
     ).toBeVisible({ timeout: 15_000 });
+    // Same scroll-back as the first test, same reasons (#411).
     await expect(async () => {
-      await log.evaluate((el) => {
-        el.scrollTop = 0;
-      });
+      await userScrollTo(page, 240);
+      await userScrollTo(page, 0);
       await expect(page.getByTestId("new-divider")).toBeVisible({
         timeout: 1_000,
       });
