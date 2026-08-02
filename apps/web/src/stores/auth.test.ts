@@ -80,6 +80,16 @@ describe("refreshSession", () => {
     expect(storage.has("eb.auth")).toBe(false);
   });
 
+  it("keeps the persisted session across a 5xx — only a 401 is a rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(jsonResponse(502, { error: "Bad gateway" }))),
+    );
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(false);
+    expect(useAuthStore.getState().refreshToken).toBe("rt-old");
+    expect(storage.has("eb.auth")).toBe(true);
+  });
+
   it("keeps the persisted session across a network failure", async () => {
     vi.stubGlobal(
       "fetch",

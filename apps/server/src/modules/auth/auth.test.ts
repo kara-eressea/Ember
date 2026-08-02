@@ -24,7 +24,7 @@ import {
   INTEGRATION_MS,
   LOADED_RUNNER_MS,
 } from "../../test-support/budgets.js";
-import { MAX_SESSIONS_PER_USER } from "./routes.js";
+import { MAX_SESSIONS_PER_USER, ROTATION_GRACE_MS } from "./routes.js";
 import { SessionJanitor } from "./session-janitor.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
@@ -193,7 +193,7 @@ describe("access tokens", () => {
 });
 
 describe("refresh rotation", () => {
-  it("rotates the refresh token and rejects the previous one", async () => {
+  it("rotates the refresh token; the pre-rotation one redeems within the grace window", async () => {
     const { refreshToken } = await registerUser();
     const first = await app.inject({
       method: "POST",
@@ -204,21 +204,54 @@ describe("refresh rotation", () => {
     const rotated = first.json<{ accessToken: string; refreshToken: string }>();
     expect(rotated.refreshToken).not.toBe(refreshToken);
 
-    // The redeemed token is dead.
+    // The lost-response recovery: a client that never received `rotated`
+    // still holds the old token — within the grace it redeems again.
+    const replay = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(replay.statusCode).toBe(200);
+    const recovered = replay.json<{ refreshToken: string }>();
+    expect(recovered.refreshToken).not.toBe(refreshToken);
+    expect(recovered.refreshToken).not.toBe(rotated.refreshToken);
+
+    // The grace redemption re-rotated: the orphaned token from `first` is
+    // dead, the recovered one is the session's live token.
+    const orphan = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken: rotated.refreshToken },
+    });
+    expect(orphan.statusCode).toBe(401);
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken: recovered.refreshToken },
+    });
+    expect(second.statusCode).toBe(200);
+  });
+
+  it("closes the grace window: an old token past ROTATION_GRACE_MS is dead", async () => {
+    const { user, refreshToken } = await registerUser();
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(first.statusCode).toBe(200);
+    await db
+      .update(authSessions)
+      .set({
+        rotatedAt: new Date(Date.now() - ROTATION_GRACE_MS - 1000),
+      })
+      .where(eq(authSessions.userId, user.id));
     const replay = await app.inject({
       method: "POST",
       url: "/api/auth/refresh",
       payload: { refreshToken },
     });
     expect(replay.statusCode).toBe(401);
-
-    // The rotated token works.
-    const second = await app.inject({
-      method: "POST",
-      url: "/api/auth/refresh",
-      payload: { refreshToken: rotated.refreshToken },
-    });
-    expect(second.statusCode).toBe(200);
   });
 
   it("rejects unknown refresh tokens", async () => {

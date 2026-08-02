@@ -54,6 +54,19 @@ const dummyHash = await argon2.hash("emberchat-timing-equalizer");
  */
 export const MAX_SESSIONS_PER_USER = 25;
 
+/**
+ * How long the pre-rotation refresh token stays redeemable after a rotation.
+ * Single-use rotation has a known failure mode: the server commits the new
+ * token but the response never reaches the client (the page navigated away
+ * with the refresh in flight — diagnosed live in the E2E suite, where every
+ * full page load refreshes on boot). The client then holds only the burnt
+ * token, and without a grace window that logs the session out. Within the
+ * window the old token redeems once more (minting a fresh current token);
+ * the window never renews for the same old token, so a stolen pre-rotation
+ * token stays useful for seconds, not for the session's life.
+ */
+export const ROTATION_GRACE_MS = 30_000;
+
 export interface AuthRoutesOptions {
   db: Db;
   /** Requests per minute per IP on these endpoints. */
@@ -225,12 +238,16 @@ export async function authRoutes(
       const now = new Date();
       const presentedHash = hashRefreshToken(request.body.refreshToken);
       // Rotation: swap in a new token in the same statement that matches the
-      // old one, so a token can never be redeemed twice.
+      // old one, so redeeming stays atomic. The replaced hash is kept for
+      // ROTATION_GRACE_MS (see there) so a client that never received this
+      // response can recover instead of being logged out.
       const { token, hash } = generateRefreshToken();
-      const [session] = await db
+      let [session] = await db
         .update(authSessions)
         .set({
           refreshTokenHash: hash,
+          prevRefreshTokenHash: presentedHash,
+          rotatedAt: now,
           expiresAt: refreshExpiry(now),
           lastSeenAt: now,
         })
@@ -241,6 +258,29 @@ export async function authRoutes(
           ),
         )
         .returning({ id: authSessions.id, userId: authSessions.userId });
+      if (!session) {
+        // Grace path: the presented token was already rotated away — accept
+        // it briefly after rotatedAt. prevRefreshTokenHash and rotatedAt stay
+        // untouched, so the same old token's window never renews.
+        [session] = await db
+          .update(authSessions)
+          .set({
+            refreshTokenHash: hash,
+            expiresAt: refreshExpiry(now),
+            lastSeenAt: now,
+          })
+          .where(
+            and(
+              eq(authSessions.prevRefreshTokenHash, presentedHash),
+              gt(
+                authSessions.rotatedAt,
+                new Date(now.getTime() - ROTATION_GRACE_MS),
+              ),
+              gt(authSessions.expiresAt, now),
+            ),
+          )
+          .returning({ id: authSessions.id, userId: authSessions.userId });
+      }
       if (!session) {
         return reply
           .code(401)

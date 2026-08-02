@@ -212,7 +212,13 @@ export async function provisionAndConnect(
   await page.getByLabel("F-List account name").fill(account);
   await page.getByLabel("F-List password").fill("hunter2");
   await page.getByRole("button", { name: "Verify account" }).click();
-  await page.getByRole("listitem").filter({ hasText: character }).click();
+  // Bounded: the character list renders from one fetch — if it never comes,
+  // fail here in 15s with this locator in the message instead of burning the
+  // spec's whole 120-180s budget on it (WP-4).
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: character })
+    .click({ timeout: 15_000 });
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page).toHaveURL(/\/app\//);
   await expectCharacterOnline(page, character);

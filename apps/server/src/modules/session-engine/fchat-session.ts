@@ -111,6 +111,9 @@ export interface SessionLogger {
   info: (obj: object, msg: string) => void;
   warn: (obj: object, msg: string) => void;
   error: (obj: object, msg: string) => void;
+  /** pino-style child bindings — the registry stamps each session's lines
+   * with its character, or churn across sessions is unattributable. */
+  child?: (bindings: object) => SessionLogger;
 }
 
 function rawDataToString(data: WebSocket.RawData): string {

@@ -44,7 +44,8 @@ export class TicketManager {
   readonly #getPassword: () => string | undefined;
   readonly #api: TicketApi;
   readonly #ttlMs: number;
-  #cached: { ticket: string; issuedAt: number } | undefined;
+  #cached:
+    { ticket: string; issuedAt: number; characters?: string[] } | undefined;
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: TicketManagerOptions) {
@@ -67,14 +68,26 @@ export class TicketManager {
   }
 
   /**
-   * Character data only comes with ticket issuance, so this always fetches —
-   * still through the lock, and the new ticket replaces the cache.
+   * Character data only comes with ticket issuance, so a miss fetches a new
+   * ticket — but a fresh cached ticket whose issuance carried the list is
+   * reused. That matters beyond budget: every fresh ticket invalidates all
+   * previous ones account-wide, so the add-identity flow (account add →
+   * character picker → create) minting a ticket per step would repeatedly
+   * pull the rug from under the account's LIVE sessions — any of them
+   * reconnecting in that window gets ERR 4 with its cached ticket (E2E
+   * hang diagnosis, 2026-08-02). The list can go stale within the ticket
+   * TTL (~25 min) if characters are created or deleted on f-list.net;
+   * that's the accepted trade.
    */
   async getTicketWithCharacters(): Promise<{
     ticket: string;
     characters: string[];
   }> {
     return this.#withLock(async () => {
+      const fresh = this.#freshTicket();
+      if (fresh !== undefined && this.#cached?.characters !== undefined) {
+        return { ticket: fresh, characters: this.#cached.characters };
+      }
       const response = await this.#fetchTicket({ withCharacters: true });
       return { ticket: response.ticket, characters: response.characters ?? [] };
     });
@@ -117,7 +130,13 @@ export class TicketManager {
     if (!("ticket" in response)) {
       throw new FlistAuthError(response.error);
     }
-    this.#cached = { ticket: response.ticket, issuedAt: Date.now() };
+    this.#cached = {
+      ticket: response.ticket,
+      issuedAt: Date.now(),
+      ...(options.withCharacters
+        ? { characters: response.characters ?? [] }
+        : {}),
+    };
     return response;
   }
 

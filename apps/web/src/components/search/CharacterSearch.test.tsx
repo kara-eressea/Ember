@@ -182,6 +182,32 @@ describe("CharacterSearch saved-search cap", () => {
     expect(patch.savedSearches[11]?.name).toBe("Twelfth");
   });
 
+  it("keeps the save-name input through a parent re-render (no focus steal)", async () => {
+    // The shell passes onClose as an inline closure, so every gateway event
+    // re-renders CharacterSearch with a fresh prop identity. The dialog's
+    // focus() used to ride an [onClose] effect and re-fire on each of those,
+    // blurring the save-name input — which dismisses itself on blur, killing
+    // the naming mid-typing (E2E hang diagnosis, 2026-08-02).
+    const user = userEvent.setup();
+    const view = render(
+      <CharacterSearch session={session([])} onClose={vi.fn()} />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "+ Add kinks…" }),
+    );
+    await user.click(screen.getByRole("button", { name: /Biting/ }));
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: /Save current/ }));
+    const input = screen.getByLabelText("Saved search name");
+    input.focus();
+
+    // A re-render with a NEW onClose — the shell's shape on any event.
+    view.rerender(<CharacterSearch session={session([])} onClose={vi.fn()} />);
+
+    expect(screen.getByLabelText("Saved search name")).toBeInTheDocument();
+    expect(document.activeElement).toBe(input);
+  });
+
   it("refuses a thirteenth — the button is disabled at the cap", async () => {
     const user = userEvent.setup();
     const full = Array.from({ length: 12 }, (_, index) => saved(index));
