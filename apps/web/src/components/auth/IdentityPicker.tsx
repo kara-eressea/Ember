@@ -81,87 +81,101 @@ export function IdentityPicker() {
         </p>
       )}
 
-      {identities?.map((identity) => {
-        const live =
-          identity.sessionStatus !== "offline" &&
-          identity.sessionStatus !== "stopped";
-        return (
-          <div key={identity.id} className={styles.identityRow}>
-            <Avatar name={identity.characterName} size={38} />
-            <span className={styles.identityInfo}>
-              <span className={styles.identityName}>
-                {identity.characterName}
-              </span>
-              <br />
-              <span className={styles.identityMeta}>
-                {accountName(identity.flistAccountId)} ·{" "}
-                {identity.sessionStatus.replace("_", " ")}
-              </span>
-            </span>
-            {live && (
-              <button
-                className={styles.signOut}
-                onClick={() => {
-                  void api
-                    .disconnectIdentity(identity.id)
-                    .then(reload)
-                    .catch(() => reload());
-                }}
-              >
-                Disconnect
-              </button>
-            )}
-            <button
-              className={styles.connectButton}
-              onClick={() => {
-                const open = () =>
-                  navigate(identityPath(identity.characterName));
-                if (live) {
-                  void open();
-                  return;
-                }
-                // Connect explicitly (the shell's connect-on-visit ignores
-                // logged-off identities by design), then open — failures
-                // surface as session status in the shell.
-                void api.connectIdentity(identity.id).then(open, open);
+      {(identities === undefined || accounts === undefined) && !error && (
+        // The whole body waits for the first load. Offering "Add a server
+        // identity" before the accounts arrived let a fast click mount the
+        // add flow with accounts=[], whose mode useState then snapshots
+        // "brand-new account" and never reconciles — an existing account's
+        // second identity dead-ends in the wrong form (E2E hang diagnosis,
+        // 2026-08-02: the rail.spec 3-minute hang, trace-verified).
+        <p className={styles.footNote}>Loading identities…</p>
+      )}
+
+      {identities !== undefined && accounts !== undefined && (
+        <>
+          {identities.map((identity) => {
+            const live =
+              identity.sessionStatus !== "offline" &&
+              identity.sessionStatus !== "stopped";
+            return (
+              <div key={identity.id} className={styles.identityRow}>
+                <Avatar name={identity.characterName} size={38} />
+                <span className={styles.identityInfo}>
+                  <span className={styles.identityName}>
+                    {identity.characterName}
+                  </span>
+                  <br />
+                  <span className={styles.identityMeta}>
+                    {accountName(identity.flistAccountId)} ·{" "}
+                    {identity.sessionStatus.replace("_", " ")}
+                  </span>
+                </span>
+                {live && (
+                  <button
+                    className={styles.signOut}
+                    onClick={() => {
+                      void api
+                        .disconnectIdentity(identity.id)
+                        .then(reload)
+                        .catch(() => reload());
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                )}
+                <button
+                  className={styles.connectButton}
+                  onClick={() => {
+                    const open = () =>
+                      navigate(identityPath(identity.characterName));
+                    if (live) {
+                      void open();
+                      return;
+                    }
+                    // Connect explicitly (the shell's connect-on-visit ignores
+                    // logged-off identities by design), then open — failures
+                    // surface as session status in the shell.
+                    void api.connectIdentity(identity.id).then(open, open);
+                  }}
+                >
+                  {live ? "Open" : "Connect"}
+                </button>
+                <RemoveButton
+                  what={`identity ${identity.characterName} and its history`}
+                  onConfirm={async () => {
+                    await api.deleteIdentity(identity.id);
+                    useSessionsStore.getState().removeIdentity(identity.id);
+                    await reload();
+                  }}
+                />
+              </div>
+            );
+          })}
+
+          {adding ? (
+            <AddIdentityFlow
+              accounts={accounts}
+              canRemember={canRemember}
+              onDone={() => {
+                setAdding(false);
+                void reload();
               }}
-            >
-              {live ? "Open" : "Connect"}
-            </button>
-            <RemoveButton
-              what={`identity ${identity.characterName} and its history`}
-              onConfirm={async () => {
-                await api.deleteIdentity(identity.id);
-                useSessionsStore.getState().removeIdentity(identity.id);
-                await reload();
+              onAccountsChanged={() => {
+                void reload();
               }}
             />
-          </div>
-        );
-      })}
-
-      {adding ? (
-        <AddIdentityFlow
-          accounts={accounts ?? []}
-          canRemember={canRemember}
-          onDone={() => {
-            setAdding(false);
-            void reload();
-          }}
-          onAccountsChanged={() => {
-            void reload();
-          }}
-        />
-      ) : (
-        <button
-          className={styles.addRow}
-          onClick={() => {
-            setAdding(true);
-          }}
-        >
-          <span className={styles.addChip}>+</span>
-          Add a server identity
-        </button>
+          ) : (
+            <button
+              className={styles.addRow}
+              onClick={() => {
+                setAdding(true);
+              }}
+            >
+              <span className={styles.addChip}>+</span>
+              Add a server identity
+            </button>
+          )}
+        </>
       )}
     </AuthCard>
   );
