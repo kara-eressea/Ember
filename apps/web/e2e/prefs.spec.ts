@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { type Page } from "@playwright/test";
 import {
   expect,
+  expectCharacterOnline,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
@@ -259,9 +260,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
 
   // Survives a reload (flash cache + server prefs agree).
   await page.reload();
-  await expect(page.getByText("Hazel Fenwick · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, "Hazel Fenwick");
   expect(await appliedAccent(page)).toBe(MOSS);
 
   // ── A second device logs in fresh and paints Moss from the server ─────
@@ -409,9 +408,7 @@ test("preferences window: gear, pane nav, accent persists across reload + device
     });
   });
   await page.reload();
-  await expect(page.getByText("Hazel Fenwick · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, "Hazel Fenwick");
   const recordedCount = () =>
     page.evaluate(
       () =>

@@ -320,8 +320,8 @@
 
 .serverHead {
   display: flex;
-  align-items: center;
-  gap: 9px;
+  align-items: baseline;
+  gap: 8px;
   padding: 14px;
   border-bottom: 1px solid var(--eb-border);
 }
@@ -333,22 +333,32 @@
   flex: none;
 }
 
-.serverMeta {
-  min-width: 0;
-}
-
 .serverName {
   font-size: calc(14px * var(--eb-font-ui-scale));
   font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.serverSub {
+.serverVersion {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: calc(10.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
+}
+
+/* An update is waiting: the version tints and becomes the link. */
+.serverVersionUpdate {
+  color: var(--eb-accent-text);
+  text-decoration: none;
+}
+
+.serverVersionUpdate:hover,
+.serverVersionUpdate:focus-visible {
+  text-decoration: underline;
 }
 
 /* Channel-list toolbar (#196): filter field + browser entry points. */

@@ -16,6 +16,7 @@
 import { type Locator } from "@playwright/test";
 import {
   expect,
+  expectCharacterOnline,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
@@ -123,9 +124,7 @@ test("identity rail: avatar toggle hides it without breaking the shell grid, sur
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByRole("listitem").filter({ hasText: "Marsh Willow" }).click();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.getByText("Marsh Willow · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, "Marsh Willow");
 
   await expect(rail).toBeVisible();
   await expect(rail.getByTestId("rail-item")).toHaveCount(2);

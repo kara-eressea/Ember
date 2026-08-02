@@ -264,6 +264,7 @@ export async function buildApp({
   const updates = new UpdateChecker({
     currentVersion: config.CLIENT_VERSION,
     repo: config.UPDATE_CHECK_REPO,
+    clientName: config.CLIENT_NAME,
     // Test runs never phone home, whatever the config says.
     enabled: config.UPDATE_CHECK_ENABLED && process.env.NODE_ENV !== "test",
     logger: app.log,

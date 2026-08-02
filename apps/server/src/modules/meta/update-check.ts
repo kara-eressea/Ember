@@ -14,6 +14,8 @@ export interface UpdateCheckerOptions {
   readonly currentVersion: string;
   /** "owner/repo" the releases are read from. */
   readonly repo: string;
+  /** Client identifier for the API call (config CLIENT_NAME). */
+  readonly clientName: string;
   readonly enabled: boolean;
   readonly logger?: SessionLogger;
   /** Injectable for tests. */
@@ -84,7 +86,13 @@ export class UpdateChecker {
     try {
       const response = await this.#fetch(
         `https://api.github.com/repos/${this.#options.repo}/releases/latest`,
-        { headers: { accept: "application/vnd.github+json" } },
+        {
+          headers: {
+            accept: "application/vnd.github+json",
+            // GitHub requires a User-Agent and rejects requests without one.
+            "user-agent": `${this.#options.clientName}/${this.#options.currentVersion}`,
+          },
+        },
       );
       if (!response.ok) {
         this.#options.logger?.warn(

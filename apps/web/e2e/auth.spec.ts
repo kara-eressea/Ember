@@ -10,7 +10,12 @@
 // characters and channels.
 
 import { type Page } from "@playwright/test";
-import { expect, provisionUser, test } from "./helpers.js";
+import {
+  expect,
+  expectCharacterOnline,
+  provisionUser,
+  test,
+} from "./helpers.js";
 
 // 1×1 transparent PNG — stands in for every F-List avatar.
 const TINY_PNG = Buffer.from(
@@ -111,9 +116,7 @@ test("provision, log in, connect an F-List account, and pick a character with av
   // Log the character off again (MeBar power control) — sessions outlive
   // tabs, and a later test in this file connects Aspen Vale itself; a
   // character can hold only one sim connection.
-  await expect(page.getByText("Aspen Vale · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, "Aspen Vale");
   await page.getByRole("button", { name: "Log off F-Chat" }).click();
   await expect(
     page.getByText(/stopped — disconnected by user/).first(),
@@ -179,9 +182,7 @@ test("identities can be connected, disconnected and removed from the picker", as
   // Connect from the picker; the shell reports the session online.
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page).toHaveURL(/\/app\//);
-  await expect(page.getByText("Aspen Vale · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, "Aspen Vale");
 
   // Back on the picker the live session is visible and can be logged off —
   // the session outlives tabs (bouncer), so this is the deliberate way out.

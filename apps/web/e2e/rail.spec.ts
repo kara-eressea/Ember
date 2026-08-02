@@ -9,6 +9,7 @@
 
 import {
   expect,
+  expectCharacterOnline,
   interceptAvatars,
   joinChannel,
   provisionAndConnect,
@@ -33,9 +34,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
   await page.getByRole("listitem").filter({ hasText: "Petal Thorn" }).click();
   // "Connect" would substring-match rows; the add flow's button is exact.
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.getByText("Petal Thorn · online")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expectCharacterOnline(page, "Petal Thorn");
 
   // Both identities on the rail; Petal (routed) is the active one.
   const rail = page.getByRole("navigation", { name: "Identities" });
@@ -49,7 +48,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
   // ── Rail switch: the ENTIRE context swaps, back at Rowan's last spot ──
   await rowanItem.click();
   await expect(page).toHaveURL(/\/app\/Rowan%20Redleaf\/c\/Gardening$/);
-  await expect(page.getByText("Rowan Redleaf · online")).toBeVisible();
+  await expectCharacterOnline(page, "Rowan Redleaf");
   await expect(page.getByRole("heading", { name: "Gardening" })).toBeVisible();
   // Rowan never joined Development: it is not in this sidebar.
   const nav = page.getByRole("navigation").last(); // the sidebar, not the rail
@@ -72,7 +71,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
     // ── Switch to Petal (her last conversation), read the DM ────────────
     await petalItem.click();
     await expect(page).toHaveURL(/\/app\/Petal%20Thorn\/c\/Development$/);
-    await expect(page.getByText("Petal Thorn · online")).toBeVisible();
+    await expectCharacterOnline(page, "Petal Thorn");
     await nav.getByRole("link", { name: /Bramble Thorn/ }).click();
     await expect(
       page.getByTestId("message-log").getByText("psst, petal"),
@@ -80,7 +79,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
 
     // Reading cleared the unread: Petal stays badge-free in the background.
     await rowanItem.click();
-    await expect(page.getByText("Rowan Redleaf · online")).toBeVisible();
+    await expectCharacterOnline(page, "Rowan Redleaf");
     await expect(petalItem.getByTestId("rail-badge")).toHaveCount(0);
 
     // ── @me lands on the last-active identity ───────────────────────────
@@ -105,9 +104,7 @@ test("identity rail: full context swap, background badges, @me alias", async ({
       /Petal Thorn/,
     );
     await page.reload();
-    await expect(page.getByText("Rowan Redleaf · online")).toBeVisible({
-      timeout: 15_000,
-    });
+    await expectCharacterOnline(page, "Rowan Redleaf");
     await expect(rail.getByTestId("rail-item").first()).toHaveAccessibleName(
       /Petal Thorn/,
     );
