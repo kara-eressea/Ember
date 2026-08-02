@@ -18,6 +18,7 @@ import {
   placePopoverInWindow,
   type PopoverPlacement,
 } from "../profile/popover.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { ComposerInputHandle } from "./composer-input.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import {
@@ -401,17 +402,9 @@ function ToolbarPopover({
       }),
     );
   }, [anchor]);
-  useEffect(() => {
-    function onKey(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  // Shared Escape stack (#442): a picker opened from inside this popover (the
+  // eicon picker) mounts later and closes first, one press at a time.
+  useEscapeToClose(onClose);
   return (
     <>
       <div className={styles.tbOverlay} onClick={onClose} />

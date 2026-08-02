@@ -17,6 +17,7 @@ import {
   type NoteSaveCallbacks,
 } from "../../stores/profile.js";
 import { api } from "../../lib/api.js";
+import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import {
   nextNoteSaveState,
   noteSaveLabel,
@@ -49,7 +50,23 @@ export function PrivateNote({
   // late must not flash ✓ over a fresher Saving… / ⚠.
   const reqRef = useRef(0);
   const dirtyRef = useRef(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  /** Only the *focused* editor claims Escape — see the hook below. */
+  const [focused, setFocused] = useState(false);
   const fullClass = fullWidth ? (styles.noteFull ?? "") : "";
+
+  // Blur (which flushes the save) and collapse to peek instead of letting the
+  // host surface — the DM overlay drawer — take the press. Registered on the
+  // shared stack (#442) as an overlay so it outranks the drawer's ambient
+  // entry; in the profile modal escapeCollapses is off, nothing registers,
+  // and Escape still closes the window.
+  useEscapeToClose(
+    () => {
+      bodyRef.current?.blur();
+      setMode("idle");
+    },
+    escapeCollapses === true && mode === "editing" && focused,
+  );
 
   function callbacks(token: number): NoteSaveCallbacks {
     return {
@@ -101,6 +118,7 @@ export function PrivateNote({
           )}
         </span>
         <textarea
+          ref={bodyRef}
           className={styles.noteBody}
           value={body}
           autoFocus
@@ -108,19 +126,11 @@ export function PrivateNote({
           onChange={(event) => {
             edit(event.target.value);
           }}
-          onKeyDown={(event) => {
-            if (escapeCollapses && event.key === "Escape") {
-              // Blur (which flushes the save) and collapse to peek, without
-              // letting Escape bubble up to close a host surface (the DM
-              // overlay drawer). In the profile modal this handler is off, so
-              // Escape still closes the window.
-              event.preventDefault();
-              event.stopPropagation();
-              event.currentTarget.blur();
-              setMode("idle");
-            }
+          onFocus={() => {
+            setFocused(true);
           }}
           onBlur={() => {
+            setFocused(false);
             flush();
             if (body.trim() === "") {
               setMode("idle");
