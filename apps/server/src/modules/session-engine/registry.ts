@@ -73,7 +73,11 @@ export class SessionRegistry {
       wsUrl: this.#options.wsUrl,
       clientName: this.#options.clientName,
       clientVersion: this.#options.clientVersion,
-      logger: this.#options.logger,
+      logger:
+        this.#options.logger?.child?.({
+          character: params.character,
+          identityId: params.identityId,
+        }) ?? this.#options.logger,
       ...this.#options.tuning,
     });
     for (const channel of params.seedChannels ?? []) {

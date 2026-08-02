@@ -57,6 +57,10 @@ export interface FlistApiClientOptions {
    * bound; past the cap new work sheds fast with FlistApiBusyError (M6
    * audit). */
   maxPendingRequests?: number;
+  /** Per-request deadline. The throttle is one global chain, so a single
+   * fetch that never settles would wedge every tenant's calls behind it
+   * forever (E2E hang diagnosis, 2026-08-02) — bound it. */
+  requestTimeoutMs?: number;
 }
 
 /** The shared F-List budget is saturated; retry shortly. */
@@ -68,6 +72,9 @@ export class FlistApiBusyError extends Error {
 }
 
 const MAX_PENDING_REQUESTS = 32;
+/** Generous for a healthy f-list.net, tight enough that a black-holed
+ * connection releases the global chain within one UI attention span. */
+const REQUEST_TIMEOUT_MS = 30_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,6 +85,7 @@ export class FlistApiClient {
   readonly #fetch: typeof fetch;
   readonly #minIntervalMs: number;
   readonly #maxPending: number;
+  readonly #requestTimeoutMs: number;
   #pending = 0;
   #lastRequestStart = 0;
   #queue: Promise<unknown> = Promise.resolve();
@@ -87,6 +95,7 @@ export class FlistApiClient {
     this.#fetch = options.fetchImpl ?? fetch;
     this.#minIntervalMs = options.minRequestIntervalMs ?? 1000;
     this.#maxPending = options.maxPendingRequests ?? MAX_PENDING_REQUESTS;
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   }
 
   async getApiTicket(params: GetApiTicketParams): Promise<ApiTicketResponse> {
@@ -103,6 +112,7 @@ export class FlistApiClient {
         {
           method: "POST",
           body: form,
+          signal: AbortSignal.timeout(this.#requestTimeoutMs),
         },
       );
       if (!response.ok) {
@@ -274,6 +284,7 @@ export class FlistApiClient {
       const response = await this.#fetch(new URL(path, this.#baseUrl), {
         method: "POST",
         body: new URLSearchParams(),
+        signal: AbortSignal.timeout(this.#requestTimeoutMs),
       });
       if (!response.ok) {
         throw new Error(`${path}: HTTP ${String(response.status)}`);
@@ -297,6 +308,7 @@ export class FlistApiClient {
       const response = await this.#fetch(new URL(path, this.#baseUrl), {
         method: "POST",
         body: form,
+        signal: AbortSignal.timeout(this.#requestTimeoutMs),
       });
       if (!response.ok) {
         throw new Error(`${path}: HTTP ${String(response.status)}`);

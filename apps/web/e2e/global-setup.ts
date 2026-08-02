@@ -3,6 +3,7 @@
 // migrates on boot). Returns the teardown that stops all three.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
@@ -12,6 +13,11 @@ import { API_PORT, PREVIEW_PORT, WEB_PORT } from "../playwright.config.js";
 const SERVER_ENTRY = fileURLToPath(
   new URL("../../server/dist/main.js", import.meta.url),
 );
+
+// The bouncer's pino stream, teed to a file: a spec that hangs on a locator
+// is usually waiting on the server, and that side of the story is invisible
+// in Playwright traces. CI uploads this next to playwright-report/.
+const SERVER_LOG = fileURLToPath(new URL("../e2e-server.log", import.meta.url));
 
 async function waitForHealthy(url: string, child: ChildProcess): Promise<void> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -147,8 +153,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         // No phone-home from CI runs.
         UPDATE_CHECK_ENABLED: "false",
       },
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    const serverLog = createWriteStream(SERVER_LOG);
+    server.stdout?.pipe(serverLog);
+    server.stderr?.pipe(process.stderr);
     await waitForHealthy(
       `http://127.0.0.1:${String(API_PORT)}/healthz`,
       server,

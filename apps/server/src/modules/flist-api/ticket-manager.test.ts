@@ -114,15 +114,15 @@ describe("TicketManager", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("getTicketWithCharacters always fetches and refreshes the cache for getTicket", async () => {
+  it("getTicketWithCharacters fetches when the cache has no character list", async () => {
     const { api, calls } = stubApi((params, i) => ({
       error: "",
       ticket: `fct_${String(i)}`,
       ...(params.noCharacters ? {} : { characters: ["Amber Vale", "Cindral"] }),
     }));
     const m = manager(api);
-    await m.getTicket(); // fct_0, cached
-    const withCharacters = await m.getTicketWithCharacters(); // always fetches → fct_1
+    await m.getTicket(); // fct_0, cached ticket-only
+    const withCharacters = await m.getTicketWithCharacters(); // miss → fct_1
     expect(withCharacters).toEqual({
       ticket: "fct_1",
       characters: ["Amber Vale", "Cindral"],
@@ -131,6 +131,31 @@ describe("TicketManager", () => {
     // The fresh ticket from the characters fetch now serves plain callers.
     expect(await m.getTicket()).toBe("fct_1");
     expect(calls).toHaveLength(2);
+  });
+
+  it("getTicketWithCharacters reuses a fresh ticket that carried the list", async () => {
+    const { api, calls } = stubApi((params, i) => ({
+      error: "",
+      ticket: `fct_${String(i)}`,
+      ...(params.noCharacters ? {} : { characters: ["Amber Vale"] }),
+    }));
+    const m = manager(api);
+    // The add-identity flow calls this back-to-back (account add → picker →
+    // create). One ticket must serve all of them: every extra issuance
+    // invalidates the account's other tickets and can knock live sessions
+    // into ERR 4 on their next reconnect.
+    await m.getTicketWithCharacters();
+    const again = await m.getTicketWithCharacters();
+    expect(again).toEqual({ ticket: "fct_0", characters: ["Amber Vale"] });
+    expect(calls).toHaveLength(1);
+    // Past the TTL the reuse ends like any cached ticket.
+    vi.advanceTimersByTime(26 * 60 * 1000);
+    expect((await m.getTicketWithCharacters()).ticket).toBe("fct_1");
+    expect(calls).toHaveLength(2);
+    // invalidate() (IDN rejection) drops the pair — the next call refetches.
+    m.invalidate();
+    expect((await m.getTicketWithCharacters()).ticket).toBe("fct_2");
+    expect(calls).toHaveLength(3);
   });
 });
 

@@ -122,8 +122,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         persist(get());
         return true;
       } catch (cause) {
-        if (cause instanceof ApiError) {
-          // The server rejected the token — the session really is gone.
+        if (cause instanceof ApiError && cause.status === 401) {
+          // Only a 401 means the session is really gone. Any other failure —
+          // network, 5xx, a proxy blip — must keep the persisted session so
+          // a later call retries (E2E hang diagnosis: destroying it here is
+          // a logout over a transient).
           set({
             user: undefined,
             accessToken: undefined,
@@ -132,7 +135,6 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           });
           localStorage.removeItem(STORAGE_KEY);
         }
-        // Network failure: keep the persisted session; a later call retries.
         return false;
       }
     })().finally(() => {
