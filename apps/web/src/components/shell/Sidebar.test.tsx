@@ -5,11 +5,13 @@
 // instead of — the row's existing dot and colouring. The sidebarAvatars pref
 // turns the whole treatment off, restoring the denser text-only rows.
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
 import { Sidebar } from "./Sidebar.js";
+import { appConfig } from "../../lib/config.js";
+import type { MetaDto } from "../../lib/api.js";
 import type {
   ChannelView,
   DmView,
@@ -20,6 +22,13 @@ import type {
 // session snapshot, so the network call is stubbed out.
 vi.mock("../../lib/social.js", () => ({
   loadSocial: () => Promise.resolve(),
+}));
+
+// The head's version comes from /api/meta — driven per test, never fetched.
+const meta = vi.hoisted(() => ({ current: undefined as MetaDto | undefined }));
+vi.mock("../../lib/use-meta.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/use-meta.js")>()),
+  useServerMeta: () => meta.current,
 }));
 
 function channel(key: string, title: string): ChannelView {
@@ -188,5 +197,80 @@ describe("Sidebar pin marker on social rows", () => {
 
     expect(pins(screen.getByRole("button", { name: /Cy/ }))).toHaveLength(0);
     expect(pins(screen.getByRole("button", { name: /Dot/ }))).toHaveLength(0);
+  });
+});
+
+// The head is brand + version only: presence already lives on the identity
+// rail and the MeBar, and a newer release announces itself by tinting the
+// version into a link — nothing louder.
+describe("Sidebar head", () => {
+  const releasesUrl = "https://example.invalid/releases";
+
+  afterEach(() => {
+    meta.current = undefined;
+  });
+
+  const head = (container: HTMLElement) =>
+    container.querySelector("div[class*='serverHead']");
+
+  it("shows the app name and the running version, and no presence", () => {
+    meta.current = { version: "0.19.1", updateAvailable: false, releasesUrl };
+    const { container } = renderSidebar();
+
+    expect(head(container)?.textContent).toBe(`${appConfig().appName}v0.19.1`);
+    // No presence dot, no character/status line.
+    expect(
+      head(container)?.querySelector("span[class*='serverDot']"),
+    ).toBeNull();
+    expect(head(container)?.textContent).not.toContain("Amber Vale");
+  });
+
+  it("renders a dev version string as-is", () => {
+    meta.current = {
+      version: "0.0.0-dev",
+      updateAvailable: false,
+      releasesUrl,
+    };
+    const { container } = renderSidebar();
+
+    expect(head(container)?.textContent).toContain("v0.0.0-dev");
+  });
+
+  it("links the version to the releases page when an update is waiting", () => {
+    meta.current = {
+      version: "0.19.1",
+      updateAvailable: true,
+      latestVersion: "v0.19.2",
+      releasesUrl,
+    };
+    const { container } = renderSidebar();
+
+    const link = container.querySelector<HTMLAnchorElement>(
+      "a[class*='serverVersionUpdate']",
+    );
+    expect(link?.textContent).toBe("v0.19.1");
+    expect(link?.title).toBe("v0.19.2 available");
+    expect(
+      screen.getByRole("link", { name: "Version v0.19.1 — v0.19.2 available" }),
+    ).toBe(link);
+    expect(link?.href).toBe(releasesUrl);
+    expect(link?.target).toBe("_blank");
+    expect(link?.rel).toBe("noopener noreferrer");
+  });
+
+  it("stays plain text when current, and bare while meta is unknown", () => {
+    meta.current = { version: "0.19.1", updateAvailable: false, releasesUrl };
+    const { container } = renderSidebar();
+    expect(
+      container.querySelector("a[class*='serverVersionUpdate']"),
+    ).toBeNull();
+    expect(
+      container.querySelector("span[class*='serverVersion']"),
+    ).not.toBeNull();
+
+    meta.current = undefined;
+    const unknown = renderSidebar().container;
+    expect(head(unknown)?.textContent).toBe(appConfig().appName);
+    expect(head(unknown)?.querySelector("[class*='serverVersion']")).toBeNull();
   });
 });

@@ -138,7 +138,7 @@ Far-left vertical switch between connected server identities. Background `side2`
 ### 2. Sidebar (unified nav)
 Vertical flex on `side`. Top→bottom: ServerHead · Search · NavScroll (sections) · MeBar.
 
-**ServerHead** — padding 14px, bottom border. Left: 9px `ok` dot (glow), server name (14px/700) + mono sub-line (`irc.emberchat.chat · connected`, 10.5px `meta`). Right: gear (`faint`).
+**ServerHead** — padding 14px, bottom border, baseline-aligned. App name (14px/700) + the running version beside it (mono 10.5px `meta`, e.g. `v0.19.1`). No presence here: the identity rail and the MeBar already carry it. When the server's update check has seen a newer release the version tints `accentText` and becomes the link to the releases page (title `vX.Y.Z available`) — the whole announcement, no banner.
 
 **Search** — 30px pill, `bg` fill, `border`, `⌕` + "Jump to…" placeholder (`meta`).
 

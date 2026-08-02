@@ -3,15 +3,15 @@
 // what every channel inherits; the channel header's ads chip stores
 // per-channel exceptions on top of it.
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import {
   DEFAULT_IMAGE_PREVIEW_HOSTS,
   IMAGE_PREVIEW_HOST,
   PREFS_DEFAULTS,
 } from "@emberchat/protocol";
-import { api, type MetaDto } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
+import { useServerMeta } from "../../lib/use-meta.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { FieldRow, GroupLabel, Segmented, Toggle } from "./controls.js";
 import { patchPrefs } from "./patch.js";
@@ -28,12 +28,7 @@ export function GeneralPane({
     (s) => s.sessions[identityId]?.prefs ?? PREFS_DEFAULTS,
   );
   // About surface (M7): running version + the server's quiet update hint.
-  const [meta, setMeta] = useState<MetaDto>();
-  useEffect(() => {
-    api.getMeta().then(setMeta, () => {
-      // The about line just shows the name.
-    });
-  }, []);
+  const meta = useServerMeta();
 
   return (
     <>

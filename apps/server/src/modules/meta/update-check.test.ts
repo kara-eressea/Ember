@@ -26,13 +26,20 @@ describe("UpdateChecker", () => {
     const checker = new UpdateChecker({
       currentVersion: "0.5.0",
       repo: "kara-eressea/Ember",
+      clientName: "Testline",
       enabled: true,
       fetchImpl: fetchImpl,
     });
     await checker.checkOnce();
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.github.com/repos/kara-eressea/Ember/releases/latest",
-      expect.anything(),
+      // GitHub rejects anonymous calls without a User-Agent.
+      {
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "Testline/0.5.0",
+        },
+      },
     );
     expect(checker.status).toEqual({
       version: "0.5.0",
@@ -51,6 +58,7 @@ describe("UpdateChecker", () => {
     const checker = new UpdateChecker({
       currentVersion: "0.5.0",
       repo: "kara-eressea/Ember",
+      clientName: "Testline",
       enabled: true,
       fetchImpl: fetchImpl,
     });
@@ -67,11 +75,15 @@ describe("UpdateChecker", () => {
     const checker = new UpdateChecker({
       currentVersion: "0.5.0",
       repo: "kara-eressea/Ember",
+      clientName: "Testline",
       enabled: false,
       fetchImpl: fetchImpl,
     });
     checker.start();
     checker.stop();
     expect(fetchImpl).not.toHaveBeenCalled();
+    // Nothing to announce, so /api/meta serialises without latestVersion.
+    expect(checker.status.latestVersion).toBeUndefined();
+    expect(checker.status.updateAvailable).toBe(false);
   });
 });

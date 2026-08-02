@@ -28,6 +28,7 @@ import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { displayVersion, useServerMeta } from "../../lib/use-meta.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
@@ -112,17 +113,7 @@ export interface SidebarProps {
 
 export function Sidebar({ session, activeConvId }: SidebarProps) {
   const navigate = useNavigate();
-  const gatewayStatus = useUiStore((s) => s.gatewayStatus);
   const online = session.sessionStatus === "online";
-  const headDot: DotKind =
-    online && gatewayStatus === "online"
-      ? "ok"
-      : gatewayStatus === "connecting" ||
-          session.sessionStatus === "connecting" ||
-          session.sessionStatus === "identifying" ||
-          session.sessionStatus === "acquiring_ticket"
-        ? "warn"
-        : "faint";
 
   // Toolbar filter (#196): one query narrows every section as you type —
   // subsequence matching, same behavior as the quick switcher.
@@ -545,15 +536,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
 
   return (
     <nav className={styles.sidebar}>
-      <div className={styles.serverHead}>
-        <span className={`${styles.serverDot} ${DOT_CLASS[headDot]}`} />
-        <span className={styles.serverMeta}>
-          <div className={styles.serverName}>{appConfig().appName}</div>
-          <div className={styles.serverSub}>
-            {session.character || "…"} · {sessionStatusLabel(session)}
-          </div>
-        </span>
-      </div>
+      <SidebarHead />
 
       <div className={styles.toolbar}>
         <input
@@ -713,6 +696,45 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         </button>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Sidebar head: the product name and the running version, nothing else —
+ * presence lives on the identity rail and the MeBar, and repeating it here
+ * only added noise. When the server's daily update check has seen a newer
+ * release, the version itself becomes the link to the releases page; that
+ * accent tint is the whole announcement (no banner, no nag).
+ */
+function SidebarHead() {
+  const meta = useServerMeta();
+  const update =
+    meta?.updateAvailable && meta.latestVersion !== undefined
+      ? meta.latestVersion
+      : undefined;
+
+  return (
+    <div className={styles.serverHead}>
+      <span className={styles.serverName}>{appConfig().appName}</span>
+      {meta &&
+        (update === undefined ? (
+          <span className={styles.serverVersion}>
+            {displayVersion(meta.version)}
+          </span>
+        ) : (
+          <a
+            className={`${styles.serverVersion} ${styles.serverVersionUpdate}`}
+            href={meta.releasesUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${displayVersion(update)} available`}
+            // The tint carries the news visually; the label carries it aloud.
+            aria-label={`Version ${displayVersion(meta.version)} — ${displayVersion(update)} available`}
+          >
+            {displayVersion(meta.version)}
+          </a>
+        ))}
+    </div>
   );
 }
 
