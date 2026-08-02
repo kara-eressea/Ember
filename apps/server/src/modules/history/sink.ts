@@ -23,6 +23,7 @@ import type {
   SessionLogger,
 } from "../session-engine/fchat-session.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
+import type { NotificationStore } from "../notifications/store.js";
 import type { ServerCommandPayload } from "@emberchat/fchat-protocol";
 
 type ConversationKind = "channel" | "pm";
@@ -77,6 +78,9 @@ export class HistorySink {
   readonly #maxConversationsPerIdentity: number;
   /** Stamps messages.mention at persist time (M5); absent = never mention. */
   readonly #highlights: Pick<HighlightMatcher, "mention"> | undefined;
+  /** Logs stamped mentions into the notification inbox (#466); absent = no
+   * inbox (tests that only care about persistence). */
+  readonly #notifications: Pick<NotificationStore, "recordMention"> | undefined;
   /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */
   readonly #queues = new Map<string, Promise<void>>();
   /** conversation-row cache, keyed `${identityId}:${kind}:${key}`. */
@@ -88,6 +92,7 @@ export class HistorySink {
     options: {
       maxConversationsPerIdentity?: number;
       highlights?: Pick<HighlightMatcher, "mention">;
+      notifications?: Pick<NotificationStore, "recordMention">;
     } = {},
   ) {
     this.#db = db;
@@ -95,6 +100,7 @@ export class HistorySink {
     this.#maxConversationsPerIdentity =
       options.maxConversationsPerIdentity ?? MAX_CONVERSATIONS_PER_IDENTITY;
     this.#highlights = options.highlights;
+    this.#notifications = options.notifications;
     this.events = new TypedEventBus<HistoryEvents>(this.#log);
   }
 
@@ -592,6 +598,18 @@ export class HistorySink {
         .returning();
       if (row) {
         this.events.emit("message", { identityId, message: row });
+        // The inbox row rides the same serial task as the message, and lands
+        // after its message.new: a client must never see a notification
+        // pointing at a message it has not been handed yet.
+        if (row.mention) {
+          await this.#notifications?.recordMention({
+            identityId,
+            conversationId,
+            messageId: row.id,
+            senderCharacter: row.senderCharacter,
+            bbcode: row.bbcode,
+          });
+        }
       }
     });
   }

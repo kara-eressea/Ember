@@ -44,6 +44,7 @@ import {
   type ConversationRow,
   type HistorySink,
 } from "../history/sink.js";
+import type { NotificationStore } from "../notifications/store.js";
 import { connectIdentity } from "../session-engine/connect-identity.js";
 import type {
   FchatSession,
@@ -109,6 +110,12 @@ export interface GatewayConnectionContext {
   readonly hub: GatewayHub;
   readonly outbox: Outbox;
   readonly highlights: Pick<HighlightMatcher, "invalidate">;
+  /** Notification inbox (#466): unseen counts ride `ready` so the bell
+   * badges before any sub, and a prefs patch drops its mute cache. */
+  readonly notifications: Pick<
+    NotificationStore,
+    "unseenCount" | "invalidatePrefs"
+  >;
   /** Live union of user image-preview allowlists; refreshed when a user's
    * imagePreviewHosts pref changes so the CSP admits the new host (#342). */
   readonly imagePreviewHosts: Pick<ImagePreviewHostRegistry, "refresh">;
@@ -398,6 +405,11 @@ export class GatewayConnection {
     const totals = await Promise.all(
       rows.map((row) => identityBadgeTotals(this.#ctx.db, row.id)),
     );
+    // Same reasoning for the inbox bell: a cold load must badge without an
+    // inbox fetch. One capped count per identity.
+    const unseen = await Promise.all(
+      rows.map((row) => this.#ctx.notifications.unseenCount(row.id)),
+    );
     this.#send({
       t: "ready",
       d: {
@@ -410,6 +422,7 @@ export class GatewayConnection {
           autoConnect: row.autoConnect,
           unread: totals[index]?.unread ?? 0,
           mentions: totals[index]?.mentions ?? 0,
+          notificationsUnseen: unseen[index] ?? 0,
         })),
       },
     });
@@ -1125,8 +1138,10 @@ export class GatewayConnection {
         sendDelaySeconds: userPreferences.sendDelaySeconds,
         prefs: userPreferences.prefs,
       });
-    // The highlight matcher caches highlightOwnNick per user (M5).
+    // The highlight matcher caches highlightOwnNick per user (M5); the
+    // notification store caches the mute lists it stamps rows with (#466).
     this.#ctx.highlights.invalidate(this.#userId);
+    this.#ctx.notifications.invalidatePrefs(this.#userId);
     // The CSP folds in every user's image-preview allowlist (#342); rebuild
     // the cached union when this patch touched it so the next response admits
     // (or drops) the host. Cheap and rare — a full recompute is fine.

@@ -51,6 +51,8 @@ import { historyRoutes } from "./modules/history/routes.js";
 import { identitiesRoutes } from "./modules/identities/routes.js";
 import { RetentionJob } from "./modules/history/retention.js";
 import { HistorySink } from "./modules/history/sink.js";
+import { NotificationStore } from "./modules/notifications/store.js";
+import { notificationsRoutes } from "./modules/notifications/routes.js";
 import { Outbox } from "./modules/outbox/outbox.js";
 import { SeenMembersStore } from "./modules/seen-members/store.js";
 import {
@@ -134,8 +136,9 @@ export async function buildApp({
   // Assigned once below; the session-start callback must close over it.
   // eslint-disable-next-line prefer-const -- forward declaration
   let campaignScheduler: CampaignScheduler | undefined;
-  const history = new HistorySink(db, app.log, { highlights });
-  const hub = new GatewayHub({ history, logger: app.log });
+  const notifications = new NotificationStore(db, app.log);
+  const history = new HistorySink(db, app.log, { highlights, notifications });
+  const hub = new GatewayHub({ history, notifications, logger: app.log });
   // Per-identity social lists (#194) — in memory alongside the sessions;
   // a restart just means the first GET refetches.
   const socialCache = new SocialCache();
@@ -191,6 +194,21 @@ export async function buildApp({
           return;
         }
         const { type } = command.payload;
+        // The three website events worth keeping (#466): they used to flash
+        // as a transient notice and vanish, so a friend request that arrived
+        // while the browser was closed was simply lost. The notice still
+        // fires — this only adds the durable log entry behind it.
+        if (type === "friendrequest" || type === "note" || type === "comment") {
+          void notifications.recordRtb(
+            identityId,
+            type,
+            command.payload.character ??
+              command.payload.name ??
+              command.payload.sender ??
+              "",
+            command.payload.subject,
+          );
+        }
         if (type === "bookmarkadd" || type === "bookmarkremove") {
           const name = command.payload.name ?? command.payload.character ?? "";
           if (name === "") {
@@ -351,6 +369,11 @@ export async function buildApp({
     rateLimitMax: config.AUTH_RATE_LIMIT_MAX,
   });
   await app.register(historyRoutes, { prefix: "/api/identities", db });
+  await app.register(notificationsRoutes, {
+    prefix: "/api/identities",
+    db,
+    notifications,
+  });
   await app.register(directoryRoutes, {
     prefix: "/api/identities",
     db,
@@ -425,6 +448,7 @@ export async function buildApp({
     hub,
     outbox,
     highlights,
+    notifications,
     imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
