@@ -188,6 +188,7 @@ Scroll region, `padding: 12px 0`. Four row types, all `display:flex; gap:9px; al
   - **Own message** ("Tint your own messages", default on): `background: ownSoft` (`ownSoftHover` on hover) — no edge bar and no padding change, so consecutive own rows read as one seamless block and the tint stays clearly quieter than a mention. Mention wins if a row were ever both. Ads, rolls, system and queued-send lines keep their own treatment.
 - **CodeBlock** (fenced) — its own line, `margin: 3px 16px 5px 76px` (the 76px left indent aligns it under the message body), `codebg` fill, `border`, mono 12px, `white-space: pre`, horizontal scroll.
 - Toggle "Show join/part/quit" (Preferences) hides SystemLines of that kind.
+- **LoadingSkeleton** (#460) — covers the log viewport while the buffer is fetching and while the virtualizer's first measurement pass settles; the real rows stay laid out but unpainted underneath (measurement needs layout), and swap in the frame the positions agree with the measured sizes. Message-shaped placeholder rows — `[time]` stub · name bar · 1–3 body bars of varying width — carrying the same shimmer as the profile viewer's loading placeholders. Deterministic widths per row index, never random. No spinner and no minimum duration: a channel whose heights are already known reveals within a frame or two.
 
 ### 7. Markdown rendering (message body + composer preview)
 Inline tokenizer over these patterns → styled spans:
