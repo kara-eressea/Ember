@@ -5,7 +5,14 @@
 // compatibility block — overall pill + the two most notable dimension
 // chips, or the calm no-own-profile prompt (frame M8·F).
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router";
 import { match, type MatchReport } from "@emberchat/matcher";
 import { wireToPlainText } from "../../lib/wire-text.js";
@@ -17,6 +24,7 @@ import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { nickColor } from "../../theme/tokens.js";
 import {
+  liveAnchor,
   loadOwnProfile,
   loadProfile,
   useProfileStore,
@@ -33,11 +41,19 @@ import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { DimChip, MatchPill, TierPie } from "./MatchTier.js";
 import { notableDimensions } from "./match-utils.js";
 import { findStatusMessage } from "./mini-status.js";
-import { placePopover } from "./popover.js";
+import {
+  placeCorner,
+  placePopoverInWindow,
+  popoverViewport,
+} from "./popover.js";
 import { ago } from "./time.js";
 import styles from "./profile.module.css";
 
 const CARD_WIDTH = 300;
+/** Stable resting height so the card doesn't jump as content loads (#182).
+ * Yields to the computed cap on short (or zoomed) viewports — a min-height
+ * that outranks maxHeight is just overflow. */
+const CARD_MIN_HEIGHT = 232;
 
 /** The key-infotag chips row, by mapping id (design: e.g. "Bisexual · 24 ·
  * Arctic fox · Switch") — orientation, age, species, sub/dom role. */
@@ -91,12 +107,15 @@ export function MiniProfileCard({
   ownCharacter,
   name,
   anchor,
+  anchorElement,
   onClose,
 }: {
   identityId: string;
   ownCharacter: string;
   name: string;
   anchor: CardAnchor;
+  /** The trigger itself, re-measured as the page moves under the card. */
+  anchorElement?: Element;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
@@ -111,11 +130,15 @@ export function MiniProfileCard({
   );
   const self = name.toLowerCase() === ownCharacter.toLowerCase();
   const cardRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{
     top: number;
     left: number;
     maxHeight: number;
   }>();
+  const docked =
+    useSessionsStore((s) => s.sessions[identityId]?.prefs.miniCardPlacement) ===
+    "corner";
 
   useEffect(() => {
     void loadProfile(identityId, name);
@@ -126,29 +149,39 @@ export function MiniProfileCard({
 
   useEscapeToClose(onClose);
 
-  // Measure after render, place per §13. Re-runs when the content state
-  // changes shape (skeleton → loaded → error) since the height changes.
-  const contentState = loaded?.state ?? "loading";
-  useLayoutEffect(() => {
+  const place = useCallback(() => {
     const element = cardRef.current;
     if (!element) {
       return;
     }
-    // Measure the natural content height (scrollHeight), not offsetHeight —
-    // once a prior render caps the card via maxHeight, offsetHeight reports
-    // the clamped value and the card can never re-grow as content loads
-    // (#182: the card constrained itself and hid the "Open profile" action,
-    // varying by anchor origin). scrollHeight reflects the full content, so
-    // the card expands to fit and only scrolls when it truly can't.
-    const next = placePopover(
-      anchor,
-      { width: CARD_WIDTH, height: element.scrollHeight },
-      { width: window.innerWidth, height: window.innerHeight },
-    );
-    // Only commit when the placement actually changed. The effect never
-    // depends on `pos`, so applying maxHeight can't re-trigger measurement —
-    // but this guard makes that invariant explicit and avoids redundant
-    // re-renders if the measured height lands on the same placement.
+    // Measure the NATURAL content height, not the rendered one — once a
+    // prior render caps the card, its own height is the clamped value and
+    // the card could never re-grow as content loads (#182: it constrained
+    // itself and hid the "Open profile" action). The body is the scroller,
+    // so swap its visible height for its scroll height.
+    const body = bodyRef.current;
+    const height = body
+      ? element.offsetHeight - body.clientHeight + body.scrollHeight
+      : element.scrollHeight;
+    const size = { width: CARD_WIDTH, height };
+    let next: { top: number; left: number; maxHeight: number };
+    if (docked) {
+      next = placeCorner(size, popoverViewport());
+    } else {
+      // Re-measure the trigger: the log auto-scrolls behind the card (#284),
+      // so the rect captured at open time goes stale as messages arrive.
+      const live = liveAnchor(anchorElement);
+      if (anchorElement && !live) {
+        // The trigger left the document (virtualized away, conversation
+        // switched) — close rather than float at stale coordinates.
+        onClose();
+        return;
+      }
+      next = placePopoverInWindow(live ?? anchor, size);
+    }
+    // Only commit when the placement actually changed: this runs on every
+    // scroll frame, and applying maxHeight must not feed back into a
+    // re-measure loop.
     setPos((prev) =>
       prev &&
       prev.top === next.top &&
@@ -157,7 +190,59 @@ export function MiniProfileCard({
         ? prev
         : next,
     );
-  }, [anchor, contentState]);
+  }, [anchor, anchorElement, docked, onClose]);
+
+  // Measure after render, place per §13. Re-runs when the content state
+  // changes shape (skeleton → loaded → error) since the height changes.
+  const contentState = loaded?.state ?? "loading";
+  useLayoutEffect(() => {
+    place();
+  }, [place, contentState]);
+
+  // Follow the trigger while the page moves under the card. Capture-phase
+  // scroll catches nested scrollers (the log, the member list) too; resize
+  // matters in both modes.
+  useEffect(() => {
+    let frame = 0;
+    function schedule() {
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        place();
+      });
+    }
+    window.addEventListener("resize", schedule);
+    if (!docked) {
+      window.addEventListener("scroll", schedule, true);
+    }
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+    };
+  }, [place, docked]);
+
+  // Click-away, without an overlay that swallows the click: pressing another
+  // name closes this card AND opens that one in the same gesture (§13
+  // "opening another popover" dismisses). Presses inside any dialog stacked
+  // on the card (the rate editor, portaled to <body>) are not outside ones.
+  useEffect(() => {
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        (cardRef.current?.contains(target) || target.closest('[role="dialog"]'))
+      ) {
+        return;
+      }
+      useProfileStore
+        .getState()
+        .dismissCard(target instanceof Node ? target : undefined);
+    }
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, []);
 
   function message() {
     onClose();
@@ -184,48 +269,46 @@ export function MiniProfileCard({
   }
 
   return (
-    <>
-      <div
-        className={styles.cardOverlay}
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
+    <div
+      ref={cardRef}
+      className={styles.card}
+      role="dialog"
+      aria-label={`Profile card: ${name}`}
+      style={
+        pos
+          ? {
+              top: pos.top,
+              left: pos.left,
+              maxHeight: pos.maxHeight,
+              // The resting min-height yields to the cap, or it would just
+              // overflow the bottom edge on short/zoomed viewports.
+              minHeight: Math.min(CARD_MIN_HEIGHT, pos.maxHeight),
+            }
+          : {
+              top: anchor.bottom + 6,
+              left: anchor.left,
+              visibility: "hidden",
+            }
+      }
+    >
+      <CardContent
+        name={name}
+        loaded={loaded}
+        social={social}
+        statusMessage={statusMessage}
+        ownProfile={self ? undefined : ownProfile}
+        self={self}
+        bodyRef={bodyRef}
+        onRetry={() => {
+          void loadProfile(identityId, name, true);
         }}
+        onOpenProfile={() => {
+          // open() clears the card in the store — the §13 hand-off.
+          useProfileStore.getState().open(name);
+        }}
+        onMessage={self ? undefined : message}
       />
-      <div
-        ref={cardRef}
-        className={styles.card}
-        role="dialog"
-        aria-label={`Profile card: ${name}`}
-        style={
-          pos
-            ? { top: pos.top, left: pos.left, maxHeight: pos.maxHeight }
-            : {
-                top: anchor.bottom + 6,
-                left: anchor.left,
-                visibility: "hidden",
-              }
-        }
-      >
-        <CardContent
-          name={name}
-          loaded={loaded}
-          social={social}
-          statusMessage={statusMessage}
-          ownProfile={self ? undefined : ownProfile}
-          self={self}
-          onRetry={() => {
-            void loadProfile(identityId, name, true);
-          }}
-          onOpenProfile={() => {
-            // open() clears the card in the store — the §13 hand-off.
-            useProfileStore.getState().open(name);
-          }}
-          onMessage={self ? undefined : message}
-        />
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -236,6 +319,7 @@ function CardContent({
   statusMessage,
   ownProfile,
   self,
+  bodyRef,
   onRetry,
   onOpenProfile,
   onMessage,
@@ -246,6 +330,9 @@ function CardContent({
   statusMessage: string | undefined;
   ownProfile: ProfileDto | undefined;
   self: boolean;
+  /** The scroll region (§13: only the body scrolls when the card is capped
+   * — header and actions stay pinned); measured for the natural height. */
+  bodyRef: React.RefObject<HTMLDivElement | null>;
   onRetry: () => void;
   onOpenProfile: () => void;
   onMessage: (() => void) | undefined;
@@ -260,24 +347,26 @@ function CardContent({
   if (!response && loaded && loaded.state !== "loading") {
     const budget = loaded.state === "budget";
     return (
-      <div className={styles.cardError}>
-        <span className={styles.emptyTile} aria-hidden>
-          ?
-        </span>
-        <span className={styles.emptyTitle}>
-          {budget
-            ? "Profile budget exhausted"
-            : loaded.state === "error"
-              ? "Couldn't load profile"
-              : "Profile not found"}
-        </span>
-        <span className={styles.emptyBody}>
-          {loaded.error ??
-            "This character may have been renamed or deleted on the server."}
-        </span>
-        <button type="button" className={styles.button} onClick={onRetry}>
-          Retry
-        </button>
+      <div className={styles.cardBody} ref={bodyRef}>
+        <div className={styles.cardError}>
+          <span className={styles.emptyTile} aria-hidden>
+            ?
+          </span>
+          <span className={styles.emptyTitle}>
+            {budget
+              ? "Profile budget exhausted"
+              : loaded.state === "error"
+                ? "Couldn't load profile"
+                : "Profile not found"}
+          </span>
+          <span className={styles.emptyBody}>
+            {loaded.error ??
+              "This character may have been renamed or deleted on the server."}
+          </span>
+          <button type="button" className={styles.button} onClick={onRetry}>
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -351,49 +440,51 @@ function CardContent({
           </div>
         </div>
       </div>
-      {statusMessage && (
-        // Render the chat BBCode subset the way the log and DM header do
-        // (#210): [url], [eicon], [color] and friends must never show as raw
-        // tags. The card has room for the full inline render; the title falls
-        // back to the flattened plain text for the hover tooltip.
-        <div
-          className={styles.cardStatus}
-          title={wireToPlainText(statusMessage)}
-        >
-          <RichText bbcode={statusMessage} />
-        </div>
-      )}
-      {!self &&
-        response &&
-        (report ? (
-          <div className={styles.cardMatch}>
-            <span className={styles.groupLabel}>Compatibility</span>
-            <div className={styles.cardMatchChips}>
-              <MatchPill tier={report.overall} />
-              {notableDimensions(report, 2).map((dimension) => (
-                <DimChip
-                  key={dimension.label}
-                  label={dimension.label}
-                  tier={dimension.tier}
-                  title={dimension.reason}
-                />
-              ))}
+      <div className={styles.cardBody} ref={bodyRef}>
+        {statusMessage && (
+          // Render the chat BBCode subset the way the log and DM header do
+          // (#210): [url], [eicon], [color] and friends must never show as raw
+          // tags. The card has room for the full inline render; the title falls
+          // back to the flattened plain text for the hover tooltip.
+          <div
+            className={styles.cardStatus}
+            title={wireToPlainText(statusMessage)}
+          >
+            <RichText bbcode={statusMessage} />
+          </div>
+        )}
+        {!self &&
+          response &&
+          (report ? (
+            <div className={styles.cardMatch}>
+              <span className={styles.groupLabel}>Compatibility</span>
+              <div className={styles.cardMatchChips}>
+                <MatchPill tier={report.overall} />
+                {notableDimensions(report, 2).map((dimension) => (
+                  <DimChip
+                    key={dimension.label}
+                    label={dimension.label}
+                    tier={dimension.tier}
+                    title={dimension.reason}
+                  />
+                ))}
+              </div>
             </div>
+          ) : (
+            // Frame M8·F: the viewer has no own-profile data loaded.
+            <div className={styles.cardNoMatch}>
+              <TierPie tier="neutral" size={13} />
+              Connect your own character to compare
+            </div>
+          ))}
+        {!self && <CardRating name={name} />}
+        {response && (response.stale || response.budgetExhausted) && (
+          <div className={styles.cardStale}>
+            <span aria-hidden>⟲</span>
+            cached {ago(response.fetchedAt)}
           </div>
-        ) : (
-          // Frame M8·F: the viewer has no own-profile data loaded.
-          <div className={styles.cardNoMatch}>
-            <TierPie tier="neutral" size={13} />
-            Connect your own character to compare
-          </div>
-        ))}
-      {!self && <CardRating name={name} />}
-      {response && (response.stale || response.budgetExhausted) && (
-        <div className={styles.cardStale}>
-          <span aria-hidden>⟲</span>
-          cached {ago(response.fetchedAt)}
-        </div>
-      )}
+        )}
+      </div>
       <div className={styles.cardActions}>
         <button
           type="button"

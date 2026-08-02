@@ -43,6 +43,12 @@ export const EICON_DISPLAY_MODES = ["inline", "name"] as const;
  * plain links. */
 export const LINK_PREVIEW_MODES = ["off", "hover", "click"] as const;
 
+/** Where the mini profile card opens: anchored under the name that was
+ * clicked (default) or docked in the bottom-right corner, stationary
+ * wherever it was opened from. */
+export const MINI_CARD_PLACEMENTS = ["anchored", "corner"] as const;
+export type MiniCardPlacement = (typeof MINI_CARD_PLACEMENTS)[number];
+
 /** The sidebar's four reorderable/collapsible sections. Lives here because
  * the manual drag order (#391) is a synced pref keyed by section (#412);
  * the web sidebar re-exports this list. */
@@ -131,6 +137,9 @@ const prefsShape = {
    * rows (#416). Off restores the denser text-only rows; the status dot and
    * colouring on the row itself stay either way. */
   sidebarAvatars: z.boolean(),
+  /** Mini profile card placement: anchored to the clicked name, or docked
+   * in the bottom-right corner so it never covers the conversation. */
+  miniCardPlacement: z.enum(MINI_CARD_PLACEMENTS),
   /** Timestamp rendering in the log. */
   timestampFormat: z.enum(TIMESTAMP_FORMATS),
   use24HourClock: z.boolean(),
@@ -317,6 +326,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   uiScale: 100,
   colorblindMode: false,
   sidebarAvatars: true,
+  miniCardPlacement: "anchored",
   timestampFormat: "time",
   use24HourClock: true,
   groupConsecutive: false,

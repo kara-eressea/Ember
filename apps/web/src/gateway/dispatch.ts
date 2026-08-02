@@ -116,8 +116,15 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         return;
       }
       const ui = useUiStore.getState();
-      const active =
-        ui.activeIdentityId === identityId && ui.activeConvId === convId;
+      // "Attended" — on screen AND looked at. An unfocused window accrues
+      // unread for the open conversation exactly like a background one (#440):
+      // active alone silenced badges, mentions and the favicon indicator for
+      // precisely the conversation the user is most likely watching, and the
+      // shell's auto-ack marked it read behind their back.
+      const attended =
+        ui.windowFocused &&
+        ui.activeIdentityId === identityId &&
+        ui.activeConvId === convId;
       // The prefs are per user — any slice's copy is current. Mutes silence
       // alerts only: badges, tint and the bump still accrue (decisions.md
       // §10).
@@ -132,7 +139,7 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         prefs !== undefined &&
         (prefs.mutedIdentityIds.includes(identityId) ||
           prefs.mutedConvIds.includes(convId));
-      if (!active) {
+      if (!attended) {
         // The mention verdict is stamped server-side at persist time (M5)
         // and rides the message — the client never re-matches.
         sessions.bumpUnread(identityId, convId, message.id, message.mention);

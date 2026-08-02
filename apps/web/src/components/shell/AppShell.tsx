@@ -58,6 +58,7 @@ import {
   WIDTH_VARS,
 } from "../../lib/sidebar-resize.js";
 import { useUnreadIndicator } from "../../lib/use-unread-indicator.js";
+import { startWindowFocusTracking } from "../../lib/window-focus.js";
 import styles from "./shell.module.css";
 
 export function AppShell() {
@@ -140,6 +141,10 @@ export function AppShell() {
   // Idle detection lives with the shell: it exists exactly while the user
   // is in the app, across identity/conversation navigation.
   useEffect(() => startAutoAway(), []);
+
+  // Same lifetime for window focus (#440) — the read paths below and in
+  // gateway/dispatch read it from the ui store.
+  useEffect(() => startWindowFocusTracking(), []);
 
   // Ctrl/Cmd+K toggles the quick-switcher (M9) from anywhere in the shell.
   useEffect(() => {
@@ -257,7 +262,16 @@ export function AppShell() {
     return buffer?.detachedTail ? undefined : buffer?.messages.at(-1)?.id;
   });
   useEffect(() => {
-    if (identityId !== undefined && convId !== undefined) {
+    // On screen is not enough — someone has to be looking (#440). Focus is read
+    // imperatively and deliberately kept OUT of the deps: this effect answers
+    // "a message landed while we were watching", and the mirror case (focus
+    // returns to messages that landed while we were away) belongs to MessageLog,
+    // which knows whether we are still parked at the tail.
+    if (
+      identityId !== undefined &&
+      convId !== undefined &&
+      useUiStore.getState().windowFocused
+    ) {
       useSessionsStore.getState().clearUnread(identityId, convId);
       if (newestId !== undefined) {
         gateway.readAck(identityId, convId, newestId);
@@ -526,6 +540,7 @@ export function AppShell() {
           ownCharacter={session.character}
           name={profileCard.name}
           anchor={profileCard.anchor}
+          anchorElement={profileCard.element}
           onClose={() => {
             useProfileStore.getState().closeCard();
           }}

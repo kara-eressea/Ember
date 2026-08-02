@@ -19,6 +19,7 @@ import { useMessagesStore } from "../../stores/messages.js";
 import type { PresenceLine } from "../../stores/messages.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useGenderColorVar, useSessionsStore } from "../../stores/sessions.js";
+import { useUiStore } from "../../stores/ui.js";
 import { CachedMatchChip } from "../profile/CachedMatchChip.js";
 import { RateEditor } from "../ratings/RateEditor.js";
 import { StarRow } from "../ratings/StarRating.js";
@@ -589,12 +590,42 @@ export function MessageLog({
    * (dividerCursorAfter). */
   function acknowledgeTail() {
     setNewBarAcknowledged(true);
+    ackReadCursor();
+  }
+
+  /** Clear the local badges and advance the persisted read cursor to the newest
+   * buffered message — the shell auto-ack's move, made from here because only
+   * the log knows where the viewport sits. Leaves the "new messages" bar alone:
+   * the bar is dismissed by a deliberate catch-up gesture (acknowledgeTail), not
+   * by the cursor moving. */
+  function ackReadCursor() {
     useSessionsStore.getState().clearUnread(identityId, convId);
     const newest = useMessagesStore.getState().buffers[convId]?.messages.at(-1);
     if (newest !== undefined && !detachedTail) {
       gateway.readAck(identityId, convId, newest.id);
     }
   }
+
+  // Focus returning to the window is the read event the shell's auto-ack cannot
+  // see (#440): everything that landed while we were away accrued as unread, and
+  // now the user is looking at it. Only from the live tail — the messages are on
+  // screen there because the bottom-stick kept them there. Scrolled up, or
+  // parked in detached history, focus alone acks nothing: the #415 scroll/Esc
+  // paths own the catch-up from there. A false→true transition, so a mount in a
+  // focused window (the overwhelmingly common case) leaves the shell's own
+  // open-conversation ack to do its job.
+  const windowFocused = useUiStore((s) => s.windowFocused);
+  const wasFocusedRef = useRef(windowFocused);
+  useEffect(() => {
+    const regained = windowFocused && !wasFocusedRef.current;
+    wasFocusedRef.current = windowFocused;
+    if (regained && stickBottomRef.current && !detachedTail) {
+      ackReadCursor();
+    }
+    // ackReadCursor closes over identityId/convId/detachedTail — all in scope
+    // and stable aside from detachedTail, which is in the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowFocused, detachedTail]);
 
   function jumpToRecent() {
     // Back at the tail means caught up — the "since you left" bar has done its
@@ -656,7 +687,14 @@ export function MessageLog({
   // screen and the bar stayed hidden (the live #373.2 miss: the old handler
   // lived on the bar and never registered in that case). newRowIndex < 0 once
   // the divider is gone, which disables it again.
-  useEscapeToClose(markCaughtUp, !detachedTail && atBottom && newRowIndex >= 0);
+  // "ambient": this registers the moment a new message arrives, which would
+  // otherwise put it on top of an already-open card or menu and eat that
+  // overlay's Escape (the user then had to press twice).
+  useEscapeToClose(
+    markCaughtUp,
+    !detachedTail && atBottom && newRowIndex >= 0,
+    "ambient",
+  );
 
   // Whether there is a newer position to jump to. Detached tail always
   // qualifies; otherwise it is the "scrolled up past the slack" state.

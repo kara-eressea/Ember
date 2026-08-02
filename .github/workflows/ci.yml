@@ -22,7 +22,10 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: pnpm lint
-      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium
+      # Firefox is a second engine for the typography spec only (see
+      # playwright.config.ts): carets and font metrics are where Blink and
+      # Gecko disagree, and neither can be measured from the DOM.
+      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox
       - run: pnpm turbo e2e
       - name: Upload Playwright report + traces on failure
         if: failure()

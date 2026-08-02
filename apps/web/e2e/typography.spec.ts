@@ -7,7 +7,8 @@
 // NPC-free Typesetting room: spec files run in parallel, so specs never share
 // accounts (a new ticket invalidates all previous ones account-wide).
 
-import type { Locator, Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import type { Browser, Locator, Page } from "@playwright/test";
 import {
   expect,
   interceptAvatars,
@@ -289,7 +290,15 @@ test("a full-length name fits the aligned name column at every font step", async
 
 test("the empty composer's caret fills the line box in both input modes", async ({
   page,
+  browserName,
 }) => {
+  // Gecko never paints the caret into a Playwright screenshot, so caretBox()
+  // measures nothing there — Firefox gets the video-based tests at the bottom
+  // of this file instead.
+  test.skip(
+    browserName !== "chromium",
+    "screenshot caret diffing is Blink-only",
+  );
   test.setTimeout(120_000);
   await interceptAvatars(page);
   await provisionAndConnect(page, "flint@example.test", "Flint Barrow");
@@ -332,4 +341,161 @@ test("the empty composer's caret fills the line box in both input modes", async 
   expect(emptyEditor.height).toBeGreaterThanOrEqual(
     (await caretBox(page, editor)).height,
   );
+});
+
+// ── Firefox ─────────────────────────────────────────────────────────────────
+// The same caret, measured the only way Gecko allows. Playwright screenshots
+// go through Gecko's snapshot path, which never draws the caret layer, so the
+// diff above returns nothing at all in Firefox — a screenshot with the caret
+// showing and one with it hidden are byte-identical. A recorded video does
+// carry it, so these tests film the blink and read it back. That is why the
+// caret could regress in Firefox unseen while Chromium-only CI stayed green.
+
+/** Runs in the page: decodes a recorded video and returns the bbox, within
+ * `region`, of pixels whose luminance swings between samples. Everything on a
+ * settled composer holds still except the blinking caret. Lossy VP8 smears the
+ * edges by a pixel or so, which can only make the box bigger — a caret that
+ * fails MIN_CARET_PX here is genuinely short. */
+const swingBox = async ({
+  data,
+  region,
+}: {
+  data: string;
+  region: { x: number; y: number; width: number; height: number };
+}) => {
+  const video = document.querySelector("video")!;
+  video.src = `data:video/webm;base64,${data}`;
+  await new Promise((resolve, reject) => {
+    video.onloadeddata = resolve;
+    video.onerror = () => {
+      reject(new Error("the recorded video did not decode"));
+    };
+  });
+  const canvas = new OffscreenCanvas(video.videoWidth, video.videoHeight);
+  const context = canvas.getContext("2d", { willReadFrequently: true })!;
+  const count = region.width * region.height;
+  const low = new Float64Array(count).fill(Infinity);
+  const high = new Float64Array(count).fill(-Infinity);
+  // The tail of the recording: the composer has been focused and idle since
+  // long before it, and one second covers a full blink cycle.
+  for (
+    let time = Math.max(0, video.duration - 1.6);
+    time < video.duration - 0.1;
+    time += 0.05
+  ) {
+    video.currentTime = time;
+    await new Promise((resolve) => (video.onseeked = resolve));
+    context.drawImage(video, 0, 0);
+    const frame = context.getImageData(
+      region.x,
+      region.y,
+      region.width,
+      region.height,
+    );
+    for (let i = 0; i < count; i += 1) {
+      const luminance =
+        frame.data[i * 4]! + frame.data[i * 4 + 1]! + frame.data[i * 4 + 2]!;
+      low[i] = Math.min(low[i]!, luminance);
+      high[i] = Math.max(high[i]!, luminance);
+    }
+  }
+  let top = Infinity;
+  let bottom = -Infinity;
+  let left = Infinity;
+  let right = -Infinity;
+  for (let y = 0; y < region.height; y += 1) {
+    for (let x = 0; x < region.width; x += 1) {
+      const i = y * region.width + x;
+      if (high[i]! - low[i]! > 60) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+      }
+    }
+  }
+  return bottom < 0
+    ? undefined
+    : { top, height: bottom - top + 1, width: right - left + 1 };
+};
+
+/** The painted caret's box, read back out of a finished recording. The video
+ * is decoded in a throwaway context of the same browser — no second engine
+ * involved. */
+async function caretBoxFromVideo(
+  browser: Browser,
+  file: string,
+  region: { x: number; y: number; width: number; height: number },
+): Promise<Box> {
+  const data = (await readFile(file)).toString("base64");
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.setContent("<video></video>");
+    const box = await page.evaluate(swingBox, { data, region });
+    if (!box) {
+      throw new Error("no caret was painted in the recording");
+    }
+    return box;
+  } finally {
+    await context.close();
+  }
+}
+
+test.describe("firefox", () => {
+  for (const inline of [false, true]) {
+    const mode = inline ? "inline" : "plain";
+    test(`the empty ${mode} composer's caret fills the line box in Firefox`, async ({
+      page,
+      context,
+      browser,
+      browserName,
+    }, testInfo) => {
+      test.skip(browserName !== "firefox", "Chromium is measured above");
+      test.setTimeout(120_000);
+      await interceptAvatars(page);
+      // Its own character (the Chromium half of this file can be running at
+      // the same time, in another worker), but the same quiet room: these
+      // tests never send a line, so the two halves can't disturb each other.
+      await provisionAndConnect(page, "kestrel@example.test", "Kestrel Vane");
+      await joinChannel(page, "Typesetting", "Typesetting");
+
+      if (inline) {
+        await page.getByRole("button", { name: "Preferences" }).click();
+        const prefs = page.getByRole("dialog", { name: "Preferences" });
+        await prefs
+          .getByRole("switch", { name: "Style formatting as you type" })
+          .click();
+        await page.keyboard.press("Escape");
+        await expect(prefs).not.toBeVisible();
+        await expect(page.getByTestId("inline-composer")).toBeVisible();
+      }
+
+      const input = page.getByLabel("Message", { exact: true });
+      await input.click();
+      await expect(input).toBeFocused();
+      const box = (await input.boundingBox())!;
+      // The caret sits on the first column; a narrow strip keeps every other
+      // moving pixel in the app out of the measurement.
+      const region = {
+        x: Math.floor(box.x) - 3,
+        y: Math.floor(box.y) - 3,
+        width: 30,
+        height: Math.ceil(box.height) + 6,
+      };
+      // Film a few blink cycles with nothing else on screen moving.
+      await page.waitForTimeout(2600);
+
+      const video = page.video()!;
+      await context.close(); // finalizes the recording
+      const file = testInfo.outputPath(`caret-${mode}.webm`);
+      await video.saveAs(file);
+
+      const caret = await caretBoxFromVideo(browser, file, region);
+      // A caret is a hairline: anything wider means the strip caught something
+      // else moving, and the height below would be measuring that instead.
+      expect(caret.width).toBeLessThanOrEqual(4);
+      expect(caret.height).toBeGreaterThanOrEqual(MIN_CARET_PX);
+    });
+  }
 });

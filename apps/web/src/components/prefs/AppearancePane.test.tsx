@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// Appearance-pane switches: each lives with the other appearance prefs and
+// Appearance-pane controls: each lives with the other appearance prefs and
 // writes through the synced prefs patch like every control in the pane
-// (#416 sidebar avatars, and the own-message tint).
+// (#416 sidebar avatars, the own-message tint, the mini-card placement).
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -61,5 +61,28 @@ describe("AppearancePane own-message tint", () => {
     );
 
     expect(patchPrefs).toHaveBeenCalledWith("id-1", { ownMessageTint: false });
+  });
+});
+
+describe("AppearancePane mini card placement", () => {
+  it("defaults to the anchored card", () => {
+    expect(PREFS_DEFAULTS.miniCardPlacement).toBe("anchored");
+    renderPane();
+    expect(
+      screen
+        .getByRole("radiogroup", { name: "Profile card position" })
+        .querySelector('[aria-checked="true"]')?.textContent,
+    ).toBe("Anchored");
+  });
+
+  it("patches the pref when docked to the corner", () => {
+    renderPane();
+    patchPrefs.mockClear();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Docked" }));
+
+    expect(patchPrefs).toHaveBeenCalledWith("id-1", {
+      miniCardPlacement: "corner",
+    });
   });
 });

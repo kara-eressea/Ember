@@ -414,6 +414,36 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Flint Barrow", "Marwenna Wolfhammers"],
     },
+    // The typography spec's Firefox half runs as its own Playwright project,
+    // so it can be in flight while the Chromium half runs — one file, two
+    // workers, which makes the two halves parallel specs for isolation.
+    "kestrel@example.test": {
+      password: "hunter2",
+      characters: ["Kestrel Vane"],
+    },
+    // Reserved for the #440 focus-gated read-cursor E2E (same isolation
+    // rules). Hollis Reeve keeps a room open while the window loses focus;
+    // Linnet Crow is the raw-SimClient partner whose messages must accrue as
+    // unread instead of being marked read behind the user's back.
+    "hollisreeve@example.test": {
+      password: "hunter2",
+      characters: ["Hollis Reeve"],
+    },
+    "linnet@example.test": {
+      password: "hunter2",
+      characters: ["Linnet Crow"],
+    },
+    // Reserved for the mini-profile-card E2E (same isolation rules). Tern
+    // Ashby is the raw-SimClient "other side": the nick Hollyhock opens the
+    // card from, and the sender whose message lands while it is open.
+    "hollyhock@example.test": {
+      password: "hunter2",
+      characters: ["Hollyhock Vane"],
+    },
+    "tern@example.test": {
+      password: "hunter2",
+      characters: ["Tern Ashby"],
+    },
   },
   channels: [
     {
@@ -674,6 +704,39 @@ export const DEFAULT_WORLD: SimWorld = {
       description: "Where the shape of things is checked.",
       oplist: ["Nyx Firemane"],
       npcs: ["Tally Marsh"],
+      listed: false,
+    },
+    // Reserved for the #440 focus-gated read-cursor E2E: Hollis Reeve reads
+    // here while Linnet Crow talks into an unfocused window. No NPCs — the
+    // only chatter must be the spec's own, since it counts unread badges.
+    {
+      name: "ADH-440focusgate11cc22dd33",
+      title: "Quiet Study",
+      mode: "chat",
+      description: "Where nobody marks your place for you.",
+      oplist: ["Hollis Reeve"],
+      listed: false,
+    },
+    // Reserved for the mini-profile-card E2E: Tern Ashby sends a message
+    // while Hollyhock Vane has the card open, and the side room is only
+    // somewhere to switch to so the log remounts with a read cursor.
+    // Hidden and NPC-free for the usual isolation reasons.
+    {
+      name: "ADH-cardsunroom44cc55dd1",
+      title: "Card Sun Room",
+      mode: "chat",
+      description: "Where the light lands first.",
+      oplist: ["Tern Ashby"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-cardsideroom77ee88ff",
+      title: "Card Side Room",
+      mode: "chat",
+      description: "Somewhere else to be, briefly.",
+      oplist: ["Tern Ashby"],
+      npcs: [],
       listed: false,
     },
   ],
