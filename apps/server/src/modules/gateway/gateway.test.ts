@@ -59,6 +59,10 @@ import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
+/** Injected handshake window (production: HELLO_TIMEOUT_MS). */
+const HELLO_TIMEOUT_TEST_MS = 2_000;
+/** Injected slow-consumer cap (production: MAX_BUFFERED_BYTES). */
+const MAX_BUFFERED_TEST_BYTES = 16 * 1024;
 
 // Sim-backed round trips (connect → IDN → join → relay) outgrow the 5s default.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
@@ -103,8 +107,17 @@ beforeAll(async () => {
       backoffCapMs: 400,
       statusGateMs: 1200,
     },
-    // The dead-socket test can't wait out the 30s production heartbeat.
-    gatewayHeartbeatMs: 300,
+    gatewayTuning: {
+      // The dead-socket test can't wait out the 30s production heartbeat.
+      heartbeatMs: 300,
+      // Shortened from 10s so the no-hello test doesn't sit out the real
+      // window. Still far above the connect→hello gap every other test
+      // leaves (one round trip), so nobody else sees this timer.
+      helloTimeoutMs: HELLO_TIMEOUT_TEST_MS,
+      // Shrunk from 1 MiB so the slow-consumer test can overrun it; only a
+      // socket that has stopped reading entirely ever gets near it.
+      maxBufferedBytes: MAX_BUFFERED_TEST_BYTES,
+    },
   });
   const address = await app.listen({ port: 0, host: "127.0.0.1" });
   gatewayUrl = `${address.replace(/^http/, "ws")}/gateway`;
@@ -248,6 +261,12 @@ class TestClient {
    * looks like from the server side. */
   goSilent(): void {
     this.#socket.pause();
+  }
+
+  /** Starts reading again — needed to see a close frame queued behind the
+   * backlog that went unread while the client was silent. */
+  wakeUp(): void {
+    this.#socket.resume();
   }
 
   get bufferedFrames(): readonly ServerFrame[] {
@@ -974,6 +993,13 @@ describe("gateway handshake", () => {
     expect((await wrongVersion.waitForClose()).code).toBe(
       GATEWAY_CLOSE.versionMismatch,
     );
+  });
+
+  it("closes a connection that never says hello", async () => {
+    const silent = await connectClient();
+    const closed = await silent.waitForClose();
+    expect(closed.code).toBe(GATEWAY_CLOSE.helloTimeout);
+    expect(closed.reason).toBe("no hello");
   });
 
   it("closes pre-hello connections that send garbage", async () => {
@@ -3255,6 +3281,44 @@ describe("gateway hardening", () => {
     expect(ready.t).toBe("ready");
     friendly.close();
   });
+
+  it("disconnects a client whose send backlog overruns the buffer cap", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // A client that stops reading: the kernel buffers absorb a few hundred KB
+    // before ws reports any backlog at all, so the fan-out has to push well
+    // past the cap before `bufferedAmount` moves. Channel descriptions are the
+    // cheapest big event — translated to channel.info, no persistence.
+    client.goSilent();
+    const filler = "x".repeat(256 * 1024);
+    let pushed = 0;
+    // 128 × 256 KiB caps the loop well above any autotuned socket buffer;
+    // it exits the moment the cap is overrun, which is long before that.
+    while (app.gatewayHub.subscriberCount(identityId) > 0 && pushed < 128) {
+      // A slow consumer is not a dead one — it keeps sending. Without this
+      // the heartbeat would terminate the socket first (#407) and the close
+      // code under test would never be reached.
+      client.send({ t: "ping" });
+      await inject(session, {
+        cmd: "CDS",
+        payload: { channel: "Development", description: filler },
+      });
+      pushed += 1;
+    }
+    // Dropped from the fan-out server-side — the close frame itself is stuck
+    // behind the backlog until the client reads again.
+    expect(app.gatewayHub.subscriberCount(identityId)).toBe(0);
+    expect(pushed).toBeGreaterThan(0);
+
+    client.wakeUp();
+    const closed = await client.waitForClose();
+    expect(closed.code).toBe(GATEWAY_CLOSE.slowConsumer);
+    expect(closed.reason).toBe("send buffer overflow");
+  }, 30_000);
 
   it("closes the connection once a user exhausts the hello budget", async () => {
     const token = await registerUser(); // no identities — hellos are cheap
