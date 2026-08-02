@@ -4,6 +4,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
+import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
@@ -39,7 +40,47 @@ async function waitForHealthy(url: string, child: ChildProcess): Promise<void> {
   throw new Error(`server never became healthy at ${url}`);
 }
 
+/** Resolves true when nothing is listening on 127.0.0.1:`port`. */
+function portFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.once("error", () => {
+      resolve(false);
+    });
+    probe.listen(port, "127.0.0.1", () => {
+      probe.close(() => {
+        resolve(true);
+      });
+    });
+  });
+}
+
+/**
+ * Fail fast, and legibly, if the API port is already taken. A bouncer left
+ * behind by an interrupted run otherwise surfaces as an EADDRINUSE buried in
+ * the piped child output and then a health wait that times out two minutes
+ * later — or, worse, as every spec talking to the STALE server and failing in
+ * ways that have nothing to do with the code. (The two Vite ports are
+ * Playwright's own webServers, started before this hook and already bound by
+ * the time it runs; `--strictPort` gives them the same fast failure.)
+ */
+async function assertApiPortFree(): Promise<void> {
+  if (await portFree(API_PORT)) {
+    return;
+  }
+  throw new Error(
+    `E2E API port ${String(API_PORT)} is already in use.\n` +
+      "Most likely a bouncer from an interrupted run is still alive: stop it " +
+      "(lsof -ti tcp:" +
+      String(API_PORT) +
+      " | xargs kill), or point this run at a free range with E2E_API_PORT / " +
+      "E2E_WEB_PORT.",
+  );
+}
+
 export default async function globalSetup(): Promise<() => Promise<void>> {
+  await assertApiPortFree();
+
   let sim: FchatSim | undefined;
   let container: Awaited<ReturnType<PostgreSqlContainer["start"]>> | undefined;
   let server: ChildProcess | undefined;
