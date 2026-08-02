@@ -120,10 +120,6 @@ const inlineDecorations = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-// Whole-pixel line box, exactly like the textarea's, so the caret is never
-// clipped against the scroller edge (#408).
-const LINE_HEIGHT_PX = 20;
-
 // At rest the editor is the textarea (chat.module.css .composerInput): same
 // font ramp, colors, caret and placeholder from the --eb-* tokens, and the
 // same 160px autogrow cap with the scroller taking over past it.
@@ -133,7 +129,9 @@ const theme = EditorView.theme({
     minWidth: "0",
     color: "var(--eb-text)",
     fontSize: "13.5px",
-    lineHeight: `${String(LINE_HEIGHT_PX)}px`,
+    // Whole-pixel line box + a 1px/2px inset, exactly like the textarea, so
+    // the caret is never clipped against the scroller edge (#408).
+    lineHeight: "20px",
   },
   ".cm-content": { padding: "1px 2px", fontFamily: "inherit" },
   ".cm-line": { padding: "0" },
@@ -145,7 +143,7 @@ const theme = EditorView.theme({
     overflowY: "auto",
   },
   // The editor draws its own caret and selection (drawSelection below); these
-  // are the two elements that replaces them with. 1px to match the textarea's
+  // are the two elements it replaces them with. 1px to match the textarea's
   // native caret, in the same ink.
   ".cm-cursor": {
     borderLeftColor: "var(--eb-text)",
