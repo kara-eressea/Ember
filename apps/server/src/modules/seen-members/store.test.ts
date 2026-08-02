@@ -10,7 +10,15 @@ import {
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { ServerCommand } from "@emberchat/fchat-protocol";
 import { createDb, type Db } from "../../db/index.js";
 import {
@@ -20,6 +28,10 @@ import {
   identities,
   seenMembers,
 } from "../../db/schema.js";
+import {
+  CONTAINER_BOOT_MS,
+  INTEGRATION_MS,
+} from "../../test-support/budgets.js";
 import { buildSnapshot } from "../gateway/snapshot.js";
 import { SessionEventBus } from "../session-engine/event-bus.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
@@ -29,6 +41,9 @@ import { SeenMembersStore, seenByChannel } from "./store.js";
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const KEY = "Frontpage";
 const DAY_MS = 86_400_000;
+
+// Container-backed: every test round-trips the store through real Postgres.
+vi.setConfig({ testTimeout: INTEGRATION_MS });
 
 let container: StartedPostgreSqlContainer;
 let db: Db;
@@ -126,7 +141,7 @@ beforeAll(async () => {
     .values({ flistAccountId: account!.id, characterName: "Amber Vale" })
     .returning();
   identityId = identity!.id;
-}, 120_000);
+}, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await pool.end();
