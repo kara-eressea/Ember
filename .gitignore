@@ -24,3 +24,6 @@ playwright-report/
 .vscode/
 .idea/
 *.tsbuildinfo
+
+# Claude Code agent worktrees (local session tooling)
+.claude/
