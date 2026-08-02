@@ -4,7 +4,14 @@
 // layer in M4. Scrolling up past the buffer start pages older history in via
 // REST; the log sticks to the bottom while the user is there.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { MessageDto, OutboxItemDto, UserPrefs } from "@emberchat/protocol";
@@ -36,6 +43,11 @@ import {
 } from "./NewMessagesBar.js";
 import { parseEmote } from "./rich-text.js";
 import { PlainNamesProvider, RichText } from "./RichText.js";
+import {
+  measuredRows,
+  noteLogWidth,
+  rememberMeasuredRows,
+} from "./row-measurements.js";
 import styles from "./chat.module.css";
 
 /** Message-log type ramp (Appearance pref, issue #188): body plus the
@@ -82,6 +94,13 @@ const SCROLL_KEYS = new Set([
  * variable-height rows (ads, grouped messages, dividers) settle their
  * measurements. Small — one paint is rarely enough, a dozen is plenty. */
 const SCROLL_SETTLE_FRAMES = 8;
+/** Hard ceiling on how long the log may stay behind its loading skeleton while
+ * the first measurement pass settles (#460). The reveal normally happens the
+ * frame after the rows stop resizing — a handful of frames, or one when the
+ * remembered heights already fit. This only bounds the pathological case: a
+ * blank-ish log for a fifth of a second is a flicker, for a second it is a
+ * freeze, and no measurement storm gets to turn one into the other. */
+const MEASURE_REVEAL_MAX_FRAMES = 20;
 /** Auto-fill (#254) stop condition: after this many consecutive older pages
  * that add no visible rows (all filtered/ignored), give up rather than
  * cascade through the whole backlog. */
@@ -217,6 +236,29 @@ export function MessageLog({
    * variable-height rows re-measuring above the anchor no longer jump the
    * view (#266). */
   const anchorRef = useRef<{ id: number; gap: number }>(undefined);
+  /** Is the first measurement pass done, i.e. may the real rows be painted?
+   * False means the loading skeleton is up — see the reveal effect below. */
+  const [revealed, setRevealed] = useState(false);
+  const revealRafRef = useRef<number>(0);
+
+  /** Everything besides the log's width that decides how tall a row renders —
+   * the type ramp, the density, and the layout switches. A change to any of them
+   * reflows every row, so the remembered heights are dropped wholesale. */
+  const layoutSignature = [
+    prefs.fontSize,
+    prefs.density,
+    prefs.alignedColumns,
+    prefs.groupConsecutive,
+    prefs.timestampFormat,
+  ].join("|");
+  /** Heights this conversation measured on its last visit (#460). The
+   * virtualizer reads it once, when it first measures: rows whose key is in the
+   * snapshot lay out at their true height from the very first frame instead of
+   * piling up on the flat estimate; the rest estimate and measure as before. */
+  const initialMeasurementsCache = useMemo(
+    () => measuredRows(convId, layoutSignature),
+    [convId, layoutSignature],
+  );
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -224,7 +266,35 @@ export function MessageLog({
     estimateSize: () => 26,
     overscan: 12,
     getItemKey: (index) => rows[index]!.key,
+    initialMeasurementsCache,
   });
+
+  // Hand this visit's measurements to the next one. Snapshot on unmount: it is
+  // the last moment the sizes are complete, and the only moment they are about
+  // to be lost.
+  useEffect(
+    () => () => {
+      rememberMeasuredRows(convId, layoutSignature, virtualizer.takeSnapshot());
+    },
+    [convId, layoutSignature, virtualizer],
+  );
+
+  // A row's height is mostly a function of where its text wraps, so a width
+  // change invalidates every remembered measurement (#460).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    noteLogWidth(el.clientWidth);
+    const observer = new ResizeObserver(() => {
+      noteLogWidth(el.clientWidth);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   // Open at the tail on every mount / conversation switch.
   useEffect(() => {
@@ -415,6 +485,73 @@ export function MessageLog({
   const hasMoreBefore = buffer?.hasMoreBefore === true;
   const backfilled = buffer?.backfilled === true;
   const loadingOlder = buffer?.loadingOlder === true;
+
+  // Don't paint the soup (#460). Every row is absolutely positioned off the
+  // virtualizer's measurements, and on a cold visit those start as the flat 26px
+  // estimate — so a channel of multi-paragraph roleplay lays a dozen 400px rows
+  // out 26px apart and paints them stacked on top of one another until the
+  // measurement pass and the scroll corrections catch up. Nobody should see
+  // that. The rows stay unpainted (visibility, never display: measuring needs
+  // layout) behind a skeleton until the positions agree with the sizes — the
+  // first frame where nothing on screen is still unmeasured and the total size
+  // stopped moving, with the bottom-stick finished too, so the log is uncovered
+  // at the tail rather than on its way there.
+  //
+  // Remembered heights (initialMeasurementsCache) make that the very first frame
+  // on a revisit; a cold channel takes a handful, and MEASURE_REVEAL_MAX_FRAMES
+  // caps the pathological case. Rows arriving later never re-arm it: this is
+  // about the first layout, and a live log must not blink on every message.
+  useEffect(() => {
+    if (revealed) {
+      return;
+    }
+    if (rows.length === 0) {
+      // Nothing to measure. An empty backfilled buffer is its own final state
+      // ("No messages yet."); an unfilled one keeps the skeleton for the fetch.
+      if (backfilled) {
+        setRevealed(true);
+      }
+      return;
+    }
+    let frames = 0;
+    let previousSize = -1;
+    const step = () => {
+      const el = scrollRef.current;
+      const totalSize = virtualizer.getTotalSize();
+      const unmeasured = virtualizer
+        .getVirtualItems()
+        .some((item) => !virtualizer.itemSizeCache.has(item.key));
+      // Where the bottom-stick is aiming, if it is aiming anywhere: uncovering
+      // the log mid-jump would show it sliding to the tail.
+      const parked =
+        !stickBottomRef.current ||
+        el === null ||
+        el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_SLACK_PX;
+      frames += 1;
+      if (
+        (!unmeasured && parked && totalSize === previousSize) ||
+        frames >= MEASURE_REVEAL_MAX_FRAMES
+      ) {
+        setRevealed(true);
+        return;
+      }
+      previousSize = totalSize;
+      revealRafRef.current = requestAnimationFrame(step);
+    };
+    revealRafRef.current = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(revealRafRef.current);
+    };
+  }, [revealed, rows.length, backfilled, virtualizer]);
+
+  // A catch-up gap replaces the buffer under a MOUNTED log (#432): the window is
+  // refetched from scratch and re-measured, so the skeleton comes back for that
+  // instead of the log going blank — or, worse, stacking again.
+  useEffect(() => {
+    if (!backfilled) {
+      setRevealed(false);
+    }
+  }, [backfilled]);
 
   // Initial page (live events merge on top). Keyed by `backfilled`, not just
   // by conversation: a catch-up gap or a back-to-present clears it under a
@@ -1008,14 +1145,19 @@ export function MessageLog({
             </button>
           </div>
         )}
-        {!buffer?.backfilled && <div className={styles.logNote}>Loading…</div>}
         {buffer?.backfilled && rows.length === 0 && (
           <div className={styles.logNote}>No messages yet.</div>
         )}
         <div
           ref={innerRef}
           className={styles.logInner}
-          style={{ height: virtualizer.getTotalSize() }}
+          data-testid="message-log-inner"
+          style={{
+            height: virtualizer.getTotalSize(),
+            // Laid out (so the rows measure) but never painted until the
+            // measurements are consistent — see the #460 reveal effect.
+            visibility: revealed ? undefined : "hidden",
+          }}
         >
           {virtualizer.getVirtualItems().map((item) => {
             const row = rows[item.index]!;
@@ -1070,6 +1212,10 @@ export function MessageLog({
           </div>
         )}
       </div>
+      {/* The type ramp lives on the log element, and the skeleton is its
+          sibling — hand it the same vars so the placeholder rows are sized to
+          the reader's own message font. */}
+      {!revealed && <LogSkeleton style={styleVars} />}
       {canJumpToRecent && (
         <button
           type="button"
@@ -1080,6 +1226,58 @@ export function MessageLog({
           Jump to newest ↓
         </button>
       )}
+    </div>
+  );
+}
+
+/** Placeholder rows for a log that is still fetching or still measuring (#460).
+ * Message-shaped rather than a blank panel or a spinner: a timestamp stub, a
+ * name, and one to three body lines, so the log reads as filling in rather than
+ * as frozen. Variation is a fixed pattern indexed by row — never random, which
+ * would twinkle as React re-renders the placeholder underneath the shimmer. */
+const SKELETON_ROWS = 24;
+/** Body lines per row, name width in em, and body-line widths in percent. */
+const SKELETON_LINES = [2, 1, 3, 1, 1, 2, 1, 3, 1, 2];
+const SKELETON_NAME_EM = [5.5, 7, 4.5, 8, 6, 5, 7.5, 4, 6.5, 5];
+const SKELETON_BODY_PCT = [93, 71, 58, 88, 46, 82, 64, 97, 53, 76, 68, 41];
+
+function LogSkeleton({ style }: { style: CSSProperties }) {
+  return (
+    <div
+      className={styles.logSkeleton}
+      style={style}
+      data-testid="message-log-skeleton"
+      aria-hidden
+    >
+      {Array.from({ length: SKELETON_ROWS }, (_, row) => (
+        <div key={row} className={styles.skeletonRow}>
+          <span className={`${styles.shimmer} ${styles.skeletonTime ?? ""}`} />
+          <span
+            className={styles.shimmer}
+            style={{
+              width: `${String(SKELETON_NAME_EM[row % SKELETON_NAME_EM.length])}em`,
+            }}
+          />
+          <span className={styles.skeletonBody}>
+            {Array.from(
+              { length: SKELETON_LINES[row % SKELETON_LINES.length]! },
+              (_unused, line) => (
+                <span
+                  key={line}
+                  className={styles.shimmer}
+                  style={{
+                    width: `${String(
+                      SKELETON_BODY_PCT[
+                        (row * 3 + line) % SKELETON_BODY_PCT.length
+                      ],
+                    )}%`,
+                  }}
+                />
+              ),
+            )}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

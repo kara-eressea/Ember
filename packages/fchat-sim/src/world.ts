@@ -468,6 +468,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Haywick Pell"],
     },
+    // Reserved for the #460 measurement-settle E2E (same isolation rules).
+    // Loam Whitby switches between two rooms whose backlog is nothing but long
+    // multi-paragraph roleplay; Burr Netherfield is the raw-SimClient partner
+    // who wrote it. The spec samples row rectangles frame by frame, so no other
+    // character may speak into either room.
+    "loam@example.test": {
+      password: "hunter2",
+      characters: ["Loam Whitby"],
+    },
+    "burr@example.test": {
+      password: "hunter2",
+      characters: ["Burr Netherfield"],
+    },
     // Reserved for the auth-refresh rotation-grace E2E (same isolation
     // rules): Verity Gracewell reattaches after a refresh response was
     // deliberately lost mid-rotation.
@@ -800,6 +813,28 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Where the glue is tested.",
       oplist: ["Tussock Fen"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #460 measurement-settle E2E: Burr Netherfield fills the
+    // Long Atelier with multi-paragraph roleplay, and Loam Whitby steps out to
+    // the Short Corridor and back. Hidden and NPC-free — the spec measures row
+    // geometry frame by frame, so nothing else may write into either room.
+    {
+      name: "ADH-460longatelier55ee66ff",
+      title: "Long Atelier",
+      mode: "chat",
+      description: "Where the paragraphs are long.",
+      oplist: ["Loam Whitby"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-460shortcorridor77aa88bb",
+      title: "Short Corridor",
+      mode: "chat",
+      description: "Somewhere to step out to.",
+      oplist: ["Loam Whitby"],
       npcs: [],
       listed: false,
     },
