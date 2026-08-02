@@ -167,9 +167,15 @@ export const messages = pgTable(
     mention: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  // Pagination, unread counts, catch-up replay.
   (t) => [
+    // Pagination, unread counts, catch-up replay.
     index("messages_conversation_id_idx").on(t.conversationId, t.id.desc()),
+    // "Everything this character said" — the insights first/last-seen scans
+    // and the activity heatmap, which otherwise seq-scan the whole table.
+    index("messages_sender_lower_idx").on(
+      sql`lower(${t.senderCharacter})`,
+      t.createdAt,
+    ),
   ],
 );
 
@@ -369,9 +375,9 @@ export const flistMappings = pgTable("flist_mappings", {
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
-// Private per-identity notes on a character ("what we RP'd last time").
-// Deliberately separate from profile_views so pruning history never deletes
-// a note.
+// Private per-identity notes on a character ("what we RP'd last time") plus
+// the user-set timezone for them. Deliberately separate from profile_views so
+// pruning history never deletes a note.
 export const characterNotes = pgTable(
   "character_notes",
   {
@@ -379,7 +385,11 @@ export const characterNotes = pgTable(
       .notNull()
       .references(() => identities.id, { onDelete: "cascade" }),
     characterLower: text().notNull(),
+    /** Empty string = no note; the row survives for the timezone's sake. */
     note: text().notNull(),
+    /** IANA zone id the user set for this character; beats F-List's numeric
+     * offset when rendering their local clock. Null = no user answer. */
+    timezone: text(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.identityId, t.characterLower] })],

@@ -403,12 +403,16 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Teasel Crake"],
     },
-    // Reserved for the #408/#409 typography E2E (same isolation rules). Flint
-    // Barrow sends one chat line and one /roll in a room of his own, and the
-    // spec measures the computed type of both sender names.
+    // Reserved for the #408/#409/#434 typography E2E (same isolation rules).
+    // Flint Barrow sends one chat line and one /roll in a room of his own, and
+    // the spec measures the computed type of both sender names. Marwenna
+    // Wolfhammers is deliberately awkward: 20 characters — the longest
+    // plausible F-List name — and near the widest such name renders in the UI
+    // sans, so she is what catches the aligned layout's name column desyncing
+    // from the font it was sized against.
     "flint@example.test": {
       password: "hunter2",
-      characters: ["Flint Barrow"],
+      characters: ["Flint Barrow", "Marwenna Wolfhammers"],
     },
     // The typography spec's Firefox half runs as its own Playwright project,
     // so it can be in flight while the Chromium half runs — one file, two

@@ -3,9 +3,9 @@
 // cascade/metrics problems that only exist once a real engine has resolved the
 // styles — jsdom can't evaluate CSS modules at all (see MessageFontSize.test),
 // so every assertion here reads computed style or measures painted pixels.
-// Owns flint@example.test (Flint Barrow) and the NPC-free Typesetting room:
-// spec files run in parallel, so specs never share accounts (a new ticket
-// invalidates all previous ones account-wide).
+// Owns flint@example.test (Flint Barrow, Marwenna Wolfhammers) and the
+// NPC-free Typesetting room: spec files run in parallel, so specs never share
+// accounts (a new ticket invalidates all previous ones account-wide).
 
 import { readFile } from "node:fs/promises";
 import type { Browser, Locator, Page } from "@playwright/test";
@@ -91,6 +91,13 @@ const diffBox = async ({ a, b }: { a: string; b: string }) => {
     : { top, height: bottom - top + 1, width: right - left + 1 };
 };
 
+/** The message-font ramp, as the Appearance pane spells it (FONT_RAMP_PX). */
+const FONT_STEPS = [
+  ["S", 13],
+  ["M", 14],
+  ["L", 15],
+] as const;
+
 function computed(target: Locator, property: string): Promise<string> {
   return target.evaluate(
     (el, prop) => getComputedStyle(el).getPropertyValue(prop),
@@ -100,6 +107,38 @@ function computed(target: Locator, property: string): Promise<string> {
 
 async function fontSize(target: Locator): Promise<number> {
   return Number.parseFloat(await computed(target, "font-size"));
+}
+
+/** Preferences → Appearance, act, Escape. */
+async function inAppearancePrefs(
+  page: Page,
+  act: (prefs: Locator) => Promise<void>,
+): Promise<void> {
+  await page.getByRole("button", { name: "Preferences" }).click();
+  const prefs = page.getByRole("dialog", { name: "Preferences" });
+  await prefs.getByRole("button", { name: "Appearance" }).click();
+  await act(prefs);
+  await page.keyboard.press("Escape");
+  await expect(prefs).not.toBeVisible();
+}
+
+/** Layout geometry, read straight off the box — `visibility: hidden` elements
+ * still have one, which is the whole point of the grouped-row placeholder. */
+function boxWidth(target: Locator): Promise<number> {
+  return target.evaluate((el) => el.getBoundingClientRect().width);
+}
+
+function leftEdge(target: Locator): Promise<number> {
+  return target.evaluate((el) => el.getBoundingClientRect().x);
+}
+
+async function setMessageFontSize(page: Page, step: string): Promise<void> {
+  await inAppearancePrefs(page, async (prefs) => {
+    await prefs
+      .getByRole("radiogroup", { name: "Message font size" })
+      .getByRole("radio", { name: step, exact: true })
+      .click();
+  });
 }
 
 test("sender names render one type ramp across chat and roll lines", async ({
@@ -125,6 +164,7 @@ test("sender names render one type ramp across chat and roll lines", async ({
   await expect(rollLine).toBeVisible({ timeout: 10_000 });
 
   const chatName = log.getByRole("button", { name: "Flint Barrow" }).first();
+  const body = log.getByText("a plain chat line");
   // The roller's name is the name-only run inside the server-rendered die
   // line — a [b] span per the documented RLL sample, a [user] button where
   // the server sends one. Either way it must not read a step off the gutter
@@ -134,20 +174,8 @@ test("sender names render one type ramp across chat and roll lines", async ({
     .filter({ hasText: /^Flint Barrow$/ })
     .first();
 
-  for (const [step, expectedPx] of [
-    ["S", 13],
-    ["M", 14],
-    ["L", 15],
-  ] as const) {
-    await page.getByRole("button", { name: "Preferences" }).click();
-    const prefs = page.getByRole("dialog", { name: "Preferences" });
-    await prefs.getByRole("button", { name: "Appearance" }).click();
-    await prefs
-      .getByRole("radiogroup", { name: "Message font size" })
-      .getByRole("radio", { name: step, exact: true })
-      .click();
-    await page.keyboard.press("Escape");
-    await expect(prefs).not.toBeVisible();
+  for (const [step, expectedPx] of FONT_STEPS) {
+    await setMessageFontSize(page, step);
 
     // Every sender name is the message font, whatever row it sits in: the
     // bug was .nameButton's `font: inherit` beating .nick, which left the
@@ -158,10 +186,106 @@ test("sender names render one type ramp across chat and roll lines", async ({
     expect(Number.parseFloat(await computed(log, "--eb-msg-font"))).toBe(
       expectedPx,
     );
-    // …and .nick's own face and weight survive the button reset.
-    expect(await computed(chatName, "font-family")).toContain("IBM Plex Mono");
-    expect(await computed(chatName, "font-weight")).toBe("600");
+    // …and the name is the body's own type, not a face of its own: same
+    // family, same weight, colour doing all the distinguishing (user's call,
+    // 2026-08-01 — see .nick in chat.module.css). Asserted against the body
+    // rather than against literal "IBM Plex Sans"/400, so this keeps meaning
+    // "one treatment" if the body face is ever restyled.
+    expect(await computed(chatName, "font-family")).toBe(
+      await computed(body, "font-family"),
+    );
+    expect(await computed(chatName, "font-weight")).toBe(
+      await computed(body, "font-weight"),
+    );
   }
+});
+
+// The type assertions above were blind to layout, and their fixture name is
+// short — so when #434 changed .nick's font, the aligned layout's 132px name
+// column (a px number tuned for the *old* font) silently started ellipsizing
+// ordinary names. This test measures the column instead of the glyphs: a
+// longest-plausible name must be painted whole at every step of the ramp.
+test("a full-length name fits the aligned name column at every font step", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await interceptAvatars(page);
+  await provisionAndConnect(page, "flint@example.test", "Marwenna Wolfhammers");
+  await joinChannel(page, "Typesetting", "Typesetting");
+
+  await inAppearancePrefs(page, async (prefs) => {
+    await prefs.getByRole("switch", { name: "Aligned columns" }).click();
+    await prefs
+      .getByRole("switch", { name: "Group consecutive messages" })
+      .click();
+  });
+
+  const log = page.getByTestId("message-log");
+  const input = page.getByLabel("Message", { exact: true });
+  await input.click();
+  await page.keyboard.type("a line with a sender");
+  await page.keyboard.press("Enter");
+  await expect(log.getByText("a line with a sender")).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.keyboard.type("and its grouped follow-up");
+  await page.keyboard.press("Enter");
+  await expect(log.getByText("and its grouped follow-up")).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const nick = log
+    .getByRole("button", { name: "Marwenna Wolfhammers" })
+    .first();
+  // The grouped row's placeholder: same name, hidden, holding the column open.
+  const placeholder = log
+    .locator('span[aria-hidden="true"]')
+    .filter({ hasText: /^Marwenna Wolfhammers$/ })
+    .first();
+  await expect(placeholder).toBeAttached();
+
+  const widths: number[] = [];
+  for (const [step, expectedPx] of FONT_STEPS) {
+    await setMessageFontSize(page, step);
+    await expect.poll(async () => fontSize(nick)).toBe(expectedPx);
+
+    // The whole name is painted. scrollWidth outgrowing clientWidth is exactly
+    // what an ellipsis is drawn from, so this fails on a single clipped glyph.
+    const column = await nick.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      width: el.getBoundingClientRect().width,
+    }));
+    expect(column.scrollWidth).toBeLessThanOrEqual(column.clientWidth);
+    widths.push(column.width);
+
+    // Columns stay put: the invisible placeholder is the same box as the
+    // visible name, so both rows' bodies start at the same x.
+    expect(await boxWidth(placeholder)).toBeCloseTo(column.width, 1);
+    expect(
+      await leftEdge(log.getByText("and its grouped follow-up")),
+    ).toBeCloseTo(await leftEdge(log.getByText("a line with a sender")), 1);
+  }
+
+  // The regression in one assertion: the column is font-relative, so it grows
+  // with the ramp instead of standing still while the glyphs get wider.
+  expect(widths[1]).toBeGreaterThan(widths[0]!);
+  expect(widths[2]).toBeGreaterThan(widths[1]!);
+
+  // …and the ellipsis is still armed for anything past the cap.
+  const beyondCap = await nick.evaluate((el) => {
+    const original = el.textContent;
+    el.textContent = "Marwenna Wolfhammers Of The Longer Name";
+    const clipped = el.scrollWidth > el.clientWidth;
+    const { textOverflow, overflowX } = getComputedStyle(el);
+    el.textContent = original;
+    return { clipped, textOverflow, overflowX };
+  });
+  expect(beyondCap).toEqual({
+    clipped: true,
+    textOverflow: "ellipsis",
+    overflowX: "hidden",
+  });
 });
 
 test("the empty composer's caret fills the line box in both input modes", async ({

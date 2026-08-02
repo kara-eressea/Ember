@@ -13,8 +13,10 @@ import { match, type MatchReport } from "@emberchat/matcher";
 import { wireToPlainText } from "../../lib/wire-text.js";
 import { api } from "../../lib/api.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
+import { clockTitle, localClock } from "../../lib/local-time.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useMinuteClock } from "../../lib/useMinuteClock.js";
 import { nickColor } from "../../theme/tokens.js";
 import {
   loadOwnProfile,
@@ -87,6 +89,13 @@ export function DmProfile({
   const dot = presenceDot(dm.online, dm.status);
   const accent = nickColor(partner);
   const status = dm.online ? dm.statusmsg : "";
+  // Their wall clock, from the zone the user set for them or F-List's offset
+  // (see lib/local-time.ts). Ticks off the one shared minute timer.
+  const clock = localClock(
+    useMinuteClock(),
+    response?.timezone,
+    response?.profile.timezone,
+  );
 
   const report: MatchReport | undefined = useMemo(
     () =>
@@ -150,6 +159,16 @@ export function DmProfile({
             />
             {PRESENCE_LABEL[dot]}
           </span>
+          {clock && (
+            // Its own line: the column is narrow enough that appending to the
+            // presence line wraps mid-clock.
+            <span
+              className={styles.localTime}
+              title={clockTitle(clock, partner)}
+            >
+              Local time {clock.time}
+            </span>
+          )}
           {status && (
             <div className={styles.heroStatus} title={wireToPlainText(status)}>
               <RichText bbcode={status} />
