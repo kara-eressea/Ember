@@ -13,6 +13,7 @@ import { loadSocial } from "../lib/social.js";
 import { flashTitle, playHighlightChime } from "../lib/highlight-notify.js";
 import { useAdsStore } from "../stores/ads.js";
 import { useMessagesStore } from "../stores/messages.js";
+import { useNotificationsStore } from "../stores/notifications.js";
 import { useSearchStore } from "../stores/search.js";
 import { sameCharacter, useSessionsStore } from "../stores/sessions.js";
 import { useUiStore } from "../stores/ui.js";
@@ -35,6 +36,11 @@ export function dispatchFrame(frame: ServerFrame): void {
       );
       for (const identity of frame.d.identities) {
         sessions.applySessionStatus(identity.id, identity.sessionStatus);
+        // The inbox bell badges from `ready` alone — an identity this tab
+        // never subscribes to still shows what is waiting in it (#466).
+        useNotificationsStore
+          .getState()
+          .applyUnseen(identity.id, identity.notificationsUnseen);
       }
       return;
     case "snapshot": {
@@ -296,6 +302,14 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       return;
     case "ignore.updated":
       sessions.applyIgnores(identityId, event.d.characters);
+      return;
+    case "notification.new":
+      // The durable half of an alert (#466). The transient notice, chime and
+      // desktop notification are unchanged and fire on their own paths —
+      // this only appends to the log behind them.
+      useNotificationsStore
+        .getState()
+        .applyLive(identityId, event.d.notification);
       return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);

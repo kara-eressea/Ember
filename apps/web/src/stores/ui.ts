@@ -48,6 +48,12 @@ interface UiState {
   campaignOpen: boolean;
   /** Character-search dialog (M10), beside the channel browser. */
   characterSearchOpen: boolean;
+  /**
+   * Bumped when something asks the sidebar to show its friend-request rows
+   * (the notification inbox, #466). A nonce rather than a boolean: asking
+   * twice in a row must reveal twice, and there is no "off" state to clear.
+   */
+  friendRequestsNonce: number;
 
   setActive: (
     identityId: string | undefined,
@@ -69,6 +75,7 @@ interface UiState {
   setPostAdsOpen: (open: boolean) => void;
   setCampaignOpen: (open: boolean) => void;
   setCharacterSearchOpen: (open: boolean) => void;
+  revealFriendRequests: () => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -88,6 +95,7 @@ export const useUiStore = create<UiState>()((set) => ({
   postAdsOpen: false,
   campaignOpen: false,
   characterSearchOpen: false,
+  friendRequestsNonce: 0,
 
   setActive(identityId, convId) {
     set({ activeIdentityId: identityId, activeConvId: convId });
@@ -149,5 +157,8 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setCharacterSearchOpen(open) {
     set({ characterSearchOpen: open });
+  },
+  revealFriendRequests() {
+    set((state) => ({ friendRequestsNonce: state.friendRequestsNonce + 1 }));
   },
 }));

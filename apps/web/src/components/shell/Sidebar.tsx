@@ -98,6 +98,9 @@ async function waitForJoin(
  * frame; the menu re-clamps against its measured size once rendered. */
 const MENU_WIDTH = 216;
 
+/** Friend-request reveal flash (#466) — matches the log's jump flash. */
+const FLASH_MS = 2400;
+
 /** Right-click target of a sidebar people row (DM / friend / bookmark). */
 interface PersonMenuState {
   member: MemberDto;
@@ -1408,6 +1411,31 @@ function SocialSections({
   const identityId = session.identityId;
   const social = session.social;
   const [loadError, setLoadError] = useState<string>();
+  // The notification inbox sends the user here when they click a friend
+  // request (#466). The rows already render regardless of the section's
+  // collapsed state, so revealing them is scroll + a one-shot flash.
+  const requestsNonce = useUiStore((s) => s.friendRequestsNonce);
+  const requestsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = requestsRef.current;
+    // Nonce 0 = nobody has asked; a flash on mount would be a lie.
+    if (requestsNonce === 0 || element === null) {
+      return;
+    }
+    element.scrollIntoView({ block: "nearest" });
+    // A class on the DOM node rather than React state: the flash is a
+    // one-shot animation with no bearing on what renders, and setState in an
+    // effect body is exactly the cascading render the lint forbids.
+    const flash = styles.requestsFlash ?? "";
+    element.classList.add(flash);
+    const timer = setTimeout(() => {
+      element.classList.remove(flash);
+    }, FLASH_MS);
+    return () => {
+      clearTimeout(timer);
+      element.classList.remove(flash);
+    };
+  }, [requestsNonce]);
 
   useEffect(() => {
     // No synchronous state write here (lint): the load either resolves
@@ -1485,33 +1513,35 @@ function SocialSections({
           Couldn't load — {loadError}.
         </div>
       )}
-      {social?.incoming.map((request) => (
-        <div className={styles.inviteRow} key={`fr:${String(request.id)}`}>
-          <span className={styles.inviteText}>
-            ♥ <strong>{request.name}</strong> sent a friend request
-          </span>
-          <button
-            type="button"
-            className={styles.miniButton}
-            aria-label={`Accept friend request from ${request.name}`}
-            onClick={() => {
-              void respond(request.id, "accept");
-            }}
-          >
-            Accept
-          </button>
-          <button
-            type="button"
-            className={styles.inviteDismiss}
-            aria-label={`Deny friend request from ${request.name}`}
-            onClick={() => {
-              void respond(request.id, "deny");
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      ))}
+      <div ref={requestsRef}>
+        {social?.incoming.map((request) => (
+          <div className={styles.inviteRow} key={`fr:${String(request.id)}`}>
+            <span className={styles.inviteText}>
+              ♥ <strong>{request.name}</strong> sent a friend request
+            </span>
+            <button
+              type="button"
+              className={styles.miniButton}
+              aria-label={`Accept friend request from ${request.name}`}
+              onClick={() => {
+                void respond(request.id, "accept");
+              }}
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              className={styles.inviteDismiss}
+              aria-label={`Deny friend request from ${request.name}`}
+              onClick={() => {
+                void respond(request.id, "deny");
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
       {openSection("friends") &&
         friends.map((friend) => row(friend, "★", "friends"))}
       {openSection("friends") &&

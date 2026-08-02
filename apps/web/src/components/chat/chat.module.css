@@ -2615,3 +2615,148 @@
   background: none;
   border: none;
 }
+
+/* ── Notification inbox (#466) ─────────────────────────────────────────────
+   The tray chip is an ordinary toolbar IconBtn; the anchor exists only so the
+   dropdown can hang off it, exactly like the search field's .searchAnchor. */
+.inboxAnchor {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+/* Unseen count, riding the chip's top-right corner. Mono + tabular so 9 and
+   11 sit at the same optical weight, and small enough that a 30px chip is
+   still a chip rather than a badge with a glyph attached. */
+.inboxBadge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 15px;
+  padding: 0 3px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  color: var(--eb-accent-text);
+  text-align: center;
+  pointer-events: none;
+  background: var(--eb-accent-soft);
+  border-radius: 7px;
+}
+
+/* The same card as the search results panel — one dropdown shape for the row. */
+.inboxPanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  max-height: min(60vh, 520px);
+  overflow: hidden;
+  background: var(--eb-side);
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  box-shadow: 0 18px 44px -12px rgb(0 0 0 / 55%);
+}
+
+.inboxHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.inboxTitle {
+  font-size: var(--eb-font-ui-small);
+  font-weight: 600;
+  color: var(--eb-text);
+}
+
+/* Says which way the list runs: a dropdown that pages DOWNWARD for older
+   entries is the opposite of the message log right underneath it. */
+.inboxHint {
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-faint);
+}
+
+.inboxBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.inboxNote {
+  padding: 10px 8px;
+  font-size: var(--eb-font-ui-small);
+  color: var(--eb-meta);
+}
+
+.inboxRow {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--eb-radius);
+}
+
+.inboxRow:hover,
+.inboxRow:focus-visible {
+  background: var(--eb-hover);
+}
+
+/* Unseen until the open marks them: an accent edge, not a fill, so a screen
+   full of new entries still reads as a list rather than one block. */
+.inboxRowUnseen {
+  box-shadow: inset 2px 0 0 var(--eb-accent);
+}
+
+.inboxRowGlyph {
+  flex: none;
+  width: 14px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--eb-font-ui-small);
+  color: var(--eb-accent-text);
+  text-align: center;
+}
+
+.inboxRowText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.inboxRowLine {
+  font-size: var(--eb-font-ui-small);
+  color: var(--eb-text);
+}
+
+.inboxRowExcerpt {
+  overflow: hidden;
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inboxRowTime {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-faint);
+  white-space: nowrap;
+}

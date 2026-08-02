@@ -8,6 +8,7 @@ import type {
   GuestbookPage,
   HighlightRuleDto,
   HighlightRuleInput,
+  NotificationDto,
   ProfileActivity,
   ProfileHistoryEntry,
   ProfileInsights,
@@ -344,6 +345,35 @@ export const api = {
     return apiRequest<{ messages: HistoryMessageDto[]; hasMore: boolean }>(
       `/identities/${identityId}/conversations/${conversationId}/messages${suffix}`,
       { auth: true },
+    );
+  },
+
+  /** One page of the notification inbox (#466), NEWEST FIRST; `before`
+   * walks toward older entries. */
+  listNotifications(
+    identityId: string,
+    options: { before?: number; limit?: number } = {},
+  ) {
+    const query = new URLSearchParams();
+    if (options.before !== undefined) {
+      query.set("before", String(options.before));
+    }
+    if (options.limit !== undefined) {
+      query.set("limit", String(options.limit));
+    }
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return apiRequest<{
+      notifications: NotificationDto[];
+      hasMore: boolean;
+      lastSeenId: number;
+      unseen: number;
+    }>(`/identities/${identityId}/notifications${suffix}`, { auth: true });
+  },
+  /** Advance the seen watermark (monotonic server-side). */
+  putNotificationsSeen(identityId: string, lastSeenId: number) {
+    return apiRequest<{ lastSeenId: number; unseen: number }>(
+      `/identities/${identityId}/notifications/seen`,
+      { method: "PUT", body: { lastSeenId }, auth: true },
     );
   },
 

@@ -51,6 +51,7 @@ import {
   PinGlyph,
   SearchGlyph,
 } from "../icons/Glyphs.js";
+import { InboxChip } from "./NotificationInbox.js";
 import { RichText } from "./RichText.js";
 import { SearchPanel } from "./SearchPanel.js";
 import { useLogSearch } from "./log-search.js";
@@ -578,6 +579,10 @@ export function ChannelHeader({
         <MembersGlyph />
         <span className={styles.headerCount}>{channel.members.length}</span>
       </button>
+      {/* The notification inbox (#466) is per identity, not per conversation
+          — it rides the right-hand cluster beside search because that is the
+          one row always on screen while a conversation is open. */}
+      <InboxChip identityId={identityId} />
       {/* Search sits last, flush to the app's right edge — the toolbar now
           spans the member column, so this is where a search box belongs. */}
       <HeaderSearch identityId={identityId} convId={channel.convId} />
@@ -754,6 +759,7 @@ export function DmHeader({
       >
         <CloseGlyph />
       </button>
+      <InboxChip identityId={identityId} />
       {/* Search sits last, flush to the app's right edge — the toolbar now
           spans the profile column, so this is where a search box belongs. */}
       <HeaderSearch identityId={identityId} convId={dm.convId} />

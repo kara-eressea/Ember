@@ -91,6 +91,22 @@ export function BellOffGlyph(): ReactNode {
   );
 }
 
+/**
+ * Paper tray — the notification inbox (#466). Deliberately not a bell: the
+ * bell is the per-conversation mute toggle two chips away, and two bells in
+ * one cluster meaning opposite things is the sort of thing nobody unlearns.
+ * A tray reads as "things that arrived and stayed", which is what the inbox
+ * is: a log, not an alert.
+ */
+export function InboxGlyph(): ReactNode {
+  return svg(
+    <>
+      <path d="M3.6 13.2h4.1l1.3 2.2h6l1.3-2.2h4.1" />
+      <path d="M6.2 4.8h11.6l2.6 8.4v4.2a1.8 1.8 0 0 1-1.8 1.8H5.4a1.8 1.8 0 0 1-1.8-1.8v-4.2Z" />
+    </>,
+  );
+}
+
 /** Circle-slash — the ignore toggle (a danger action, tinted by CSS). */
 export function BanGlyph(): ReactNode {
   return svg(
