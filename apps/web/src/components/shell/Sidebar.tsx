@@ -724,9 +724,13 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
  * only added noise. When the server's daily update check has seen a newer
  * release, the version itself becomes the link to the releases page; that
  * accent tint is the whole announcement (no banner, no nag).
+ *
+ * The one exception is a gateway that is not connected: the tab is showing
+ * stale everything, so it says so — and the chip retries on click.
  */
 function SidebarHead() {
   const meta = useServerMeta();
+  const gatewayStatus = useUiStore((s) => s.gatewayStatus);
   const update =
     meta?.updateAvailable && meta.latestVersion !== undefined
       ? meta.latestVersion
@@ -735,6 +739,21 @@ function SidebarHead() {
   return (
     <div className={styles.serverHead}>
       <span className={styles.serverName}>{appConfig().appName}</span>
+      {gatewayStatus !== "online" && (
+        <button
+          type="button"
+          className={`${styles.connState} ${
+            gatewayStatus === "offline" ? styles.connStateOffline : ""
+          }`}
+          title="Reconnect now"
+          aria-label="Reconnect now"
+          onClick={() => {
+            gateway.reconnectNow();
+          }}
+        >
+          {gatewayStatus === "offline" ? "Offline" : "Connecting…"}
+        </button>
+      )}
       {meta &&
         (update === undefined ? (
           <span className={styles.serverVersion}>

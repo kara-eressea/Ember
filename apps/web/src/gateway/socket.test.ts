@@ -12,11 +12,17 @@
 // runs to notice until the user interacts (#432). jsdom, not node, so the
 // lifecycle events that must drive the probe instead actually exist.
 
+import { GATEWAY_CLOSE } from "@emberchat/protocol";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("./dispatch.js", () => ({ dispatchFrame: vi.fn() }));
+const auth = vi.hoisted(() => ({
+  refreshSession: vi.fn<() => Promise<"ok" | "rejected" | "unavailable">>(),
+}));
 vi.mock("../stores/auth.js", () => ({
-  useAuthStore: { getState: () => ({ accessToken: "token" }) },
+  useAuthStore: {
+    getState: () => ({ accessToken: "token", ...auth }),
+  },
 }));
 vi.mock("../stores/messages.js", () => ({ resumeCursorsFor: () => ({}) }));
 vi.mock("../stores/sessions.js", () => ({
@@ -60,6 +66,8 @@ const clients: { stop(): void }[] = [];
 
 beforeEach(() => {
   vi.useFakeTimers();
+  auth.refreshSession.mockReset();
+  auth.refreshSession.mockResolvedValue("ok");
   FakeSocket.instances = [];
   clients.length = 0;
   realWebSocket = globals.WebSocket;
@@ -200,6 +208,105 @@ it("reconnects at once when the tab wakes inside the backoff", async () => {
   wake("focus");
   await vi.advanceTimersByTimeAsync(300);
   expect(FakeSocket.instances).toHaveLength(attempts + 1);
+});
+
+// ── giving up, and not giving up ─────────────────────────────────────────────
+//
+// A sleeping laptop wakes into a wake storm: the access token expired while
+// the machine was away, so the reconnect's hello is refused (4401) — and the
+// refresh that would fix it goes out while the Wi-Fi is still re-associating.
+// That failure says nothing about the session, so it must not end the tab's
+// reconnecting career; only the server rejecting the refresh token may.
+
+/** Drive the socket through the close the server sends an expired hello. */
+async function expire(socket: FakeSocket) {
+  socket.close(GATEWAY_CLOSE.unauthorized, "invalid token");
+  await vi.advanceTimersByTimeAsync(0); // let the refresh settle
+}
+
+it("keeps reconnecting when the refresh never reached a verdict", async () => {
+  auth.refreshSession.mockResolvedValue("unavailable");
+  const { socket } = await connectClient();
+
+  await expire(socket);
+  expect(auth.refreshSession).toHaveBeenCalledTimes(1);
+
+  // The backoff carries on, and every attempt gets a fresh crack at the
+  // refresh — the network comes back on its own schedule, not ours.
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(FakeSocket.instances).toHaveLength(2);
+  await expire(FakeSocket.instances.at(-1)!);
+  expect(auth.refreshSession).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(4_000);
+  expect(FakeSocket.instances).toHaveLength(3);
+});
+
+it("wakes straight into a reconnect after a refresh failure", async () => {
+  auth.refreshSession.mockResolvedValue("unavailable");
+  const { socket } = await connectClient();
+
+  // Climb the backoff so a wake demonstrably beats it.
+  await expire(socket);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await vi.advanceTimersByTimeAsync(60_000);
+    FakeSocket.instances.at(-1)!.close(1006, "still gone");
+  }
+  const attempts = FakeSocket.instances.length;
+
+  wake("focus");
+  await vi.advanceTimersByTimeAsync(300);
+  expect(FakeSocket.instances).toHaveLength(attempts + 1);
+});
+
+it("gives up only when the server rejected the refresh token", async () => {
+  auth.refreshSession.mockResolvedValue("rejected");
+  const { socket } = await connectClient();
+
+  await expire(socket);
+  // Signed out for real: the auth store has torn the session down and shown
+  // the login form; hammering the gateway would achieve nothing.
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(FakeSocket.instances).toHaveLength(1);
+  wake("focus");
+  await vi.advanceTimersByTimeAsync(300);
+  expect(FakeSocket.instances).toHaveLength(1);
+});
+
+it("gives up when a refreshed token is refused all the same", async () => {
+  const { socket } = await connectClient();
+
+  await expire(socket); // refresh "ok" → straight back in
+  expect(FakeSocket.instances).toHaveLength(2);
+  await expire(FakeSocket.instances.at(-1)!); // …and refused again
+  expect(auth.refreshSession).toHaveBeenCalledTimes(1);
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(FakeSocket.instances).toHaveLength(2);
+});
+
+it("reconnects on demand, whatever state it gave up in", async () => {
+  auth.refreshSession.mockResolvedValue("rejected");
+  const { client, socket } = await connectClient();
+  await expire(socket);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(FakeSocket.instances).toHaveLength(1);
+
+  // The user clicked "Reconnect now": one click beats a page reload, even
+  // for a bug we haven't found yet.
+  client.reconnectNow();
+  expect(FakeSocket.instances).toHaveLength(2);
+});
+
+it("skips the backoff when the user asks to reconnect", async () => {
+  const { client, socket } = await connectClient();
+  socket.close(1006, "network gone");
+  await vi.advanceTimersByTimeAsync(100);
+
+  client.reconnectNow();
+  expect(FakeSocket.instances).toHaveLength(2);
+  // …and the pending timer is not left behind to open a third.
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(FakeSocket.instances).toHaveLength(2);
 });
 
 it("stops probing after a deliberate teardown", async () => {

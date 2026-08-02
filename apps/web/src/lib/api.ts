@@ -164,7 +164,7 @@ export async function apiDownload(path: string): Promise<Blob> {
   let response = await rawRequest(path, { auth: true }, auth.accessToken);
   if (response.status === 401) {
     const refreshed = await auth.refreshSession();
-    if (!refreshed) {
+    if (refreshed !== "ok") {
       throw await toError(response);
     }
     response = await rawRequest(
@@ -187,7 +187,7 @@ export async function apiRequest<T>(
   let response = await rawRequest(path, options, auth.accessToken);
   if (response.status === 401 && options.auth) {
     const refreshed = await auth.refreshSession();
-    if (!refreshed) {
+    if (refreshed !== "ok") {
       throw await toError(response);
     }
     response = await rawRequest(

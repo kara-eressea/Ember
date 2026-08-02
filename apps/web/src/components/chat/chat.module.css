@@ -622,6 +622,54 @@
   text-align: center;
 }
 
+/* ── Loading skeleton (#460) ───────────────────────────────────────────────
+   Covers the log viewport while the buffer is fetching and while the first
+   measurement pass settles, so the reader never sees the rows stacked on the
+   flat row estimate. An overlay on logWrap, not a flow sibling: the real rows
+   stay laid out underneath (visibility: hidden) because that is what measures
+   them, and this must consume no layout of its own. */
+
+.logSkeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 12px 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.skeletonRow {
+  display: flex;
+  gap: 9px;
+  /* Bars, not text: there is no baseline to align to, so the row's boxes line
+     up at the top the way the first line of a real row does. */
+  align-items: flex-start;
+  padding: 3px 16px;
+}
+
+/* The shimmer treatment the profile viewer already uses for its loading
+   placeholders — one idiom for "this is filling in", not two. */
+.shimmer {
+  composes: shimmer from "../profile/profile.module.css";
+  height: 0.85em;
+  border-radius: 3px;
+  font-size: var(--eb-msg-font, 14px);
+}
+
+.skeletonTime {
+  flex: none;
+  width: 2.6em;
+  font-size: var(--eb-msg-meta-font, 12px);
+}
+
+.skeletonBody {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
 /* Scroll-up loading indicator (#387): a floating pill over the top of the log,
    NOT a flow sibling above the virtualized rows. Anchored to logWrap so it
    never enters the scroll container's layout — inserting it the moment

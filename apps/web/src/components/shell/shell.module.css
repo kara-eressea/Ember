@@ -369,6 +369,35 @@
   text-decoration: underline;
 }
 
+/* The browser↔server socket is not up. A quiet chip, not a banner — but a
+   clickable one: a reload must never be the only way back. */
+.connState {
+  margin-left: auto;
+  align-self: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--eb-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--eb-meta);
+  font-family: inherit;
+  font-size: calc(11px * var(--eb-font-ui-scale));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.connState:hover,
+.connState:focus-visible {
+  color: var(--eb-text);
+  border-color: var(--eb-meta);
+}
+
+/* Given up / not retrying right now: the only loud state in the head. */
+.connStateOffline {
+  color: var(--eb-warn);
+  border-color: var(--eb-warn);
+}
+
 /* Channel-list toolbar (#196): filter field + browser entry points. */
 .toolbar {
   display: flex;
