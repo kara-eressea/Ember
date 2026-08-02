@@ -10,6 +10,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
 import { Sidebar } from "./Sidebar.js";
+import { gateway } from "../../gateway/socket.js";
+import { useUiStore } from "../../stores/ui.js";
 import { appConfig } from "../../lib/config.js";
 import type { MetaDto } from "../../lib/api.js";
 import type {
@@ -120,6 +122,9 @@ function renderSidebar(
   dms?: Record<string, DmView>,
   social?: Partial<SocialData>,
 ) {
+  // A connected gateway is the quiet case — the head's offline chip has its
+  // own test below.
+  useUiStore.setState({ gatewayStatus: "online" });
   return render(
     <MemoryRouter>
       <Sidebar session={session(prefs, dms, social)} activeConvId={undefined} />
@@ -351,6 +356,24 @@ describe("Sidebar head", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("button", { name: "Set status" })).toBeDisabled();
+  });
+
+  // Belt and braces for the sleep/wake family: whatever state the socket
+  // talked itself into, one click retries it.
+  it("offers a clickable retry while the gateway is not connected", async () => {
+    const reconnect = vi
+      .spyOn(gateway, "reconnectNow")
+      .mockImplementation(() => undefined);
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: "Reconnect now" })).toBeNull();
+
+    useUiStore.setState({ gatewayStatus: "offline" });
+    const chip = await screen.findByRole("button", { name: "Reconnect now" });
+    expect(chip.textContent).toBe("Offline");
+
+    chip.click();
+    expect(reconnect).toHaveBeenCalledTimes(1);
+    reconnect.mockRestore();
   });
 
   it("renders a dev version string as-is", () => {

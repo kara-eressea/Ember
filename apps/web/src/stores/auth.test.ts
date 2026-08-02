@@ -1,6 +1,8 @@
 // Refresh tokens are single-use server-side, so the store must never race
 // two rotations (concurrent 401s) and must never destroy a persisted session
-// over a mere network failure.
+// over a mere network failure. The outcome it reports has to keep the two
+// apart as well: callers park on a rejection, so a transient dressed up as
+// one takes the gateway offline for good.
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { useAuthStore as AuthStore } from "./auth.js";
@@ -61,7 +63,7 @@ describe("refreshSession", () => {
       store.refreshSession(),
       store.refreshSession(),
     ]);
-    expect([a, b, c]).toEqual([true, true, true]);
+    expect([a, b, c]).toEqual(["ok", "ok", "ok"]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().refreshToken).toBe("rt-new");
     expect(storage.get("eb.auth")).toContain("rt-new");
@@ -74,7 +76,9 @@ describe("refreshSession", () => {
         Promise.resolve(jsonResponse(401, { error: "Invalid refresh token" })),
       ),
     );
-    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(false);
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(
+      "rejected",
+    );
     expect(useAuthStore.getState().status).toBe("anonymous");
     expect(useAuthStore.getState().refreshToken).toBeUndefined();
     expect(storage.has("eb.auth")).toBe(false);
@@ -85,7 +89,11 @@ describe("refreshSession", () => {
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse(502, { error: "Bad gateway" }))),
     );
-    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(false);
+    // "unavailable", not "rejected": callers must read this as try-again,
+    // never as a sign-out (the gateway parked itself forever on it).
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(
+      "unavailable",
+    );
     expect(useAuthStore.getState().refreshToken).toBe("rt-old");
     expect(storage.has("eb.auth")).toBe(true);
   });
@@ -95,7 +103,9 @@ describe("refreshSession", () => {
       "fetch",
       vi.fn(() => Promise.reject(new TypeError("fetch failed"))),
     );
-    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(false);
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(
+      "unavailable",
+    );
     // Nothing destroyed: a later retry can still rotate this token.
     expect(useAuthStore.getState().refreshToken).toBe("rt-old");
     expect(storage.has("eb.auth")).toBe(true);
@@ -115,7 +125,7 @@ describe("refreshSession", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(true);
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe("ok");
     const [, options] = fetchMock.mock.calls[0] as unknown as [
       string,
       RequestInit,
