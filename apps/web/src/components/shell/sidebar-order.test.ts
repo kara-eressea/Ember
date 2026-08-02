@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { orderRows, orderSocial, socialNameSet } from "./sidebar-order.js";
+import {
+  bumpUnread,
+  orderRows,
+  orderSocial,
+  socialNameSet,
+} from "./sidebar-order.js";
 
 interface Row {
   name: string;
@@ -62,6 +67,65 @@ describe("orderSocial", () => {
 
   it("does not mutate the input", () => {
     const rows = [social("B", false), social("A", true)];
+    order(rows);
+    expect(rows.map((r) => r.name)).toEqual(["B", "A"]);
+  });
+});
+
+describe("bumpUnread", () => {
+  interface Person {
+    name: string;
+    highlightedAt?: number;
+    newestMessageId?: number;
+  }
+  const order = (rows: Person[]) =>
+    bumpUnread(rows, (r) =>
+      r.highlightedAt === undefined && r.newestMessageId === undefined
+        ? undefined
+        : {
+            highlightedAt: r.highlightedAt ?? 0,
+            newestMessageId: r.newestMessageId ?? 0,
+          },
+    ).map((r) => r.name);
+
+  it("floats rows with activity to the top, most recent first", () => {
+    expect(
+      order([
+        { name: "Dell" },
+        { name: "Alder", highlightedAt: 100 },
+        { name: "Birch" },
+        { name: "Cider", highlightedAt: 200 },
+      ]),
+    ).toEqual(["Cider", "Alder", "Dell", "Birch"]);
+  });
+
+  it("keeps the incoming order below the bumped rows", () => {
+    expect(
+      order([{ name: "Dell" }, { name: "Alder" }, { name: "Birch" }]),
+    ).toEqual(["Dell", "Alder", "Birch"]);
+  });
+
+  it("breaks highlight ties on the newest message id", () => {
+    expect(
+      order([
+        { name: "Alder", newestMessageId: 5 },
+        { name: "Birch", newestMessageId: 9 },
+        { name: "Cider", highlightedAt: 1, newestMessageId: 2 },
+      ]),
+    ).toEqual(["Cider", "Birch", "Alder"]);
+  });
+
+  it("is stable for rows with identical activity", () => {
+    expect(
+      order([
+        { name: "Birch", highlightedAt: 7 },
+        { name: "Alder", highlightedAt: 7 },
+      ]),
+    ).toEqual(["Birch", "Alder"]);
+  });
+
+  it("does not mutate the input", () => {
+    const rows = [{ name: "B" }, { name: "A", highlightedAt: 1 }];
     order(rows);
     expect(rows.map((r) => r.name)).toEqual(["B", "A"]);
   });
