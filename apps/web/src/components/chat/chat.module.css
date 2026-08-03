@@ -281,21 +281,80 @@
   display: none;
 }
 
-/* Below this there is no honest room for a topic beside the name — it steps
-   out entirely rather than shrinking to an ellipsis nobody can read. The
-   popover it opened is reachable from the room-settings window instead.
+/* ── The ⋯ overflow (#375) ────────────────────────────────────────────────
 
-   Keyed off `data-header`, the provisional named threshold in layout-mode.ts
-   (was `max-width: 820px`): it sits inside the compact tier rather than on one
-   of its edges, so it keeps its own attribute instead of being rounded to a
-   tier and changing behaviour on the way. Package C retires both when the
-   header collapses by measurement. */
-:root[data-header="dense"] .topicSlot,
-:root[data-header="dense"] .headerHairline,
-/* The clock goes with it: at this width it was costing the partner's name its
-   last characters, and the profile panel carries the same reading. */
-:root[data-header="dense"] .headerClock {
-  display: none;
+   What the row could not keep, in the composer toolbar's own popover shell.
+   Each collapsed control renders as itself — same button, same aria-label and
+   title — laid out as a menu row with its label spelled out beside the glyph,
+   so nothing loses a keyboard path on the way in. The topic and the clock come
+   across as read-outs rather than rows: below a certain width there is no
+   honest room for a topic beside the name, and it is better read in full here
+   than as an ellipsis nobody can decipher. (This is the judgement the old
+   `@media (max-width: 820px)` rule was making by eye; header-toolbar.ts now
+   makes it from the row's measured width, and hands the content somewhere
+   instead of simply dropping it.) */
+.hdrMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 190px;
+  max-width: min(280px, calc(100vw - 32px));
+}
+
+/* The IconBtn, unrolled into a menu row: full width, glyph then label. Taller
+   than the 30px chip, never shorter — a collapsed control must not become a
+   smaller target than it was on the row. */
+.hdrMenu .hdrMenuItem {
+  justify-content: start;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  gap: 8px;
+  text-align: left;
+}
+
+/* …but a toggled row keeps the IconBtn state table's own accent colour. */
+.hdrMenu .hdrMenuItem:not(.iconBtnOn) {
+  color: var(--eb-text);
+}
+
+.hdrMenuLabel {
+  overflow: hidden;
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The topic, read in full rather than clipped to the row. */
+.hdrMenuNote {
+  max-height: 30vh;
+  padding: 6px 8px 8px;
+  overflow-y: auto;
+  font-size: var(--eb-font-ui-small);
+  line-height: 1.5;
+  color: var(--eb-dim);
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.hdrMenuNote img {
+  max-width: 100%;
+}
+
+/* The partner's clock, same read-out as the row's but with its subject named
+   — in a list of actions "10:12 PM" on its own would be a riddle. */
+.hdrMenuClock {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 8px;
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-meta);
+}
+
+.hdrMenuClock svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1582,7 +1641,10 @@
   z-index: 41;
   display: flex;
   flex-direction: column;
-  width: 336px;
+  /* Exactly five 60px tiles, their four 6px gaps, .pickerBody's padding and
+     the border — see .pickerGrid. Keep the two in step (PICKER_WIDTH in
+     EiconPicker.tsx mirrors it for the placement maths). */
+  width: 346px;
   background: var(--eb-side);
   border: 1px solid var(--eb-border);
   border-radius: calc(var(--eb-radius) + 2px);
@@ -1622,9 +1684,16 @@
   overflow-y: auto;
 }
 
+/* Five 60px tiles and their gaps are 324px of fixed track. That never fitted
+   the body's 314px of content box — the tab body has scrolled sideways by
+   10px since the picker was built — and under the viewport cap on floating
+   surfaces (#375 package E) a phone-width panel could not come close.
+   auto-fill reflows to whatever the panel can actually hold; the panel is
+   10px wider (above) so that stays five on a desktop and the sideways scroll
+   goes away with it. */
 .pickerGrid {
   display: grid;
-  grid-template-columns: repeat(5, 60px);
+  grid-template-columns: repeat(auto-fill, 60px);
   gap: 6px;
   justify-content: center;
 }

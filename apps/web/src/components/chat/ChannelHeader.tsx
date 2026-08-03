@@ -4,7 +4,10 @@
 // inline search field and the view toggles on the right. The row runs on the
 // composer toolbar's own IconBtn + divider language (chat.module.css
 // .iconBtn/.tbDivider) so the top and bottom of a conversation read as the
-// same instrument.
+// same instrument — including its priority collapse (#375): the row measures
+// itself and folds its lowest-priority controls into a ⋯ overflow menu, in the
+// order header-toolbar.ts lays down. Search and the notification inbox are the
+// two that never fold.
 //
 // F-Chat channels carry one CDS description — that fills the topic slot; the
 // separate editable TOPIC row has no wire counterpart and is omitted. The TPN
@@ -12,10 +15,12 @@
 // typingLine.
 
 import {
+  Fragment,
   useEffect,
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Link, useNavigate } from "react-router";
@@ -24,12 +29,13 @@ import { gateway } from "../../gateway/socket.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
 import { useLayoutMode } from "../../lib/layout-mode.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useRowWidth } from "../../lib/useRowWidth.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
 import { useMinuteClock } from "../../lib/clock.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
-import { useProfileStore } from "../../stores/profile.js";
+import { useProfileStore, type CardAnchor } from "../../stores/profile.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -56,19 +62,140 @@ import {
 import { InboxChip } from "./NotificationInbox.js";
 import { RichText } from "./RichText.js";
 import { SearchPanel } from "./SearchPanel.js";
+import { anchorOf, ToolbarPopover } from "./ToolbarPopover.js";
+import {
+  collapsedHeaderControls,
+  type HeaderControlId,
+} from "./header-toolbar.js";
 import { useLogSearch } from "./log-search.js";
 import { roleFor } from "./member-roles.js";
 import styles from "./chat.module.css";
 
-/** Toolbar chip: the composer's IconBtn, with the toggled state spelled out. */
-function chipClass(on = false, danger = false): string {
+/**
+ * Toolbar chip: the composer's IconBtn, with the toggled state spelled out.
+ * `menu` is the same chip rendered as a row of the ⋯ overflow — full width,
+ * label beside the glyph — so a collapsed control keeps its component, its
+ * behaviour and its aria-label/title pair rather than growing a second
+ * implementation.
+ */
+function chipClass({
+  on = false,
+  danger = false,
+  menu = false,
+}: { on?: boolean; danger?: boolean; menu?: boolean } = {}): string {
   return [
     styles.iconBtn,
     on ? styles.iconBtnOn : "",
     on && danger ? styles.iconBtnDanger : "",
+    menu ? styles.hdrMenuItem : "",
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/** The label a collapsed chip spells out in the ⋯ menu; nothing inline. */
+function MenuLabel({ menu, children }: { menu: boolean; children: string }) {
+  return menu ? <span className={styles.hdrMenuLabel}>{children}</span> : null;
+}
+
+/**
+ * Which of a row's controls fold into the ⋯ overflow, measured (#375).
+ *
+ * `wide` never collapses: the desktop row is what it has always been, by
+ * construction rather than by arithmetic that happens to agree. `phone`
+ * collapses everything — MP1 spec §3 keeps exactly two chips there, the inbox
+ * and search, and that is a design floor rather than a fitting result (a
+ * 390px row can *hold* five 30px chips; it should not be asked to). `compact`
+ * is the range where the measurement genuinely decides, and where measuring
+ * beats the window width it replaced: the rail hides (#346) and both columns
+ * are drag-resizable (#292), so the same window gives this row anywhere from
+ * ~460 to ~760 pixels.
+ */
+function useHeaderCollapse(
+  rowRef: RefObject<HTMLElement | null>,
+  present: readonly HeaderControlId[],
+): ReadonlySet<HeaderControlId> {
+  const layout = useLayoutMode();
+  const width = useRowWidth(rowRef);
+  if (layout === "wide" || width === undefined) {
+    return EMPTY_COLLAPSE;
+  }
+  if (layout === "phone") {
+    return new Set(present);
+  }
+  return new Set(collapsedHeaderControls(width, present));
+}
+
+const EMPTY_COLLAPSE: ReadonlySet<HeaderControlId> = new Set();
+
+/**
+ * The ⋯ slot, holding whatever the row could not keep. The collapsed controls
+ * render as themselves inside it — same buttons, same labels, same keyboard
+ * path — and any click in the menu closes it, the way a menu should.
+ */
+function HeaderOverflow({
+  items,
+  render,
+}: {
+  items: readonly HeaderControlId[];
+  render: (id: HeaderControlId, menu: boolean) => ReactNode;
+}) {
+  const [anchor, setAnchor] = useState<CardAnchor>();
+
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className={chipClass({ on: anchor !== undefined })}
+        aria-label="More conversation actions"
+        aria-haspopup="dialog"
+        aria-expanded={anchor !== undefined}
+        title="More conversation actions"
+        onClick={(event) => {
+          const at = anchorOf(event.currentTarget);
+          setAnchor((open) => (open ? undefined : at));
+        }}
+      >
+        ⋯
+      </button>
+      {anchor && (
+        <ToolbarPopover
+          anchor={anchor}
+          label="More conversation actions"
+          onClose={() => {
+            setAnchor(undefined);
+          }}
+        >
+          <div
+            className={styles.hdrMenu}
+            onClick={() => {
+              setAnchor(undefined);
+            }}
+          >
+            {items.map((id) => render(id, true))}
+          </div>
+        </ToolbarPopover>
+      )}
+    </>
+  );
+}
+
+/** A read-out rather than an action — the topic and the clock, once they have
+ * folded. Clicking inside one is not a menu choice, so it doesn't close it. */
+function HeaderNote({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className={styles.hdrMenuNote}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -247,9 +374,11 @@ function HeaderSearch({
 function IgnoreChip({
   identityId,
   character,
+  menu,
 }: {
   identityId: string;
   character: string;
+  menu: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const ignored = useSessionsStore((s) =>
@@ -286,7 +415,7 @@ function IgnoreChip({
   return (
     <button
       type="button"
-      className={chipClass(ignored, true)}
+      className={chipClass({ on: ignored, danger: true, menu })}
       onClick={() => {
         void toggle();
       }}
@@ -300,6 +429,7 @@ function IgnoreChip({
       }
     >
       <BanGlyph />
+      <MenuLabel menu={menu}>{ignored ? "Unignore" : "Ignore"}</MenuLabel>
     </button>
   );
 }
@@ -313,9 +443,11 @@ function IgnoreChip({
 function MuteChip({
   identityId,
   convId,
+  menu,
 }: {
   identityId: string;
   convId: string;
+  menu: boolean;
 }) {
   const mutedConvIds = useSessionsStore(
     (s) => s.sessions[identityId]?.prefs.mutedConvIds ?? EMPTY_MUTES,
@@ -325,7 +457,7 @@ function MuteChip({
   return (
     <button
       type="button"
-      className={chipClass(muted)}
+      className={chipClass({ on: muted, menu })}
       onClick={() => {
         // The prefs schema caps the list at 500; without this check the
         // patch is rejected server-side and the chip silently flips back
@@ -355,6 +487,7 @@ function MuteChip({
       }
     >
       {muted ? <BellOffGlyph /> : <BellGlyph />}
+      <MenuLabel menu={menu}>{muted ? "Unmute" : "Mute"}</MenuLabel>
     </button>
   );
 }
@@ -370,10 +503,12 @@ function PinChip({
   identityId,
   convId,
   pinned,
+  menu,
 }: {
   identityId: string;
   convId: string;
   pinned: boolean;
+  menu: boolean;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -407,7 +542,7 @@ function PinChip({
   return (
     <button
       type="button"
-      className={chipClass(pinned)}
+      className={chipClass({ on: pinned, menu })}
       onClick={() => {
         void toggle();
       }}
@@ -417,6 +552,7 @@ function PinChip({
       title={pinned ? "Unpin — stop auto-rejoining" : "Pin — rejoin on connect"}
     >
       <PinGlyph />
+      <MenuLabel menu={menu}>{pinned ? "Unpin" : "Pin"}</MenuLabel>
     </button>
   );
 }
@@ -428,54 +564,23 @@ function PinChip({
  * works everywhere: room mode (RMO), description (CDS), and the banlist
  * (CBL). F-Chat reports no open/closed state, so the window offers both
  * visibility actions and echoes the server's SYS response.
+ *
+ * The window itself is mounted by ChannelHeader rather than by this chip: the
+ * chip may be living inside the ⋯ overflow, which closes on the click that
+ * opened the window and would take the window down with it.
  */
-function RoomChip({
-  identityId,
-  channelKey,
-  convId,
-  title,
-  isPrivateRoom,
-  mode,
-  description,
-}: {
-  identityId: string;
-  channelKey: string;
-  convId: string;
-  title: string;
-  isPrivateRoom: boolean;
-  mode: string;
-  description: string;
-}) {
-  const [open, setOpen] = useState(false);
-
+function RoomChip({ menu, onOpen }: { menu: boolean; onOpen: () => void }) {
   return (
-    <>
-      <button
-        type="button"
-        className={chipClass()}
-        onClick={() => {
-          setOpen(true);
-        }}
-        aria-label="Room settings"
-        title="Room settings — invites, visibility, bans"
-      >
-        <GearGlyph />
-      </button>
-      {open && (
-        <RoomSettingsWindow
-          identityId={identityId}
-          channelKey={channelKey}
-          convId={convId}
-          title={title}
-          isPrivateRoom={isPrivateRoom}
-          mode={mode}
-          description={description}
-          onClose={() => {
-            setOpen(false);
-          }}
-        />
-      )}
-    </>
+    <button
+      type="button"
+      className={chipClass({ menu })}
+      onClick={onOpen}
+      aria-label="Room settings"
+      title="Room settings — invites, visibility, bans"
+    >
+      <GearGlyph />
+      <MenuLabel menu={menu}>Room settings</MenuLabel>
+    </button>
   );
 }
 
@@ -563,73 +668,145 @@ export function ChannelHeader({
   // for ADH rooms.
   const canManageRoom =
     roleFor(ownCharacter, channel.oplist) !== null || chatop;
+  const [roomOpen, setRoomOpen] = useState(false);
 
   // Room titles are wire text the server entity-escapes (#350); decode for the
   // plain-text header + chip tooltip. The description goes through RichText,
   // which decodes on its own path — so it is left untouched here.
   const title = decodeWireEntities(channel.title);
+
+  const rowRef = useRef<HTMLElement>(null);
+  // The member list has nowhere to dock on the phone stack, so AppShell holds
+  // it back there (#375) — and a toggle whose aria-pressed flips while nothing
+  // happens is worse than no toggle, in the ⋯ menu as much as on the row. MP1
+  // package D gives the list a full-height overlay and this chip its job back.
+  const present: HeaderControlId[] = [
+    ...(description === "" ? [] : (["topic"] as const)),
+    "pin",
+    "mute",
+    ...(canManageRoom ? (["room"] as const) : []),
+    ...(stacked ? [] : (["members"] as const)),
+  ];
+  const collapsed = useHeaderCollapse(rowRef, present);
+  const inline = (id: HeaderControlId) =>
+    present.includes(id) && !collapsed.has(id);
+
+  /** One control, rendered inline in the row or as a row of the ⋯ menu. */
+  function control(id: HeaderControlId, menu: boolean): ReactNode {
+    switch (id) {
+      case "topic":
+        return menu ? (
+          <HeaderNote key={id}>
+            <RichText bbcode={description} />
+          </HeaderNote>
+        ) : (
+          <Fragment key={id}>
+            <span className={styles.headerHairline} aria-hidden />
+            <HeaderTopic label={`#${title} description`}>
+              <RichText bbcode={description} />
+            </HeaderTopic>
+          </Fragment>
+        );
+      case "pin":
+        return (
+          <PinChip
+            key={id}
+            identityId={identityId}
+            convId={channel.convId}
+            pinned={channel.pinned}
+            menu={menu}
+          />
+        );
+      case "mute":
+        return (
+          <MuteChip
+            key={id}
+            identityId={identityId}
+            convId={channel.convId}
+            menu={menu}
+          />
+        );
+      case "room":
+        return (
+          <RoomChip
+            key={id}
+            menu={menu}
+            onOpen={() => {
+              setRoomOpen(true);
+            }}
+          />
+        );
+      case "members":
+        return (
+          <button
+            key={id}
+            type="button"
+            className={chipClass({ on: membersOpen, menu })}
+            onClick={toggleMembers}
+            aria-pressed={membersOpen}
+            aria-label="Toggle member list"
+            title="Toggle member list"
+          >
+            <MembersGlyph />
+            <MenuLabel menu={menu}>Member list</MenuLabel>
+            <span className={styles.headerCount}>{channel.members.length}</span>
+          </button>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
-    <header className={styles.header}>
+    <header ref={rowRef} className={styles.header}>
       {backTo !== undefined && <HeaderBack to={backTo} />}
       <div className={styles.headerIdentity}>
         <span className={styles.headerGlyph} aria-hidden>
           #
         </span>
         <h1 className={styles.headerTitle}>{title}</h1>
-        {description !== "" && (
-          <>
-            <span className={styles.headerHairline} aria-hidden />
-            <HeaderTopic label={`#${title} description`}>
-              <RichText bbcode={description} />
-            </HeaderTopic>
-          </>
-        )}
+        {inline("topic") && control("topic", false)}
       </div>
       <CampaignChip identityId={identityId} channelKey={channel.key} />
-      <div className={styles.headerCluster}>
-        <PinChip
-          identityId={identityId}
-          convId={channel.convId}
-          pinned={channel.pinned}
-        />
-        <MuteChip identityId={identityId} convId={channel.convId} />
-        {canManageRoom && (
-          <RoomChip
-            identityId={identityId}
-            channelKey={channel.key}
-            convId={channel.convId}
-            title={title}
-            isPrivateRoom={channel.key.startsWith("ADH-")}
-            mode={channel.mode}
-            description={channel.description}
-          />
-        )}
-      </div>
-      <span className={styles.tbDivider} aria-hidden />
-      {/* The member list has nowhere to dock on the phone stack, so AppShell
-          holds it back there (#375) — and a toggle whose aria-pressed flips
-          while nothing happens is worse than no toggle. MP1 package D gives
-          the list a full-height overlay and this chip its job back. */}
-      {!stacked && (
-        <button
-          type="button"
-          className={chipClass(membersOpen)}
-          onClick={toggleMembers}
-          aria-pressed={membersOpen}
-          aria-label="Toggle member list"
-          title="Toggle member list"
-        >
-          <MembersGlyph />
-          <span className={styles.headerCount}>{channel.members.length}</span>
-        </button>
+      {(inline("pin") || inline("mute") || inline("room")) && (
+        <div className={styles.headerCluster}>
+          {inline("pin") && control("pin", false)}
+          {inline("mute") && control("mute", false)}
+          {inline("room") && control("room", false)}
+        </div>
       )}
+      {inline("members") && (
+        <>
+          <span className={styles.tbDivider} aria-hidden />
+          {control("members", false)}
+        </>
+      )}
+      <HeaderOverflow
+        items={present.filter((id) => collapsed.has(id))}
+        render={control}
+      />
       {/* The notification inbox (#467) is per identity, not per conversation
           — it rides the right-hand cluster beside search because that is the
-          one row always on screen while a conversation is open. */}
+          one row always on screen while a conversation is open. Neither it nor
+          search ever collapses (spec §3). */}
       <InboxChip identityId={identityId} />
       {/* Search sits last, flush to the app's right edge — the toolbar now
           spans the member column, so this is where a search box belongs. */}
       <HeaderSearch identityId={identityId} convId={channel.convId} />
+      {roomOpen && (
+        <RoomSettingsWindow
+          identityId={identityId}
+          channelKey={channel.key}
+          convId={channel.convId}
+          title={title}
+          isPrivateRoom={channel.key.startsWith("ADH-")}
+          mode={channel.mode}
+          description={channel.description}
+          onClose={() => {
+            setRoomOpen(false);
+          }}
+        />
+      )}
     </header>
   );
 }
@@ -710,8 +887,155 @@ export function DmHeader({
   }
 
   const status = dm.online ? dm.status : "offline";
+  const hasTopic = dm.statusmsg !== "" || dm.status !== "";
+
+  const rowRef = useRef<HTMLElement>(null);
+  const present: HeaderControlId[] = [
+    ...(hasTopic ? (["topic"] as const) : []),
+    ...(clock ? (["clock"] as const) : []),
+    "pin",
+    "mute",
+    "ignore",
+    "panel",
+    "actions",
+    "close",
+  ];
+  const collapsed = useHeaderCollapse(rowRef, present);
+  const inline = (id: HeaderControlId) =>
+    present.includes(id) && !collapsed.has(id);
+
+  /** One control, rendered inline in the row or as a row of the ⋯ menu. */
+  function control(id: HeaderControlId, menu: boolean): ReactNode {
+    switch (id) {
+      case "topic": {
+        const body = (
+          <>
+            <span className={styles.topicStatus}>{status}</span>
+            {dm.online && dm.statusmsg ? (
+              <>
+                {" — "}
+                <RichText bbcode={dm.statusmsg} />
+              </>
+            ) : null}
+          </>
+        );
+        return menu ? (
+          <HeaderNote key={id}>{body}</HeaderNote>
+        ) : (
+          <Fragment key={id}>
+            <span className={styles.headerHairline} aria-hidden />
+            <HeaderTopic label={`${dm.partner} — status`}>{body}</HeaderTopic>
+          </Fragment>
+        );
+      }
+      case "clock":
+        // Their local time (#439) sits outside the topic slot on purpose: it
+        // is a two-glance fact, and inside the slot it would be the first
+        // thing an overlong status truncated away.
+        return clock ? (
+          <span
+            key={id}
+            className={menu ? styles.hdrMenuClock : styles.headerClock}
+            title={clockTitle(clock, dm.partner)}
+          >
+            <ClockGlyph />
+            {clock.time}
+            {menu && ` — ${dm.partner}'s local time`}
+          </span>
+        ) : null;
+      case "pin":
+        return (
+          <PinChip
+            key={id}
+            identityId={identityId}
+            convId={dm.convId}
+            pinned={dm.pinned}
+            menu={menu}
+          />
+        );
+      case "mute":
+        return (
+          <MuteChip
+            key={id}
+            identityId={identityId}
+            convId={dm.convId}
+            menu={menu}
+          />
+        );
+      case "ignore":
+        return (
+          <IgnoreChip
+            key={id}
+            identityId={identityId}
+            character={dm.partner}
+            menu={menu}
+          />
+        );
+      case "panel":
+        return (
+          <button
+            key={id}
+            type="button"
+            className={chipClass({ on: sidebarOn, menu })}
+            title={
+              sidebarOn ? "Hide the profile panel" : "Show the profile panel"
+            }
+            aria-label="Toggle profile panel"
+            aria-pressed={sidebarOn}
+            onClick={() => {
+              if (narrow) {
+                useUiStore.getState().toggleDmDrawer();
+              } else {
+                useUiStore.getState().toggleDmSidebar();
+              }
+            }}
+          >
+            <PanelRightGlyph />
+            <MenuLabel menu={menu}>Profile panel</MenuLabel>
+          </button>
+        );
+      case "actions":
+        return (
+          <button
+            key={id}
+            type="button"
+            className={chipClass({ menu })}
+            title={`Actions for ${dm.partner}`}
+            aria-label={`Actions for ${dm.partner}`}
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setMenuAt({ x: rect.left, y: rect.bottom + 4 });
+            }}
+          >
+            <MoreGlyph />
+            <MenuLabel menu={menu}>{`Actions for ${dm.partner}`}</MenuLabel>
+          </button>
+        );
+      case "close":
+        return (
+          <button
+            key={id}
+            type="button"
+            className={chipClass({ menu })}
+            title="Close this conversation — history is kept"
+            aria-label={`Close conversation with ${dm.partner}`}
+            disabled={closing}
+            onClick={() => {
+              void close();
+            }}
+          >
+            <CloseGlyph />
+            <MenuLabel menu={menu}>Close conversation</MenuLabel>
+          </button>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
-    <header className={styles.header}>
+    <header ref={rowRef} className={styles.header}>
       {backTo !== undefined && <HeaderBack to={backTo} />}
       <div className={styles.headerIdentity}>
         <span
@@ -727,86 +1051,28 @@ export function DmHeader({
           }}
         />
         <h1 className={styles.headerTitle}>{dm.partner}</h1>
-        {(dm.statusmsg !== "" || dm.status !== "") && (
-          <>
-            <span className={styles.headerHairline} aria-hidden />
-            <HeaderTopic label={`${dm.partner} — status`}>
-              <span className={styles.topicStatus}>{status}</span>
-              {dm.online && dm.statusmsg ? (
-                <>
-                  {" — "}
-                  <RichText bbcode={dm.statusmsg} />
-                </>
-              ) : null}
-            </HeaderTopic>
-          </>
-        )}
-        {/* Their local time (#439) sits outside the topic slot on purpose: it
-            is a two-glance fact, and inside the slot it would be the first
-            thing an overlong status truncated away. */}
-        {clock && (
-          <span
-            className={styles.headerClock}
-            title={clockTitle(clock, dm.partner)}
-          >
-            <ClockGlyph />
-            {clock.time}
-          </span>
-        )}
+        {inline("topic") && control("topic", false)}
+        {inline("clock") && control("clock", false)}
       </div>
       {/* Typing status moved onto the message bar (#336) — see the composer's
           typingLine. Showing it here too would duplicate the same info. */}
-      <div className={styles.headerCluster}>
-        <PinChip
-          identityId={identityId}
-          convId={dm.convId}
-          pinned={dm.pinned}
-        />
-        <MuteChip identityId={identityId} convId={dm.convId} />
-        <IgnoreChip identityId={identityId} character={dm.partner} />
-      </div>
-      <span className={styles.tbDivider} aria-hidden />
-      <button
-        type="button"
-        className={chipClass(sidebarOn)}
-        title={sidebarOn ? "Hide the profile panel" : "Show the profile panel"}
-        aria-label="Toggle profile panel"
-        aria-pressed={sidebarOn}
-        onClick={() => {
-          if (narrow) {
-            useUiStore.getState().toggleDmDrawer();
-          } else {
-            useUiStore.getState().toggleDmSidebar();
-          }
-        }}
-      >
-        <PanelRightGlyph />
-      </button>
-      <button
-        type="button"
-        className={chipClass()}
-        title={`Actions for ${dm.partner}`}
-        aria-label={`Actions for ${dm.partner}`}
-        aria-haspopup="menu"
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          setMenuAt({ x: rect.left, y: rect.bottom + 4 });
-        }}
-      >
-        <MoreGlyph />
-      </button>
-      <button
-        type="button"
-        className={chipClass()}
-        title="Close this conversation — history is kept"
-        aria-label={`Close conversation with ${dm.partner}`}
-        disabled={closing}
-        onClick={() => {
-          void close();
-        }}
-      >
-        <CloseGlyph />
-      </button>
+      {(inline("pin") || inline("mute") || inline("ignore")) && (
+        <div className={styles.headerCluster}>
+          {inline("pin") && control("pin", false)}
+          {inline("mute") && control("mute", false)}
+          {inline("ignore") && control("ignore", false)}
+        </div>
+      )}
+      {(inline("panel") || inline("actions") || inline("close")) && (
+        <span className={styles.tbDivider} aria-hidden />
+      )}
+      {inline("panel") && control("panel", false)}
+      {inline("actions") && control("actions", false)}
+      {inline("close") && control("close", false)}
+      <HeaderOverflow
+        items={present.filter((id) => collapsed.has(id))}
+        render={control}
+      />
       <InboxChip identityId={identityId} />
       {/* Search sits last, flush to the app's right edge — the toolbar now
           spans the profile column, so this is where a search box belongs. */}
