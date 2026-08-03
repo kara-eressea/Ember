@@ -227,40 +227,56 @@
    moment it takes focus — taking the topic's room, not the conversation
    name's. The chips never collapse; they are the row's whole point.
    The thresholds are window-wide but the row is (window − rail − sidebar),
-   since the toolbar spans the right column too. */
-@media (max-width: 940px) {
-  .searchField {
-    width: 32px;
-    padding: 0 8px;
-  }
+   since the toolbar spans the right column too.
 
-  .searchField:not(:focus-within) .searchFieldInput {
-    flex: none;
-    width: 0;
-  }
+   Keyed off the shell's layout tier (lib/layout-mode.ts, #375) rather than a
+   media query: the interface-scale pref zooms :root, and a media query reads
+   the viewport before that zoom — at 125% it would hand a 1000px window the
+   full-width field the layout has no room to paint. The tiers are listed
+   positively (never `:not([data-layout="wide"])`) so an unstamped root — a
+   test fixture, a paint before boot — falls back to the desktop shape. */
+:root:is([data-layout="phone"], [data-layout="compact"]) .searchField {
+  width: 32px;
+  padding: 0 8px;
+}
 
+:root:is([data-layout="phone"], [data-layout="compact"])
+  .searchField:not(:focus-within)
+  .searchFieldInput {
+  flex: none;
+  width: 0;
+}
+
+:root:is([data-layout="phone"], [data-layout="compact"])
   .searchField:focus-within {
-    width: 200px;
-    padding: 0 10px;
-  }
+  width: 200px;
+  padding: 0 10px;
+}
 
-  .header:has(.searchField:focus-within) .topicSlot,
-  .header:has(.searchField:focus-within) .headerHairline {
-    display: none;
-  }
+:root:is([data-layout="phone"], [data-layout="compact"])
+  .header:has(.searchField:focus-within)
+  .topicSlot,
+:root:is([data-layout="phone"], [data-layout="compact"])
+  .header:has(.searchField:focus-within)
+  .headerHairline {
+  display: none;
 }
 
 /* Below this there is no honest room for a topic beside the name — it steps
    out entirely rather than shrinking to an ellipsis nobody can read. The
-   popover it opened is reachable from the room-settings window instead. */
-@media (max-width: 820px) {
-  .topicSlot,
-  .headerHairline,
-  /* The clock goes with it: at this width it was costing the partner's name
-     its last characters, and the profile panel carries the same reading. */
-  .headerClock {
-    display: none;
-  }
+   popover it opened is reachable from the room-settings window instead.
+
+   Keyed off `data-header`, the provisional named threshold in layout-mode.ts
+   (was `max-width: 820px`): it sits inside the compact tier rather than on one
+   of its edges, so it keeps its own attribute instead of being rounded to a
+   tier and changing behaviour on the way. Package C retires both when the
+   header collapses by measurement. */
+:root[data-header="dense"] .topicSlot,
+:root[data-header="dense"] .headerHairline,
+/* The clock goes with it: at this width it was costing the partner's name its
+   last characters, and the profile panel carries the same reading. */
+:root[data-header="dense"] .headerClock {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -53,6 +53,11 @@ Desktop layout is unchanged above the breakpoint.
   (touch, small viewports) covering the stack, keyboard, sheets, and scroll
   invariants; self-host docs gain an install-to-home-screen section.
 
+MP1's "one breakpoint (~768px)" was superseded during planning by three named,
+zoom-corrected tiers — see [mp1-responsive-shell.md](mp1-responsive-shell.md),
+the authoritative MP1 spec, for the tier table, the package cut and the
+invariants.
+
 ## Non-goals
 
 - Native iOS/Android apps, app-store distribution, push notifications via

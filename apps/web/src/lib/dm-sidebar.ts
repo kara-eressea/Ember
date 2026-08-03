@@ -1,18 +1,14 @@
 // DM profile sidebar (issue #170): a single global open preference, mirrored
 // to localStorage so the choice survives reloads — the same shape the theme
-// keys use (eb.accent, eb.baseTheme). The pref governs the wide-window grid
-// column; below the responsive breakpoint the sidebar is a transient overlay
-// drawer that always starts closed, so the persisted pref never forces an
-// overlay open on a narrow window.
+// keys use (eb.accent, eb.baseTheme). The pref governs the grid column on the
+// wide tier; below it the sidebar is a transient overlay drawer that always
+// starts closed, so the persisted pref never forces an overlay open on a
+// narrow window.
 
-import { useEffect, useState } from "react";
+import { useLayoutMode } from "./layout-mode.js";
 
 /** Spec §5: the single global preference key. */
 export const DM_SIDEBAR_KEY = "eb.dmSidebar.open";
-
-/** The responsive breakpoint (design-system): at or below this the sidebar
- * becomes a right-edge overlay drawer instead of a grid column. */
-export const DM_SIDEBAR_NARROW_QUERY = "(max-width: 899px)";
 
 /** Read the stored open preference. Defaults to open (true) — a first-time
  * DM shows the partner beside the conversation. Tolerant of a poisoned or
@@ -39,30 +35,12 @@ export function persistDmSidebarOpen(open: boolean): void {
   }
 }
 
-/** True while the viewport is at or below the responsive breakpoint. SSR- and
- * jsdom-safe (returns false when matchMedia is unavailable). */
+/** True on anything narrower than the wide desktop tier — the drawer/overlay
+ * side of every "is there room for a second column?" decision. A derivation of
+ * the shared tier model (lib/layout-mode.ts): this used to carry its own
+ * `(max-width: 899px)` media query, which both drifted from the shell's other
+ * breakpoints and read the pre-zoom viewport. SSR- and jsdom-safe by way of
+ * useLayoutMode, which defaults to `wide` when the environment can't answer. */
 export function useIsNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return false;
-    }
-    return window.matchMedia(DM_SIDEBAR_NARROW_QUERY).matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return;
-    }
-    const mql = window.matchMedia(DM_SIDEBAR_NARROW_QUERY);
-    const onChange = (event: MediaQueryListEvent) => {
-      setNarrow(event.matches);
-    };
-    // The initializer already read the current match; the listener carries it
-    // forward. (A synchronous setState here would only cover a query flip
-    // between render and effect, which the listener also catches.)
-    mql.addEventListener("change", onChange);
-    return () => {
-      mql.removeEventListener("change", onChange);
-    };
-  }, []);
-  return narrow;
+  return useLayoutMode() !== "wide";
 }
