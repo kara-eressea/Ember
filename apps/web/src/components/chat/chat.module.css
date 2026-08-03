@@ -262,18 +262,20 @@
   display: none;
 }
 
-/* On a phone there is no honest room for a topic beside the name — it steps
+/* Below this there is no honest room for a topic beside the name — it steps
    out entirely rather than shrinking to an ellipsis nobody can read. The
    popover it opened is reachable from the room-settings window instead.
-   (This was `max-width: 820px`, a threshold with no tier of its own; it snaps
-   to the phone edge. Through 768–820 the topic returns, which is affordable
-   because the compact rules above have already parked the search field as a
-   32px magnifier — more room back than the topic slot asks for.) */
-:root[data-layout="phone"] .topicSlot,
-:root[data-layout="phone"] .headerHairline,
+
+   Keyed off `data-header`, the provisional named threshold in layout-mode.ts
+   (was `max-width: 820px`): it sits inside the compact tier rather than on one
+   of its edges, so it keeps its own attribute instead of being rounded to a
+   tier and changing behaviour on the way. Package C retires both when the
+   header collapses by measurement. */
+:root[data-header="dense"] .topicSlot,
+:root[data-header="dense"] .headerHairline,
 /* The clock goes with it: at this width it was costing the partner's name its
    last characters, and the profile panel carries the same reading. */
-:root[data-layout="phone"] .headerClock {
+:root[data-header="dense"] .headerClock {
   display: none;
 }
 

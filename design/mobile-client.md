@@ -53,28 +53,10 @@ Desktop layout is unchanged above the breakpoint.
   (touch, small viewports) covering the stack, keyboard, sheets, and scroll
   invariants; self-host docs gain an install-to-home-screen section.
 
-## Layout tiers (MP1, implemented)
-
-The "one breakpoint" above became three tiers, because the shell already had
-two ad-hoc thresholds of its own (the DM sidebar's 899px media query and the
-channel header's 940/820px ones) and they had drifted apart. `apps/web/src/lib/
-layout-mode.ts` is now the only place a shell breakpoint is written down:
-
-| Tier | Effective width | Shape |
-|---|---|---|
-| `phone` | < 768 | single-pane navigation stack |
-| `compact` | 768 – 940 | the desktop grid, tightened (drawers, no column resize) |
-| `wide` | > 940 | the desktop grid, unchanged |
-
-**Effective** width means `window.innerWidth / uiZoom()`. The interface-scale
-pref applies `zoom` to `:root`, and CSS media queries evaluate against the
-viewport *before* that zoom — at 125% a 1000px window paints into 800 CSS
-pixels while every media query still reports 1000 and hands it the full desktop
-grid. Tier selection therefore runs in JS, driven by `resize` **and** by a
-MutationObserver on the root's style attribute (a scale change fires no resize
-event), and is published to CSS as `<html data-layout="phone|compact|wide">`.
-Shell geometry is keyed off that attribute rather than `@media (max-width: …)`;
-genuine device queries (`prefers-reduced-motion`) stay media queries.
+MP1's "one breakpoint (~768px)" was superseded during planning by three named,
+zoom-corrected tiers — see [mp1-responsive-shell.md](mp1-responsive-shell.md),
+the authoritative MP1 spec, for the tier table, the package cut and the
+invariants.
 
 ## Non-goals
 

@@ -22,7 +22,28 @@ never re-derived by eyeballing a pixel count at a call site.
 `compact` already half-exists as the ad-hoc `(max-width: 899px)` /
 `(max-width: 940px)` / `(max-width: 820px)` queries scattered across
 `dm-sidebar.ts` and `chat.module.css`. MP1 folds all of them into the tier
-model; no new one-off breakpoints may be introduced.
+model; no new one-off breakpoints may be introduced. Those three had drifted
+apart from each other — the DM sidebar and the conversation header disagreed
+about when a window was cramped — which is the concrete reason the tiers exist
+rather than being tidied in place.
+
+**One survivor, named and provisional** (package A). `899` and `940` fold onto
+the tier edges cleanly; `820` does not — it is the width at which the
+conversation header drops its topic slot and clock, and it sits *inside*
+`compact` rather than on either edge. The room it reclaims was judged
+necessary while the search field was already collapsed (which starts at 940),
+so rounding it to a tier edge is not a no-op in either direction: at the phone
+edge the clock returns at 800px, where it was removed for eating the partner's
+name; at the compact edge the topic vanishes at 900px, where there is still
+room for it. It therefore keeps a name in `layout-mode.ts`
+(`HEADER_DENSE_MAX_WIDTH`), is computed from the same effective width as the
+tiers so it is zoom-corrected too, and is published as a second root attribute
+(`data-header="dense" | "roomy"`). **Package C deletes all three** — the
+constant, `headerDensityFor`, and the attribute — when it ports
+`ComposerToolbar`'s ResizeObserver and collapses the header by measurement
+instead of by width. What §6 forbids is a bare pixel literal loose in a
+stylesheet; a named, documented, tier-model-owned threshold with a scheduled
+removal is not that.
 
 ## 2. Breakpoints are zoom-corrected — CSS media queries alone are wrong
 
@@ -40,6 +61,14 @@ in JS, and the resulting tier is stamped on the document element as
 shell geometry. Media queries remain fine for things genuinely about the
 device rather than the layout box — `prefers-reduced-motion`, `hover: none`,
 `pointer: coarse`.
+
+Because a scale change fires no `resize` event of its own, recomputation is
+driven by two signals: the window's `resize`, and a `MutationObserver` on the
+root's `style` attribute (`applyInterface` is its only writer). Both are
+coalesced into one animation frame. The attributes are stamped from boot
+(`main.tsx`, right after `applyInterface`) rather than from a React effect, so
+nothing paints untiered and the login / identity-picker screens — which live
+outside `AppShell` — are covered too.
 
 ## 3. Phone toolbar keeps exactly two chips
 
