@@ -1257,6 +1257,10 @@ function NavRow({
         <button
           type="button"
           className={styles.navClose}
+          // Revealed by row hover; permanently drawn where nothing can hover
+          // (base.css §5-F), which is also why the badge stops yielding to it
+          // there — see .navTrailBadge below.
+          data-eb-hover-reveal
           aria-label={affordance.label}
           title={affordance.label}
           onClick={(event) => {

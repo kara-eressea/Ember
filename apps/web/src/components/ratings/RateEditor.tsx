@@ -8,7 +8,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Avatar } from "../common/Avatar.js";
 import { StarPicker } from "./StarRating.js";
-import { placePopoverInWindow } from "../profile/popover.js";
+import {
+  placePopoverInWindow,
+  popoverWidthInWindow,
+} from "../profile/popover.js";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./ratings.module.css";
@@ -52,7 +55,9 @@ export function RateEditor({
   }, [onClose]);
 
   const placement = placePopoverInWindow(anchor, {
-    width: EDITOR_WIDTH,
+    // The width CSS actually drew, which on a narrow phone is the viewport
+    // cap rather than EDITOR_WIDTH (MP1 §5-E).
+    width: popoverWidthInWindow(EDITOR_WIDTH),
     height: EDITOR_HEIGHT,
   });
 
@@ -75,6 +80,7 @@ export function RateEditor({
     <div
       ref={ref}
       className={styles.editor}
+      data-eb-surface
       role="dialog"
       aria-label={`Rate ${character}`}
       style={{ top: placement.top, left: placement.left }}

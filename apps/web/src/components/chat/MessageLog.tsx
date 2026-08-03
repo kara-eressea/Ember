@@ -1349,6 +1349,10 @@ function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
     <button
       type="button"
       className={rating ? styles.chipReset : (ratingsStyles.ratePill ?? "")}
+      // The unrated pill is quiet until the ad row is hovered; on a touch
+      // device it is the only way to rate a poster, so it stays drawn
+      // (base.css §5-F). A rated poster's stars are always visible anyway.
+      data-eb-hover-reveal
       aria-label={
         rating
           ? `Your rating for ${sender}: ${String(rating.score)} of 5 — edit`

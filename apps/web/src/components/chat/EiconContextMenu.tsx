@@ -146,6 +146,7 @@ function EiconMenu({
       <div
         ref={menuRef}
         className={styles.memberMenu}
+        data-eb-surface
         role="menu"
         aria-label={`${name} eicon menu`}
         style={{ left: point.x, top: point.y }}

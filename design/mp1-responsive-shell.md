@@ -105,7 +105,13 @@ against each other.
   to the list. No new router state — back is a route change, so the browser
   and Android back gesture work for free. The identity rail folds into the
   list header.
-- **C — toolbar collapse.** §3, by porting `COLLAPSE_STEPS`.
+- **C — toolbar collapse.** §3, by porting `COLLAPSE_STEPS`. Also carries one
+  to-do handed over from E: the eicon picker's grid is `repeat(5, 60px)` =
+  324px of fixed tracks, so under E's viewport cap it scrolls sideways inside
+  the panel instead of reflowing. The fix is `repeat(auto-fill, 60px)` in
+  `chat.module.css`, which E could not touch — that file belonged to package A
+  while E was in flight. C owns the composer/toolbar chrome the picker hangs
+  off, so it lands here.
 - **D — members + DM profile overlay (phone).** The right column becomes a
   full-height overlay on `phone`, extending the drawer shim `DmProfile`
   already has for `narrow`. Member list gets the same treatment.

@@ -10,6 +10,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import {
   placeBesideInWindow,
   popoverViewport,
+  popoverWidthInWindow,
   POPOVER_MARGIN,
 } from "../profile/popover.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
@@ -48,8 +49,13 @@ export function LinkPreview() {
     // panel itself, letting the media area scroll inside it.
     const maxHeight = popoverViewport().height - 2 * POPOVER_MARGIN;
     const height = Math.min(element.offsetHeight, maxHeight);
+    // …and the same in the other axis on a phone (MP1 §5-E): the CSS cap has
+    // already shrunk the panel below PANEL_WIDTH there, so the placement has
+    // to be told the width it was actually drawn at or it flips into a gutter
+    // that no longer needs flipping.
+    const width = popoverWidthInWindow(PANEL_WIDTH);
     setPos({
-      ...placeBesideInWindow(preview.anchor, { width: PANEL_WIDTH, height }),
+      ...placeBesideInWindow(preview.anchor, { width, height }),
       maxHeight,
     });
   }, [preview, state]);
@@ -75,6 +81,7 @@ export function LinkPreview() {
       <div
         ref={panelRef}
         className={styles.linkPreview}
+        data-eb-surface
         role="dialog"
         aria-label={`Preview: ${source.path}`}
         style={

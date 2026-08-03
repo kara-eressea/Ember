@@ -5,6 +5,8 @@
 // jsdom for the `*InWindow` wrappers, which read the live viewport and the
 // interface-scale zoom factor off :root.
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   placeAtPoint,
@@ -13,11 +15,32 @@ import {
   placeCorner,
   placePopover,
   placePopoverInWindow,
+  popoverMaxWidth,
+  popoverWidthInWindow,
   POPOVER_CORNER_MARGIN,
+  POPOVER_MARGIN,
 } from "./popover.js";
 
 const VIEWPORT = { width: 1280, height: 800 };
 const SIZE = { width: 300, height: 240 };
+
+function setViewport(width: number, height: number, zoom?: number) {
+  Object.defineProperty(window, "innerWidth", {
+    value: width,
+    configurable: true,
+  });
+  Object.defineProperty(window, "innerHeight", {
+    value: height,
+    configurable: true,
+  });
+  if (zoom !== undefined) {
+    document.documentElement.style.setProperty("--eb-ui-zoom", String(zoom));
+  }
+}
+
+afterEach(() => {
+  document.documentElement.style.removeProperty("--eb-ui-zoom");
+});
 
 describe("placePopover", () => {
   it("prefers below-start: top = anchor.bottom + gap, left = anchor.left", () => {
@@ -134,24 +157,6 @@ describe("placeAtPoint (context menus)", () => {
 // live inside that zoom, so their inline coordinates are scaled again on
 // paint while the anchor rect and window.innerWidth/Height are not.
 describe("zoom-corrected placement", () => {
-  function setViewport(width: number, height: number, zoom?: number) {
-    Object.defineProperty(window, "innerWidth", {
-      value: width,
-      configurable: true,
-    });
-    Object.defineProperty(window, "innerHeight", {
-      value: height,
-      configurable: true,
-    });
-    if (zoom !== undefined) {
-      document.documentElement.style.setProperty("--eb-ui-zoom", String(zoom));
-    }
-  }
-
-  afterEach(() => {
-    document.documentElement.style.removeProperty("--eb-ui-zoom");
-  });
-
   it("is a plain viewport placement at 100%", () => {
     setViewport(1280, 800, 1);
     expect(
@@ -196,6 +201,106 @@ describe("zoom-corrected placement", () => {
     expect(
       placeAtPointInWindow({ x: 500, y: 250 }, { width: 220, height: 260 }),
     ).toEqual({ top: 200, left: 400 });
+  });
+});
+
+// MP1 §5-E: every floating surface fits a phone with the shared margin to
+// spare, at every interface scale. 360×780 is the narrowest viewport the
+// responsive shell targets.
+describe("phone viewport", () => {
+  const PHONE = { width: 360, height: 780 };
+
+  /** The four corners of a 360×780 screen, as trigger rects in *visual*
+   * pixels — what getBoundingClientRect hands the placement. */
+  const CORNERS = {
+    "top-left": { top: 4, left: 2, bottom: 24, right: 90 },
+    "top-right": { top: 4, left: 270, bottom: 24, right: 358 },
+    "bottom-left": { top: 756, left: 2, bottom: 776, right: 90 },
+    "bottom-right": { top: 756, left: 270, bottom: 776, right: 358 },
+  };
+
+  for (const zoom of [1, 1.25]) {
+    for (const [corner, anchor] of Object.entries(CORNERS)) {
+      it(`keeps a card anchored ${corner} inside the screen at ${String(zoom * 100)}%`, () => {
+        setViewport(PHONE.width, PHONE.height, zoom);
+        // The root's own CSS pixels — the space the placement works in, and
+        // the space the inline top/left it returns are read in.
+        const root = { width: PHONE.width / zoom, height: PHONE.height / zoom };
+        const width = popoverWidthInWindow(SIZE.width);
+        const placed = placePopoverInWindow(anchor, {
+          width,
+          height: SIZE.height,
+        });
+        expect(placed.left).toBeGreaterThanOrEqual(POPOVER_MARGIN);
+        expect(placed.left + width).toBeLessThanOrEqual(
+          root.width - POPOVER_MARGIN,
+        );
+        expect(placed.top).toBeGreaterThanOrEqual(POPOVER_MARGIN);
+        expect(placed.top + placed.maxHeight).toBeLessThanOrEqual(
+          root.height - POPOVER_MARGIN,
+        );
+      });
+    }
+  }
+
+  it("still opens against the anchor when the phone has room", () => {
+    setViewport(PHONE.width, PHONE.height, 1);
+    // Mid-screen trigger: the cap must not drag a surface that fits away
+    // from the name it was opened from.
+    const placed = placePopoverInWindow(
+      { top: 200, left: 40, bottom: 220, right: 130 },
+      { width: popoverWidthInWindow(SIZE.width), height: SIZE.height },
+    );
+    expect(placed).toMatchObject({ top: 226, left: 40, placement: "below" });
+  });
+
+  it("caps a surface wider than the screen instead of letting it hang off", () => {
+    setViewport(PHONE.width, PHONE.height, 1);
+    // The link preview's 340 clears a 360px screen by 4px; the profile
+    // viewer's 900 does not.
+    expect(popoverWidthInWindow(340)).toBe(340);
+    expect(popoverWidthInWindow(900)).toBe(360 - 16);
+    setViewport(PHONE.width, PHONE.height, 1.25);
+    // 360 visual pixels is 288 of the zoomed root's own, and that — not 360
+    // — is what the surface has to fit inside.
+    expect(popoverWidthInWindow(340)).toBe(288 - 16);
+    expect(popoverWidthInWindow(200)).toBe(200);
+  });
+
+  // A 60-character character name with no break opportunity, or a wide eicon
+  // grid: the content wants far more room than the screen has. It must be the
+  // content that gives way (scroll/ellipsis inside the surface), never the
+  // surface that grows past the edge.
+  it("holds the line against content that refuses to shrink", () => {
+    setViewport(PHONE.width, PHONE.height, 1.25);
+    const width = popoverWidthInWindow(900);
+    expect(width).toBe(popoverMaxWidth(288));
+    const placed = placePopoverInWindow(
+      { top: 300, left: 340, bottom: 320, right: 358 },
+      { width, height: 240 },
+    );
+    expect(placed.left).toBe(POPOVER_MARGIN);
+    expect(placed.left + width).toBe(288 - POPOVER_MARGIN);
+  });
+});
+
+// The CSS cap and the placement math have to subtract the same margin: cap to
+// a wider one and the clamp pulls a surface off the edge it is flush with;
+// cap to a narrower one and the surface is needlessly small. base.css can't
+// import the constant, so the agreement is asserted instead.
+describe("--eb-popover-margin (base.css)", () => {
+  // Read as text rather than imported: vitest stubs CSS imports out.
+  // Vitest's cwd is the web app.
+  const baseCss = readFileSync(resolve("src/styles/base.css"), "utf8");
+
+  it("declares the same margin the placement clamps to", () => {
+    expect(baseCss).toContain(
+      `--eb-popover-margin: ${String(POPOVER_MARGIN)}px;`,
+    );
+  });
+
+  it("divides the viewport cap by the interface-scale zoom", () => {
+    expect(baseCss).toContain("100vw / var(--eb-ui-zoom, 1)");
   });
 });
 

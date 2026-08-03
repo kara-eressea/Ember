@@ -18,6 +18,7 @@ import { parseBBCode, type BBNode } from "@emberchat/markdown-bbcode";
 import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
 import { parseCharacterUrl } from "../../lib/character-url.js";
 import { chipHost, chipLabel, resolvePreview } from "../../lib/link-preview.js";
+import { useNoHover } from "../../lib/pointer.js";
 import {
   openPreviewFrom,
   useLinkPreviewStore,
@@ -560,6 +561,11 @@ const EICON_BOX = 60;
  * Name-only display mode: a chip that previews the eicon on hover. A blocked
  * eicon reuses the same chip with the preview suppressed — right-clicking it
  * still opens the menu, which is how it gets unblocked.
+ *
+ * Where the pointer can't hover (MP1 §5-F) the chip is otherwise inert — the
+ * whole point of the mode is the preview, and mouseenter never fires — so a
+ * tap toggles it there instead. Only there: on a desktop pointer the chip
+ * must not swallow clicks it never handled before.
  */
 function EiconChip({
   name,
@@ -572,19 +578,38 @@ function EiconChip({
   animate: boolean;
   blocked?: boolean;
 }) {
-  const [hover, setHover] = useState(false);
+  const [shown, setShown] = useState(false);
+  const noHover = useNoHover();
+  // Either/or, never both: a tap on a touchscreen still fires the
+  // compatibility mouseenter, so leaving the hover handlers wired alongside
+  // the tap would have the enter open the preview and the click that follows
+  // it close the preview again — one tap, no preview. A blocked chip gets
+  // neither: its preview is suppressed in both directions.
+  const hoverProps = {
+    onMouseEnter: () => {
+      setShown(!blocked);
+    },
+    onMouseLeave: () => {
+      setShown(false);
+    },
+  };
+  const tapProps = {
+    role: "button",
+    tabIndex: 0,
+    "aria-expanded": shown,
+    "aria-label": `${name} — show eicon`,
+    onClick: () => {
+      setShown((value) => !value);
+    },
+  };
+  const reveal = noHover ? (blocked ? {} : tapProps) : hoverProps;
   return (
     <span
       className={styles.eiconChip}
-      onMouseEnter={() => {
-        setHover(!blocked);
-      }}
-      onMouseLeave={() => {
-        setHover(false);
-      }}
       onContextMenu={(event) => {
         openEiconMenu(event, name);
       }}
+      {...reveal}
     >
       <span
         className={`${styles.bodyCode} ${blocked ? (styles.eiconBlockedName ?? "") : ""}`}
@@ -592,8 +617,8 @@ function EiconChip({
       >
         {name}
       </span>
-      {hover && (
-        <span className={styles.eiconPreview}>
+      {shown && (
+        <span className={styles.eiconPreview} data-eb-surface>
           <EiconImage name={name} src={src} animate={animate} />
         </span>
       )}
