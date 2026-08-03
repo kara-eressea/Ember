@@ -34,6 +34,7 @@ import {
   type GatewayTuning,
 } from "./connection.js";
 import { memberDto, messageDto } from "./snapshot.js";
+import { UserPrefsCache } from "./user-prefs.js";
 
 const NOOP_LOGGER: SessionLogger = {
   debug: () => {},
@@ -457,6 +458,9 @@ export async function gatewayRoutes(
     allowedOrigins.map((origin) => origin.toLowerCase()),
   );
   const HELLO_BUDGET_PER_MINUTE = 20;
+  // One per process, not per connection: the whole point is that a user's
+  // second device (and the next msg.send) reads no row at all.
+  const userPrefs = new UserPrefsCache(db);
 
   /** True while the auth session row exists and is unexpired. */
   async function sessionAlive(sid: string): Promise<boolean> {
@@ -523,6 +527,7 @@ export async function gatewayRoutes(
       highlights,
       notifications,
       imagePreviewHosts,
+      userPrefs,
       campaigns,
       social,
       verifyToken,

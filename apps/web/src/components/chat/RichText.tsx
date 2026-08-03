@@ -32,6 +32,8 @@ import {
   useUserPrefs,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { openEiconMenu } from "../../stores/eicon-menu.js";
+import { hasEicon } from "./eicon-lists.js";
 import { spoilerSegments, textTokens } from "./rich-text.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import styles from "./chat.module.css";
@@ -438,7 +440,9 @@ function LinkChip({ href, children }: { href: string; children?: ReactNode }) {
  * hotlinked + lazy like avatars. [icon] is the character's avatar and links
  * to their profile. A name outside the safe charset falls back to a chip.
  * Eicons obey the Appearance prefs (M5): display mode (inline vs name chip
- * with hover preview) and the animate toggle (off = frozen first frame).
+ * with hover preview), the animate toggle (off = frozen first frame), and
+ * the block list (chip, no preview — it outranks the display mode).
+ * Right-clicking any eicon opens the favourite/block menu.
  * [icon] avatars are static images — the prefs don't apply.
  */
 function InlineIcon({ tag, name }: { tag: "icon" | "eicon"; name: string }) {
@@ -470,6 +474,12 @@ function InlineIcon({ tag, name }: { tag: "icon" | "eicon"; name: string }) {
       </a>
     );
   }
+  // A blocked eicon never renders its image, whatever the display mode says
+  // — the chip stands in, and (unlike the name-mode chip) it does not
+  // preview on hover, which would defeat the block.
+  if (hasEicon(prefs.eiconBlocked, name)) {
+    return <EiconChip name={name} src={src} animate={false} blocked />;
+  }
   if (prefs.eiconDisplay === "name") {
     return <EiconChip name={name} src={src} animate={prefs.animateEicons} />;
   }
@@ -494,6 +504,9 @@ function EiconImage({
       width={60}
       height={60}
       loading="lazy"
+      onContextMenu={(event) => {
+        openEiconMenu(event, name);
+      }}
     />
   ) : (
     <FrozenImage name={name} src={src} />
@@ -534,34 +547,49 @@ function FrozenImage({ name, src }: { name: string; src: string }) {
       title={name}
       role="img"
       aria-label={name}
+      onContextMenu={(event) => {
+        openEiconMenu(event, name);
+      }}
     />
   );
 }
 
 const EICON_BOX = 60;
 
-/** Name-only display mode: a chip that previews the eicon on hover. */
+/**
+ * Name-only display mode: a chip that previews the eicon on hover. A blocked
+ * eicon reuses the same chip with the preview suppressed — right-clicking it
+ * still opens the menu, which is how it gets unblocked.
+ */
 function EiconChip({
   name,
   src,
   animate,
+  blocked = false,
 }: {
   name: string;
   src: string;
   animate: boolean;
+  blocked?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   return (
     <span
       className={styles.eiconChip}
       onMouseEnter={() => {
-        setHover(true);
+        setHover(!blocked);
       }}
       onMouseLeave={() => {
         setHover(false);
       }}
+      onContextMenu={(event) => {
+        openEiconMenu(event, name);
+      }}
     >
-      <span className={styles.bodyCode} title="[eicon]">
+      <span
+        className={`${styles.bodyCode} ${blocked ? (styles.eiconBlockedName ?? "") : ""}`}
+        title={blocked ? `${name} — blocked eicon` : "[eicon]"}
+      >
         {name}
       </span>
       {hover && (

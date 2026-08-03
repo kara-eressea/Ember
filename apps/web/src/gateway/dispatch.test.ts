@@ -616,6 +616,26 @@ describe("message.new and unread", () => {
     expect(session().channels["Frontpage"]?.unread).toBe(4);
   });
 
+  it("never bumps for an ignored sender (audit backlog)", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(event("ignore.updated", { characters: ["nyx firemane"] }));
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_CHANNEL,
+        message: message(11, { mention: true }),
+      }),
+    );
+    // The message is still buffered (it is filtered at render, not dropped),
+    // but an ignored character must not badge: the row the badge points at
+    // is invisible, so the count could never be cleared by reading it.
+    expect(
+      useMessagesStore.getState().buffers[CONV_CHANNEL]?.messages,
+    ).toHaveLength(1);
+    const channel = session().channels["Frontpage"];
+    expect(channel?.unread).toBe(3);
+    expect(channel?.mentions).toBe(1);
+  });
+
   it("bumps mentions from the server-stamped flag, never by re-matching", () => {
     dispatchFrame(snapshot());
     // The persist-time verdict rides the message (M5) — the client trusts it.

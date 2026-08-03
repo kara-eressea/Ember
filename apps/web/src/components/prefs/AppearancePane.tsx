@@ -6,6 +6,7 @@
 
 import { PREFS_DEFAULTS, UI_SCALE_STEPS } from "@emberchat/protocol";
 import { useSessionsStore } from "../../stores/sessions.js";
+import { withoutEicon } from "../chat/eicon-lists.js";
 import { ACCENTS, type AccentId } from "../../theme/tokens.js";
 import {
   FieldRow,
@@ -260,6 +261,28 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
 
+      <GroupLabel>Favourite eicons</GroupLabel>
+      <EiconList
+        names={prefs.eiconFavorites}
+        label="Favourite eicons"
+        removeVerb="Unfavourite"
+        empty="No favourites yet — right-click any eicon, or use the ☆ in the composer's eicon picker."
+        onRemove={(eiconFavorites) => {
+          set({ eiconFavorites });
+        }}
+      />
+
+      <GroupLabel>Blocked eicons</GroupLabel>
+      <EiconList
+        names={prefs.eiconBlocked}
+        label="Blocked eicons"
+        removeVerb="Unblock"
+        empty="Nothing blocked — right-click an eicon in a message to hide its image everywhere."
+        onRemove={(eiconBlocked) => {
+          set({ eiconBlocked });
+        }}
+      />
+
       <GroupLabel>Timestamps</GroupLabel>
       <FieldRow label="Timestamp format">
         <Segmented
@@ -285,5 +308,47 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
     </>
+  );
+}
+
+/**
+ * The favourite/blocked eicon review lists — both are built by right-clicking
+ * eicons in chat (and the picker's ☆), so this is a management surface only,
+ * mirroring the muted-conversations list in Notifications.
+ */
+function EiconList({
+  names,
+  label,
+  removeVerb,
+  empty,
+  onRemove,
+}: {
+  names: readonly string[];
+  label: string;
+  removeVerb: string;
+  empty: string;
+  onRemove: (next: string[]) => void;
+}) {
+  if (names.length === 0) {
+    return <p className={styles.rulesEmpty}>{empty}</p>;
+  }
+  return (
+    <ul className={styles.ruleList} aria-label={label}>
+      {names.map((name) => (
+        <li key={name} className={styles.ruleChip}>
+          <span className={styles.rulePattern}>{name}</span>
+          <button
+            type="button"
+            className={styles.ruleRemove}
+            aria-label={`${removeVerb} ${name}`}
+            onClick={() => {
+              onRemove(withoutEicon(names, name));
+            }}
+          >
+            ✕
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -19,12 +19,14 @@ import { patchPrefs } from "../prefs/patch.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
+import { openEiconMenu } from "../../stores/eicon-menu.js";
 import {
   appendPage,
   emptyGallery,
   hasMore,
   type GalleryState,
 } from "./eicon-gallery.js";
+import { hasEicon, toggleEiconFavorite } from "./eicon-lists.js";
 import styles from "./chat.module.css";
 
 const PICKER_WIDTH = 336;
@@ -109,16 +111,8 @@ export function EiconPicker({
   }, [place]);
 
   function toggleFavorite(name: string) {
-    const has = prefs.eiconFavorites.some(
-      (fav) => fav.toLowerCase() === name.toLowerCase(),
-    );
     void patchPrefs(identityId, {
-      eiconFavorites: has
-        ? prefs.eiconFavorites.filter(
-            (fav) => fav.toLowerCase() !== name.toLowerCase(),
-          )
-        : // Schema caps at 100 — drop the oldest rather than refuse.
-          [...prefs.eiconFavorites.slice(-99), name],
+      eiconFavorites: toggleEiconFavorite(prefs.eiconFavorites, name),
     });
   }
 
@@ -166,6 +160,7 @@ export function EiconPicker({
             prefs.eiconSearchEnabled ? (
               <SearchTab
                 favorites={prefs.eiconFavorites}
+                blocked={prefs.eiconBlocked}
                 onInsert={onInsert}
                 onToggleFavorite={toggleFavorite}
               />
@@ -176,6 +171,7 @@ export function EiconPicker({
             prefs.eiconSearchEnabled ? (
               <GalleryTab
                 favorites={prefs.eiconFavorites}
+                blocked={prefs.eiconBlocked}
                 onInsert={onInsert}
                 onToggleFavorite={toggleFavorite}
               />
@@ -188,6 +184,7 @@ export function EiconPicker({
                 tab === "favorites" ? prefs.eiconFavorites : prefs.eiconRecents
               }
               favorites={prefs.eiconFavorites}
+              blocked={prefs.eiconBlocked}
               empty={
                 tab === "favorites" ? (
                   <PickerNote glyph="☆" title="No favorites yet">
@@ -226,10 +223,12 @@ type SearchState = "idle" | "loading" | "ok" | "error";
 
 function SearchTab({
   favorites,
+  blocked,
   onInsert,
   onToggleFavorite,
 }: {
   favorites: readonly string[];
+  blocked: readonly string[];
   onInsert: (name: string) => void;
   onToggleFavorite: (name: string) => void;
 }) {
@@ -342,6 +341,7 @@ function SearchTab({
             <TileGrid
               names={results}
               favorites={favorites}
+              blocked={blocked}
               empty={null}
               onInsert={onInsert}
               onToggleFavorite={onToggleFavorite}
@@ -359,10 +359,12 @@ function SearchTab({
 // the viewport, so opening the tab never pulls thousands of images at once.
 function GalleryTab({
   favorites,
+  blocked,
   onInsert,
   onToggleFavorite,
 }: {
   favorites: readonly string[];
+  blocked: readonly string[];
   onInsert: (name: string) => void;
   onToggleFavorite: (name: string) => void;
 }) {
@@ -470,6 +472,7 @@ function GalleryTab({
       <TileGrid
         names={gallery.names}
         favorites={favorites}
+        blocked={blocked}
         empty={null}
         onInsert={onInsert}
         onToggleFavorite={onToggleFavorite}
@@ -525,12 +528,14 @@ function IndexOffNote({
 function TileGrid({
   names,
   favorites,
+  blocked,
   empty,
   onInsert,
   onToggleFavorite,
 }: {
   names: readonly string[];
   favorites: readonly string[];
+  blocked: readonly string[];
   empty: React.ReactNode;
   onInsert: (name: string) => void;
   onToggleFavorite: (name: string) => void;
@@ -541,11 +546,20 @@ function TileGrid({
   return (
     <div className={styles.pickerGrid}>
       {names.map((name) => {
-        const favorite = favorites.some(
-          (fav) => fav.toLowerCase() === name.toLowerCase(),
-        );
+        const favorite = hasEicon(favorites, name);
+        // A blocked eicon shows its name here too — browsing is not a reason
+        // to render an image the user asked never to see. Right-click still
+        // reaches the menu, so it can be unblocked from the tile.
+        const isBlocked = hasEicon(blocked, name);
         return (
-          <span key={name} className={styles.eiconTile} title={name}>
+          <span
+            key={name}
+            className={styles.eiconTile}
+            title={isBlocked ? `${name} — blocked eicon` : name}
+            onContextMenu={(event) => {
+              openEiconMenu(event, name);
+            }}
+          >
             <button
               type="button"
               className={styles.eiconTileInsert}
@@ -554,7 +568,11 @@ function TileGrid({
                 onInsert(name);
               }}
             >
-              <EiconImage name={name} />
+              {isBlocked ? (
+                <span className={styles.eiconTileName}>{name}</span>
+              ) : (
+                <EiconImage name={name} />
+              )}
             </button>
             <button
               type="button"

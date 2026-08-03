@@ -141,6 +141,16 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       if (message.kind === "lrp") {
         return;
       }
+      // Ignored senders badge nothing (audit backlog): the log filters their
+      // rows out (log-rows.ts), so an unread they raised would point at
+      // something invisible and could never be cleared by reading it. The
+      // server's snapshot and ready-frame counts exclude them the same way.
+      const ignores = sessions.sessions[identityId]?.ignores ?? [];
+      if (
+        ignores.some((name) => sameCharacter(name, message.senderCharacter))
+      ) {
+        return;
+      }
       const muted =
         prefs !== undefined &&
         (prefs.mutedIdentityIds.includes(identityId) ||
