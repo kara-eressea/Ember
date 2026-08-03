@@ -8,17 +8,13 @@
 
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
   type RefObject,
 } from "react";
-import {
-  placePopoverInWindow,
-  type PopoverPlacement,
-} from "../profile/popover.js";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useRowWidth } from "../../lib/useRowWidth.js";
+import { anchorOf, ToolbarPopover } from "./ToolbarPopover.js";
 import type { ComposerInputHandle } from "./composer-input.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import {
@@ -69,19 +65,12 @@ export interface ComposerToolbarProps {
   onOpenHelp: () => void;
 }
 
-function anchorOf(element: HTMLElement): CardAnchor {
-  const rect = element.getBoundingClientRect();
-  return {
-    top: rect.top,
-    left: rect.left,
-    bottom: rect.bottom,
-    right: rect.right,
-  };
-}
-
 export function ComposerToolbar(props: ComposerToolbarProps) {
   const rowRef = useRef<HTMLDivElement>(null);
-  const [rowWidth, setRowWidth] = useState<number>();
+  // Never wrap, never scroll (spec §8): the row watches its own width and
+  // folds the lower-priority actions into the ⋯ overflow. The conversation
+  // toolbar runs on the same measurement (#375).
+  const rowWidth = useRowWidth(rowRef);
   const [popover, setPopover] = useState<{
     kind: PopoverKind;
     anchor: CardAnchor;
@@ -91,27 +80,6 @@ export function ComposerToolbar(props: ComposerToolbarProps) {
 
   const armed = props.sendDelaySeconds > 0;
   const armedLabel = delayLabel(props.sendDelaySeconds);
-
-  // Never wrap, never scroll (spec §8): watch the row's width and fold the
-  // lower-priority actions into the ⋯ overflow. First ResizeObserver in
-  // the app — idiomatic for an element-scoped width, no container queries
-  // in use elsewhere.
-  useEffect(() => {
-    const row = rowRef.current;
-    if (!row) {
-      return;
-    }
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        setRowWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(row);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
 
   // Toggle reflection (spec §3): on caret/selection change each style
   // button mirrors whether its format is active at the cursor.
@@ -374,54 +342,6 @@ export function ComposerToolbar(props: ComposerToolbarProps) {
         </ToolbarPopover>
       )}
     </div>
-  );
-}
-
-/** The shared popover shell: overlay to close, measured + viewport-clamped
- * placement (profile popover primitive). */
-function ToolbarPopover({
-  anchor,
-  onClose,
-  children,
-}: {
-  anchor: CardAnchor;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [placement, setPlacement] = useState<PopoverPlacement>();
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) {
-      return;
-    }
-    setPlacement(
-      placePopoverInWindow(anchor, {
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-      }),
-    );
-  }, [anchor]);
-  // Shared Escape stack (#442): a picker opened from inside this popover (the
-  // eicon picker) mounts later and closes first, one press at a time.
-  useEscapeToClose(onClose);
-  return (
-    <>
-      <div className={styles.tbOverlay} onClick={onClose} />
-      <div
-        ref={ref}
-        role="dialog"
-        className={styles.tbPopover}
-        data-eb-surface
-        style={
-          placement
-            ? { top: placement.top, left: placement.left }
-            : { top: 0, left: 0, visibility: "hidden" }
-        }
-      >
-        {children}
-      </div>
-    </>
   );
 }
 

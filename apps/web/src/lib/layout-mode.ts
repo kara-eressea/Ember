@@ -32,9 +32,12 @@
 // at most one comparison per frame and only publishes when something actually
 // flips — no visible lag, no React render per pixel.
 //
-// One width measurement feeds every threshold the shell has, so they can never
-// disagree with each other. That includes HEADER_DENSE_MAX_WIDTH below, which
-// is not a tier edge and is explicitly provisional — see its comment.
+// The tiers are the whole of this module. The conversation header's old
+// `max-width: 820px` rule lived here for one release as the provisional
+// HEADER_DENSE_MAX_WIDTH; MP1 package C retired it, and the header now decides
+// what it can carry from its own measured width (components/chat/
+// header-toolbar.ts). A width that is about the window belongs here; a width
+// that is about one row belongs to that row.
 
 import { useSyncExternalStore } from "react";
 import { uiZoom } from "./ui-zoom.js";
@@ -56,33 +59,6 @@ export function layoutModeFor(width: number): LayoutMode {
     return "compact";
   }
   return "phone";
-}
-
-/**
- * PROVISIONAL (MP1 package C). The conversation header sheds its topic slot
- * and clock below a width that is inside the compact tier, not on one of its
- * edges — the old `@media (max-width: 820px)` rule. The room it reclaims was
- * judged necessary *while the search field was already collapsed* (that starts
- * at 940), so the threshold is real and snapping it to either tier edge
- * changes behaviour: at the phone edge the clock comes back at 800px, where it
- * was removed for eating the partner's name; at the compact edge the topic
- * disappears at 900px, where there is still room for it.
- *
- * So it keeps its own name here rather than living as a pixel literal in a
- * stylesheet, and rides the same measurement/scheduler as the tiers so it is
- * zoom-corrected too. Package C replaces it with a real measurement of the
- * header row (porting `ComposerToolbar`'s ResizeObserver + `COLLAPSE_STEPS`),
- * at which point this constant, `headerDensityFor` and the `data-header`
- * attribute all go away.
- */
-export const HEADER_DENSE_MAX_WIDTH = 820;
-
-/** Whether the conversation header has room for its secondary furniture. */
-export type HeaderDensity = "dense" | "roomy";
-
-/** See HEADER_DENSE_MAX_WIDTH. Pure, same as `layoutModeFor`. */
-export function headerDensityFor(width: number): HeaderDensity {
-  return width <= HEADER_DENSE_MAX_WIDTH ? "dense" : "roomy";
 }
 
 /** The viewport width in the zoomed root's own CSS pixels — the width the
@@ -107,51 +83,26 @@ export function currentLayoutMode(): LayoutMode {
   return width === undefined ? "wide" : layoutModeFor(width);
 }
 
-/** The live header density; `roomy` when the environment can't answer. */
-export function currentHeaderDensity(): HeaderDensity {
-  const width = measurableWidth();
-  return width === undefined ? "roomy" : headerDensityFor(width);
-}
-
-/** Everything the shell derives from one width measurement. */
-interface ShellMetrics {
-  layout: LayoutMode;
-  header: HeaderDensity;
-}
-
 const listeners = new Set<() => void>();
-let snapshot: ShellMetrics | undefined;
+let snapshot: LayoutMode | undefined;
 let scheduled = false;
 let frame: number | undefined;
 
-function measure(): ShellMetrics {
+function measure(): LayoutMode {
   const width = measurableWidth();
-  return width === undefined
-    ? { layout: "wide", header: "roomy" }
-    : { layout: layoutModeFor(width), header: headerDensityFor(width) };
+  return width === undefined ? "wide" : layoutModeFor(width);
 }
 
-function getSnapshot(): ShellMetrics {
+function getSnapshot(): LayoutMode {
   snapshot ??= measure();
   return snapshot;
 }
 
-/** `useSyncExternalStore` compares snapshots by identity, so the hook reads
- * the one field it cares about rather than the record. */
-function getLayoutSnapshot(): LayoutMode {
-  return getSnapshot().layout;
-}
-
-/** Re-measure and wake subscribers, but only when something actually flipped
- * — one measurement feeds every threshold, so they can never disagree. */
+/** Re-measure and wake subscribers, but only when the tier actually flipped —
+ * `useSyncExternalStore` re-renders on any notification. */
 function publish(): void {
   const next = measure();
-  const previous = snapshot;
-  if (
-    previous !== undefined &&
-    next.layout === previous.layout &&
-    next.header === previous.header
-  ) {
+  if (next === snapshot) {
     return;
   }
   snapshot = next;
@@ -228,30 +179,26 @@ function subscribe(listener: () => void): () => void {
 
 /** The current layout tier, kept live. */
 export function useLayoutMode(): LayoutMode {
-  return useSyncExternalStore(subscribe, getLayoutSnapshot, () => "wide");
+  return useSyncExternalStore(subscribe, getSnapshot, () => "wide");
 }
 
 /**
- * Mirror the live measurements onto the document element — `data-layout` for
- * the tier, `data-header` for the provisional header threshold — and keep them
+ * Mirror the live tier onto the document element as `data-layout` and keep it
  * there. Installed once at boot (main.tsx) rather than from an AppShell
- * effect: the attributes have to exist before React's first paint (otherwise
+ * effect: the attribute has to exist before React's first paint (otherwise
  * the shell renders one frame of desktop geometry and then reflows), and the
- * login and identity-picker screens live outside AppShell but still need them.
+ * login and identity-picker screens live outside AppShell but still need it.
  * Returns a stop function for tests; the app never calls it.
  */
 export function startLayoutTracking(): () => void {
   const root = document.documentElement;
   const stamp = () => {
-    const { layout, header } = getSnapshot();
-    root.setAttribute("data-layout", layout);
-    root.setAttribute("data-header", header);
+    root.setAttribute("data-layout", getSnapshot());
   };
   const unsubscribe = subscribe(stamp);
   stamp();
   return () => {
     unsubscribe();
     root.removeAttribute("data-layout");
-    root.removeAttribute("data-header");
   };
 }

@@ -27,23 +27,26 @@ apart from each other — the DM sidebar and the conversation header disagreed
 about when a window was cramped — which is the concrete reason the tiers exist
 rather than being tidied in place.
 
-**One survivor, named and provisional** (package A). `899` and `940` fold onto
-the tier edges cleanly; `820` does not — it is the width at which the
-conversation header drops its topic slot and clock, and it sits *inside*
-`compact` rather than on either edge. The room it reclaims was judged
-necessary while the search field was already collapsed (which starts at 940),
-so rounding it to a tier edge is not a no-op in either direction: at the phone
-edge the clock returns at 800px, where it was removed for eating the partner's
-name; at the compact edge the topic vanishes at 900px, where there is still
-room for it. It therefore keeps a name in `layout-mode.ts`
-(`HEADER_DENSE_MAX_WIDTH`), is computed from the same effective width as the
-tiers so it is zoom-corrected too, and is published as a second root attribute
-(`data-header="dense" | "roomy"`). **Package C deletes all three** — the
-constant, `headerDensityFor`, and the attribute — when it ports
-`ComposerToolbar`'s ResizeObserver and collapses the header by measurement
-instead of by width. What §6 forbids is a bare pixel literal loose in a
-stylesheet; a named, documented, tier-model-owned threshold with a scheduled
-removal is not that.
+**One survivor, named and provisional — now retired** (package A, deleted by
+package C). `899` and `940` folded onto the tier edges cleanly; `820` did not
+— it was the width at which the conversation header dropped its topic slot and
+clock, and it sat *inside* `compact` rather than on either edge. Package A gave
+it a name in `layout-mode.ts` (`HEADER_DENSE_MAX_WIDTH`) and a root attribute
+(`data-header`) rather than leaving a pixel literal loose in a stylesheet, on
+the understanding that package C would replace it with a measurement.
+
+It did. `layout-mode.ts` now carries the tier model and nothing else, and the
+header decides what it can hold from its own measured width
+(`components/chat/header-toolbar.ts`). Measuring turned out to be the honest
+answer rather than a tidier one: the row is not the window — it is the window
+minus the identity rail (hideable, #346) and the sidebar (drag-resizable
+between 180 and 400, #292), so `820` meant anywhere from ~330 to ~610 pixels
+of actual row. And one number had to serve two different rows: a DM header
+carries three more chips and a clock, so `820` was tuned to the busier of
+them. Measured in Chromium, a channel now keeps its description through the
+whole `compact` tier while a DM sheds its status and clock at ~845 — each row
+shedding what it actually cannot carry, within ~25px of where the eyeballed
+threshold put it.
 
 ## 2. Breakpoints are zoom-corrected — CSS media queries alone are wrong
 
@@ -79,6 +82,19 @@ existing ResizeObserver + `COLLAPSE_STEPS` mechanism rather than a second,
 parallel one. Search stays the right-most element (matching the full-width
 toolbar decision from v0.20.0).
 
+As built (package C): the measurement is shared (`lib/useRowWidth.ts`) and so
+is the popover the menu hangs in (`ToolbarPopover.tsx`); the priority table and
+width model are a port, because the two rows differ in kind — six fixed
+clusters with dividers versus a control set that changes per conversation
+(channel vs DM, op-only room chip, a clock only for a partner whose timezone is
+known). The collapse order is topic + clock, then pin + mute, then ignore /
+room settings / close, then the partner actions menu, then the member-list and
+profile-panel toggles. On `phone` the two-chip floor is applied directly rather
+than inferred from the arithmetic: a 390px row *can* hold four 30px chips, and
+should not be asked to. Above `wide` the row never collapses at all, so the
+desktop toolbar is unchanged by construction rather than by arithmetic that
+happens to agree.
+
 ## 4. Preferences on phone: the cheap stopgap
 
 `PreferencesWindow` is a two-column section-rail-plus-pane dialog and does not
@@ -111,7 +127,10 @@ against each other.
   the panel instead of reflowing. The fix is `repeat(auto-fill, 60px)` in
   `chat.module.css`, which E could not touch — that file belonged to package A
   while E was in flight. C owns the composer/toolbar chrome the picker hangs
-  off, so it lands here.
+  off, so it lands here. *Done:* `auto-fill`, plus 10px on the panel's own
+  width — five 60px tiles and their gaps are 324px against 314px of content
+  box, so the tab body had in fact been scrolling sideways on a desktop since
+  the picker was built. Five tiles fit exactly now, and reflow below that.
 - **D — members + DM profile overlay (phone).** The right column becomes a
   full-height overlay on `phone`, extending the drawer shim `DmProfile`
   already has for `narrow`. Member list gets the same treatment.

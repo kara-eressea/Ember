@@ -32,7 +32,8 @@ import {
 import { hasEicon, toggleEiconFavorite } from "./eicon-lists.js";
 import styles from "./chat.module.css";
 
-const PICKER_WIDTH = 336;
+/** Mirrors `.eiconPicker`'s width in chat.module.css — five 60px tiles wide. */
+const PICKER_WIDTH = 346;
 
 const TABS = [
   { id: "favorites", label: "Favorites" },
