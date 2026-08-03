@@ -98,3 +98,42 @@ describe("row measurements", () => {
     expect(measuredRows("a", SIG)).toHaveLength(1);
   });
 });
+
+// The phone stack (#375) moves the log between two very different widths, and
+// it does so without a conversation switch — so the store meets width changes
+// in an order it never saw on the desktop grid. These are the two sequences
+// that matter.
+describe("row measurements across a pane switch (#375)", () => {
+  beforeEach(() => {
+    resetMeasuredRows();
+  });
+
+  // wide → phone with a conversation open: the sidebar leaves and the log
+  // takes the whole viewport. Every remembered height was measured against the
+  // old wrap width and is now wrong — the tier flip must invalidate them, or
+  // the log paints its rows on top of one another (#460).
+  it("drops heights when a tier flip widens the log", () => {
+    noteLogWidth(1000); // desktop: viewport minus rail, sidebar, members
+    rememberMeasuredRows("a", SIG, snapshot(["m:1", "m:2"]));
+
+    noteLogWidth(390); // phone: the conversation pane is the whole width
+    expect(measuredRows("a", SIG)).toEqual([]);
+  });
+
+  // Leaving the conversation pane unmounts the log; nothing else on the phone
+  // stack owns a log, so the store must not be disturbed by the teardown —
+  // the zero-width guard is what keeps the heights for the way back.
+  it("keeps them across a back-and-return that never changes the width", () => {
+    noteLogWidth(390);
+    rememberMeasuredRows("a", SIG, snapshot(["m:1", "m:2"]));
+
+    // Back to the list: the unmounting log reports its no-longer-laid-out box.
+    noteLogWidth(0);
+    // …and the same conversation is re-opened at the same phone width.
+    noteLogWidth(390);
+    expect(measuredRows("a", SIG).map((item) => item.key)).toEqual([
+      "m:1",
+      "m:2",
+    ]);
+  });
+});

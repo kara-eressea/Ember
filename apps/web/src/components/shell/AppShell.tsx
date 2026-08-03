@@ -1,11 +1,13 @@
 // AppShell (COMPONENTS.md §Layout): rail · sidebar · main · members grid,
 // driven by the human-readable routes /app/<Character>[/c/<channel>|/dm/
 // <partner>] (lib/routes.ts — case-insensitive, @me alias, legacy UUID
-// redirects). Owns the gateway lifecycle for the tab: connect the socket,
-// subscribe every identity (background identities must stream so their rail
-// badges stay live), connect F-Chat sessions where the autoConnect intent
-// says so (sessions themselves outlive every tab — the bouncer property),
-// and advance the read cursor for whatever conversation is on screen.
+// redirects). On the phone tier the same routes drive a single-pane stack
+// instead of the grid (lib/pane.ts, #375). Owns the gateway lifecycle for the
+// tab: connect the socket, subscribe every identity (background identities
+// must stream so their rail badges stay live), connect F-Chat sessions where
+// the autoConnect intent says so (sessions themselves outlive every tab — the
+// bouncer property), and advance the read cursor for whatever conversation is
+// on screen.
 
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
@@ -34,6 +36,7 @@ import { Composer } from "../chat/Composer.js";
 import { DmProfile } from "../chat/DmProfile.js";
 import { MemberList } from "../chat/MemberList.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
+import { usePane } from "../../lib/pane.js";
 import { MessageLog } from "../chat/MessageLog.js";
 import { CharacterSearch } from "../search/CharacterSearch.js";
 import { AdCenter } from "../ads/AdCenter.js";
@@ -128,6 +131,10 @@ export function AppShell() {
       : undefined;
   const convId = conv?.convId;
   const convSuffix = conv?.suffix;
+  // Which pane the phone stack is showing (#375). A function of the route
+  // alone, so browser Back and the Android back gesture walk the stack; it is
+  // `undefined` on compact and wide, where both columns are on screen.
+  const pane = usePane(ref !== undefined);
 
   // Favicon badge + title count for backgrounded tabs (#390).
   useUnreadIndicator();
@@ -315,11 +322,27 @@ export function AppShell() {
   }
 
   const activeId = resolved.id;
+  // The back affordance of the phone stack. It targets `identityPath` — the
+  // exact prefix the canonical URL above is built from — so following it
+  // lands on a path that is already canonical and never triggers a second
+  // <Navigate replace> on arrival. Undefined on compact and wide: there is
+  // nothing to go back to when the list is on screen already.
+  const backToList =
+    pane === "conversation" ? identityPath(resolved.name) : undefined;
   const conversation =
     convId === undefined ? undefined : findConversation(session, convId);
   const channel =
     conversation?.kind === "channel" ? conversation.channel : undefined;
-  const showMembers = channel !== undefined && membersOpen;
+  // The stack has no right-hand track to dock into, and `membersOpen` starts
+  // open — docked into the single column, every channel on a phone would open
+  // on its member list instead of its conversation. So the member list steps
+  // out on that tier, the same way the DM sidebar's grid column already steps
+  // out below the wide layout; MP1 package D brings it back as the full-height
+  // overlay DmProfile's narrow drawer already is, and until then the header
+  // hides its chip on the same tier rather than offering a toggle that does
+  // nothing.
+  const showMembers =
+    channel !== undefined && membersOpen && pane === undefined;
   // The DM sidebar shares the same 232px right-column slot as MemberList; the
   // two are mutually exclusive by conversation kind. On the wide layout it's a
   // grid column (persisted pref); below the responsive breakpoint it's a
@@ -333,6 +356,11 @@ export function AppShell() {
     <div
       ref={shellRef}
       className={`${styles.shell} ${rightColumnOpen ? "" : (styles.membersClosed ?? "")} ${hideRail ? (styles.railHidden ?? "") : ""}`}
+      // The stack's state, for CSS and for tests. Present only on the phone
+      // tier — where the shell shows one pane — so the desktop grid keeps
+      // exactly the markup it has today.
+      data-pane={pane}
+      data-testid="app-shell"
       style={{
         [WIDTH_VARS.left]: `${leftWidth}px`,
         [WIDTH_VARS.right]: `${rightWidth}px`,
@@ -369,12 +397,14 @@ export function AppShell() {
             key={`head:${convId}`}
             identityId={activeId}
             channel={conversation.channel}
+            backTo={backToList}
           />
         ) : (
           <DmHeader
             key={`head:${convId}`}
             identityId={activeId}
             dm={conversation.dm}
+            backTo={backToList}
           />
         )
       ) : null}
@@ -399,6 +429,16 @@ export function AppShell() {
         {conversation === undefined || convId === undefined ? (
           <div className={styles.centerNote}>
             <p>Join a channel or open a conversation to start chatting.</p>
+            {/* A conversation route that resolved to nothing (never joined,
+                deleted, a stale bookmark) renders no toolbar, so the stack's
+                usual back chip is not there. Installed as a PWA there is no
+                browser chrome to fall back on either — so the pane carries
+                its own way out. */}
+            {backToList !== undefined && (
+              <p>
+                <Link to={backToList}>Back to conversations</Link>
+              </p>
+            )}
           </div>
         ) : (
           <>

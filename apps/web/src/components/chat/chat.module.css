@@ -16,6 +16,25 @@
   background: var(--eb-head);
 }
 
+/* Back out of the phone stack's conversation pane (#375). It rides the row's
+   own IconBtn shape, as an anchor rather than a button — the pane is a route,
+   so this is a link. AppShell renders it only while the shell is stacked. */
+.headerBack {
+  flex: none;
+  text-decoration: none;
+}
+
+.headerBack:hover {
+  text-decoration: none;
+}
+
+/* The row's generous left padding exists to set the conversation name off
+   from the sidebar's edge; with the back chip leading, that job is the
+   chip's and the padding only pushes the name further from it. */
+.header:has(.headerBack) {
+  padding-left: 4px;
+}
+
 /* Name and topic share the row and take every spare pixel — everything to
    their right is fixed-width, so the topic is what gives way first. The
    floor is on the block, not the name inside it: a name that outgrew its

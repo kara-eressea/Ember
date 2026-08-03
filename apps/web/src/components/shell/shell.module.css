@@ -1104,6 +1104,125 @@
   align-items: center;
 }
 
+/* ── Phone: the single-pane navigation stack (MP1 package B, #375) ───────
+   Below the compact floor there is room for one pane, and which one is a
+   function of the route — AppShell derives it (lib/pane.ts) and publishes it
+   as `data-pane` on the shell. Everything here is gated on the tier attribute
+   stamped by lib/layout-mode.ts, listed positively so an unstamped root (a
+   test fixture, a paint before boot) keeps the desktop grid. `compact` and
+   `wide` are untouched by this section. */
+
+:root[data-layout="phone"] .shell {
+  /* One column, whichever desktop variant is also in play: .membersClosed and
+     .railHidden both rewrite grid-template-columns and both are outranked by
+     the tier attribute. The rows carry over as they are — the conversation
+     pane puts the toolbar in the first and the log in the second; the list
+     pane takes a third, further down. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The identity rail folds into the list pane's header: the same <nav>, the
+   same links and badges and context menu, laid on its side as a scrolling
+   strip above the conversation list. A 60px permanent column is not
+   affordable on a phone, and folding beats a menu here because switching
+   identity is the rail's whole purpose — a strip keeps it (and the unread
+   badges that make it worth looking at) one tap away and visible at a
+   glance. */
+:root[data-layout="phone"] .rail {
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-right: none;
+  border-bottom: 1px solid var(--eb-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+:root[data-layout="phone"] .railItem {
+  flex: none;
+  padding: 2px 4px;
+}
+
+/* The active marker turns with the strip: an underline, not a left edge. */
+:root[data-layout="phone"] .railActive {
+  box-shadow: inset 0 -3px 0 var(--eb-accent);
+}
+
+:root[data-layout="phone"] .railAdd {
+  flex: none;
+  margin: 0;
+}
+
+/* Rail hidden (#346): the docked shell collapses the rail's grid COLUMN to
+   zero and clips it, which is why the element has to stay in the grid there
+   (#351). The stack has no column to collapse and a horizontal strip would
+   keep its full height, so here it leaves the flow instead — safe precisely
+   because it is not a track between two others: every remaining child is
+   placed explicitly, so nothing can shift into its place. */
+:root[data-layout="phone"] .shell.railHidden .rail {
+  display: none;
+}
+
+:root[data-layout="phone"] .sidebar {
+  grid-column: 1;
+  grid-row: 2;
+  /* Full-bleed: the border marked the seam with the chat column, and there
+     is no column beside it now. */
+  border-right: none;
+}
+
+:root[data-layout="phone"] .shell > header,
+:root[data-layout="phone"] .main {
+  grid-column: 1;
+}
+
+/* No rule for the right column here on purpose: nothing docks into the stack.
+   AppShell holds the member list back on this tier (package D turns it into a
+   full-height overlay), and the DM profile is already a fixed-position drawer
+   below the wide layout, so it is out of the grid entirely. */
+
+/* The stack itself. `display: none` rather than an off-screen transform: the
+   hidden pane must leave the tab order and the accessibility tree, or a
+   screen-reader user walks into a conversation list nobody can see. The cost
+   is the list's scroll offset, which resets when it comes back — judged the
+   cheaper of the two, and the conversation pays nothing either way, because
+   on the list pane the route names no conversation and the message log is not
+   mounted at all (so no hidden log ever measures itself at width 0). */
+:root[data-layout="phone"] .shell[data-pane="conversation"] .rail,
+:root[data-layout="phone"] .shell[data-pane="conversation"] .sidebar {
+  display: none;
+}
+
+:root[data-layout="phone"] .shell[data-pane="list"] > header {
+  display: none;
+}
+
+/* …with one exception: <main> also carries the session notice — the banner a
+   failed connect or status change raises, both of which are reachable from
+   the rail and the MeBar, i.e. from the list pane itself. Hiding <main>
+   outright would leave those errors with nowhere to appear. So the list pane
+   gives it a row of its own between the folded rail and the list, and hides
+   only the landing copy inside it; with no notice up, the row measures zero
+   and nothing moves. */
+:root[data-layout="phone"] .shell[data-pane="list"] {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+:root[data-layout="phone"] .shell[data-pane="list"] .main {
+  grid-row: 2;
+}
+
+:root[data-layout="phone"] .shell[data-pane="list"] .sidebar {
+  grid-row: 3;
+}
+
+:root[data-layout="phone"] .shell[data-pane="list"] .centerNote {
+  display: none;
+}
+
 /* One-shot highlight when the notification inbox sends the user to the
    friend-request rows (#467) — the same read as the log's jump flash. */
 @keyframes request-flash {

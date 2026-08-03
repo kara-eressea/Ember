@@ -164,3 +164,10 @@ export function ClockGlyph(): ReactNode {
 export function CloseGlyph(): ReactNode {
   return svg(<path d="M6.4 6.4l11.2 11.2M17.6 6.4L6.4 17.6" />);
 }
+
+/** Left chevron — back out of the phone stack's conversation pane (#375). A
+ * bare chevron, not an arrow: it is a navigation-stack affordance, and every
+ * phone platform draws that one the same way. */
+export function BackGlyph(): ReactNode {
+  return svg(<path d="M14.5 5.5L8 12l6.5 6.5" />);
+}

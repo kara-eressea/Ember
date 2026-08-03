@@ -3,6 +3,10 @@
 // that identity's store slice. Background identities carry unread/mention
 // badges; the active one never does. Right-click opens the identity menu:
 // set status / connect–log off / move up–down (persisted rail order).
+//
+// On the phone tier the same element folds into the conversation list's
+// header as a horizontal strip (shell.module.css, #375); the only behavioural
+// difference is where a rail link points — see RailItem.
 
 import {
   useEffect,
@@ -18,6 +22,7 @@ import {
 } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
+import { useLayoutMode } from "../../lib/layout-mode.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
@@ -43,6 +48,9 @@ interface MenuState {
 export function IdentityRail({ activeId }: { activeId: string }) {
   const identities = useSessionsStore((s) => s.identities);
   const [menu, setMenu] = useState<MenuState>();
+  // Subscribed once here rather than per row — every item wants the same
+  // answer, and the rail can hold a dozen.
+  const stacked = useLayoutMode() === "phone";
 
   if (identities === undefined) {
     return <nav className={styles.rail} aria-label="Identities" />;
@@ -55,6 +63,7 @@ export function IdentityRail({ activeId }: { activeId: string }) {
           key={identity.id}
           identity={identity}
           active={identity.id === activeId}
+          stacked={stacked}
           onMenu={(event) => {
             event.preventDefault();
             // Keyboard-invoked (Menu key / Shift+F10) contextmenu events
@@ -97,10 +106,13 @@ export function IdentityRail({ activeId }: { activeId: string }) {
 function RailItem({
   identity,
   active,
+  stacked,
   onMenu,
 }: {
   identity: IdentitySummary;
   active: boolean;
+  /** Phone tier: the rail is the list pane's own header (#375). */
+  stacked: boolean;
   onMenu: (event: MouseEvent) => void;
 }) {
   const slice = useSessionsStore((s) => s.sessions[identity.id]);
@@ -111,7 +123,13 @@ function RailItem({
     slice?.ownStatus ?? "online",
   );
   const base = identityPath(identity.name);
-  const to = lastConv !== undefined ? `${base}/${lastConv}` : base;
+  // Resume where that identity was last (the only reader of lastConvByIdentity
+  // — nothing redirects a bare identity route on its own, so back-from-a-
+  // conversation stays on the list). On the stack the rail sits IN the list
+  // pane's header, and a header tab that teleports past the list it heads is
+  // the wrong gesture: there, switching identity means "show me that
+  // identity's conversations".
+  const to = !stacked && lastConv !== undefined ? `${base}/${lastConv}` : base;
   // The label overrides the link's content for assistive tech, so the badge
   // has to travel inside it — a visual-only badge would be silent.
   const label = active

@@ -513,6 +513,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Bindweed Ash"],
     },
+    // Reserved for the #375 phone pane-stack E2E (same isolation rules). Pane
+    // Hollow walks the list ⇄ conversation stack while the viewport crosses
+    // the phone boundary; Stack Fell is the raw-SimClient partner who writes
+    // the tall backlog the spec measures the tail against, so no other
+    // character may speak into that room.
+    "pane@example.test": {
+      password: "hunter2",
+      characters: ["Pane Hollow"],
+    },
+    "stackfell@example.test": {
+      password: "hunter2",
+      characters: ["Stack Fell"],
+    },
   },
   channels: [
     {
@@ -873,6 +886,20 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Where the mentions get buried.",
       oplist: ["Hazelmere Fen"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #375 phone pane-stack E2E: Stack Fell fills it with
+    // long, variable-height lines so the spec can measure whether the log is
+    // still parked at the tail after the viewport crosses the phone boundary
+    // and after each pane switch. Hidden and NPC-free — any other speaker
+    // would move the tail underneath the measurement.
+    {
+      name: "ADH-375panestack11aa22bb",
+      title: "Pane Room",
+      mode: "chat",
+      description: "One pane at a time.",
+      oplist: ["Pane Hollow"],
       npcs: [],
       listed: false,
     },
