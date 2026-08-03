@@ -18,10 +18,11 @@ import {
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
+import { useLayoutMode } from "../../lib/layout-mode.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
 import { presenceDot } from "../../lib/presence.js";
@@ -39,6 +40,7 @@ import { patchPrefs } from "../prefs/patch.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { RoomSettingsWindow } from "./RoomSettingsWindow.js";
 import {
+  BackGlyph,
   BanGlyph,
   BellGlyph,
   BellOffGlyph,
@@ -67,6 +69,30 @@ function chipClass(on = false, danger = false): string {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/**
+ * The phone stack's back affordance (#375): leading chip on the conversation
+ * toolbar, the one row that is always on screen while a conversation is open.
+ *
+ * A <Link> to the identity path, not a `history.back()`: the visible pane is a
+ * function of the route, so "back to the list" genuinely IS that navigation —
+ * and a link still works when the conversation was reached by a deep link or a
+ * notification, where there is no history entry to pop. AppShell only supplies
+ * a target while the shell is stacked, so on compact and wide this renders
+ * nothing rather than a chip that would go nowhere useful.
+ */
+function HeaderBack({ to }: { to: string }) {
+  return (
+    <Link
+      className={`${styles.iconBtn} ${styles.headerBack ?? ""}`}
+      to={to}
+      aria-label="Back to conversations"
+      title="Back to conversations"
+    >
+      <BackGlyph />
+    </Link>
+  );
 }
 
 /**
@@ -507,12 +533,18 @@ function CampaignChip({
 export function ChannelHeader({
   identityId,
   channel,
+  backTo,
 }: {
   identityId: string;
   channel: ChannelView;
+  /** Where the phone stack's back chip goes; absent on compact and wide. */
+  backTo?: string;
 }) {
   const toggleMembers = useUiStore((s) => s.toggleMembers);
   const membersOpen = useUiStore((s) => s.membersOpen);
+  // The single-pane stack (#375) — the tier, not the route, so this is the
+  // shell's shape rather than which pane is showing.
+  const stacked = useLayoutMode() === "phone";
   const ownCharacter = useSessionsStore(
     (s) => s.sessions[identityId]?.character ?? "",
   );
@@ -533,6 +565,7 @@ export function ChannelHeader({
   const title = decodeWireEntities(channel.title);
   return (
     <header className={styles.header}>
+      {backTo !== undefined && <HeaderBack to={backTo} />}
       <div className={styles.headerIdentity}>
         <span className={styles.headerGlyph} aria-hidden>
           #
@@ -568,17 +601,23 @@ export function ChannelHeader({
         )}
       </div>
       <span className={styles.tbDivider} aria-hidden />
-      <button
-        type="button"
-        className={chipClass(membersOpen)}
-        onClick={toggleMembers}
-        aria-pressed={membersOpen}
-        aria-label="Toggle member list"
-        title="Toggle member list"
-      >
-        <MembersGlyph />
-        <span className={styles.headerCount}>{channel.members.length}</span>
-      </button>
+      {/* The member list has nowhere to dock on the phone stack, so AppShell
+          holds it back there (#375) — and a toggle whose aria-pressed flips
+          while nothing happens is worse than no toggle. MP1 package D gives
+          the list a full-height overlay and this chip its job back. */}
+      {!stacked && (
+        <button
+          type="button"
+          className={chipClass(membersOpen)}
+          onClick={toggleMembers}
+          aria-pressed={membersOpen}
+          aria-label="Toggle member list"
+          title="Toggle member list"
+        >
+          <MembersGlyph />
+          <span className={styles.headerCount}>{channel.members.length}</span>
+        </button>
+      )}
       {/* The notification inbox (#467) is per identity, not per conversation
           — it rides the right-hand cluster beside search because that is the
           one row always on screen while a conversation is open. */}
@@ -593,9 +632,12 @@ export function ChannelHeader({
 export function DmHeader({
   identityId,
   dm,
+  backTo,
 }: {
   identityId: string;
   dm: DmView;
+  /** Where the phone stack's back chip goes; absent on compact and wide. */
+  backTo?: string;
 }) {
   const dot = presenceDot(dm.online, dm.status);
   const navigate = useNavigate();
@@ -665,6 +707,7 @@ export function DmHeader({
   const status = dm.online ? dm.status : "offline";
   return (
     <header className={styles.header}>
+      {backTo !== undefined && <HeaderBack to={backTo} />}
       <div className={styles.headerIdentity}>
         <span
           className={styles.headerDot}
