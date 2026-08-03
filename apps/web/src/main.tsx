@@ -11,6 +11,7 @@ import "@fontsource/ibm-plex-mono/700.css";
 import "./styles/base.css";
 
 import { loadRuntimeConfig } from "./lib/config.js";
+import { startLayoutTracking } from "./lib/layout-mode.js";
 import { AppRouter } from "./router.js";
 import { useAuthStore } from "./stores/auth.js";
 import {
@@ -25,6 +26,9 @@ import {
 
 applyTheme(savedAccent(), savedBaseTheme(), savedColorblind());
 applyInterface(savedUiFontSize(), savedUiScale());
+// After applyInterface, so the first measurement already sees the stored
+// interface scale; before render, so nothing paints untiered (#375).
+startLayoutTracking();
 const config = await loadRuntimeConfig();
 document.title = config.appName;
 void useAuthStore.getState().restore();

@@ -16,6 +16,7 @@
 // wants. Always place through a wrapper rather than reading `window` at the
 // call site.
 
+import { uiZoom } from "../../lib/ui-zoom.js";
 import type { CardAnchor } from "../../stores/profile.js";
 
 export const POPOVER_GAP = 6;
@@ -137,14 +138,6 @@ export function placeAtPoint(
       viewport.width - size.width - POPOVER_MARGIN,
     ),
   };
-}
-
-/** The interface-scale `zoom` factor on :root (theme.ts `applyInterface`). */
-export function uiZoom(): number {
-  const raw = Number.parseFloat(
-    document.documentElement.style.getPropertyValue("--eb-ui-zoom"),
-  );
-  return Number.isFinite(raw) && raw > 0 ? raw : 1;
 }
 
 /** The visual viewport expressed in the zoomed root's CSS pixels. */
