@@ -739,6 +739,25 @@
   visibility: hidden;
 }
 
+/* Touch (MP1 §5-F): the ✕ is drawn permanently, so it can no longer take
+   turns with the counter badge the way the hover swap did — one of the two
+   would be gone for good, and "how many I missed" is not a thing to trade for
+   "leave". They both stay: the row reserves the ✕'s width on its right, and
+   the badge sits just inside it.
+
+   The `:hover` rule above has to be undone rather than left alone, because
+   mobile browsers latch :hover onto the last-tapped element and it would
+   blank that row's badge until something else was tapped. */
+@media (hover: none) {
+  .navRowWrap:has(.navClose) .navItem {
+    padding-right: 30px;
+  }
+
+  .navRowWrap:hover:has(.navClose) .navTrailBadge {
+    visibility: visible;
+  }
+}
+
 .navBadge {
   margin-left: auto;
   flex: none;
@@ -980,7 +999,7 @@
   z-index: 53;
   display: flex;
   flex-direction: column;
-  width: min(480px, calc(100vw - 32px));
+  width: min(480px, calc(100vw / var(--eb-ui-zoom, 1) - 32px));
   overflow: hidden;
   background: var(--eb-side);
   border: 1px solid var(--eb-border);

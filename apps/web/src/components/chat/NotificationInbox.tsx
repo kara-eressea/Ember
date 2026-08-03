@@ -206,7 +206,12 @@ function InboxPanel({
 
   const items = inbox?.items ?? [];
   return (
-    <div className={styles.inboxPanel} role="dialog" aria-label="Notifications">
+    <div
+      className={styles.inboxPanel}
+      data-eb-surface
+      role="dialog"
+      aria-label="Notifications"
+    >
       <div className={styles.inboxHead}>
         <span className={styles.inboxTitle}>Notifications</span>
         <span className={styles.inboxHint}>Newest first</span>

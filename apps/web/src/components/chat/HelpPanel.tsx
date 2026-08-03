@@ -38,7 +38,12 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div className={styles.helpOverlay} onClick={onClose} />
-      <div className={styles.helpPanel} role="dialog" aria-label="Help">
+      <div
+        className={styles.helpPanel}
+        data-eb-surface
+        role="dialog"
+        aria-label="Help"
+      >
         <div className={styles.helpHead}>
           Commands & formatting
           <button

@@ -412,6 +412,7 @@ function ToolbarPopover({
         ref={ref}
         role="dialog"
         className={styles.tbPopover}
+        data-eb-surface
         style={
           placement
             ? { top: placement.top, left: placement.left }

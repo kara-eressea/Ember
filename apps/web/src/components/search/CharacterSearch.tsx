@@ -450,6 +450,9 @@ export function CharacterSearch({
                 <button
                   type="button"
                   className={styles.savedRemove}
+                  // Quiet until the row is hovered; always drawn where
+                  // nothing can hover (base.css §5-F).
+                  data-eb-hover-reveal
                   aria-label={`Delete saved search ${saved.name}`}
                   onClick={() => {
                     removeSaved(saved);
