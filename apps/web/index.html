@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Never hand a third-party host the URL of the instance a reader is on
+         (audit backlog). Individual <img> tags already carry
+         referrerPolicy="no-referrer", but <video> has no such attribute, so
+         the preview player leaked a Referer; the document policy covers it and
+         every other subresource app-wide. Verified against the default
+         imagePreviewHosts — none of them hotlink-gate on Referer. -->
+    <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- Title is placeholder markup only; real branding is runtime config
          injected by the serving Fastify (decisions.md §5). -->

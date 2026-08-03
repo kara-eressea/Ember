@@ -22,6 +22,17 @@ vi.mock("../../gateway/socket.js", () => ({
   gateway: { cmd: vi.fn().mockResolvedValue({ ok: true }) },
 }));
 
+// The picker re-places itself on a content-driven resize (#472); jsdom has no
+// ResizeObserver. A no-op stub is enough — placement is asserted separately in
+// EiconPicker.placement.test.tsx, which drives the observer for real.
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+globalThis.ResizeObserver ??=
+  ResizeObserverStub as unknown as typeof ResizeObserver;
+
 const IDENTITY = "id1";
 const ANCHOR = { top: 300, left: 100, bottom: 320, right: 140 };
 

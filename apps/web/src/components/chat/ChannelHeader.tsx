@@ -26,7 +26,7 @@ import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
-import { useMinuteClock } from "../../lib/useMinuteClock.js";
+import { useMinuteClock } from "../../lib/clock.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import { useProfileStore } from "../../stores/profile.js";
 import {

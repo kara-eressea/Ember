@@ -21,6 +21,7 @@ import {
   formatTime,
   type TimeFormat,
 } from "../../lib/time.js";
+import { useSecondClock } from "../../lib/clock.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import type { PresenceLine } from "../../stores/messages.js";
@@ -1304,15 +1305,9 @@ function LogSkeleton({ style }: { style: CSSProperties }) {
  * the empty composer recalls the newest one.
  */
 function PendingLine({ item }: { item: OutboxItemDto }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
+  // The shared second ticker, not one setInterval per row: a queued outbox
+  // can hold many rows and N drifting timers was the audit-backlog finding.
+  const now = useSecondClock();
   const seconds = Math.max(
     0,
     Math.ceil((new Date(item.releaseAt).getTime() - now) / 1000),

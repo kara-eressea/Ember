@@ -9,7 +9,7 @@
 import { useId, useState } from "react";
 import { saveTimezone } from "../../stores/profile.js";
 import { clockTitle, localClock } from "../../lib/local-time.js";
-import { useMinuteClock } from "../../lib/useMinuteClock.js";
+import { useMinuteClock } from "../../lib/clock.js";
 import styles from "./profile.module.css";
 
 /** Every zone the runtime knows — a fixed ~400-entry list, so it is built

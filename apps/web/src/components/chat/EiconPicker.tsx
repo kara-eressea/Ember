@@ -68,7 +68,7 @@ export function EiconPicker({
   // Measure and place per §13 — the composer sits at the bottom of the
   // viewport, so the below-start preference flips this above the ☺ button
   // (where the caret points) in every realistic layout.
-  useLayoutEffect(() => {
+  const place = useCallback(() => {
     const element = panelRef.current;
     if (!element) {
       return;
@@ -77,9 +77,38 @@ export function EiconPicker({
       width: PICKER_WIDTH,
       height: element.offsetHeight,
     });
-    setPos({ top: placed.top, left: placed.left });
+    // Only commit a real move: this also runs from a ResizeObserver, and a
+    // no-op setState there would loop through layout every frame.
+    setPos((prev) =>
+      prev && prev.top === placed.top && prev.left === placed.left
+        ? prev
+        : { top: placed.top, left: placed.left },
+    );
     setPlacement(placed.placement === "below" ? "below" : "above");
-  }, [anchor, tab]);
+  }, [anchor]);
+
+  useLayoutEffect(() => {
+    place();
+  }, [place, tab]);
+
+  // The panel grows and shrinks under its own content — a search narrowing
+  // from 200 hits to 3, a gallery page landing, an empty state replacing a
+  // grid. Placement is anchored to the panel's height, so without this the
+  // panel keeps the position measured for the old height and hangs off the
+  // viewport or floats detached from the ☺ button (audit backlog).
+  useEffect(() => {
+    const element = panelRef.current;
+    if (!element) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      place();
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [place]);
 
   function toggleFavorite(name: string) {
     void patchPrefs(identityId, {
