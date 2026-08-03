@@ -45,6 +45,7 @@ import {
   placeCorner,
   placePopoverInWindow,
   popoverViewport,
+  popoverWidthInWindow,
 } from "./popover.js";
 import { ago } from "./time.js";
 import styles from "./profile.module.css";
@@ -163,7 +164,10 @@ export function MiniProfileCard({
     const height = body
       ? element.offsetHeight - body.clientHeight + body.scrollHeight
       : element.scrollHeight;
-    const size = { width: CARD_WIDTH, height };
+    // CARD_WIDTH is what the card wants; on a phone the CSS cap has already
+    // drawn it narrower (MP1 §5-E), and placing at the wanted width would
+    // clamp the card left of the edge it is actually flush with.
+    const size = { width: popoverWidthInWindow(CARD_WIDTH), height };
     let next: { top: number; left: number; maxHeight: number };
     if (docked) {
       next = placeCorner(size, popoverViewport());
@@ -272,6 +276,7 @@ export function MiniProfileCard({
     <div
       ref={cardRef}
       className={styles.card}
+      data-eb-surface
       role="dialog"
       aria-label={`Profile card: ${name}`}
       style={

@@ -9,7 +9,7 @@
   grid-template-columns: 204px 1fr;
   width: 748px;
   height: 560px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100vw / var(--eb-ui-zoom, 1) - 32px);
   max-height: calc(100vh - 32px);
   overflow: hidden;
   background: var(--eb-side);

@@ -192,6 +192,7 @@ export function ChannelContextMenu({
       <div
         ref={menuRef}
         className={styles.memberMenu}
+        data-eb-surface
         role="menu"
         aria-label={`${channel.title} menu`}
         style={{ left: position.x, top: position.y }}

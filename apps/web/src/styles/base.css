@@ -21,6 +21,59 @@
      (30px IconBtns, the 28px search pill) set the floor, and the chrome type
      still fits at L. */
   --eb-topbar-height: 46px;
+
+  /* Floating-surface margin (MP1 §5-E). Must stay equal to POPOVER_MARGIN in
+     components/profile/popover.ts — the placement math clamps a surface to
+     that margin and the cap below subtracts it, so a disagreement either caps
+     a surface the clamp thinks still fits or clamps one the cap has already
+     shrunk. popover.test.ts reads this file and asserts the two agree. */
+  --eb-popover-margin: 8px;
+
+  /* Widest a floating surface may be: it has to fit a 360px phone with the
+     margin on both sides. `vw` is a *visual* length and is blind to the
+     `zoom` the interface-scale pref puts on :root (#388) — inside that zoom a
+     100vw box paints 1.25× the screen — so divide it out, exactly as
+     popover.ts divides getBoundingClientRect and window.innerWidth. */
+  --eb-popover-max-w: calc(
+    100vw / var(--eb-ui-zoom, 1) - 2 * var(--eb-popover-margin)
+  );
+}
+
+/* Every floating surface — popover, menu, preview panel, anchored panel —
+   carries data-eb-surface and is capped here, in one place, rather than each
+   module restating the arithmetic. Only max-width: the surfaces keep their own
+   preferred `width`, and the cap bites only when the viewport can't hold it.
+
+   The `:root ` prefix is specificity, not scoping: several surfaces declare
+   their own `max-width: calc(100vw - 32px)`, which is the zoom-blind form of
+   this cap, and a bare attribute selector ties with a CSS-module class and
+   loses on source order.
+
+   That override also settles the margin, deliberately: an anchored surface
+   hugs the edge at POPOVER_MARGIN, the same 8px its placement is clamped to,
+   while a centred modal window keeps its own roomier 16px inset. The log
+   search panel and the notification inbox move from 16 to 8 on a phone as a
+   result — they are dropdowns hanging off a toolbar button, not dialogs, and
+   an anchored panel that stops short of the edge it is anchored near just
+   loses width it had no reason to give up. */
+:root [data-eb-surface] {
+  max-width: var(--eb-popover-max-w);
+}
+
+/* Hover-reveal affordances (MP1 §5-F): a control that only appears on :hover
+   does not exist on a touchscreen — the event never fires and nothing stands
+   in for it (long-press action sheets are MP2). Each such control carries
+   data-eb-hover-reveal and is simply left visible where the primary pointer
+   cannot hover.
+
+   `hover: none` rather than `pointer: coarse` on purpose: it asks the exact
+   question the affordance depends on. A touchscreen laptop reports a coarse
+   pointer among its inputs but still has a mouse as its primary one, and it
+   should keep the quiet, uncluttered rows. Same specificity trick as above. */
+@media (hover: none) {
+  :root [data-eb-hover-reveal] {
+    opacity: 1;
+  }
 }
 
 *,

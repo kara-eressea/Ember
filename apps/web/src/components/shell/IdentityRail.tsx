@@ -300,6 +300,7 @@ function RailMenu({
       <div
         ref={menuRef}
         className={styles.railMenu}
+        data-eb-surface
         role="menu"
         aria-label={`${identity.name} menu`}
         style={{ left: position.x, top: position.y }}

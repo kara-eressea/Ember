@@ -83,6 +83,7 @@ export function SectionOfflineMenu({
       <div
         ref={menuRef}
         className={styles.memberMenu}
+        data-eb-surface
         role="menu"
         aria-label={`${SECTION_LABEL[section]} section menu`}
         style={{ left: position.x, top: position.y }}

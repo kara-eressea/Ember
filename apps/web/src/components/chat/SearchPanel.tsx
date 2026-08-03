@@ -74,7 +74,12 @@ export function SearchPanel({
   }
 
   return (
-    <div className={styles.searchPanel} role="dialog" aria-label="Search log">
+    <div
+      className={styles.searchPanel}
+      data-eb-surface
+      role="dialog"
+      aria-label="Search log"
+    >
       <div className={styles.searchHead}>
         <div
           className={styles.searchScopeGroup}

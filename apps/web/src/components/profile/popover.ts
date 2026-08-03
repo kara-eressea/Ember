@@ -140,6 +140,23 @@ export function placeAtPoint(
   };
 }
 
+/** Widest a surface may be in a viewport of `viewportWidth`: the shared
+ * margin on both sides, the same number `--eb-popover-max-w` computes in CSS
+ * (MP1 §5-E). */
+export function popoverMaxWidth(viewportWidth: number): number {
+  return viewportWidth - 2 * POPOVER_MARGIN;
+}
+
+/** The width to place a constant-width surface at, against the live viewport.
+ * Surfaces that measure themselves (offsetWidth) already see the CSS cap; the
+ * ones that hand the placement a constant — the mini card, the link preview,
+ * the eicon picker, the rate editor — have to apply the same cap here, or the
+ * math places a 340px panel that CSS has drawn 272px wide and leaves it 68px
+ * adrift of the edge it was clamped to. */
+export function popoverWidthInWindow(preferred: number): number {
+  return Math.min(preferred, popoverMaxWidth(popoverViewport().width));
+}
+
 /** The visual viewport expressed in the zoomed root's CSS pixels. */
 export function popoverViewport(): { width: number; height: number } {
   const zoom = uiZoom();

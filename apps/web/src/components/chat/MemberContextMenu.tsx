@@ -357,6 +357,7 @@ export function MemberContextMenu({
       <div
         ref={menuRef}
         className={styles.memberMenu}
+        data-eb-surface
         role="menu"
         aria-label={`${member.character} menu`}
         style={{ left: position.x, top: position.y }}

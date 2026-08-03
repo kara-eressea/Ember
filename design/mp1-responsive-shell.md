@@ -105,7 +105,13 @@ against each other.
   to the list. No new router state — back is a route change, so the browser
   and Android back gesture work for free. The identity rail folds into the
   list header.
-- **C — toolbar collapse.** §3, by porting `COLLAPSE_STEPS`.
+- **C — toolbar collapse.** §3, by porting `COLLAPSE_STEPS`. Also carries one
+  to-do handed over from E: the eicon picker's grid is `repeat(5, 60px)` =
+  324px of fixed tracks, so under E's viewport cap it scrolls sideways inside
+  the panel instead of reflowing. The fix is `repeat(auto-fill, 60px)` in
+  `chat.module.css`, which E could not touch — that file belonged to package A
+  while E was in flight. C owns the composer/toolbar chrome the picker hangs
+  off, so it lands here.
 - **D — members + DM profile overlay (phone).** The right column becomes a
   full-height overlay on `phone`, extending the drawer shim `DmProfile`
   already has for `narrow`. Member list gets the same treatment.
@@ -114,9 +120,13 @@ against each other.
   induce horizontal page scroll on a 360px screen. Builds on `popover.ts`'s
   existing zoom-corrected clamps.
 - **F — hover-affordance fallbacks.** Every control that only appears on
-  `:hover` (message row actions, sidebar row buttons, close affordances) needs
-  a coarse-pointer path via `@media (hover: none)`. Hover-only previews
-  (eicon, link) degrade to tap or to nothing — never to an unreachable action.
+  `:hover` (sidebar row buttons, the unrated ad's rating pill, the eicon
+  picker's ☆, close affordances) needs a coarse-pointer path via
+  `@media (hover: none)`. Hover-only previews (eicon, link) degrade to tap or
+  to nothing — never to an unreachable action. *(This clause originally cited
+  "message row actions"; the package's sweep established there are none — a
+  message row's only reveal-on-hover control is the ad rating pill. The list
+  above is the swept inventory, not a guess.)*
 - **G — docs + mobile e2e project.** A scoped Playwright project on a phone
   viewport covering the pane stack, the overflow toolbar and the overlays,
   plus the tier model written into `design/ui/COMPONENTS.md`.

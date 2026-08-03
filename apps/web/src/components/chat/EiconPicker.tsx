@@ -14,7 +14,10 @@ import {
 import type { UserPrefs } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
 import { eiconUrl } from "../../lib/avatar.js";
-import { placePopoverInWindow } from "../profile/popover.js";
+import {
+  placePopoverInWindow,
+  popoverWidthInWindow,
+} from "../profile/popover.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { CardAnchor } from "../../stores/profile.js";
@@ -74,7 +77,10 @@ export function EiconPicker({
       return;
     }
     const placed = placePopoverInWindow(anchor, {
-      width: PICKER_WIDTH,
+      // The CSS cap shrinks the panel below PICKER_WIDTH on a phone (MP1
+      // §5-E); place it at the width it was actually drawn at, or the clamp
+      // pins a 336px panel to an edge it no longer reaches.
+      width: popoverWidthInWindow(PICKER_WIDTH),
       height: element.offsetHeight,
     });
     // Only commit a real move: this also runs from a ResizeObserver, and a
@@ -122,6 +128,7 @@ export function EiconPicker({
       <div
         ref={panelRef}
         className={styles.eiconPicker}
+        data-eb-surface
         role="dialog"
         aria-label="Eicon picker"
         style={
@@ -579,6 +586,9 @@ function TileGrid({
               className={`${styles.eiconTileStar} ${
                 favorite ? (styles.eiconTileStarOn ?? "") : ""
               }`}
+              // Quiet until the tile is hovered; permanently visible where
+              // there is no hover to reveal it (base.css §5-F).
+              data-eb-hover-reveal
               aria-label={
                 favorite
                   ? `Remove ${name} from favorites`

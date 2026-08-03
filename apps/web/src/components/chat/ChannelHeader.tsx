@@ -151,7 +151,12 @@ function HeaderTopic({
               setOpen(false);
             }}
           />
-          <div className={styles.topicPopover} role="dialog" aria-label={label}>
+          <div
+            className={styles.topicPopover}
+            data-eb-surface
+            role="dialog"
+            aria-label={label}
+          >
             {children}
           </div>
         </>
