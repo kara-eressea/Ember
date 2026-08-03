@@ -120,9 +120,13 @@ against each other.
   induce horizontal page scroll on a 360px screen. Builds on `popover.ts`'s
   existing zoom-corrected clamps.
 - **F — hover-affordance fallbacks.** Every control that only appears on
-  `:hover` (message row actions, sidebar row buttons, close affordances) needs
-  a coarse-pointer path via `@media (hover: none)`. Hover-only previews
-  (eicon, link) degrade to tap or to nothing — never to an unreachable action.
+  `:hover` (sidebar row buttons, the unrated ad's rating pill, the eicon
+  picker's ☆, close affordances) needs a coarse-pointer path via
+  `@media (hover: none)`. Hover-only previews (eicon, link) degrade to tap or
+  to nothing — never to an unreachable action. *(This clause originally cited
+  "message row actions"; the package's sweep established there are none — a
+  message row's only reveal-on-hover control is the ad rating pill. The list
+  above is the swept inventory, not a guess.)*
 - **G — docs + mobile e2e project.** A scoped Playwright project on a phone
   viewport covering the pane stack, the overflow toolbar and the overlays,
   plus the tier model written into `design/ui/COMPONENTS.md`.
