@@ -5,9 +5,9 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { match } from "@emberchat/matcher";
-import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import type { ProfileDto } from "@emberchat/protocol";
 import { useNameColor } from "../../lib/name-color.js";
+import { wireToPlainText } from "../../lib/wire-text.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useFocusTrap } from "../../lib/useFocusTrap.js";
@@ -587,10 +587,14 @@ export function Header({
         {statusMessage && (
           // Render the chat BBCode subset the way the mini card does (#210):
           // [url], [eicon], [color] must never show as raw tags. The title
-          // falls back to flattened plain text for the hover tooltip.
+          // falls back to flattened plain text for the hover tooltip —
+          // through wireToPlainText, which also decodes the server's entities
+          // (#512). The tooltip is an attribute, so it never reaches RichText
+          // and this is its single decode; the visible line below owns its own
+          // (wire-text.ts, DECODE-EXACTLY-ONCE CONTRACT).
           <div
             className={styles.headerStatus}
-            title={bbcodeToText(statusMessage)}
+            title={wireToPlainText(statusMessage)}
           >
             <RichText bbcode={statusMessage} />
           </div>
