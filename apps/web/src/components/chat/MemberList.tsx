@@ -7,18 +7,12 @@
 // MemberContextMenu — the f-list.net website link lives there. One filter
 // query matches every group, offline included.
 
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { MemberDto, SeenMemberDto } from "@emberchat/protocol";
 import { wireToPlainText } from "../../lib/wire-text.js";
 import { presenceDot } from "../../lib/presence.js";
 import { loadSocial } from "../../lib/social.js";
+import { useLongPress, type PressEvent } from "../../lib/useLongPress.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import { genderColorVar } from "../../theme/tokens.js";
@@ -161,7 +155,7 @@ export function MemberList({
   // render (#355) — setMenu is referentially stable, so this has no deps.
   const openMenu = useCallback(
     (
-      event: ReactMouseEvent,
+      event: PressEvent,
       member: MemberDto,
       role: ChannelRole,
       present: boolean,
@@ -268,8 +262,11 @@ export function MemberList({
   );
 }
 
+/** Opening the menu needs only a point and the right to claim the event, so
+ * the parameter is the shape both openers satisfy: a real `contextmenu`
+ * MouseEvent, and the synthetic press a long-press produces (MP2 §1). */
 type OpenMenu = (
-  event: ReactMouseEvent,
+  event: PressEvent,
   member: MemberDto,
   role: ChannelRole,
   present: boolean,
@@ -294,9 +291,12 @@ const MemberRow = memo(function MemberRow({
   // Gender tint is supplementary (#177): the name keeps AA contrast regardless,
   // so it stays fully readable without the colour.
   const genderColor = genderColorVar(member.gender);
+  const press = useLongPress((event) => {
+    onOpenMenu(event, member, role, true);
+  });
   return (
-    // Left-click = mini profile card anchored to the row (§13);
-    // right-click = menu.
+    // Left-click = mini profile card anchored to the row (§13); right-click,
+    // or a hold on a touchscreen, = menu.
     <button
       type="button"
       className={styles.memberRow}
@@ -307,6 +307,7 @@ const MemberRow = memo(function MemberRow({
       onContextMenu={(event) => {
         onOpenMenu(event, member, role, true);
       }}
+      {...press}
     >
       <span className={styles.memberAvatar}>
         <Avatar name={member.character} size={30} />
@@ -362,6 +363,21 @@ const OfflineRow = memo(function OfflineRow({
   onOpenMenu: OpenMenu;
 }) {
   const genderColor = genderColorVar(member.gender);
+  // An absent member holds no live role — always the null/false form.
+  const openMenu = (event: PressEvent) => {
+    onOpenMenu(
+      event,
+      {
+        character: member.character,
+        gender: member.gender,
+        status: "",
+        statusmsg: "",
+      },
+      null,
+      false,
+    );
+  };
+  const press = useLongPress(openMenu);
   return (
     <button
       type="button"
@@ -370,20 +386,8 @@ const OfflineRow = memo(function OfflineRow({
       onClick={(event) => {
         openCardFrom(event.currentTarget, member.character);
       }}
-      onContextMenu={(event) => {
-        // An absent member holds no live role — always the null/false form.
-        onOpenMenu(
-          event,
-          {
-            character: member.character,
-            gender: member.gender,
-            status: "",
-            statusmsg: "",
-          },
-          null,
-          false,
-        );
-      }}
+      onContextMenu={openMenu}
+      {...press}
     >
       <span className={`${styles.memberAvatar} ${styles.offlineAvatar ?? ""}`}>
         <Avatar name={member.character} size={30} />

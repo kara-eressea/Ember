@@ -1,13 +1,13 @@
-// SectionOfflineMenu (#329): right-click menu on a sidebar people-section
-// header — Friends, Bookmarks, or Direct messages — with a single "Show
-// offline" checkbox that toggles that section's synced pref. Same popover
-// grammar as the channel-row menu (#234): a fixed popover over a click-away
-// overlay, measured re-clamp pre-paint, Escape closes, arrows walk the items.
+// SectionOfflineMenu (#329): right-click — or long-press on a touchscreen
+// (MP2 §1) — menu on a sidebar people-section header (Friends, Bookmarks, or
+// Direct messages) with a single "Show offline" checkbox that toggles that
+// section's synced pref. Same grammar as the channel-row menu (#234), in the
+// shell they share: an anchored popover on a desktop, a bottom sheet on a
+// phone (MenuSurface).
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
-import { placeAtPointInWindow } from "../profile/popover.js";
+import { MenuSurface } from "../common/MenuSurface.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import {
   SHOW_OFFLINE_PREF,
@@ -41,23 +41,6 @@ export function SectionOfflineMenu({
   const prefKey = SHOW_OFFLINE_PREF[section];
   const showOffline = prefs[prefKey];
 
-  // Clamp against the measured menu, DOM write pre-paint (cf. the channel
-  // and identity menus).
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!el) {
-      return;
-    }
-    const { top, left } = placeAtPointInWindow(position, {
-      width: el.offsetWidth,
-      height: el.offsetHeight,
-    });
-    el.style.left = `${String(left)}px`;
-    el.style.top = `${String(top)}px`;
-  }, [position]);
-
-  useEscapeToClose(onClose);
-
   // Menus move focus into themselves so the toggle is reachable by keyboard.
   useEffect(() => {
     menuRef.current
@@ -71,47 +54,39 @@ export function SectionOfflineMenu({
   }
 
   return (
-    <>
-      <div
-        className={styles.memberMenuOverlay}
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <div
-        ref={menuRef}
-        className={styles.memberMenu}
-        data-eb-surface
-        role="menu"
-        aria-label={`${SECTION_LABEL[section]} section menu`}
-        style={{ left: position.x, top: position.y }}
-      >
+    <MenuSurface
+      className={styles.memberMenu}
+      overlayClassName={styles.memberMenuOverlay}
+      label={`${SECTION_LABEL[section]} section menu`}
+      point={position}
+      onClose={onClose}
+      menuRef={menuRef}
+      head={
         <div className={styles.memberMenuHead}>
           <span className={styles.memberMenuNick}>
             {SECTION_LABEL[section]}
           </span>
         </div>
-        <button
-          className={styles.memberMenuItem}
-          role="menuitemcheckbox"
-          aria-checked={showOffline}
-          title={
-            showOffline
-              ? "Hide offline people in this section (pinned, unread, and open chats still show)"
-              : "Show offline people in this section too"
-          }
-          onClick={toggle}
-        >
-          Show offline
-          {showOffline && (
-            <span className={styles.memberMenuCheck} aria-hidden>
-              ✓
-            </span>
-          )}
-        </button>
-      </div>
-    </>
+      }
+    >
+      <button
+        className={styles.memberMenuItem}
+        role="menuitemcheckbox"
+        aria-checked={showOffline}
+        title={
+          showOffline
+            ? "Hide offline people in this section (pinned, unread, and open chats still show)"
+            : "Show offline people in this section too"
+        }
+        onClick={toggle}
+      >
+        Show offline
+        {showOffline && (
+          <span className={styles.memberMenuCheck} aria-hidden>
+            ✓
+          </span>
+        )}
+      </button>
+    </MenuSurface>
   );
 }

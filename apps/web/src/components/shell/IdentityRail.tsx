@@ -1,8 +1,9 @@
 // IdentityRail (COMPONENTS.md §1): far-left switch between the user's
 // identities. Click = route change = the entire session context swaps from
 // that identity's store slice. Background identities carry unread/mention
-// badges; the active one never does. Right-click opens the identity menu:
-// set status / connect–log off / move up–down (persisted rail order).
+// badges; the active one never does. Right-click — or, on a touchscreen, a
+// long press (MP2 §1) — opens the identity menu: set status / connect–log off
+// / move up–down (persisted rail order).
 //
 // On the phone tier the same element folds into the conversation list's
 // header as a horizontal strip (shell.module.css, #375); the only behavioural
@@ -13,7 +14,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent,
 } from "react";
 import { Link } from "react-router";
 import {
@@ -25,13 +25,14 @@ import { api } from "../../lib/api.js";
 import { useLayoutMode } from "../../lib/layout-mode.js";
 import { presenceDot } from "../../lib/presence.js";
 import { identityPath } from "../../lib/routes.js";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
+import { useLongPress, type PressEvent } from "../../lib/useLongPress.js";
 import {
   useSessionsStore,
   type IdentitySummary,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { Avatar } from "../common/Avatar.js";
+import { MenuSurface } from "../common/MenuSurface.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
 import { railBadge, railDot } from "./rail-data.js";
 import styles from "./shell.module.css";
@@ -113,8 +114,11 @@ function RailItem({
   active: boolean;
   /** Phone tier: the rail is the list pane's own header (#375). */
   stacked: boolean;
-  onMenu: (event: MouseEvent) => void;
+  /** Opens the identity menu — from a right-click, the Menu key, or a hold on
+   * a touchscreen (MP2 §1), which is why it is typed on what opening needs. */
+  onMenu: (event: PressEvent) => void;
 }) {
+  const press = useLongPress(onMenu);
   const slice = useSessionsStore((s) => s.sessions[identity.id]);
   const lastConv = useUiStore((s) => s.lastConvByIdentity[identity.id]);
   const badge = railBadge(identity, slice);
@@ -149,6 +153,7 @@ function RailItem({
       aria-current={active ? "page" : undefined}
       data-testid="rail-item"
       onContextMenu={onMenu}
+      {...press}
     >
       <span className={styles.railAvatar}>
         <Avatar name={identity.name} size={40} square={active} />
@@ -196,8 +201,6 @@ function RailMenu({
     slice.sessionStatus !== "stopped";
   const index = identities.findIndex((i) => i.id === identity.id);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEscapeToClose(onClose);
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {
@@ -288,74 +291,64 @@ function RailMenu({
   }
 
   return (
-    <>
-      <div
-        className={styles.railMenuOverlay}
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <div
-        ref={menuRef}
-        className={styles.railMenu}
-        data-eb-surface
-        role="menu"
-        aria-label={`${identity.name} menu`}
-        style={{ left: position.x, top: position.y }}
-        onKeyDown={onMenuKeyDown}
+    <MenuSurface
+      className={styles.railMenu}
+      overlayClassName={styles.railMenuOverlay}
+      label={`${identity.name} menu`}
+      point={position}
+      onClose={onClose}
+      onKeyDown={onMenuKeyDown}
+      menuRef={menuRef}
+      head={<div className={styles.railMenuName}>{identity.name}</div>}
+    >
+      <div className={styles.railMenuSection}>Status</div>
+      {CLIENT_SETTABLE_STATUSES.map((status) => (
+        <button
+          key={status}
+          className={styles.railMenuItem}
+          role="menuitem"
+          disabled={!online}
+          onClick={() => {
+            setStatus(status);
+          }}
+        >
+          <span
+            className={`${styles.navDot} ${DOT_CLASS[presenceDot(true, status)]}`}
+          />
+          {status}
+          {online && slice.ownStatus === status ? " ✓" : ""}
+        </button>
+      ))}
+      <div className={styles.railMenuSection}>Session</div>
+      <button
+        className={styles.railMenuItem}
+        role="menuitem"
+        onClick={togglePower}
       >
-        <div className={styles.railMenuName}>{identity.name}</div>
-        <div className={styles.railMenuSection}>Status</div>
-        {CLIENT_SETTABLE_STATUSES.map((status) => (
-          <button
-            key={status}
-            className={styles.railMenuItem}
-            role="menuitem"
-            disabled={!online}
-            onClick={() => {
-              setStatus(status);
-            }}
-          >
-            <span
-              className={`${styles.navDot} ${DOT_CLASS[presenceDot(true, status)]}`}
-            />
-            {status}
-            {online && slice.ownStatus === status ? " ✓" : ""}
-          </button>
-        ))}
-        <div className={styles.railMenuSection}>Session</div>
-        <button
-          className={styles.railMenuItem}
-          role="menuitem"
-          onClick={togglePower}
-        >
-          ⏻ {connected ? "Log off" : "Connect"}
-        </button>
-        <div className={styles.railMenuSection}>Order</div>
-        <button
-          className={styles.railMenuItem}
-          role="menuitem"
-          disabled={index <= 0}
-          onClick={() => {
-            move(-1);
-          }}
-        >
-          ↑ Move up
-        </button>
-        <button
-          className={styles.railMenuItem}
-          role="menuitem"
-          disabled={index === -1 || index >= identities.length - 1}
-          onClick={() => {
-            move(1);
-          }}
-        >
-          ↓ Move down
-        </button>
-      </div>
-    </>
+        ⏻ {connected ? "Log off" : "Connect"}
+      </button>
+      <div className={styles.railMenuSection}>Order</div>
+      <button
+        className={styles.railMenuItem}
+        role="menuitem"
+        disabled={index <= 0}
+        onClick={() => {
+          move(-1);
+        }}
+      >
+        ↑ Move up
+      </button>
+      <button
+        className={styles.railMenuItem}
+        role="menuitem"
+        disabled={index === -1 || index >= identities.length - 1}
+        onClick={() => {
+          move(1);
+        }}
+      >
+        ↓ Move down
+      </button>
+    </MenuSurface>
   );
 }
 

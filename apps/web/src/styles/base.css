@@ -62,9 +62,9 @@
 
 /* Hover-reveal affordances (MP1 §5-F): a control that only appears on :hover
    does not exist on a touchscreen — the event never fires and nothing stands
-   in for it (long-press action sheets are MP2). Each such control carries
-   data-eb-hover-reveal and is simply left visible where the primary pointer
-   cannot hover.
+   in for it (long-press action sheets arrived in MP2 §1). Each such control
+   carries data-eb-hover-reveal and is simply left visible where the primary
+   pointer cannot hover.
 
    `hover: none` rather than `pointer: coarse` on purpose: it asks the exact
    question the affordance depends on. A touchscreen laptop reports a coarse
@@ -74,6 +74,23 @@
   :root [data-eb-hover-reveal] {
     opacity: 1;
   }
+}
+
+/* Long-press targets (MP2 §1): the elements lib/useLongPress.ts has claimed.
+   The browser's own hold behaviours have to lose on them — iOS Safari's
+   callout sheet ("Copy / Share / Add to Photos") and the selection handles
+   both appear at roughly our own threshold and would race the menu we are
+   opening.
+
+   The attribute is written by the hook, which attaches nothing at all where
+   the pointer can hover, so this needs no media query: the presence of the
+   attribute IS the scope. That scoping is also the §6 invariant — message
+   prose is never a claimed target, so a long press on what someone said still
+   selects it, on every device. */
+[data-eb-press] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 *,
