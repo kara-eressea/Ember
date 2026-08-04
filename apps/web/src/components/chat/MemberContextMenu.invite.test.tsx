@@ -3,6 +3,14 @@
 // The "Invite to →" submenu opens on hover AND on click. Because the pointer
 // necessarily enters the wrapper before the click lands, a click that toggled
 // would shut the panel hover had just opened — the #316 E2E flake.
+//
+// …and the other half, from MP2's package-D audit (closed in MP4, #378): on a
+// touchscreen that arrangement has no close path at all. The engines fire a
+// compatibility `mouseenter` from the press that raises the action sheet, so
+// the sheet arrived with the panel already expanded, and they never send the
+// `mouseleave` an open-only trigger is relying on. Where `hover: none` matches,
+// the hover pair is not attached and the click is a toggle
+// (lib/useSubmenuTrigger.ts).
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -19,7 +27,24 @@ vi.mock("../../lib/social.js", () => ({
 const initialSessions = useSessionsStore.getState().sessions;
 afterEach(() => {
   useSessionsStore.setState({ sessions: initialSessions });
+  vi.unstubAllGlobals();
 });
+
+/** jsdom ships no matchMedia, which is already the "has a hover" answer
+ * (useNoHover defaults to false). This installs one that says otherwise —
+ * same stub RichText.touch.test.tsx uses. */
+function stubNoHover(): void {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string): MediaQueryList =>
+      ({
+        matches: query === "(hover: none)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }) as unknown as MediaQueryList,
+  );
+}
 
 const HARBOR: ChannelView = {
   convId: "c1",
@@ -95,6 +120,44 @@ describe('MemberContextMenu "Invite to →" (#316)', () => {
     await user.click(parent);
     await user.unhover(parent);
 
+    expect(parent).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("menu", { name: "Invite Nettle Fen to a channel" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('MemberContextMenu "Invite to →" on a touchscreen (#378)', () => {
+  it("does not open from the compatibility mouseenter a press synthesizes", async () => {
+    stubNoHover();
+    const user = userEvent.setup();
+    const parent = renderMenu();
+
+    // The press that raised the sheet, arriving as a mouse would: this is the
+    // event that used to expand the panel before the user had touched it.
+    await user.hover(parent);
+
+    expect(parent).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("menu", { name: "Invite Nettle Fen to a channel" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens and closes again from taps, with no mouseleave to rely on", async () => {
+    stubNoHover();
+    const user = userEvent.setup();
+    const parent = renderMenu();
+
+    await user.click(parent);
+    expect(parent).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("menuitem", { name: "Invite Harbor" }),
+    ).toBeInTheDocument();
+
+    // The gesture that did not exist before: a second tap on the trigger. A
+    // touchscreen sends no `mouseleave`, so under the open-only trigger the
+    // only way back was Escape, which a phone does not have.
+    await user.click(parent);
     expect(parent).toHaveAttribute("aria-expanded", "false");
     expect(
       screen.queryByRole("menu", { name: "Invite Nettle Fen to a channel" }),

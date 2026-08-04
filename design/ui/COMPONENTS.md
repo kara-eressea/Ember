@@ -229,6 +229,17 @@ Both mechanisms are gated on `data-layout="phone"` in the module that owns the c
 
 **The documented shortfall** is message-log prose — sender names, name-mode eicon chips, links and mentions sit in a 21px line box whose neighbours above and below are the same kind of target, so a 44px hit area there would hand the press to the wrong line. Every action behind them stays reachable from a surface that does meet the floor (the member list, the action sheet). An exclusion added later without that argument is a bug in the change.
 
+### Hover is a *behaviour* question too, not only a style one
+
+`@media (hover: none)` keeps every reveal-on-hover control drawn (`data-eb-hover-reveal`). The matching rule for JavaScript is `lib/pointer.ts`, and it is the one that keeps getting missed: an `onMouseEnter` that **opens a UI state** is a hover affordance in exactly the same way, and a touchscreen fires the compatibility `mouseenter` — including the one synthesized by the press that *raised* the surface — while never sending the `mouseleave` that was supposed to close it again.
+
+**The rule is either/or, never both.** Where the primary pointer cannot hover, the hover pair is not attached at all and the click carries the whole interaction. Two places state it:
+
+- `lib/useSubmenuTrigger.ts` — the nested "Invite to ▸" / "Show ▸" panels. Under a mouse the trigger's click is deliberately *open-only* (the pointer must enter the wrapper before it can click, so a toggle would shut what hover just opened); under a finger it is an ordinary toggle, and there is no `mouseenter` to expand the panel unasked as a sheet rises.
+- `RichText`'s eicon chip — the name-only preview, `hoverProps` or `tapProps`, never the two together (one tap would otherwise open and immediately close it).
+
+A new hover-driven behaviour goes through one of those shapes or states its own argument. Styles are swept by the media query; behaviours are not swept by anything, which is why they are written down here.
+
 ### Invariants
 
 - Above `phone`, no change on a hover-capable device. Coarse-pointer `compact`/`wide` gaining a long-press opener is the one exception — the menu it opens is still the anchored one.

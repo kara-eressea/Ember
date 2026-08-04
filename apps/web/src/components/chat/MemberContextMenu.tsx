@@ -22,6 +22,7 @@ import { api } from "../../lib/api.js";
 import { markConversationRead } from "../../lib/mark-read.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { useSubmenuTrigger } from "../../lib/useSubmenuTrigger.js";
 import { MenuSurface } from "../common/MenuSurface.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
@@ -79,6 +80,7 @@ export function MemberContextMenu({
   const [reporting, setReporting] = useState(false);
   const [reportText, setReportText] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const inviteTrigger = useSubmenuTrigger(inviteOpen, setInviteOpen);
 
   const self = member.character.toLowerCase() === ownCharacter.toLowerCase();
   const powers = modPowers({
@@ -398,27 +400,20 @@ export function MemberContextMenu({
         <span className={styles.memberMenuHint}>↗ website</span>
       </a>
       {!self && targets.length > 0 && (
-        <div
-          className={styles.memberMenuSub}
-          onMouseEnter={() => {
-            setInviteOpen(true);
-          }}
-          onMouseLeave={() => {
-            setInviteOpen(false);
-          }}
-        >
+        <div className={styles.memberMenuSub} {...inviteTrigger.wrapper}>
           <button
             className={styles.memberMenuItem}
             role="menuitem"
             aria-haspopup="menu"
             aria-expanded={inviteOpen}
-            // Open-only, never a toggle: the pointer must enter the wrapper
-            // before it can click, so onMouseEnter has already opened the
-            // panel and a toggle would shut it again. Leaving the wrapper is
-            // the mouse's close path; ArrowLeft/Escape the keyboard's.
-            onClick={() => {
-              setInviteOpen(true);
-            }}
+            // Open-only under a mouse, never a toggle: the pointer must enter
+            // the wrapper before it can click, so onMouseEnter has already
+            // opened the panel and a toggle would shut it again. Leaving the
+            // wrapper is the mouse's close path; ArrowLeft/Escape the
+            // keyboard's. Where the pointer cannot hover there is no enter and
+            // no leave, so the same click is a plain toggle and the hover pair
+            // above is not attached at all — see lib/useSubmenuTrigger.ts.
+            onClick={inviteTrigger.press}
             onKeyDown={(event) => {
               if (event.key === "ArrowRight" || event.key === "Enter") {
                 event.preventDefault();

@@ -7,6 +7,10 @@
 // this width before: the toolbar has collapsed to two chips, so send a
 // message and read the log with what is left.
 //
+// …and, since MP4 (#378), in `mobile-webkit` too — an iPhone-class descriptor
+// on the other engine, where the same two paths are the ones a real phone user
+// would walk first. It costs nothing but a browser: nothing in here is CDP.
+//
 // Owns pocket@example.test (Pocket Chase), slateburn@example.test (Slate Burn)
 // and the Pocket Room: spec files run in parallel and a character holds one
 // sim connection, so specs share neither.
@@ -86,6 +90,7 @@ async function inlineControls(page: Page): Promise<string[]> {
 
 test("phone device: two chips inline, everything else through ⋯, and the composer still works (#375)", async ({
   page,
+  browserName,
 }) => {
   test.setTimeout(180_000);
   await interceptAvatars(page);
@@ -119,14 +124,27 @@ test("phone device: two chips inline, everything else through ⋯, and the compo
       width: window.innerWidth,
       noHover: matchMedia("(hover: none)").matches,
       coarse: matchMedia("(pointer: coarse)").matches,
+      touchEvents: "ontouchstart" in window,
       touchPoints: navigator.maxTouchPoints,
     }));
     // The layout viewport follows the device only because index.html asks it
-    // to (`width=device-width`); without that meta tag Chromium's mobile
-    // emulation lays the page out at ~980px and the phone tier never engages.
+    // to (`width=device-width`); without that meta tag mobile emulation lays
+    // the page out at ~980px — measured, on both engines — and the phone tier
+    // never engages.
     expect(device.width).toBeLessThan(768);
     expect(device).toMatchObject({ noHover: true, coarse: true });
-    expect(device.touchPoints).toBeGreaterThan(0);
+    // `ontouchstart` rather than `maxTouchPoints`, because the two engines
+    // disagree and only one of them is right (MP4, #378): Playwright's WebKit
+    // build reports `maxTouchPoints: 0` under an iPhone descriptor that is
+    // otherwise fully touch-enabled, where a real iPhone reports 5. The
+    // presence of the event handler is what both agree on, and it is the
+    // stronger claim anyway — the events exist. Nothing in the app reads
+    // `maxTouchPoints`; its capability probe is `(hover: none)`
+    // (lib/pointer.ts), asserted on the line above.
+    expect(device.touchEvents).toBe(true);
+    if (browserName === "chromium") {
+      expect(device.touchPoints).toBeGreaterThan(0);
+    }
     await expect(page.locator("html")).toHaveAttribute("data-layout", "phone");
     await expect(page.getByTestId("app-shell")).toHaveAttribute(
       "data-pane",
@@ -251,6 +269,16 @@ test("installable: the document links a manifest whose icons resolve (#377)", as
   page,
 }) => {
   await page.goto("/");
+
+  // The one login-free page in the mobile tier, and therefore the only place
+  // MP1 §2's boot-order claim is falsifiable (MP4, #378): the tier is stamped
+  // from `main.tsx` right after `applyInterface`, not from an `AppShell`
+  // effect, *so that* the screens outside the shell — login, the identity
+  // picker — are tiered too and nothing paints untiered. Every other
+  // `data-layout` assertion in the suite runs after `provisionAndConnect`, so
+  // an effect-based stamp would have passed all of them.
+  await expect(page.locator("html")).toHaveAttribute("data-layout", "phone");
+
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
     "href",
     "/manifest.webmanifest",

@@ -25,10 +25,13 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: pnpm lint
-      # Firefox is a second engine for the typography spec only (see
-      # playwright.config.ts): carets and font metrics are where Blink and
-      # Gecko disagree, and neither can be measured from the DOM.
-      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox
+      # Two second engines, each scoped to where it can disagree (see
+      # playwright.config.ts). Firefox: the typography spec's carets and font
+      # metrics, plus the open-at-the-tail family — neither measurable from the
+      # DOM. WebKit: the phone specs on an iPhone-class descriptor, which is
+      # the closest automatable thing to the engine MP2's keyboard module and
+      # MP3's install metadata were written for.
+      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox webkit
       - run: pnpm turbo e2e
       # Not `if: failure()`: a flake that fails once and passes on the retry
       # leaves a green job, and the first attempt's trace would die with the
