@@ -13,7 +13,6 @@
 // and the Reach Room: spec files run in parallel and a character holds one sim
 // connection, so specs share neither.
 
-import type { CDPSession, Locator, Page } from "@playwright/test";
 import {
   delay,
   expect,
@@ -24,6 +23,7 @@ import {
   test,
   userScrollTo,
 } from "./helpers.js";
+import { longPress } from "./long-press.js";
 import {
   measureTargets,
   round,
@@ -37,9 +37,6 @@ const ROOM = "ADH-376touchtargets1f2e3d4c";
 const ROOM_TITLE = "Reach Room";
 const PARTNER = "Pressley Vane";
 const EICON = "tearsofjoy";
-
-/** Past useLongPress's 450ms threshold with room for a slow frame. */
-const HOLD_MS = 800;
 
 /**
  * Controls the floor does not apply to, keyed by their (de-hashed) class, with
@@ -80,34 +77,6 @@ function excluded(target: TargetMeasurement): string | undefined {
     }
   }
   return undefined;
-}
-
-/** The middle of a locator, in viewport coordinates — where a finger goes. */
-async function centreOf(locator: Locator): Promise<{ x: number; y: number }> {
-  const box = await locator.boundingBox();
-  if (!box) {
-    throw new Error("the element has no box to press");
-  }
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
-
-/** Put a finger down, hold it past the threshold, lift it. Playwright's touch
- * API only taps, so the hold is CDP (same primitive mobile-longpress uses). */
-async function longPress(
-  cdp: CDPSession,
-  page: Page,
-  locator: Locator,
-): Promise<void> {
-  const { x, y } = await centreOf(locator);
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [{ x, y }],
-  });
-  await page.waitForTimeout(HOLD_MS);
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
 }
 
 test("phone device: every control on screen is a 44px target, and no two contest the same pixels (#376)", async ({

@@ -24,6 +24,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/standalone-client.md` | Desktop-client design (M7 step 8): embedded bouncer, session-library boundary, pglite, Electron — built post-v1.0 |
 | `design/mobile-client.md` | MP track plan: responsive web client + PWA, why not an app store, MP1–MP4 scope |
 | `design/mp1-responsive-shell.md` | **MP1 implementation spec** — the three zoom-corrected layout tiers, `data-layout`, package A–G cut and invariants |
+| `design/mp2-touch.md` | **MP2 implementation spec + as-built** — long-press action sheets, the keyboard inset, 44px targets, momentum; the real-device checklist no emulator can replace |
 | `design/testing-strategy.md` | fchat-sim, unit/integration/E2E strategy, responsible live testing |
 | `design/risks-and-open-questions.md` | ToS exposure, protocol gaps, scaling ceiling |
 | `design/chat-protocol.md` | F-Chat wire protocol (copied from F-List wiki) |
