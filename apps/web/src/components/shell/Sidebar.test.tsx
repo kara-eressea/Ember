@@ -6,7 +6,13 @@
 // turns the whole treatment off, restoring the denser text-only rows.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
 import { Sidebar } from "./Sidebar.js";
@@ -423,5 +429,96 @@ describe("Sidebar head", () => {
     const unknown = renderSidebar().container;
     expect(head(unknown)?.textContent).toBe(appConfig().appName);
     expect(head(unknown)?.querySelector("[class*='serverVersion']")).toBeNull();
+  });
+});
+
+// A muted conversation said so nowhere in the list (#490): mute lives in
+// prefs.mutedConvIds, and the only surface that read it was the conversation
+// you had to open to find out. The row carries it now — a glyph in the
+// trailing column, and the label down to §4's muted tone.
+describe("Sidebar muted rows (#490)", () => {
+  const mutes = (row: HTMLElement) =>
+    row.querySelectorAll("span[class*='navMute']");
+  const isMuted = (row: HTMLElement) => /mutedRow/.test(row.className);
+
+  it("marks a muted channel row and leaves the others alone", () => {
+    renderSidebar({ mutedConvIds: ["conv-ADH-abc123"] });
+
+    const quiet = screen.getByRole("link", { name: /Quiet Room/ });
+    expect(mutes(quiet)).toHaveLength(1);
+    expect(isMuted(quiet)).toBe(true);
+
+    const frontpage = screen.getByRole("link", { name: /Frontpage/ });
+    expect(mutes(frontpage)).toHaveLength(0);
+    expect(isMuted(frontpage)).toBe(false);
+  });
+
+  it("marks a muted DM row", () => {
+    renderSidebar({ mutedConvIds: ["dm-Bea"] });
+
+    expect(mutes(screen.getByRole("link", { name: /Bea/ }))).toHaveLength(1);
+  });
+
+  // #290 again: a friend/bookmark with an open DM keeps no row in Direct
+  // messages, so their social row is the only place the mute can show.
+  it("carries a muted DM onto the partner's social row", () => {
+    renderSidebar({ mutedConvIds: ["dm-Cy"] }, { "dm-Cy": dm("Cy") });
+
+    const cy = screen.getByRole("button", { name: /Cy/ });
+    expect(mutes(cy)).toHaveLength(1);
+    expect(isMuted(cy)).toBe(true);
+    expect(mutes(screen.getByRole("button", { name: /Dot/ }))).toHaveLength(0);
+  });
+
+  it("names the marker for a screen reader", () => {
+    renderSidebar({ mutedConvIds: ["conv-ADH-abc123"] });
+
+    expect(
+      within(screen.getByRole("link", { name: /Quiet Room/ })).getByRole(
+        "img",
+        { name: "Muted" },
+      ),
+    ).toBeTruthy();
+  });
+});
+
+// #496: the heading used to be a button hugging its label inside a wider
+// header row, so the gap after the word and the count at the far right looked
+// exactly as clickable as the label and did nothing.
+describe("Sidebar section headers (#496)", () => {
+  // A plain string matcher is a whole-name match, so this doubles as the
+  // assertion that the count never joins the button's accessible name.
+  const header = (label: string) => screen.getByRole("button", { name: label });
+
+  it("makes the whole heading row one toggle, count included", () => {
+    const { container } = renderSidebar();
+
+    const channels = header("Channels");
+    // The row *is* the button: nothing sits between it and the scroller…
+    expect(channels.className).toMatch(/sectionHeader/);
+    expect(channels.parentElement).toBe(
+      container.querySelector("div[class*='navScroll']"),
+    );
+    // …and the count rides inside it rather than beside it, without joining
+    // the accessible name (which the whole-name lookup above already asserts).
+    expect(
+      channels.querySelector("span[class*='sectionMeta']")?.textContent,
+    ).toBe("2");
+  });
+
+  it("collapses and expands from that row", () => {
+    renderSidebar();
+
+    const channels = header("Channels");
+    expect(channels.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByRole("link", { name: /Frontpage/ })).not.toBeNull();
+
+    fireEvent.click(channels);
+    expect(header("Channels").getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("link", { name: /Frontpage/ })).toBeNull();
+
+    fireEvent.click(header("Channels"));
+    expect(header("Channels").getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByRole("link", { name: /Frontpage/ })).not.toBeNull();
   });
 });
