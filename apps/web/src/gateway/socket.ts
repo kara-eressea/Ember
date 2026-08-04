@@ -43,6 +43,14 @@ const RECONNECT_MAX_MS = 30_000;
 const WAKE_WINDOW_EVENTS = ["focus", "online", "pageshow"] as const;
 /** `resume` is Page Lifecycle: a frozen tab thawing. */
 const WAKE_DOCUMENT_EVENTS = ["resume", "visibilitychange"] as const;
+/**
+ * The other half of Page Lifecycle, and the one an installed app meets far
+ * more often than a browser tab does (MP3 §5, #377): the browser is about to
+ * stop running this document altogether. Timers do not fire while frozen and
+ * fire *late* on the way back — every deadline still armed when this lands is
+ * about to measure the freeze rather than the network, so this hands them in.
+ */
+const FREEZE_DOCUMENT_EVENTS = ["freeze"] as const;
 /** A resume fires several wake events at once; collapse them into one probe. */
 const PROBE_DEBOUNCE_MS = 250;
 /**
@@ -92,6 +100,14 @@ export class GatewayClient {
   #probeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Registered while connected, so the singleton owns its own listeners. */
   #onWake: ((event: Event) => void) | undefined;
+  #onFreeze: (() => void) | undefined;
+  /**
+   * The document stopped running between now and the last probe — it was
+   * frozen, or it came back out of the bfcache. Both mean the same thing to a
+   * socket: nothing that happened before it is evidence about now. Consumed by
+   * the next probe, which then declines to take any shortcut.
+   */
+  #thawing = false;
   /** Timestamp of the last inbound frame — the wake probe's staleness test. */
   #lastFrameAt = 0;
   /** Timestamp of the last #open(), so a burst of wake events can never
@@ -329,7 +345,7 @@ export class GatewayClient {
     useUiStore.getState().setGatewayStatus("offline");
   }
 
-  // ── wake probing ───────────────────────────────────────────────────────────
+  // ── freezing and wake probing ──────────────────────────────────────────────
 
   #listenForWake(): void {
     if (this.#onWake !== undefined || typeof window === "undefined") {
@@ -340,6 +356,24 @@ export class GatewayClient {
       if (event.type === "visibilitychange" && document.hidden) {
         return;
       }
+      // Two wakes carry their own proof that this document stopped running,
+      // and both must reach the probe as such:
+      //
+      // - `resume`, the far side of `freeze`. The bit is normally already set
+      //   by the freeze handler, but a `freeze` listener is best-effort — the
+      //   browser is under no obligation to have run ours — so set it here
+      //   too rather than trust the pair arrived intact.
+      // - `pageshow` with `persisted`, a bfcache restore: the document was
+      //   parked whole and browsers sever a parked page's WebSocket without
+      //   telling it. `#lastFrameAt` was written before the page went in, so a
+      //   quick out-and-back (under PROBE_SILENCE_MS) would otherwise read as
+      //   "demonstrably alive" and wave a severed socket through.
+      const restored =
+        event.type === "pageshow" &&
+        (event as PageTransitionEvent).persisted === true;
+      if (restored || event.type === "resume") {
+        this.#thawing = true;
+      }
       this.#scheduleProbe();
     };
     this.#onWake = onWake;
@@ -349,24 +383,70 @@ export class GatewayClient {
     for (const type of WAKE_DOCUMENT_EVENTS) {
       document.addEventListener(type, onWake);
     }
+    const onFreeze = () => {
+      this.#freeze();
+    };
+    this.#onFreeze = onFreeze;
+    for (const type of FREEZE_DOCUMENT_EVENTS) {
+      document.addEventListener(type, onFreeze);
+    }
+  }
+
+  /**
+   * The document is about to stop running. Every timer still armed is now a
+   * message from a world that will be gone by the time it is delivered, so
+   * disarm the two that make decisions:
+   *
+   * - the **pong deadline**, which on thaw fires instantly and closes the
+   *   socket without ever asking again — a full re-hello, snapshot and catchup
+   *   for every subscribed identity, sometimes against a socket that was fine.
+   *   Dropping it costs nothing: the probe below re-asks with a fresh 3s
+   *   deadline, which is the same verdict a quarter-second later.
+   * - the **probe debounce**, which would otherwise fire on thaw *and* be
+   *   re-armed by the wake events the thaw itself fires — two probes, two
+   *   pings, and the second one silently extending the first's deadline.
+   *
+   * The keepalive interval is left alone: it belongs to the socket and
+   * `#teardownSocket` owns its lifetime. It fires at most once on thaw
+   * (an interval has one task pending at a time), and one extra ping is a
+   * rounding error against MAX_FRAMES_PER_MINUTE.
+   */
+  #freeze(): void {
+    this.#thawing = true;
+    if (this.#pongTimer) {
+      clearTimeout(this.#pongTimer);
+      this.#pongTimer = undefined;
+    }
+    if (this.#probeTimer) {
+      clearTimeout(this.#probeTimer);
+      this.#probeTimer = undefined;
+    }
   }
 
   #stopListeningForWake(): void {
     const onWake = this.#onWake;
+    const onFreeze = this.#onFreeze;
     if (onWake === undefined) {
       return;
     }
     this.#onWake = undefined;
+    this.#onFreeze = undefined;
     for (const type of WAKE_WINDOW_EVENTS) {
       window.removeEventListener(type, onWake);
     }
     for (const type of WAKE_DOCUMENT_EVENTS) {
       document.removeEventListener(type, onWake);
     }
+    if (onFreeze !== undefined) {
+      for (const type of FREEZE_DOCUMENT_EVENTS) {
+        document.removeEventListener(type, onFreeze);
+      }
+    }
     if (this.#probeTimer) {
       clearTimeout(this.#probeTimer);
       this.#probeTimer = undefined;
     }
+    this.#thawing = false;
   }
 
   #scheduleProbe(): void {
@@ -378,11 +458,34 @@ export class GatewayClient {
 
   /**
    * The tab is back. Nothing here trusts a timer: whatever the browser did to
-   * them while we were away, this runs off the lifecycle event itself.
+   * them while we were away, this runs off the lifecycle event itself — and
+   * when the document genuinely stopped running (`#thawing`), it declines the
+   * two shortcuts that are only sound while it was running: the staleness test
+   * below, and the ladder the reconnect was climbing before it went away.
    */
   #probe(): void {
     if (!this.#wanted) {
       return;
+    }
+    const thawed = this.#thawing;
+    this.#thawing = false;
+    if (thawed) {
+      // A backoff ladder climbed before a freeze describes a network that no
+      // longer exists — the radio was off, the Wi-Fi was another building's.
+      // Waiting out the 30s cap on the strength of it leaves an installed app
+      // staring at "Connecting…" with no address bar to reload from, which is
+      // the failure MP3 §5 is about. A thaw is as good a reason to start the
+      // ladder over as the user tapping the chip (`reconnectNow`), and the
+      // `#lastOpenAt` floor below still caps this at one attempt a second.
+      this.#backoffMs = RECONNECT_MIN_MS;
+      if (this.#reconnectTimer !== undefined) {
+        // Something already re-armed at the old, escalated delay (the timer
+        // that fired on thaw, opened, and failed against a radio that was not
+        // up yet). Re-arm it at the floor instead.
+        clearTimeout(this.#reconnectTimer);
+        this.#reconnectTimer = undefined;
+        this.#scheduleReconnect();
+      }
     }
     const ws = this.#ws;
     if (ws === undefined) {
@@ -401,7 +504,7 @@ export class GatewayClient {
     if (ws.readyState !== WebSocket.OPEN) {
       return; // still opening (or already closing) — onopen/onclose decides
     }
-    if (Date.now() - this.#lastFrameAt < PROBE_SILENCE_MS) {
+    if (!thawed && Date.now() - this.#lastFrameAt < PROBE_SILENCE_MS) {
       return; // demonstrably alive
     }
     this.#sendFrame({ t: "ping" });

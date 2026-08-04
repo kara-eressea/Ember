@@ -99,6 +99,23 @@ function wake(type: "focus" | "online" | "pageshow" | "visibilitychange") {
   target.dispatchEvent(new Event(type));
 }
 
+/** Page Lifecycle: the browser is about to stop running this document. */
+function freeze() {
+  document.dispatchEvent(new Event("freeze"));
+}
+
+/** …and the far side of it, when the tab is allowed to run again. */
+function resume() {
+  document.dispatchEvent(new Event("resume"));
+}
+
+/** A back/forward-cache restore: `pageshow` carrying `persisted`. */
+function restore() {
+  const event = new Event("pageshow");
+  Object.assign(event, { persisted: true });
+  window.dispatchEvent(event);
+}
+
 it("closes and reconnects a socket that stops answering the keepalive ping", async () => {
   const { socket } = await connectClient();
 
@@ -208,6 +225,161 @@ it("reconnects at once when the tab wakes inside the backoff", async () => {
   wake("focus");
   await vi.advanceTimersByTimeAsync(300);
   expect(FakeSocket.instances).toHaveLength(attempts + 1);
+});
+
+// ── frozen tabs (#377, MP3 §5) ───────────────────────────────────────────────
+//
+// An installed app is frozen far more readily than a browser tab, and it has
+// no address bar to reload from when the thaw goes wrong. A frozen document
+// runs nothing: its timers do not fire while it is away and fire *late* on the
+// way back, all in one go. Every deadline still armed at freeze time is
+// therefore about to measure the freeze rather than the network, and the
+// client has to be the one that knows the difference.
+
+it("hands in the pong deadline when the tab freezes", async () => {
+  const { socket } = await connectClient();
+
+  // The keepalive ping goes out and its 10s deadline starts ticking…
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(pings(socket)).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(2_000);
+
+  // …and the browser freezes the tab under it. Left armed, that deadline
+  // fires the instant the tab thaws and closes the socket without ever
+  // re-asking — a whole re-hello, snapshot and catchup, sometimes against a
+  // socket that was fine.
+  freeze();
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(socket.closed).toBeUndefined();
+
+  // The probe asks again on the way back, with its own tighter deadline, and
+  // a socket that answers survives.
+  resume();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(pings(socket)).toHaveLength(2);
+  socket.onmessage?.({ data: JSON.stringify({ t: "pong" }) });
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(socket.closed).toBeUndefined();
+});
+
+it("still closes a thawed socket that will not answer", async () => {
+  const { socket } = await connectClient();
+
+  await vi.advanceTimersByTimeAsync(30_000);
+  freeze();
+  await vi.advanceTimersByTimeAsync(20_000);
+
+  // Same story, silent peer: dropping the stale deadline delays the verdict
+  // by a quarter-second and three, it does not withdraw it.
+  resume();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(socket.closed).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(3_000);
+  expect(socket.closed).toBeDefined();
+});
+
+it("collapses a probe armed before the freeze into the one after it", async () => {
+  const { socket } = await connectClient();
+
+  // A wake event arms the debounce, and the browser freezes the tab before it
+  // fires. On the way back that stale timer and the thaw's own events would
+  // otherwise make two probes a quarter-second apart — two pings, the second
+  // silently pushing out the first's deadline.
+  await vi.advanceTimersByTimeAsync(6_000);
+  wake("focus");
+  await vi.advanceTimersByTimeAsync(100);
+  freeze();
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(pings(socket)).toHaveLength(0);
+
+  resume();
+  wake("focus");
+  wake("pageshow");
+  await vi.advanceTimersByTimeAsync(300);
+  expect(pings(socket)).toHaveLength(1);
+});
+
+it("probes after a bfcache restore even though a frame just arrived", async () => {
+  const { socket } = await connectClient();
+
+  // Out to another page and straight back. The document was parked whole and
+  // the browser severed its socket without telling it — but by the clock it
+  // spoke a moment ago, so the staleness shortcut would wave the corpse
+  // through. `persisted` is the page saying so itself.
+  socket.onmessage?.({ data: JSON.stringify({ t: "pong" }) });
+  await vi.advanceTimersByTimeAsync(1_000);
+  restore();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(pings(socket)).toHaveLength(1);
+});
+
+it("starts the reconnect ladder over when the tab thaws", async () => {
+  const { socket } = await connectClient();
+
+  // Six failures while the tab was awake: the backoff is at its 30s cap.
+  socket.close(1006, "network gone");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await vi.advanceTimersByTimeAsync(60_000);
+    FakeSocket.instances.at(-1)!.close(1006, "still gone");
+  }
+
+  // Now it freezes, and the queued attempt lands the moment it thaws — into a
+  // radio that is not up yet. That failure is about the freeze, not about the
+  // server, and answering it with another thirty seconds leaves an installed
+  // app on a stale conversation with nothing to press.
+  freeze();
+  await vi.advanceTimersByTimeAsync(30_000);
+  FakeSocket.instances.at(-1)!.close(1006, "radio still coming up");
+  const attempts = FakeSocket.instances.length;
+
+  resume();
+  await vi.advanceTimersByTimeAsync(300);
+  // The one-attempt-per-second floor still holds — a thaw is not a licence to
+  // hammer our own bouncer…
+  expect(FakeSocket.instances).toHaveLength(attempts);
+  // …but the next try is a second away, not thirty.
+  await vi.advanceTimersByTimeAsync(1_500);
+  expect(FakeSocket.instances).toHaveLength(attempts + 1);
+});
+
+it("leaves the backoff alone when the tab merely regains focus", async () => {
+  const { socket } = await connectClient();
+
+  // No freeze, no bfcache: an ordinary alt-tab back to a tab whose reconnect
+  // is genuinely being refused. The ladder is the only thing keeping this
+  // from becoming a retry loop, so a plain wake must not reset it — the wake
+  // gets its one immediate attempt (#432) and the climb resumes from where it
+  // was.
+  socket.close(1006, "network gone");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await vi.advanceTimersByTimeAsync(60_000);
+    FakeSocket.instances.at(-1)!.close(1006, "still gone");
+  }
+  await vi.advanceTimersByTimeAsync(30_000);
+  FakeSocket.instances.at(-1)!.close(1006, "still gone");
+  const attempts = FakeSocket.instances.length;
+
+  wake("focus");
+  await vi.advanceTimersByTimeAsync(300);
+  expect(FakeSocket.instances).toHaveLength(attempts);
+  await vi.advanceTimersByTimeAsync(1_500);
+  expect(FakeSocket.instances).toHaveLength(attempts);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(FakeSocket.instances).toHaveLength(attempts + 1);
+});
+
+it("stops listening for the freeze after a deliberate teardown", async () => {
+  const { client, socket } = await connectClient();
+  await vi.advanceTimersByTimeAsync(30_000);
+  client.stop();
+
+  // stop() closed the socket; a freeze arriving afterwards must not reach a
+  // client that has no business acting on one.
+  freeze();
+  resume();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(pings(socket)).toHaveLength(1);
+  expect(FakeSocket.instances).toHaveLength(1);
 });
 
 // ── giving up, and not giving up ─────────────────────────────────────────────

@@ -10,6 +10,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ChannelHeader, DmHeader } from "./ChannelHeader.js";
+import { gateway } from "../../gateway/socket.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
 import {
@@ -456,5 +457,85 @@ describe("member-list toggle across the tiers", () => {
     expect(useUiStore.getState().membersOpen).toBe(false);
     expect(useUiStore.getState().membersDrawerOpen).toBe(false);
     expect(chip).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+// ── the connection chip on the phone stack (#377, MP3 §5) ────────────────────
+//
+// The sidebar has said "Offline, tap to retry" since #465, and the phone stack
+// hides the sidebar whenever a conversation is open. Installed to a home
+// screen there is no address bar behind it either, so without this the one
+// recovery the app has is on the one screen the user is not looking at.
+
+describe("conversation toolbar connection chip", () => {
+  const initialGateway = useUiStore.getState().gatewayStatus;
+  afterEach(() => {
+    useUiStore.setState({ gatewayStatus: initialGateway });
+  });
+
+  /** `backTo` is what AppShell passes only while the shell is stacked, so it
+   * is also the exact condition the chip rides on. */
+  function renderStacked() {
+    return render(
+      <MemoryRouter>
+        <ChannelHeader
+          identityId="id1"
+          channel={channelTitled("Frontpage")}
+          backTo="/app/@me"
+        />
+      </MemoryRouter>,
+    );
+  }
+
+  it("says so on the conversation pane, and retries on tap", async () => {
+    const user = userEvent.setup();
+    useUiStore.setState({ gatewayStatus: "offline" });
+    const reconnect = vi
+      .spyOn(gateway, "reconnectNow")
+      .mockImplementation(() => undefined);
+    renderStacked();
+
+    const chip = screen.getByRole("button", { name: "Reconnect now" });
+    expect(chip).toHaveTextContent("Offline");
+    await user.click(chip);
+    expect(reconnect).toHaveBeenCalledTimes(1);
+    reconnect.mockRestore();
+  });
+
+  it("reads the mid-retry state rather than claiming offline", () => {
+    useUiStore.setState({ gatewayStatus: "connecting" });
+    renderStacked();
+    expect(
+      screen.getByRole("button", { name: "Reconnect now" }),
+    ).toHaveTextContent("Connecting…");
+  });
+
+  it("is absent while connected, and on every tier with a sidebar", () => {
+    useUiStore.setState({ gatewayStatus: "online" });
+    const { unmount } = renderStacked();
+    expect(screen.queryByRole("button", { name: "Reconnect now" })).toBeNull();
+    unmount();
+
+    // Not stacked: the sidebar is on screen with the chip already on it, and a
+    // second copy in the toolbar would be one state said twice.
+    useUiStore.setState({ gatewayStatus: "offline" });
+    render(
+      <MemoryRouter>
+        <ChannelHeader identityId="id1" channel={channelTitled("Frontpage")} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("button", { name: "Reconnect now" })).toBeNull();
+  });
+
+  it("rides the DM toolbar too", () => {
+    useUiStore.setState({ gatewayStatus: "offline" });
+    render(
+      <MemoryRouter>
+        <DmHeader identityId="id1" dm={dm()} backTo="/app/@me" />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Reconnect now" }),
+    ).toHaveTextContent("Offline");
   });
 });

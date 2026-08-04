@@ -198,6 +198,26 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Pull-to-refresh, in an installed window only (MP3 §5, #377).
+   MP2 gave every scroll region `overscroll-behavior: contain`, so a drag that
+   starts inside the log or the sidebar already stops there. What is left is a
+   drag that starts on something that does not scroll at all — the toolbar, the
+   composer's chrome, the gaps — which Chrome on Android still reads as an
+   overscroll of the document and answers with a reload.
+
+   In a browser tab that is correct and stays: pull-to-refresh is the user's
+   reload, and §7 says the tab changes in nothing. Installed there is no
+   address bar behind it, so the same gesture is a whole app state — a live
+   socket, every open conversation's buffer — thrown away because a thumb
+   landed an inch too high. `contain` rather than `none` keeps the overscroll
+   glow, so the edge still feels like an edge; recovery from a genuinely stuck
+   connection is the toolbar chip, which costs no reload at all. */
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: contain;
+  }
+}
+
 code,
 kbd,
 samp {

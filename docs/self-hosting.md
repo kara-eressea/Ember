@@ -243,6 +243,49 @@ docker compose up -d
 #    box, remembered accounts reconnect on their own.)
 ```
 
+## Install to your home screen
+
+Your instance is installable as a web app: an icon on the home screen, its own
+window with no address bar, and the phone's own app switcher instead of a
+browser tab. Nothing to enable — it works from the moment the server is
+reachable over **HTTPS**. (Over plain `http://` the browser will not offer it,
+one more reason for the reverse proxy above. `http://localhost` is the
+exception, if you only ever use it on the machine it runs on.)
+
+**Android (Chrome).** Open your instance, log in, then the ⋮ menu → **Add to
+Home screen** → *Install*. Chrome also offers this by itself after a couple of
+visits. Long-press the installed icon and you get two shortcuts: **Continue**
+(straight back to your conversations) and **Identities** (the character
+picker).
+
+**iOS/iPadOS (Safari).** Open your instance, then the Share button → **Add to
+Home Screen** → *Add*. It must be Safari — on iOS the other browsers cannot
+install anything. The shortcut menu is Android's; iOS ignores that part of the
+manifest.
+
+What lands on the home screen is yours, not ours: the name under the icon is
+whatever you set `APP_NAME` to, and the status/title bar takes its colour from
+the app's own top bar, following your theme. If the name looks wrong after an
+install, change `APP_NAME`, restart, and re-install — the manifest is read once
+at install time.
+
+Two honest expectations:
+
+- **It does not work offline.** The client is a live view onto the bouncer, so
+  with no connection there is nothing to show. There is deliberately no offline
+  cache — a stale copy of a conversation is worse than an empty one. (Your
+  *characters* stay online regardless: that is the bouncer's whole job, and it
+  keeps running whether the app is open, closed or uninstalled.)
+- **There are no push notifications.** Notifications work while the app is
+  open, from the browser's own Notifications permission; a closed app is
+  silent. Push would need infrastructure this project does not have and does
+  not want.
+
+One thing to know about the installed window: it has no reload button. It
+should never need one — if the connection drops, the app says so in the top bar
+and taps to retry — but if it is ever genuinely stuck, close it from the app
+switcher and open it again.
+
 ## Smoke test without touching F-List
 
 The `sim` profile runs fchat-sim, a fake F-Chat with fixture accounts
@@ -271,6 +314,8 @@ Replace `image:` with `build: { context: ., target: runtime }` in
   reached without a proxy must appear in `APP_BASE_URL` too).
 - **Locked out of the app** — `reset-password` via the admin CLI (Quick
   start step 4).
+- **No "Add to Home screen" offered** — the instance is not on HTTPS, or the
+  browser is not Chrome/Safari (see Install to your home screen).
 - **Everything logged out after a restart** — expected with the default
   memory-only credential model; re-enter your F-List password. If you want
   restarts to reconnect on their own, set `CREDENTIALS_KEY` and opt in to
