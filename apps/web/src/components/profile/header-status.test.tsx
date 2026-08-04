@@ -46,6 +46,19 @@ describe("full profile header status line (#365)", () => {
     expect(screen.queryByText(/\[b\]/)).not.toBeInTheDocument();
   });
 
+  // #512: the hover tooltip is the one status surface that was still flattening
+  // BBCode without decoding the server's entities, so a status containing
+  // `&amp;` showed the raw entity here while every other surface (mini card,
+  // DM hero, MemberStatus) read correctly. The visible line is RichText's
+  // business and decodes on its own path — the attribute is a separate,
+  // single decode (wire-text.ts).
+  it("decodes wire entities in the hover tooltip, not just the visible line", () => {
+    seedSession("Ada Lovelace", "[b]Ada[/b] &amp; friends &lt;3");
+    const { container } = render(<Header identityId="id1" profile={profile} />);
+    const line = container.querySelector("div[class*='headerStatus']");
+    expect(line?.getAttribute("title")).toBe("Ada & friends <3");
+  });
+
   it("renders no status line when the message is empty (offline)", () => {
     seedSession("Ada Lovelace", "");
     const { container } = render(<Header identityId="id1" profile={profile} />);

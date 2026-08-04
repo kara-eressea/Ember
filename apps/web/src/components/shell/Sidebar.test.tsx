@@ -79,6 +79,7 @@ function dm(
     highlightedAt: 0,
     lastReadMessageId: null,
     newestMessageId: null,
+    lastActivityId: 0,
     ...extra,
   };
 }
@@ -221,10 +222,12 @@ describe("Sidebar pin marker on social rows", () => {
   });
 });
 
-// Unread DM traffic floats a friend/bookmark to the top of its own section
-// (#462) — with one row per character (#290) that social row is the only
-// surface the unread has, so it must not stay buried in the alphabet.
-describe("Sidebar activity bump on social rows (#462)", () => {
+// Recent DM activity is the base sort for the people sections (#515), which
+// retires the #462/#463 unread float: a friend you are talking to sits at the
+// top whether or not their last line is still unread, so reading them clears
+// the badge without the row teleporting away. With one row per character
+// (#290) that social row is the only surface the conversation has.
+describe("Sidebar activity sort on social rows (#515)", () => {
   const person = (name: string, online = true): SocialCharacter => ({
     name,
     online,
@@ -243,10 +246,16 @@ describe("Sidebar activity bump on social rows (#462)", () => {
     bookmarks: [],
   };
 
-  it("floats an unread friend above the online ones, offline or not", () => {
+  it("lifts a recently-active friend above the online ones, offline or not", () => {
     const { container } = renderSidebar(
       undefined,
-      { "dm-Zed": dm("Zed", false, { unread: 2, online: false }) },
+      {
+        "dm-Zed": dm("Zed", false, {
+          unread: 2,
+          online: false,
+          lastActivityId: 12,
+        }),
+      },
       {
         friends: [person("Ana"), person("Bo"), person("Zed", false)],
         bookmarks: [],
@@ -258,12 +267,12 @@ describe("Sidebar activity bump on social rows (#462)", () => {
     expect(socialNames(container)).toEqual(["Zed", "Ana", "Bo"]);
   });
 
-  it("orders several unread rows by their DM's highlight recency", () => {
+  it("orders several conversations by their newest message id", () => {
     const { container } = renderSidebar(
       undefined,
       {
-        "dm-Ana": dm("Ana", false, { unread: 1, highlightedAt: 200 }),
-        "dm-Cass": dm("Cass", false, { unread: 3, highlightedAt: 100 }),
+        "dm-Ana": dm("Ana", false, { unread: 1, lastActivityId: 200 }),
+        "dm-Cass": dm("Cass", false, { unread: 3, lastActivityId: 100 }),
       },
       trio,
     );
@@ -271,12 +280,16 @@ describe("Sidebar activity bump on social rows (#462)", () => {
     expect(socialNames(container)).toEqual(["Ana", "Cass", "Bo"]);
   });
 
-  it("falls back to the newest message id when no highlight stamped", () => {
+  // The heart of #515: Cass has the older conversation but it is READ, Ana's
+  // is newer. Under the retired float, Ana (unread) would have floated and
+  // Cass would have sat in the alphabet; now both are ordered by recency and
+  // reading Ana would change nothing.
+  it("keeps a read conversation ranked by recency, above rows with none", () => {
     const { container } = renderSidebar(
       undefined,
       {
-        "dm-Ana": dm("Ana", false, { unread: 1, newestMessageId: 5 }),
-        "dm-Cass": dm("Cass", false, { unread: 1, newestMessageId: 9 }),
+        "dm-Cass": dm("Cass", false, { unread: 0, lastActivityId: 300 }),
+        "dm-Ana": dm("Ana", false, { unread: 0, lastActivityId: 100 }),
       },
       trio,
     );
@@ -284,10 +297,10 @@ describe("Sidebar activity bump on social rows (#462)", () => {
     expect(socialNames(container)).toEqual(["Cass", "Ana", "Bo"]);
   });
 
-  it("bumps a bookmark within its own section only", () => {
+  it("ranks a bookmark within its own section only", () => {
     const { container } = renderSidebar(
       undefined,
-      { "dm-Fen": dm("Fen", false, { unread: 1 }) },
+      { "dm-Fen": dm("Fen", false, { unread: 1, lastActivityId: 7 }) },
       {
         friends: [person("Ana")],
         bookmarks: [person("Dee"), person("Eve"), person("Fen")],
@@ -298,14 +311,72 @@ describe("Sidebar activity bump on social rows (#462)", () => {
     expect(socialNames(container)).toEqual(["Ana", "Fen", "Dee", "Eve"]);
   });
 
-  it("returns the row to its base order once the DM is read", () => {
+  it("leaves rows with no conversation in presence + alphabetical order", () => {
+    const { container } = renderSidebar(undefined, {}, trio);
+
+    expect(socialNames(container)).toEqual(["Ana", "Bo", "Cass"]);
+  });
+
+  // A hand-placed order is gone with #391's people half (#515): a stored one
+  // is inert rather than half-applied, so the sort below is pure activity.
+  it("ignores a stored manual order for the people sections", () => {
     const { container } = renderSidebar(
-      undefined,
-      { "dm-Cass": dm("Cass", false, { unread: 0, highlightedAt: 0 }) },
+      {
+        sidebarOrder: {
+          "id-1": { friends: ["cass", "bo", "ana"], dms: ["bea"] },
+        },
+      },
+      { "dm-Bo": dm("Bo", false, { lastActivityId: 5 }) },
       trio,
     );
 
-    expect(socialNames(container)).toEqual(["Ana", "Bo", "Cass"]);
+    expect(socialNames(container)).toEqual(["Bo", "Ana", "Cass"]);
+  });
+
+  it("gives people rows no drag affordance", () => {
+    const { container } = renderSidebar(
+      undefined,
+      { "dm-Bea": dm("Bea") },
+      trio,
+    );
+
+    for (const row of container.querySelectorAll(
+      "button[class*='socialRow']",
+    )) {
+      expect(row.getAttribute("draggable")).toBeNull();
+    }
+    // The DM row's wrapper is not draggable either — only channels are.
+    const dmWrap = screen
+      .getByRole("link", { name: /Bea/ })
+      .closest("div[class*='navRowWrap']");
+    expect(dmWrap?.getAttribute("draggable")).toBeNull();
+  });
+});
+
+// Direct messages sort the same way (#515), with pins still on top (#169).
+describe("Sidebar Direct messages ordering (#515)", () => {
+  const dmNames = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll("a[class*='navItem']"))
+      .map((row) => row.querySelector("span[class*='navLabel']")?.textContent)
+      .filter((label) => label != null && /^(Ana|Bea|Cass)$/.test(label));
+
+  it("orders by recent activity, alphabetical for conversations with none", () => {
+    const { container } = renderSidebar(undefined, {
+      "dm-Ana": dm("Ana", false, { lastActivityId: 10 }),
+      "dm-Bea": dm("Bea"),
+      "dm-Cass": dm("Cass", false, { lastActivityId: 40 }),
+    });
+
+    expect(dmNames(container)).toEqual(["Cass", "Ana", "Bea"]);
+  });
+
+  it("keeps a pinned row above a more recently active one", () => {
+    const { container } = renderSidebar(undefined, {
+      "dm-Ana": dm("Ana", true, { lastActivityId: 1 }),
+      "dm-Cass": dm("Cass", false, { lastActivityId: 99 }),
+    });
+
+    expect(dmNames(container)).toEqual(["Ana", "Cass"]);
   });
 });
 

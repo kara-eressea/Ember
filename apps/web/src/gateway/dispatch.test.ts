@@ -115,6 +115,7 @@ function snapshot(): ServerFrame {
           pinned: false,
           unread: 0,
           lastReadMessageId: null,
+          lastActivityId: 0,
         },
       ],
     },
@@ -558,6 +559,55 @@ describe("presence", () => {
       }),
     );
     expect(session().ownStatus).toBe("away");
+  });
+});
+
+// #515: the sidebar's people sections sort DMs on their newest message id in
+// EITHER direction, so the stamp has to survive the three early returns that
+// govern unread (own sends, the attended conversation, mutes) while still
+// respecting the two that mean "nothing was shown" (ads, ignored senders).
+describe("DM activity stamps (#515)", () => {
+  const activity = () => session().dms[CONV_DM]?.lastActivityId;
+
+  it("stamps our own send — the partner we just answered is the most recent", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(40, { kind: "pm", sentByUs: true }),
+      }),
+    );
+    // No unread from an own send, but the row still counts as active.
+    expect(session().dms[CONV_DM]?.unread).toBe(0);
+    expect(activity()).toBe(40);
+  });
+
+  it("stamps a message arriving in the conversation being read", () => {
+    dispatchFrame(snapshot());
+    useUiStore.getState().setActive(IDENTITY, CONV_DM);
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(41, { kind: "pm" }),
+      }),
+    );
+    // Attended: no badge — but the conversation on screen must not sink
+    // below quieter ones while the user is reading it.
+    expect(session().dms[CONV_DM]?.unread).toBe(0);
+    expect(activity()).toBe(41);
+  });
+
+  it("does not stamp a message from an ignored sender", () => {
+    dispatchFrame(snapshot());
+    dispatchFrame(event("ignore.updated", { characters: ["nyx firemane"] }));
+    dispatchFrame(
+      event("message.new", {
+        convId: CONV_DM,
+        message: message(42, { kind: "pm" }),
+      }),
+    );
+    // A line no view renders must not reorder the sidebar either.
+    expect(activity()).toBe(0);
   });
 });
 
