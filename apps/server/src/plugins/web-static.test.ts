@@ -55,13 +55,26 @@ describe("webStatic", () => {
     expect(response.headers["cache-control"]).toBe("no-cache");
   });
 
-  it("serves hashed assets immutably", async () => {
-    const response = await app.inject({
+  // The pair of headers is the whole of MP3's no-service-worker mitigation
+  // (#377): content-hashed bundles cached for a year give an installed app
+  // warm cold-starts out of the plain HTTP cache, and the document that names
+  // them must never be cached or a deploy would be invisible until the entry
+  // expired. Pinned exactly rather than loosely — "contains immutable" would
+  // pass a max-age of a minute, and a no-cache that drifted to max-age=0 would
+  // still revalidate but stop being the documented contract.
+  it("serves hashed assets immutably and the document not at all", async () => {
+    const asset = await app.inject({
       method: "GET",
       url: "/assets/app-abc123.js",
     });
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["cache-control"]).toContain("immutable");
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers["cache-control"]).toBe(
+      "public, max-age=31536000, immutable",
+    );
+
+    const index = await app.inject({ method: "GET", url: "/" });
+    expect(index.statusCode).toBe(200);
+    expect(index.headers["cache-control"]).toBe("no-cache");
   });
 
   it("keeps unknown API paths as JSON 404s", async () => {

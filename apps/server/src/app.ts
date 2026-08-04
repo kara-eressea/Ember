@@ -60,6 +60,7 @@ import {
   type SessionTuning,
 } from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
+import { webManifestRoute } from "./plugins/web-manifest.js";
 import { runtimeConfigScript, webStatic } from "./plugins/web-static.js";
 
 declare module "fastify" {
@@ -480,6 +481,11 @@ export async function buildApp({
   // Version/update surface for the UI (M7). Authenticated: the running
   // version is nobody else's business.
   app.get("/api/meta", { preHandler: app.authenticate }, () => updates.status);
+  // The install manifest (MP3 §1). Unauthenticated and always registered: it
+  // names the app the browser is about to put on a home screen, and in dev
+  // the Vite proxy reaches it here rather than at a WEB_DIST that does not
+  // exist. Nothing in it is private — it is the product name and four colours.
+  webManifestRoute(app, { appName: config.APP_NAME });
 
   if (config.WEB_DIST !== undefined) {
     await app.register(webStatic, {

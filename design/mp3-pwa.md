@@ -21,6 +21,15 @@ client is a correctness hazard with no user-visible win. If that changes
   the existing favicon source art (one script, checked-in outputs are fine if
   generation needs tooling CI lacks; document whichever). `apple-touch-icon`
   (180) for iOS, linked in `index.html`.
+- **App shortcuts** (added during package A): a `shortcuts` array, so a
+  long-press on the installed icon jumps into the app. The manifest is baked
+  per instance, not per character, so a shortcut may only name a route that
+  means the same thing to every user on every launch, and a label may not
+  carry the product name — "Continue" → `/app/@me` (the identity-agnostic
+  alias in `lib/routes.ts`, landing on the conversation list) and
+  "Identities" → `/identities`. No new routes were invented for this; the
+  96px shortcut icon comes out of the same generation script. Manifest-only —
+  no service worker involved.
 - CSP: same-origin manifest and icons — no policy change. Verify the hash-pin
   guard (#466) is untouched by any `index.html` edit.
 - **Asset cache headers** (the no-service-worker mitigation): Vite's output is
@@ -94,3 +103,42 @@ A then B, sequential (B documents and tests A's surface).
 - Product name and domains stay config tokens — grep the diff for the literal
   before merging.
 - The CSP hash-pin guard stays green; no new external requests.
+
+## 8. What only real hardware can answer (package A)
+
+Package A is the half of MP3 that is *least* testable from a desktop: an
+installed window is a thing an operating system makes, and no automation here
+can make one. Two measured facts bound what is already known — Chromium parses
+the manifest with zero errors and reports the page installable (checked over
+CDP against the built bundle behind the real static handler), and
+`display-mode` is **not** emulatable: `Emulation.setEmulatedMedia` accepts a
+`display-mode` feature and Blink ignores it, so every `@media (display-mode:
+standalone)` rule is unreachable from Playwright on any platform. The safe-area
+arithmetic underneath it was verified instead by driving the four tokens
+directly (browser tab → 0; insets alone → padded; keyboard taller than the
+inset → 0; keyboard shorter → the remainder). What is left needs a phone.
+
+**Android (Chrome):**
+
+- [ ] **Install prompt appears** and the installed icon is the flame, not a
+      screenshot of the page. A cropped or letterboxed icon means the maskable
+      512 is wrong, not the 192.
+- [ ] **The status bar matches the app's top bar**, and re-matches after
+      switching base theme in Preferences (`theme-color` sync, §4).
+- [ ] **The shortcut menu.** Long-press the installed icon: "Continue" and
+      "Identities" appear, and each opens on the right screen. Manifest
+      parsing of `shortcuts` is emulator-verifiable; the menu itself is not.
+
+**iOS (Safari) — the engine none of this is reachable from:**
+
+- [ ] **Add to Home Screen gives a standalone window** (no address bar) with
+      the `apple-touch-icon`, from the manifest's `display` alone — the
+      deprecated `apple-mobile-web-app-capable` is deliberately absent (§2)
+      and this is the check that the omission was right.
+- [ ] **Nothing sits under the notch or the home indicator** in the installed
+      window, in both orientations, on the shell, the login screen, the
+      identity picker, a long-press sheet and the member-list overlay.
+- [ ] **The composer clears the keyboard without an extra gap** above it —
+      the double-pad case §3's `max()` is there to prevent.
+- [ ] **A browser tab is unchanged** by all of the above: same layout, no
+      padding, `viewport-fit=cover` notwithstanding.

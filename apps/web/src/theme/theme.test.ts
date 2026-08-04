@@ -241,6 +241,10 @@ describe("hydrateTheme", () => {
     });
     vi.stubGlobal("document", {
       documentElement: { style: { setProperty }, classList: { toggle() {} } },
+      // The theme-color meta applyTheme keeps in sync (MP3 §4). Its own
+      // behaviour is asserted against a real DOM in theme-color.test.ts;
+      // here it only has to exist so the palette assertions can run.
+      querySelector: () => ({ content: "" }),
     });
   });
 

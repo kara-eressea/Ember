@@ -134,6 +134,60 @@ body,
   height: 100%;
 }
 
+/* ── Installed-app safe areas (MP3 §3, #377) ──────────────────────────────
+   `viewport-fit=cover` in index.html hands the whole screen to the document,
+   notch and home indicator included; these four properties hand the unusable
+   strips back as padding.
+
+   The display-mode gate is the §7 invariant, written once here rather than
+   repeated at every surface that needs an inset: outside an installed window
+   the four tokens are 0px and every rule that reads them is arithmetic on
+   zero. It is a media query in a codebase that mostly refuses them (MP1 §2),
+   and it is the carve-out that section names — `display-mode` asks about the
+   window the app is running in, not about how wide it happens to be, so no
+   amount of interface zoom or window dragging can make it answer wrongly.
+
+   `--eb-safe-bottom-kb` is the bottom inset corrected for the soft keyboard,
+   and it exists because exactly one box needs the correction. #root is in the
+   flow, so the phone shell's `height: calc(100% - var(--eb-keyboard-inset))`
+   (shell.module.css) measures inside this padding — and when the keyboard is
+   up, the strip it covers already includes the home indicator, so padding for
+   both would lift the composer a home-indicator's height above a keyboard it
+   is already clear of. Subtracting and clamping at 0 makes the two mutually
+   exclusive: whichever is larger wins, which is the correct answer in both
+   directions. Fixed-position surfaces are not in that flow — they are laid
+   out against the layout viewport, which the keyboard does not shrink — so
+   they read the plain `--eb-safe-bottom` and no correction applies. */
+:root {
+  --eb-safe-top: 0px;
+  --eb-safe-right: 0px;
+  --eb-safe-bottom: 0px;
+  --eb-safe-left: 0px;
+  --eb-safe-bottom-kb: max(
+    0px,
+    var(--eb-safe-bottom) - var(--eb-keyboard-inset, 0px)
+  );
+}
+
+@media (display-mode: standalone) {
+  :root {
+    --eb-safe-top: env(safe-area-inset-top, 0px);
+    --eb-safe-right: env(safe-area-inset-right, 0px);
+    --eb-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --eb-safe-left: env(safe-area-inset-left, 0px);
+  }
+}
+
+/* One padded box for every screen the app has — the shell, but also login and
+   the identity picker, which are just as installed and just as notched. The
+   composer needs nothing of its own as a result: it is in this flow, at the
+   bottom of a shell that now ends above the home indicator. The strips show
+   `body`'s ground through, which is the app's own --eb-bg. */
+#root {
+  padding: var(--eb-safe-top) var(--eb-safe-right) var(--eb-safe-bottom-kb)
+    var(--eb-safe-left);
+}
+
 body {
   margin: 0;
   background: var(--eb-bg);

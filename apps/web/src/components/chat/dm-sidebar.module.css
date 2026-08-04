@@ -27,6 +27,12 @@
   bottom: 0;
   z-index: 40;
   width: min(280px, calc(86vw / var(--eb-ui-zoom, 1)));
+  /* Installed safe areas (MP3 §3, #377), identical to the phone overlay this
+     drawer became: a fixed, full-height, right-anchored panel reaches the
+     status bar, the home indicator and — in landscape — the notch. Zero
+     outside an installed window, and an installed tablet is exactly where a
+     compact-tier drawer runs. */
+  padding: var(--eb-safe-top) var(--eb-safe-right) var(--eb-safe-bottom) 0;
   box-shadow: -18px 0 50px -18px rgb(0 0 0 / 55%);
   animation: dmDrawerIn 0.15s ease;
 }
