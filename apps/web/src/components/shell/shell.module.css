@@ -132,6 +132,11 @@
   background: var(--eb-side2);
   border-right: 1px solid var(--eb-border);
   overflow-y: auto;
+  /* The conversation list is the whole pane on a phone, so an overscroll at
+     either end has nowhere useful to chain to and would rubber-band the page
+     (and arm pull-to-refresh once MP3 installs the app). Same rule as the log —
+     see chat.module.css .log for the argument (MP2 §4, #376). */
+  overscroll-behavior: contain;
 }
 
 .railItem {
@@ -1119,6 +1124,28 @@
      pane puts the toolbar in the first and the log in the second; the list
      pane takes a third, further down. */
   grid-template-columns: minmax(0, 1fr);
+  /* The soft keyboard (MP2 §2, #376). --eb-keyboard-inset is published on :root
+     by lib/visual-viewport.ts and is the strip of the layout viewport the
+     keyboard is covering; with no keyboard the property is absent and the
+     fallback makes this the plain `height: 100%` the shell has always had.
+
+     Shrinking the SHELL rather than padding the second row is the deliberate
+     choice, and it is a choice about how many boxes have to agree. The shell is
+     the single element the whole phone layout hangs off: its rows are
+     `auto minmax(0, 1fr)`, so taking height off the bottom shortens the log's
+     track and carries the composer — toolbar and all — up with it in one
+     reflow. Padding the row instead would leave the shell's box overlapping the
+     keyboard, so every fixed/absolute child positioned against it (the jump
+     pill, the picker, the overlays) would still measure the pre-keyboard
+     bottom and need a correction of its own. One rule here, or a rule per
+     floating surface.
+
+     Nothing about this is in React. The property is written imperatively by the
+     tracker, so an animating keyboard invalidates style on this one rule and
+     re-renders no components at all (see visual-viewport.ts). Phone-tier only,
+     and inert everywhere else: above this tier the selector never matches, and
+     on a desktop the inset is 0 regardless because the two viewports agree. */
+  height: calc(100% - var(--eb-keyboard-inset, 0px));
 }
 
 /* The identity rail folds into the list pane's header: the same <nav>, the

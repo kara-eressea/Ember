@@ -12,6 +12,7 @@ import "./styles/base.css";
 
 import { loadRuntimeConfig } from "./lib/config.js";
 import { startLayoutTracking } from "./lib/layout-mode.js";
+import { startKeyboardTracking } from "./lib/visual-viewport.js";
 import { AppRouter } from "./router.js";
 import { useAuthStore } from "./stores/auth.js";
 import {
@@ -29,6 +30,10 @@ applyInterface(savedUiFontSize(), savedUiScale());
 // After applyInterface, so the first measurement already sees the stored
 // interface scale; before render, so nothing paints untiered (#375).
 startLayoutTracking();
+// Same placement argument as the tier tracker, and the same reason it is not an
+// AppShell effect: the login and identity-picker screens are typed into too,
+// and the property has to exist before the first paint (#376).
+startKeyboardTracking();
 const config = await loadRuntimeConfig();
 document.title = config.appName;
 void useAuthStore.getState().restore();

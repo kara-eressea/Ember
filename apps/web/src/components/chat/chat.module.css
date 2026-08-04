@@ -401,6 +401,16 @@
      log manages its own scroll position (bottom-stick + the #266 prepend
      re-pin), so anchoring only fights it. */
   overflow-anchor: none;
+  /* Scroll chaining stops here (MP2 §4, #376). Fling a touch log past either
+     end and the leftover momentum is handed to the nearest scrollable ancestor
+     — on a phone that is the page itself, so reaching the top of the backlog
+     rubber-bands the whole shell, and in an installed PWA (MP3) the same
+     overscroll at the top is what the platform reads as pull-to-refresh, i.e.
+     a reload of the client mid-read. The log owns its own overscroll; nothing
+     above it wants the remainder. `contain` rather than `none` deliberately:
+     the elastic bounce inside the log is the platform's own "you are at the
+     end" feedback and there is no reason to take it away. */
+  overscroll-behavior: contain;
 }
 
 /* "Jump to recent" pill (#231): floats over the bottom of the message area
@@ -976,6 +986,11 @@
   min-height: 0;
   overflow-y: auto;
   padding: 6px 0;
+  /* The member list is a full-height PanelOverlay on the phone tier, laid over
+     the conversation — so an overscroll here chains into the log behind it and
+     scrolls the thing the panel is covering. See .log for the full argument
+     (MP2 §4, #376). */
+  overscroll-behavior: contain;
 }
 
 .memberGroup {
@@ -1682,6 +1697,11 @@
   max-height: 264px;
   padding: 10px;
   overflow-y: auto;
+  /* A short scroll region inside a floating surface: flick through the eicon
+     grid and the leftover momentum would scroll the log underneath, which on a
+     phone means the conversation moves while the picker sits still over it
+     (MP2 §4, #376 — see .log). */
+  overscroll-behavior: contain;
 }
 
 /* Five 60px tiles and their gaps are 324px of fixed track. That never fitted

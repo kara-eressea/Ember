@@ -577,6 +577,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Marla Quinn"],
     },
+    // Reserved for the #376 keyboard + momentum-fling E2E (same isolation
+    // rules). Mitten Vale flings the log and opens the soft keyboard; Driftwood
+    // Ash is the raw-SimClient partner whose backlog gives the log something to
+    // fling through and who lands the arrivals the stick intent is read off, so
+    // no other character may speak into that room.
+    "mitten@example.test": {
+      password: "hunter2",
+      characters: ["Mitten Vale"],
+    },
+    "driftwood@example.test": {
+      password: "hunter2",
+      characters: ["Driftwood Ash"],
+    },
   },
   channels: [
     {
@@ -976,6 +989,20 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Everything in one thumb's reach.",
       oplist: ["Pocket Chase"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #376 keyboard + momentum-fling E2E: Driftwood Ash seeds
+    // a backlog deep enough to fling through, and lands the arrivals the stick
+    // intent is read off. Hidden and NPC-free — the spec measures the log's
+    // distance from the tail across a momentum tail and a viewport resize, and
+    // any other speaker would move it mid-assertion.
+    {
+      name: "ADH-376keyboardfling88cc99dd",
+      title: "Lantern Room",
+      mode: "chat",
+      description: "Thumbs, keyboards and the space between them.",
+      oplist: ["Mitten Vale"],
       npcs: [],
       listed: false,
     },

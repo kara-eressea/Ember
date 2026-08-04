@@ -2,6 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Deliberately WITHOUT `interactive-widget=resizes-content` (MP2 §2,
+         #376). That directive tells Chromium to shrink the layout viewport when
+         the soft keyboard opens, which would indeed lift the composer clear of
+         it — measured here, and it works. It is still the wrong choice:
+         it is Chromium-only (iOS Safari and Firefox ignore it), so
+         lib/visual-viewport.ts has to exist for the other two engines
+         regardless, and adding the directive would mean the engine most of our
+         phone testing runs on is the one engine that never exercises that
+         module. One measured path beats two, one of them untested. The module's
+         arithmetic is self-cancelling by construction — an engine that resizes
+         the layout viewport itself reports layout height == visual height and
+         gets an inset of 0 — so Firefox Android already lands on the
+         `resizes-content` behaviour without a directive, and Chromium would too
+         if this were ever added. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Never hand a third-party host the URL of the instance a reader is on
          (audit backlog). Individual <img> tags already carry
