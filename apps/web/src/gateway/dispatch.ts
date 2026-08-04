@@ -334,6 +334,14 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
         .getState()
         .applySeen(identityId, event.d.lastSeenId, event.d.unseen);
       return;
+    case "notification.removed":
+      // A device deleted one entry (#506). The row leaves every open panel,
+      // and the badge takes the server's recount — deleting an *unseen*
+      // entry changes what "unseen" means, and only the server counted.
+      useNotificationsStore
+        .getState()
+        .applyRemoved(identityId, event.d.id, event.d.unseen);
+      return;
     case "sys":
       sessions.applyNotice(identityId, "sys", event.d.message);
       return;

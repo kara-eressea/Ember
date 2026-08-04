@@ -2951,11 +2951,30 @@
   color: var(--eb-meta);
 }
 
+/* The row is a container now, not the button: it carries the entry's own
+   controls (#505/#506), and a button inside a button is not a thing. The
+   hover wash moved with it, so pointing anywhere on the row — including at
+   the trashcan — still lights the whole row. */
 .inboxRow {
   display: flex;
+  gap: 2px;
+  align-items: center;
+  width: 100%;
+  border-radius: var(--eb-radius);
+}
+
+.inboxRow:hover,
+.inboxRow:focus-within {
+  background: var(--eb-hover);
+}
+
+/* Everything that reads as the entry itself, and the click that acts on it. */
+.inboxRowMain {
+  display: flex;
+  flex: 1;
   gap: 8px;
   align-items: baseline;
-  width: 100%;
+  min-width: 0;
   padding: 6px 8px;
   text-align: left;
   cursor: pointer;
@@ -2964,9 +2983,74 @@
   border-radius: var(--eb-radius);
 }
 
-.inboxRow:hover,
-.inboxRow:focus-visible {
-  background: var(--eb-hover);
+/* The trailing cluster, in a fixed order on every row: the request's answer
+   (or its verdict), then the trashcan. Right-aligned by the main column
+   taking the spare width, so a row with no request actions still puts its
+   trashcan where the one above it is. */
+.inboxRowTrail {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  padding-right: 5px;
+}
+
+.inboxAction {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  line-height: 0;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--eb-radius);
+}
+
+.inboxAction:hover,
+.inboxAction:focus-visible {
+  background: var(--eb-hover-main);
+  color: var(--eb-text);
+}
+
+/* The two answers, tinted only on approach: a row of permanently green and
+   red glyphs would out-shout the entry they belong to. */
+.inboxActionAccept:hover,
+.inboxActionAccept:focus-visible {
+  color: var(--eb-ok);
+}
+
+.inboxActionReject:hover,
+.inboxActionReject:focus-visible,
+.inboxActionRemove:hover,
+.inboxActionRemove:focus-visible {
+  color: var(--eb-danger);
+}
+
+/* Hidden until the row is hovered or the button itself is focused (#506).
+   Kept in the DOM — opacity, not display — so it stays tab-reachable, and
+   the row reserves its width either way. `data-eb-hover-reveal` draws it
+   permanently where nothing can hover (base.css §5-F). */
+.inboxActionRemove {
+  opacity: 0;
+}
+
+.inboxRow:hover .inboxActionRemove,
+.inboxActionRemove:focus-visible {
+  opacity: 1;
+}
+
+/* "Accepted" / "Declined": the quiet end state of an entry that had buttons
+   (#505). Deliberately text and not a glyph — a resolved request is a fact
+   to read, not a control to find. */
+.inboxRowVerdict {
+  flex: none;
+  padding: 0 4px;
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-faint);
+  white-space: nowrap;
 }
 
 /* Unseen until the open marks them: an accent edge, not a fill, so a screen
@@ -3112,6 +3196,28 @@
 /* Fields grow rather than wear an overlay, for the caret's sake (above). */
 :root[data-layout="phone"] .memberFilter {
   min-height: var(--eb-touch-target);
+}
+
+/* The inbox row and the two-or-three controls trailing it (#505/#506) grow
+   rather than wear overlays, and for the reason the token's rule gives: they
+   sit side by side with no space between them, so a hit area wider than the
+   box would reach into the neighbour — and the neighbour here is the
+   difference between accepting a friend request and deleting the line that
+   mentions it. Three 44px squares plus the row's own text still leave the
+   main column ~190px on the narrowest phone the panel renders on. */
+:root[data-layout="phone"] .inboxRowMain {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .inboxAction {
+  width: var(--eb-touch-target);
+  height: var(--eb-touch-target);
+}
+
+/* The cluster's own padding would otherwise sit between the last target and
+   the panel edge as dead pixels a thumb aiming at the trashcan can land in. */
+:root[data-layout="phone"] .inboxRowTrail {
+  padding-right: 0;
 }
 
 :root[data-layout="phone"] .joinButton {

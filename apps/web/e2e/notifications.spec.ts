@@ -5,9 +5,15 @@
 // the sim's JSON API (which bridges an RTB to the chat socket, as the live
 // site does) shows up as a second entry.
 //
+// The second test is the inbox's own actions (#505/#506) across two attached
+// browsers: a friend request answered from the entry, and an unseen entry
+// deleted — with the other device following both.
+//
 // Owns hazelmere@example.test (Hazelmere Fen), larkspur@example.test
-// (Larkspur Wend) and bindweed@example.test (Bindweed Ash): specs never share
-// an account or a character (world.ts).
+// (Larkspur Wend), bindweed@example.test (Bindweed Ash), quillon@example.test
+// (Quillon Reed), sable@example.test (Sable Arkwright) and
+// thimble@example.test (Thimble Ashgrove): specs never share an account or a
+// character (world.ts).
 
 import {
   delay,
@@ -28,6 +34,10 @@ const CHARACTER = "Hazelmere Fen";
 const BURY_COUNT = 70;
 /** Above the e2e sim's msg_flood (50ms) so no line is throttled away. */
 const SEED_SPACING_MS = 70;
+
+/** The second test's own hidden channel — one per spec, never shared. */
+const ACTIONS_CHANNEL_KEY = "ADH-505inboxactions9a8b7c6d5e";
+const ACTIONS_CHANNEL_TITLE = "Quillon Actions";
 
 /** Sends a friend request over the sim's JSON API, as the website would. */
 async function sendFriendRequest(
@@ -157,5 +167,133 @@ test("the inbox logs a mention, badges it, and jumps back to it (#467)", async (
     ).toBeVisible();
   } finally {
     larkspur.close();
+  }
+});
+
+test("answers a friend request from the entry and deletes a log line, on two devices (#505, #506)", async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await interceptAvatars(page);
+
+  const character = "Quillon Reed";
+  const creds = await provisionAndConnect(
+    page,
+    "quillon@example.test",
+    character,
+  );
+  // The inbox chip lives on the conversation toolbar, so both devices need a
+  // conversation open to have one. Nobody else ever speaks in here — the
+  // spec's subject is the inbox, not the log.
+  await joinChannel(page, ACTIONS_CHANNEL_KEY, ACTIONS_CHANNEL_TITLE);
+
+  // A second attached browser on the same account: the inbox is server-held
+  // state, so everything one device does to it has to land on the other.
+  const contextB = await browser.newContext();
+  try {
+    const pageB = await contextB.newPage();
+    await interceptAvatars(pageB);
+    await pageB.goto("/login");
+    await pageB.getByLabel("Email").fill(creds.email);
+    await pageB.getByLabel("Password").fill(creds.password);
+    await pageB.getByRole("button", { name: "Log in" }).click();
+    await expect(pageB).toHaveURL(/\/identities$/);
+    // The session is already live (device A connected it) → Open.
+    await pageB.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(pageB).toHaveURL(/\/app\//);
+    // The channel is the identity's, not the device's: B finds it already in
+    // the sidebar and opens it for the toolbar.
+    await pageB
+      .getByRole("navigation")
+      .getByRole("link", { name: new RegExp(ACTIONS_CHANNEL_TITLE) })
+      .click({ timeout: 15_000 });
+    await expect(
+      pageB.getByRole("heading", { name: ACTIONS_CHANNEL_TITLE }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    const chipA = page.getByRole("button", { name: /^Notifications/ });
+    const chipB = pageB.getByRole("button", { name: /^Notifications/ });
+
+    // ── A friend request, answered from the inbox entry (#505) ───────────
+    await sendFriendRequest("sable@example.test", "Sable Arkwright", character);
+    await expect(chipA).toHaveAccessibleName("Notifications — 1 unseen", {
+      timeout: 15_000,
+    });
+
+    await chipA.click();
+    const panelA = page.getByRole("dialog", { name: "Notifications" });
+    await expect(
+      panelA.getByText("Sable Arkwright sent a friend request"),
+    ).toBeVisible({ timeout: 10_000 });
+    await panelA
+      .getByRole("button", {
+        name: "Accept friend request from Sable Arkwright",
+      })
+      .click();
+    // The entry resolves in place — it stays in the log, it just stops
+    // asking.
+    await expect(panelA.getByText("Accepted")).toBeVisible({
+      timeout: 15_000,
+    });
+    // …and the accept really went upstream: no surface still offers it,
+    // including the sidebar's own request row behind the panel.
+    await expect(
+      page.getByRole("button", {
+        name: "Accept friend request from Sable Arkwright",
+      }),
+    ).toHaveCount(0, { timeout: 15_000 });
+
+    // ── An unseen entry, deleted while both devices are attached (#506) ──
+    // The panel is still open, so opening it does not sweep this one under
+    // the seen watermark: it arrives unseen on BOTH devices, which is the
+    // only way to find out whether the badge settles coherently.
+    await sendFriendRequest(
+      "thimble@example.test",
+      "Thimble Ashgrove",
+      character,
+    );
+    await expect(
+      panelA.getByText("Thimble Ashgrove sent a friend request"),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(chipA).toHaveAccessibleName("Notifications — 1 unseen");
+    await expect(chipB).toHaveAccessibleName("Notifications — 1 unseen", {
+      timeout: 15_000,
+    });
+
+    const bins = panelA.getByRole("button", { name: "Remove notification" });
+    // Newest first (the panel head says so), so the entry that just arrived
+    // is the top row and its trashcan is the first one.
+    await expect(bins).toHaveCount(2);
+    await bins.first().click();
+    await expect(
+      panelA.getByText("Thimble Ashgrove sent a friend request"),
+    ).toBeHidden({ timeout: 15_000 });
+    // The other entry is untouched: this deletes one line, not the log.
+    await expect(
+      panelA.getByText("Sable Arkwright sent a friend request"),
+    ).toBeVisible();
+    // Both badges settle on the server's recount, not on a guess each.
+    await expect(chipA).toHaveAccessibleName("Notifications", {
+      timeout: 15_000,
+    });
+    await expect(chipB).toHaveAccessibleName("Notifications", {
+      timeout: 15_000,
+    });
+
+    // ── What device B sees when it finally looks ─────────────────────────
+    await chipB.click();
+    const panelB = pageB.getByRole("dialog", { name: "Notifications" });
+    await expect(
+      panelB.getByText("Sable Arkwright sent a friend request"),
+    ).toBeVisible({ timeout: 10_000 });
+    // Resolved on the other device, derived here from B's own live request
+    // list — no verdict travelled with the row.
+    await expect(panelB.getByText("Accepted")).toBeVisible({ timeout: 15_000 });
+    await expect(
+      panelB.getByText("Thimble Ashgrove sent a friend request"),
+    ).toHaveCount(0);
+  } finally {
+    await contextB.close();
   }
 });
