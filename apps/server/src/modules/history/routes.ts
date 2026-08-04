@@ -36,6 +36,11 @@ const messageResponse = z.object({
   sentByUs: z.boolean(),
   mention: z.boolean(),
   createdAt: z.date(),
+  /** Own DMs the server refused (#491) — the initial page and every
+   * scroll-back page come through here, so the mark has to ride them or a
+   * reload would paint a rejected message as delivered. Absent (never null)
+   * so the shape matches the gateway's MessageDto exactly. */
+  failureReason: z.string().optional(),
 });
 
 const errorResponse = z.object({ error: z.string() });
@@ -265,6 +270,7 @@ export async function historyRoutes(
           sentByUs: messages.sentByUs,
           mention: messages.mention,
           createdAt: messages.createdAt,
+          failureReason: messages.failureReason,
         })
         .from(messages)
         .where(
@@ -277,7 +283,15 @@ export async function historyRoutes(
         .limit(limit + 1);
       const hasMore = page.length > limit;
       return reply.send({
-        messages: page.slice(0, limit).reverse(),
+        messages: page
+          .slice(0, limit)
+          .reverse()
+          // null → absent, so a page row is shaped exactly like the DTO the
+          // gateway fans out (#491).
+          .map(({ failureReason, ...row }) => ({
+            ...row,
+            ...(failureReason !== null ? { failureReason } : {}),
+          })),
         hasMore,
       });
     },

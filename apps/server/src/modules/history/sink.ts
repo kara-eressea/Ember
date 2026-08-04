@@ -34,6 +34,9 @@ export type MessageRow = typeof messages.$inferSelect;
 export interface HistoryEvents {
   /** A message was persisted (inbound or our own send). */
   message: { identityId: string; message: MessageRow };
+  /** An already-persisted row changed after the fact (#491: a DM the server
+   * refused, and the same row's failure clearing on a successful retry). */
+  messageUpdated: { identityId: string; message: MessageRow };
   /** A conversation was created or updated (joined flag, read cursor). */
   conversation: { identityId: string; conversation: ConversationRow };
   /** A conversation row was removed outright (channel close/leave, #327). */
@@ -63,6 +66,13 @@ const NOOP_LOGGER: SessionLogger = {
  */
 export const MAX_CONVERSATIONS_PER_IDENTITY = 1000;
 
+/**
+ * How many recent own-DM sends stay resolvable by `sendId` (#491). A refusal
+ * follows its PRI within a round trip, so anything beyond the last few sends
+ * per process is dead weight — this is generous.
+ */
+export const MAX_TRACKED_SENDS = 500;
+
 export class ConversationLimitError extends Error {
   constructor() {
     super("Too many conversations for this identity");
@@ -83,6 +93,13 @@ export class HistorySink {
   readonly #notifications: Pick<NotificationStore, "recordMention"> | undefined;
   /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */
   readonly #queues = new Map<string, Promise<void>>();
+  /**
+   * `sendId` → the messages row it was written as (#491), so a refusal ERR
+   * the session correlated to a send can find its line. Bounded and
+   * insertion-ordered: only the newest sends can still attract an ERR, and
+   * the window that makes one plausible is seconds wide.
+   */
+  readonly #sentRows = new Map<string, number>();
   /** conversation-row cache, keyed `${identityId}:${kind}:${key}`. */
   readonly #conversationIds = new Map<string, string>();
 
@@ -228,6 +245,12 @@ export class HistorySink {
     });
 
     const offSent = session.events.on("sent", (sent: OutboundMessage) => {
+      // A retry (#491) re-uses the row it failed on: the user wrote one
+      // message and it is one line in the log, whatever it took to deliver.
+      if (sent.kind === "pm" && sent.retryOf !== undefined) {
+        this.#enqueueRetryAttempt(identityId, sent.sendId, sent.retryOf);
+        return;
+      }
       this.#enqueueMessage(identityId, {
         target:
           sent.kind === "pm"
@@ -238,13 +261,19 @@ export class HistorySink {
           sent.kind === "channel" ? "msg" : sent.kind === "ad" ? "lrp" : "pm",
         bbcode: sent.message,
         sentByUs: true,
+        ...(sent.kind === "pm" ? { sendId: sent.sendId } : {}),
       });
+    });
+
+    const offFailed = session.events.on("sendFailed", (failure) => {
+      this.#enqueueSendFailure(identityId, failure.sendId, failure.reason);
     });
 
     const offStatus = session.events.on("status", (event) => {
       if (event.status === "stopped") {
         offCommand();
         offSent();
+        offFailed();
         offStatus();
       }
     });
@@ -545,6 +574,9 @@ export class HistorySink {
       sentByUs: boolean;
       /** Set for inbound channel messages: enables highlight matching. */
       ownCharacter?: string;
+      /** Own DMs: the session's per-send id, remembered against the row so a
+       * refusal ERR can find it (#491). */
+      sendId?: string;
     },
   ): void {
     this.#enqueue(identityId, async () => {
@@ -597,6 +629,9 @@ export class HistorySink {
         })
         .returning();
       if (row) {
+        if (entry.sendId !== undefined) {
+          this.#rememberSentRow(entry.sendId, row.id);
+        }
         this.events.emit("message", { identityId, message: row });
         // The inbox row rides the same serial task as the message, and lands
         // after its message.new: a client must never see a notification
@@ -612,6 +647,71 @@ export class HistorySink {
         }
       }
     });
+  }
+
+  /**
+   * A retry (#491) went onto the wire for an existing row: the failure mark
+   * comes off, and the new send id points at the same row so a second
+   * refusal re-marks it rather than going nowhere. Rides the identity's
+   * write queue like every other write, so it can never overtake the insert
+   * of the message it is retrying.
+   */
+  #enqueueRetryAttempt(
+    identityId: string,
+    sendId: string,
+    messageId: number,
+  ): void {
+    this.#rememberSentRow(sendId, messageId);
+    this.#enqueue(identityId, async () => {
+      const [row] = await this.#db
+        .update(messages)
+        .set({ failureReason: null })
+        .where(eq(messages.id, messageId))
+        .returning();
+      if (row) {
+        this.events.emit("messageUpdated", { identityId, message: row });
+      }
+    });
+  }
+
+  /**
+   * The session correlated a refusal ERR to one of our sends: stamp the
+   * cause on the row so every attached device — and every later reload —
+   * shows the message as never delivered. Enqueued behind the send's own
+   * insert, so the row is always there by the time this runs.
+   */
+  #enqueueSendFailure(
+    identityId: string,
+    sendId: string,
+    reason: string,
+  ): void {
+    this.#enqueue(identityId, async () => {
+      const messageId = this.#sentRows.get(sendId);
+      if (messageId === undefined) {
+        // The insert failed, or the row aged out of the map. Nothing to mark.
+        this.#log.warn({ sendId }, "send failure has no persisted message");
+        return;
+      }
+      const [row] = await this.#db
+        .update(messages)
+        .set({ failureReason: reason })
+        .where(eq(messages.id, messageId))
+        .returning();
+      if (row) {
+        this.events.emit("messageUpdated", { identityId, message: row });
+      }
+    });
+  }
+
+  #rememberSentRow(sendId: string, messageId: number): void {
+    this.#sentRows.set(sendId, messageId);
+    while (this.#sentRows.size > MAX_TRACKED_SENDS) {
+      const oldest = this.#sentRows.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      this.#sentRows.delete(oldest);
+    }
   }
 
   #enqueueJoinedFlag(

@@ -630,6 +630,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Thaw Caldwell"],
     },
+    // Reserved for the #491 failed-DM E2E (same isolation rules). Corvin Ash
+    // writes into a DM whose partner has just logged off; Slate Harrow is the
+    // raw-SimClient other side, who leaves mid-conversation and comes back
+    // for the retry — so her own account matters twice over (a reconnect
+    // re-tickets, and only her own account may be invalidated by it).
+    "corvin@example.test": {
+      password: "hunter2",
+      characters: ["Corvin Ash"],
+    },
+    "slateharrow@example.test": {
+      password: "hunter2",
+      characters: ["Slate Harrow"],
+    },
   },
   channels: [
     {
