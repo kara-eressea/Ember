@@ -1,13 +1,12 @@
-// ChannelContextMenu (#234): right-click menu on a sidebar channel row,
-// absorbing the old channel-header chips — Pin/Unpin, Mute/Unmute, the
-// Chat/Ads/Both view (as a Show submenu, only in rooms whose server mode
-// is "both"), and Leave. Same look and interaction grammar as the
-// identity menu (#167): fixed popover over a click-away overlay, measured
-// re-clamp, Escape closes, arrows walk the items.
+// ChannelContextMenu (#234): right-click — or long-press on a touchscreen
+// (MP2 §1) — menu on a sidebar channel row, absorbing the old channel-header
+// chips: Pin/Unpin, Mute/Unmute, the Chat/Ads/Both view (as a Show submenu,
+// only in rooms whose server mode is "both"), and Leave. Same look and
+// interaction grammar as the identity menu (#167), in the shell they share:
+// an anchored popover on a desktop, a bottom sheet on a phone (MenuSurface).
 
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -18,8 +17,7 @@ import { gateway } from "../../gateway/socket.js";
 import { markConversationRead } from "../../lib/mark-read.js";
 import { identityPath } from "../../lib/routes.js";
 import { patchPrefs } from "../prefs/patch.js";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
-import { placeAtPointInWindow } from "../profile/popover.js";
+import { MenuSurface } from "../common/MenuSurface.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import { adViewFor, setChannelAdView, type AdView } from "./ads.js";
 import styles from "./chat.module.css";
@@ -58,23 +56,6 @@ export function ChannelContextMenu({
   // The Chat/Ads/Both choice only means something where the server lets
   // both kinds of message through; elsewhere the item renders disabled.
   const canChooseView = channel.mode === "both";
-
-  // Clamp against the measured menu, DOM write pre-paint (cf. the
-  // identity menu) — re-runs when the Show submenu changes the size.
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!el) {
-      return;
-    }
-    const { top, left } = placeAtPointInWindow(position, {
-      width: el.offsetWidth,
-      height: el.offsetHeight,
-    });
-    el.style.left = `${String(left)}px`;
-    el.style.top = `${String(top)}px`;
-  }, [position, showOpen]);
-
-  useEscapeToClose(onClose);
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {
@@ -180,156 +161,150 @@ export function ChannelContextMenu({
   }
 
   return (
-    <>
-      <div
-        className={styles.memberMenuOverlay}
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <div
-        ref={menuRef}
-        className={styles.memberMenu}
-        data-eb-surface
-        role="menu"
-        aria-label={`${channel.title} menu`}
-        style={{ left: position.x, top: position.y }}
-        onKeyDown={onMenuKeyDown}
-      >
+    <MenuSurface
+      className={styles.memberMenu}
+      overlayClassName={styles.memberMenuOverlay}
+      label={`${channel.title} menu`}
+      point={position}
+      onClose={onClose}
+      onKeyDown={onMenuKeyDown}
+      // The Show submenu changes the anchored menu's measured size.
+      reflow={showOpen}
+      menuRef={menuRef}
+      head={
         <div className={styles.memberMenuHead}>
           <span className={styles.memberMenuGlyph} aria-hidden>
             #
           </span>
           <span className={styles.memberMenuNick}>{channel.title}</span>
         </div>
+      }
+    >
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        disabled={
+          channel.unread === 0 &&
+          channel.mentions === 0 &&
+          channel.highlightedAt === 0
+        }
+        title="Clear the unread count without opening the channel"
+        onClick={markRead}
+      >
+        Mark as read
+      </button>
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        title={
+          channel.pinned
+            ? "Stop rejoining this channel when you reconnect"
+            : "Rejoin this channel whenever you reconnect"
+        }
+        onClick={togglePin}
+      >
+        {channel.pinned ? "Unpin" : "Pin"}
+      </button>
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        title={
+          muted
+            ? "Sounds and notifications again"
+            : "No sounds or notifications — unread counts still show"
+        }
+        onClick={toggleMute}
+      >
+        {muted ? "Unmute" : "Mute"}
+      </button>
+      <div
+        className={styles.memberMenuSub}
+        onMouseEnter={() => {
+          setShowOpen(canChooseView);
+        }}
+        onMouseLeave={() => {
+          setShowOpen(false);
+        }}
+      >
         <button
           className={styles.memberMenuItem}
           role="menuitem"
-          disabled={
-            channel.unread === 0 &&
-            channel.mentions === 0 &&
-            channel.highlightedAt === 0
-          }
-          title="Clear the unread count without opening the channel"
-          onClick={markRead}
-        >
-          Mark as read
-        </button>
-        <button
-          className={styles.memberMenuItem}
-          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={showOpen}
+          // Disabled, not hidden, in rooms the server locks to chat-only
+          // or ads-only — the choice exists but has nothing to do (PR
+          // #237 review). Native disabled also drops the item from the
+          // arrow-key walk (enabledItems skips :disabled).
+          disabled={!canChooseView}
+          aria-disabled={!canChooseView}
           title={
-            channel.pinned
-              ? "Stop rejoining this channel when you reconnect"
-              : "Rejoin this channel whenever you reconnect"
+            canChooseView
+              ? "Choose whether this channel shows chat, roleplay ads, or both"
+              : "This channel allows only one kind of message, so there is nothing to choose"
           }
-          onClick={togglePin}
-        >
-          {channel.pinned ? "Unpin" : "Pin"}
-        </button>
-        <button
-          className={styles.memberMenuItem}
-          role="menuitem"
-          title={
-            muted
-              ? "Sounds and notifications again"
-              : "No sounds or notifications — unread counts still show"
-          }
-          onClick={toggleMute}
-        >
-          {muted ? "Unmute" : "Mute"}
-        </button>
-        <div
-          className={styles.memberMenuSub}
-          onMouseEnter={() => {
-            setShowOpen(canChooseView);
+          // Open-only, never a toggle — see MemberContextMenu's "Invite
+          // to →": onMouseEnter has already opened the panel by the time a
+          // click can land, so toggling would shut it again.
+          onClick={() => {
+            setShowOpen(true);
           }}
-          onMouseLeave={() => {
-            setShowOpen(false);
-          }}
-        >
-          <button
-            className={styles.memberMenuItem}
-            role="menuitem"
-            aria-haspopup="menu"
-            aria-expanded={showOpen}
-            // Disabled, not hidden, in rooms the server locks to chat-only
-            // or ads-only — the choice exists but has nothing to do (PR
-            // #237 review). Native disabled also drops the item from the
-            // arrow-key walk (enabledItems skips :disabled).
-            disabled={!canChooseView}
-            aria-disabled={!canChooseView}
-            title={
-              canChooseView
-                ? "Choose whether this channel shows chat, roleplay ads, or both"
-                : "This channel allows only one kind of message, so there is nothing to choose"
-            }
-            // Open-only, never a toggle — see MemberContextMenu's "Invite
-            // to →": onMouseEnter has already opened the panel by the time a
-            // click can land, so toggling would shut it again.
-            onClick={() => {
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "Enter") {
+              event.preventDefault();
+              event.stopPropagation();
               setShowOpen(true);
-            }}
+            }
+          }}
+        >
+          Show
+          <span className={styles.memberMenuSubArrow} aria-hidden>
+            ▸
+          </span>
+        </button>
+        {showOpen && (
+          <div
+            className={styles.memberMenuSubPanel}
+            role="menu"
+            aria-label="Show chat, ads, or both"
             onKeyDown={(event) => {
-              if (event.key === "ArrowRight" || event.key === "Enter") {
-                event.preventDefault();
+              if (event.key === "ArrowLeft") {
                 event.stopPropagation();
-                setShowOpen(true);
+                setShowOpen(false);
+                enabledItems(menuRef.current)[0]?.focus();
               }
             }}
           >
-            Show
-            <span className={styles.memberMenuSubArrow} aria-hidden>
-              ▸
-            </span>
-          </button>
-          {showOpen && (
-            <div
-              className={styles.memberMenuSubPanel}
-              role="menu"
-              aria-label="Show chat, ads, or both"
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") {
-                  event.stopPropagation();
-                  setShowOpen(false);
-                  enabledItems(menuRef.current)[0]?.focus();
-                }
-              }}
-            >
-              {SHOW_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  className={styles.memberMenuItem}
-                  role="menuitemradio"
-                  aria-checked={view === option.value}
-                  onClick={() => {
-                    setView(option.value);
-                  }}
-                >
-                  {option.label}
-                  {view === option.value && (
-                    <span className={styles.memberMenuCheck} aria-hidden>
-                      ✓
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className={styles.memberMenuDivider} />
-        <button
-          className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}
-          role="menuitem"
-          title="Leave this channel — it also stops rejoining on reconnect"
-          onClick={leave}
-        >
-          Leave channel
-        </button>
+            {SHOW_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={styles.memberMenuItem}
+                role="menuitemradio"
+                aria-checked={view === option.value}
+                onClick={() => {
+                  setView(option.value);
+                }}
+              >
+                {option.label}
+                {view === option.value && (
+                  <span className={styles.memberMenuCheck} aria-hidden>
+                    ✓
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </>
+      <div className={styles.memberMenuDivider} />
+      <button
+        className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}
+        role="menuitem"
+        title="Leave this channel — it also stops rejoining on reconnect"
+        onClick={leave}
+      >
+        Leave channel
+      </button>
+    </MenuSurface>
   );
 }
 

@@ -132,6 +132,11 @@
   background: var(--eb-side2);
   border-right: 1px solid var(--eb-border);
   overflow-y: auto;
+  /* The conversation list is the whole pane on a phone, so an overscroll at
+     either end has nowhere useful to chain to and would rubber-band the page
+     (and arm pull-to-refresh once MP3 installs the app). Same rule as the log —
+     see chat.module.css .log for the argument (MP2 §4, #376). */
+  overscroll-behavior: contain;
 }
 
 .railItem {
@@ -1119,6 +1124,28 @@
      pane puts the toolbar in the first and the log in the second; the list
      pane takes a third, further down. */
   grid-template-columns: minmax(0, 1fr);
+  /* The soft keyboard (MP2 §2, #376). --eb-keyboard-inset is published on :root
+     by lib/visual-viewport.ts and is the strip of the layout viewport the
+     keyboard is covering; with no keyboard the property is absent and the
+     fallback makes this the plain `height: 100%` the shell has always had.
+
+     Shrinking the SHELL rather than padding the second row is the deliberate
+     choice, and it is a choice about how many boxes have to agree. The shell is
+     the single element the whole phone layout hangs off: its rows are
+     `auto minmax(0, 1fr)`, so taking height off the bottom shortens the log's
+     track and carries the composer — toolbar and all — up with it in one
+     reflow. Padding the row instead would leave the shell's box overlapping the
+     keyboard, so every fixed/absolute child positioned against it (the jump
+     pill, the picker, the overlays) would still measure the pre-keyboard
+     bottom and need a correction of its own. One rule here, or a rule per
+     floating surface.
+
+     Nothing about this is in React. The property is written imperatively by the
+     tracker, so an animating keyboard invalidates style on this one rule and
+     re-renders no components at all (see visual-viewport.ts). Phone-tier only,
+     and inert everywhere else: above this tier the selector never matches, and
+     on a desktop the inset is 0 regardless because the two viewports agree. */
+  height: calc(100% - var(--eb-keyboard-inset, 0px));
 }
 
 /* The identity rail folds into the list pane's header: the same <nav>, the
@@ -1222,6 +1249,106 @@
 
 :root[data-layout="phone"] .shell[data-pane="list"] .centerNote {
   display: none;
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #376) ─────────────────────────────
+   The two mechanisms — a row that grows, or a box that keeps its size and
+   gains a centred `::after` — and the rule that picks between them are stated
+   once in base.css beside --eb-touch-target. What follows is which one each
+   control here got, and what it was competing with.
+
+   The rail strip is absent from this section because it already passes: a
+   folded rail item is a 40px avatar in 2px of padding, 48×44 (#375). */
+
+/* Stacked rows grow. Every one of these has another row of the same kind one
+   or two pixels above and below it, so there is nowhere for a hit area to go
+   except into the neighbour — which is a press that opens the conversation
+   under the one the finger was on. Sidebar rows go 28 → 44, section headings
+   30 → 44 (their own padding gives back most of it), switcher rows 34 → 44. */
+:root[data-layout="phone"] :is(.navItem, .switcherRow, .sectionToggle) {
+  min-height: var(--eb-touch-target);
+}
+
+/* The filter field grows too, rather than taking an overlay: an overlay
+   across a text input swallows the tap that puts the caret mid-word. */
+:root[data-layout="phone"] .toolbarSearch {
+  height: var(--eb-touch-target);
+}
+
+/* A section heading is a button inside a padded header; with the button at 44
+   the padding is what would push the list down, so the header hands its own
+   back and the band ends up ~11px taller than it was. */
+:root[data-layout="phone"] .sectionHeader {
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Side-by-side controls keep their boxes and take the overlay, and the rows
+   they sit in open up to 16px so two neighbouring 44px targets leave 2px
+   between them rather than taking 5px from each other. */
+:root[data-layout="phone"] :is(.toolbar, .sectionActions, .meBar) {
+  gap: 16px;
+}
+
+/* The MeBar's status line is the one control with no room under it — it is
+   the last line of the last row of the pane, and its overlay reaches 14px
+   past the bar's 10px of padding, i.e. off the bottom of the screen, where
+   nothing can be pressed. The bar gives it those pixels. */
+:root[data-layout="phone"] .meBar {
+  padding-bottom: 16px;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .toolbarBtn,
+    .railAdd,
+    .meAvatar,
+    .meGear,
+    .meStatusButton,
+    .inviteDismiss,
+    .miniButton,
+    .statusRecentChip
+  ) {
+  position: relative;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .toolbarBtn,
+    .railAdd,
+    .meAvatar,
+    .meGear,
+    .meStatusButton,
+    .inviteDismiss,
+    .miniButton,
+    .statusRecentChip
+  )::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
+
+/* The row's ✕ is the exception that grows rather than overlays: it sits 12px
+   from the right edge of the screen, so a centred 44px overlay would hang 11
+   of its pixels off the side of the phone and the thumb would get 33. A 44px
+   box moved in against the edge keeps all of it — the glyph inside is the
+   same 11px it always was, and there is no hover state on a touchscreen for
+   the wider box to show. The row then reserves that width so its label never
+   sits under a target that leaves the conversation. */
+:root[data-layout="phone"] .navClose {
+  width: var(--eb-touch-target);
+  height: var(--eb-touch-target);
+  right: 2px;
+  padding: 0;
+}
+
+:root[data-layout="phone"] .navRowWrap:has(.navClose) .navItem {
+  padding-right: 46px;
 }
 
 /* One-shot highlight when the notification inbox sends the user to the

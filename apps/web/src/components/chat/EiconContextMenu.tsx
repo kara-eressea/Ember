@@ -1,19 +1,18 @@
-// EiconContextMenu: right-click on any rendered eicon — in the log, in the
-// composer preview, in the picker — to favourite it, block it, or copy its
-// name. Same grammar as the channel/member menus (#234): fixed popover over
-// a click-away overlay, measured re-clamp, Escape closes, arrows walk the
-// items. Mounted once at the AppShell; the open menu lives in the store.
+// EiconContextMenu: right-click — or, on a touchscreen, long-press (MP2 §1) —
+// on any rendered eicon, in the log, in the composer preview, or in the
+// picker, to favourite it, block it, or copy its name. Same grammar as the
+// channel/member menus (#234), and the shell they all share puts it: an
+// anchored popover on a desktop, a bottom sheet on a phone (MenuSurface).
+// Mounted once at the AppShell; the open menu lives in the store.
 
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { patchPrefs } from "../prefs/patch.js";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
-import { placeAtPointInWindow } from "../profile/popover.js";
+import { MenuSurface } from "../common/MenuSurface.js";
 import { prefsIdentityId, useSessionsStore } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { useEiconMenuStore } from "../../stores/eicon-menu.js";
@@ -54,21 +53,6 @@ function EiconMenu({
 
   const favorite = hasEicon(prefs.eiconFavorites, name);
   const blocked = hasEicon(prefs.eiconBlocked, name);
-
-  useLayoutEffect(() => {
-    const element = menuRef.current;
-    if (!element) {
-      return;
-    }
-    const { top, left } = placeAtPointInWindow(point, {
-      width: element.offsetWidth,
-      height: element.offsetHeight,
-    });
-    element.style.left = `${String(left)}px`;
-    element.style.top = `${String(top)}px`;
-  }, [point]);
-
-  useEscapeToClose(close);
 
   useEffect(() => {
     enabledItems(menuRef.current)[0]?.focus();
@@ -134,67 +118,59 @@ function EiconMenu({
   }
 
   return (
-    <>
-      <div
-        className={styles.memberMenuOverlay}
-        onClick={close}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          close();
-        }}
-      />
-      <div
-        ref={menuRef}
-        className={styles.memberMenu}
-        data-eb-surface
-        role="menu"
-        aria-label={`${name} eicon menu`}
-        style={{ left: point.x, top: point.y }}
-        onKeyDown={onMenuKeyDown}
-      >
+    <MenuSurface
+      className={styles.memberMenu}
+      overlayClassName={styles.memberMenuOverlay}
+      label={`${name} eicon menu`}
+      point={point}
+      onClose={close}
+      onKeyDown={onMenuKeyDown}
+      menuRef={menuRef}
+      head={
         <div className={styles.memberMenuHead}>
           <span className={styles.memberMenuGlyph} aria-hidden>
             ☺
           </span>
           <span className={styles.memberMenuNick}>{name}</span>
         </div>
-        <button
-          className={styles.memberMenuItem}
-          role="menuitem"
-          disabled={identityId === undefined}
-          title={
-            favorite
-              ? "Drop it from the picker's Favorites tab"
-              : "Keep it one click away in the picker's Favorites tab"
-          }
-          onClick={toggleFavorite}
-        >
-          {favorite ? "Unfavourite" : "Favourite"}
-        </button>
-        <button
-          className={styles.memberMenuItem}
-          role="menuitem"
-          disabled={identityId === undefined}
-          title={
-            blocked
-              ? "Show this eicon's image again"
-              : "Never show this eicon's image — messages using it show its name instead"
-          }
-          onClick={toggleBlocked}
-        >
-          {blocked ? "Unblock" : "Block"}
-        </button>
-        <div className={styles.memberMenuDivider} />
-        <button
-          className={styles.memberMenuItem}
-          role="menuitem"
-          title="Copy the eicon's name to the clipboard"
-          onClick={copyName}
-        >
-          Copy name
-        </button>
-      </div>
-    </>
+      }
+    >
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        disabled={identityId === undefined}
+        title={
+          favorite
+            ? "Drop it from the picker's Favorites tab"
+            : "Keep it one click away in the picker's Favorites tab"
+        }
+        onClick={toggleFavorite}
+      >
+        {favorite ? "Unfavourite" : "Favourite"}
+      </button>
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        disabled={identityId === undefined}
+        title={
+          blocked
+            ? "Show this eicon's image again"
+            : "Never show this eicon's image — messages using it show its name instead"
+        }
+        onClick={toggleBlocked}
+      >
+        {blocked ? "Unblock" : "Block"}
+      </button>
+      <div className={styles.memberMenuDivider} />
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        title="Copy the eicon's name to the clipboard"
+        onClick={copyName}
+      >
+        Copy name
+      </button>
+    </MenuSurface>
   );
 }
 

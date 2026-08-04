@@ -566,6 +566,42 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Chip Warren"],
     },
+    // Reserved for the MP2 §1 long-press E2E (#376), same isolation rules.
+    // Holt Barrow holds an eicon down until the action sheet rises; Marla
+    // Quinn is the raw-SimClient partner whose DM carries it.
+    "holt@example.test": {
+      password: "hunter2",
+      characters: ["Holt Barrow"],
+    },
+    "marlaquinn@example.test": {
+      password: "hunter2",
+      characters: ["Marla Quinn"],
+    },
+    // Reserved for the #376 keyboard + momentum-fling E2E (same isolation
+    // rules). Mitten Vale flings the log and opens the soft keyboard; Driftwood
+    // Ash is the raw-SimClient partner whose backlog gives the log something to
+    // fling through and who lands the arrivals the stick intent is read off, so
+    // no other character may speak into that room.
+    "mitten@example.test": {
+      password: "hunter2",
+      characters: ["Mitten Vale"],
+    },
+    "driftwood@example.test": {
+      password: "hunter2",
+      characters: ["Driftwood Ash"],
+    },
+    // Reserved for the MP2 §3 touch-target E2E (#376), same isolation rules.
+    // Reach Palmer walks every surface of the shell measuring what a thumb can
+    // land on; Pressley Vane is the raw-SimClient partner who supplies the
+    // room's backlog and the DM row, so no other character may speak there.
+    "reachpalmer@example.test": {
+      password: "hunter2",
+      characters: ["Reach Palmer"],
+    },
+    "pressley@example.test": {
+      password: "hunter2",
+      characters: ["Pressley Vane"],
+    },
   },
   channels: [
     {
@@ -965,6 +1001,34 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Everything in one thumb's reach.",
       oplist: ["Pocket Chase"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #376 keyboard + momentum-fling E2E: Driftwood Ash seeds
+    // a backlog deep enough to fling through, and lands the arrivals the stick
+    // intent is read off. Hidden and NPC-free — the spec measures the log's
+    // distance from the tail across a momentum tail and a viewport resize, and
+    // any other speaker would move it mid-assertion.
+    {
+      name: "ADH-376keyboardfling88cc99dd",
+      title: "Lantern Room",
+      mode: "chat",
+      description: "Thumbs, keyboards and the space between them.",
+      oplist: ["Mitten Vale"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #376 touch-target E2E: Pressley Vane seeds the backlog
+    // whose rows, names and eicons are measured. Reach Palmer is an op, so
+    // the toolbar carries the op-only room-settings chip and the sweep sees
+    // the busiest version of that row. Hidden and NPC-free — an NPC joining
+    // would move the rows out from under the measurement.
+    {
+      name: "ADH-376touchtargets1f2e3d4c",
+      title: "Reach Room",
+      mode: "chat",
+      description: "Everything a thumb can land on.",
+      oplist: ["Reach Palmer"],
       npcs: [],
       listed: false,
     },

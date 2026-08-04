@@ -22,6 +22,7 @@ import { patchPrefs } from "../prefs/patch.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import type { CardAnchor } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
+import { useLongPress } from "../../lib/useLongPress.js";
 import { openEiconMenu } from "../../stores/eicon-menu.js";
 import {
   appendPage,
@@ -553,58 +554,84 @@ function TileGrid({
   }
   return (
     <div className={styles.pickerGrid}>
-      {names.map((name) => {
-        const favorite = hasEicon(favorites, name);
-        // A blocked eicon shows its name here too — browsing is not a reason
-        // to render an image the user asked never to see. Right-click still
-        // reaches the menu, so it can be unblocked from the tile.
-        const isBlocked = hasEicon(blocked, name);
-        return (
-          <span
-            key={name}
-            className={styles.eiconTile}
-            title={isBlocked ? `${name} — blocked eicon` : name}
-            onContextMenu={(event) => {
-              openEiconMenu(event, name);
-            }}
-          >
-            <button
-              type="button"
-              className={styles.eiconTileInsert}
-              aria-label={`Insert ${name}`}
-              onClick={() => {
-                onInsert(name);
-              }}
-            >
-              {isBlocked ? (
-                <span className={styles.eiconTileName}>{name}</span>
-              ) : (
-                <EiconImage name={name} />
-              )}
-            </button>
-            <button
-              type="button"
-              className={`${styles.eiconTileStar} ${
-                favorite ? (styles.eiconTileStarOn ?? "") : ""
-              }`}
-              // Quiet until the tile is hovered; permanently visible where
-              // there is no hover to reveal it (base.css §5-F).
-              data-eb-hover-reveal
-              aria-label={
-                favorite
-                  ? `Remove ${name} from favorites`
-                  : `Add ${name} to favorites`
-              }
-              onClick={() => {
-                onToggleFavorite(name);
-              }}
-            >
-              {favorite ? "★" : "☆"}
-            </button>
-          </span>
-        );
-      })}
+      {names.map((name) => (
+        <Tile
+          key={name}
+          name={name}
+          favorite={hasEicon(favorites, name)}
+          // A blocked eicon shows its name here too — browsing is not a
+          // reason to render an image the user asked never to see. The menu
+          // is still reachable from the tile, so it can be unblocked there.
+          blocked={hasEicon(blocked, name)}
+          onInsert={onInsert}
+          onToggleFavorite={onToggleFavorite}
+        />
+      ))}
     </div>
+  );
+}
+
+/** One picker tile. Its own component so it can hold the long-press
+ * recognizer (MP2 §1) — a hook, and the grid is a map. */
+function Tile({
+  name,
+  favorite,
+  blocked,
+  onInsert,
+  onToggleFavorite,
+}: {
+  name: string;
+  favorite: boolean;
+  blocked: boolean;
+  onInsert: (name: string) => void;
+  onToggleFavorite: (name: string) => void;
+}) {
+  const press = useLongPress((event) => {
+    openEiconMenu(event, name);
+  });
+  return (
+    <span
+      className={styles.eiconTile}
+      title={blocked ? `${name} — blocked eicon` : name}
+      onContextMenu={(event) => {
+        openEiconMenu(event, name);
+      }}
+      {...press}
+    >
+      <button
+        type="button"
+        className={styles.eiconTileInsert}
+        aria-label={`Insert ${name}`}
+        onClick={() => {
+          onInsert(name);
+        }}
+      >
+        {blocked ? (
+          <span className={styles.eiconTileName}>{name}</span>
+        ) : (
+          <EiconImage name={name} />
+        )}
+      </button>
+      <button
+        type="button"
+        className={`${styles.eiconTileStar} ${
+          favorite ? (styles.eiconTileStarOn ?? "") : ""
+        }`}
+        // Quiet until the tile is hovered; permanently visible where there is
+        // no hover to reveal it (base.css §5-F).
+        data-eb-hover-reveal
+        aria-label={
+          favorite
+            ? `Remove ${name} from favorites`
+            : `Add ${name} to favorites`
+        }
+        onClick={() => {
+          onToggleFavorite(name);
+        }}
+      >
+        {favorite ? "★" : "☆"}
+      </button>
+    </span>
   );
 }
 

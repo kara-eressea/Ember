@@ -1,0 +1,161 @@
+/* MenuSurface's phone shape (MP2 §1, #376): a context menu as a bottom sheet.
+   The anchored shape has no styles here at all — it goes on wearing the class
+   its own menu passes in, so the desktop popovers are untouched by this file.
+
+   Geometry deliberately echoes PanelOverlay (MP1 package D): same backdrop
+   tint, same short slide, same reduced-motion opt-out. What differs is the
+   edge it comes from, and that is the whole reason it is a second component
+   and not a prop on the first — a full-width band rising from the bottom and a
+   full-height column sliding in from the right share a mood, not a layout.
+
+   Tokens only. The one viewport length is zoom-corrected for the reason
+   base.css states once: `vh` is a *visual* length and is blind to the `zoom`
+   the interface-scale pref puts on :root (#388), so inside that zoom a bare
+   70vh cap would be 70% of the screen times the scale. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 25%);
+}
+
+.sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(70vh / var(--eb-ui-zoom, 1));
+  background: var(--eb-side);
+  border-top: 1px solid var(--eb-border);
+  border-radius: calc(var(--eb-radius) + 6px) calc(var(--eb-radius) + 6px) 0 0;
+  box-shadow: 0 -18px 50px -18px rgb(0 0 0 / 55%);
+  animation: menu-sheet-in 0.16s ease;
+}
+
+@keyframes menu-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    animation: none;
+  }
+}
+
+.head {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 8px 10px 20px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+/* The menus' own header element (chat.module.css .memberMenuHead, the rail's
+   .railMenuName) carries the rule that separates it from the items in the
+   anchored popover. Here the header is a band of its own and draws that rule
+   itself, so the inner one is dropped and the header stretches to leave the ✕
+   at the far edge. A child selector rather than a class: naming another CSS
+   module's hashed class is exactly what a CSS module is for preventing, and
+   "the one element the caller passed as `head`" is a truthful description of
+   what this is styling. Qualified by .sheet only for the specificity: a bare
+   `.head > *` ties with the module class it is overriding and loses on
+   source order, which showed up as two rules under the header. */
+.sheet .head > * {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+}
+
+.close {
+  position: relative; /* the hit-area overlay below hangs off this */
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  font-size: calc(15px * var(--eb-font-ui-scale));
+  line-height: 1;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 8px;
+}
+
+.close:hover,
+.close:focus-visible {
+  color: var(--eb-dim);
+  background: var(--eb-hover);
+  outline: none;
+}
+
+/* …and 44 for the thumb (MP2 §3, #376), the overlay mechanism base.css
+   describes beside --eb-touch-target. The rows below this header were 44 from
+   the day the sheet was written; the ✕ that closes it was four pixels short,
+   which is exactly the sort of thing measuring finds and eyes do not. Like
+   the sheet itself, this needs no tier gate — it is only ever on a phone. */
+.close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
+
+.items {
+  flex: 1;
+  min-height: 0;
+  /* Rubber-banding a short menu must not scroll the conversation behind it
+     (MP2 §4 makes the same call for the log). */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The home indicator on a notched phone sits over the last row otherwise. */
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── The items, restyled without being rewritten ──────────────────────────
+   Selected by the ARIA role each item already carries, not by class. Every
+   menu that renders into this sheet lives in a different CSS module from this
+   one (chat.module.css, shell.module.css), and the roles are both the stable
+   contract between them and the accurate description of what gets a 44px row:
+   the things that are menu items. */
+.items [role^="menuitem"] {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: var(--eb-font-ui);
+  text-align: left;
+  border-radius: 8px;
+}
+
+/* The channel menu's "Show ▸" flyout is a popover beside its anchor item on a
+   desktop; in a full-width sheet there is no "beside", so it drops inline
+   under the item it belongs to, indented and without its own frame. The
+   sheet's own container is a dialog, so the only nested `role="menu"` is that
+   flyout. */
+.items [role="menu"] {
+  position: static;
+  padding: 0 0 0 16px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
