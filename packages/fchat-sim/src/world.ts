@@ -602,6 +602,26 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Pressley Vane"],
     },
+    // Reserved for the MP2 §1 sheet-census E2E (#376), same isolation rules.
+    // Knuckle Reed holds every element class the long-press recognizer claims;
+    // Palm Wexford is the raw-SimClient partner who supplies the member row,
+    // the DM row and the eicon, so no other character may speak in that room.
+    "knuckle@example.test": {
+      password: "hunter2",
+      characters: ["Knuckle Reed"],
+    },
+    "palmwex@example.test": {
+      password: "hunter2",
+      characters: ["Palm Wexford"],
+    },
+    // Reserved for the phone-preferences E2E (MP1 §4 as built by MP2 §3,
+    // #376). Dial Ashcombe walks the section strip and adds a highlight rule
+    // from the full-screen dialog; the whole spec is one browser and no
+    // partner, since preferences are per app account and never touch chat.
+    "dial@example.test": {
+      password: "hunter2",
+      characters: ["Dial Ashcombe"],
+    },
   },
   channels: [
     {
@@ -1029,6 +1049,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Everything a thumb can land on.",
       oplist: ["Reach Palmer"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the MP2 §1 sheet-census E2E: Palm Wexford is the only other
+    // member, so the member row the spec holds down is unambiguous. Hidden and
+    // NPC-free — an NPC joining would put a second row under the finger.
+    {
+      name: "ADH-376sheets5a6b7c8d",
+      title: "Knuckle Room",
+      mode: "chat",
+      description: "One hold, one menu.",
+      oplist: ["Knuckle Reed"],
       npcs: [],
       listed: false,
     },

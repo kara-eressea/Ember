@@ -6,16 +6,14 @@
 // mouse — the recognizer would attach nothing and this file would pass by
 // doing nothing.
 //
-// The hold itself is CDP, because Playwright's touchscreen API only taps:
-// `Input.dispatchTouchEvent` is the only way to put a finger down, leave it
-// there past a threshold, and lift it. Which is also what makes the drag case
-// meaningful — the same primitive, with movement in the middle.
+// The hold itself is CDP (long-press.ts), because Playwright's touchscreen API
+// only taps. Which is also what makes the drag case meaningful — the same
+// primitive, with movement in the middle.
 //
 // Owns holt@example.test (Holt Barrow) and marlaquinn@example.test (Marla
 // Quinn): spec files run in parallel and a character holds one sim
 // connection, so specs share neither.
 
-import type { CDPSession, Locator, Page } from "@playwright/test";
 import {
   expect,
   interceptAvatars,
@@ -23,65 +21,10 @@ import {
   SimClient,
   test,
 } from "./helpers.js";
+import { longPress, slowDrag } from "./long-press.js";
 
 const PARTNER = "Marla Quinn";
 const EICON = "tearsofjoy";
-
-/** Past the recognizer's 450ms threshold with room for a slow frame. */
-const HOLD_MS = 800;
-
-/** The middle of a locator, in viewport coordinates — where a finger goes. */
-async function centerOf(locator: Locator): Promise<{ x: number; y: number }> {
-  const box = await locator.boundingBox();
-  if (!box) {
-    throw new Error("the element has no box to press");
-  }
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
-
-/** Put a finger down, hold it, lift it. */
-async function longPress(
-  cdp: CDPSession,
-  page: Page,
-  locator: Locator,
-): Promise<void> {
-  const { x, y } = await centerOf(locator);
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [{ x, y }],
-  });
-  await page.waitForTimeout(HOLD_MS);
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
-}
-
-/** A finger that goes down, wanders past the slop radius the way a scroll
- * does, and only then lifts — long enough that a recognizer which ignored
- * the movement would have fired twice over. */
-async function slowDrag(
-  cdp: CDPSession,
-  page: Page,
-  locator: Locator,
-): Promise<void> {
-  const { x, y } = await centerOf(locator);
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [{ x, y }],
-  });
-  for (let step = 1; step <= 6; step += 1) {
-    await page.waitForTimeout(120);
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [{ x, y: y - step * 12 }],
-    });
-  }
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
-}
 
 test("phone device: a hold opens the action sheet, a drag does not (#376)", async ({
   page,

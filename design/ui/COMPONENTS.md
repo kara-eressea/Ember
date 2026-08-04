@@ -166,7 +166,75 @@ A control revealed by `:hover` does not exist on a touchscreen; the event never 
 - Above `wide`, no visual or behavioural change, ever. A diff that has to edit a desktop assertion is a bug in the change.
 - No literal pixel breakpoint outside `layout-mode.ts`. A width that is about the *window* belongs there; a width that is about one *row* belongs to that row and is measured, not guessed (`lib/useRowWidth.ts`).
 - The message log's scroll invariants survive every tier flip — a layout change must not strand the log off-tail.
-- MP1 must not *reduce* any touch target; growing them is MP2.
+- The scroll invariants hold under touch as well as wheel and keyboard — see **Touch conventions** below.
+
+---
+
+## Touch conventions
+
+What the `phone` tier and a coarse pointer add on top of the shell shapes above. The tier answers questions about the *layout box*; these answer questions about the *finger*, and they are not the same question — a 390px window on a desktop is `phone` and still has a mouse.
+
+### `data-eb-press` — long-press opens the context menu
+
+Every context menu in the app hangs off `onContextMenu`. Desktop fires it from the right button and Android synthesizes it from a hold; **iOS Safari never fires it at all**, so on an iPhone none of those menus existed. `lib/useLongPress.ts` is the second opener: a hold on a claimed element calls the same handler the right-click calls, with the same event shape.
+
+- **Installed only where the primary pointer cannot hover** (`useNoHover()`). With a hover-capable pointer the hook returns an empty props object — no listeners, no attribute — because the right-click already works there and a long left-press means text selection.
+- **The recognizer**, in pointer events rather than touch events (a touch pointer is implicitly captured to the element that got `pointerdown`, and a scroll announces itself as `pointercancel`): a **450ms** hold, cancelled by movement past a **10px** slop radius, by `pointercancel`, or by a second finger. It never sets `touch-action: none` — every claimed target sits inside something scrollable, and taking the gesture off the compositor would cost that scroll.
+- **`PressEvent`** is the contract with the menus: `{ clientX, clientY, currentTarget, preventDefault, stopPropagation }` — the subset of a `contextmenu` MouseEvent an opener actually reads. A menu takes `(event: PressEvent) => void` and is then openable by either route without knowing which fired.
+- **Two suppressions the press owns.** Android's synthetic `contextmenu` is deduplicated in both directions (ours swallows a duplicate arriving within **700ms** of the press; the platform's disarms our pending timer if it gets there first), so one hold opens one menu. The compatibility "ghost" click the engines synthesize after `pointerup` is swallowed on `window` in the capture phase within **350ms** of the lift — it is told apart from a real tap by having no `pointerdown` of its own, and it does not reliably land where the finger was.
+- **The attribute is the scope.** Claimed elements carry the bare `data-eb-press`, and `base.css` puts `-webkit-touch-callout: none` and `user-select: none` on exactly those — iOS's own callout sheet and selection handles appear at roughly our threshold and would race the menu. Nothing else is touched, which is how **message prose keeps native text selection**: a long press on what someone said still selects it. Only discrete interactive elements are ever claimed.
+
+### `MenuSurface` — one menu, two shapes
+
+The five context menus (eicon, member, channel, section-offline, identity rail) render through `components/common/MenuSurface.tsx`, which decides the shape and nothing else. The item list is authored once, in the menu component, as the JSX it always was.
+
+| Tier | Shape |
+|---|---|
+| `compact`, `wide` | The anchored popover, unchanged: a fixed panel measured and clamped to the press point over a click-away overlay. |
+| `phone` | A full-width bottom sheet: the menu's own header plus a ✕, 44px rows, backdrop tap / Escape / ✕ to close, modal (focus trap, focus returns to the opener). The channel menu's "Show ▸" flyout drops inline and indented — in a full-width sheet there is no "beside". |
+
+**Keyed on the tier alone, not tier-and-pointer.** The question the sheet answers is geometric — is there room beside the finger for a panel — and that is what the tier already is. Keying on the pointer too would hand a mouse user in a 390px window the cramped popover the sheet exists to replace, and hand a tablet with a paired mouse a sheet it has the width to avoid.
+
+The sheet's rows are selected by the ARIA role each item already carries (`[role^="menuitem"]`), not by class: every menu lives in a different CSS module, and the roles are both the stable contract across that boundary and an accurate description of what gets a 44px row.
+
+### `--eb-keyboard-inset` — the soft keyboard
+
+A soft keyboard shrinks the **visual** viewport. What it does to the **layout** viewport — the box `100%` and `100vh` resolve against — is engine-specific: iOS Safari leaves it alone (so a bottom-anchored composer sits *behind* the keyboard, which is the case this exists for), Chrome Android does the same by default, Firefox Android resizes it and needs no help.
+
+`lib/visual-viewport.ts` is the one source of keyboard truth — one subscription over `window.visualViewport` (`resize` + `scroll`), same shape as `layout-mode.ts`. It publishes `layoutHeight − visualHeight − offsetTop`, divided by `var(--eb-ui-zoom)` for the same reason every other viewport measurement is (`vh` and the two viewport heights are visual lengths; a `calc()` term inside the zoomed root is not), floored at zero, and ignored below **120px** so the browser's own retracting chrome is never mistaken for a keyboard.
+
+- **Published as a CSS custom property on `:root`, not as React state.** A keyboard animates open over ~250ms; routing that through `useSyncExternalStore` would re-render the virtualized log and every visible row ~15 times, on the devices with the least CPU to spare. `data-keyboard="open"` rides along for anything that needs to switch rather than subtract. Both are *removed* when the keyboard closes, so the `var(--eb-keyboard-inset, 0px)` fallback is the single definition of "no keyboard". `useKeyboardInset()` exists for the rare consumer that needs the number in JS.
+- **One rule reads it: the shell shrinks.** `:root[data-layout="phone"] .shell { height: calc(100% - var(--eb-keyboard-inset, 0px)) }`. Shrinking the shell rather than padding the composer's row is a choice about how many boxes have to agree — the shell's rows are `auto minmax(0, 1fr)`, so taking height off the bottom shortens the log's track and carries the composer and its toolbar up in one reflow, and every fixed/absolute child positioned against the shell stays correct. Padding the row would leave the shell overlapping the keyboard and need a correction per floating surface.
+- **The viewport meta deliberately does not carry `interactive-widget=resizes-content`.** It works, and it is Chromium-only — so the module has to exist for iOS and Firefox regardless, and adding it would take the one engine most of our phone testing runs on out of the code path.
+- Tracking is armed once at boot in `main.tsx`, beside `startLayoutTracking`, for the same reasons: the value must exist before the first paint, and the login screens live outside `AppShell` but are still typed into.
+
+### `overscroll-behavior` — a scroll region keeps its own overscroll
+
+Every scroll region that can reach an end on a phone carries `overscroll-behavior: contain`: the message log, the conversation list, the member list, the eicon picker's grid, the sheet's item list. Without it the leftover momentum chains to the nearest scrollable ancestor — on a phone that is the page, so reaching the top of the backlog rubber-bands the whole shell, and in an installed PWA (MP3) the same overscroll at the top is what the platform reads as pull-to-refresh, i.e. a reload of the client mid-read.
+
+`contain` rather than `none`: the elastic bounce *inside* the region is the platform's own "you are at the end" feedback and there is no reason to take it away.
+
+### `--eb-touch-target` — 44px hit areas on `phone`
+
+`44px` is where Apple's HIG and WCAG 2.5.5 AAA agree. It is a floor on the **hit area, never on the glyph**: a 30px IconBtn wearing an invisible 44px target is the goal; a row of 44px buttons that used to be 30px is a redesign nobody asked for. Two mechanisms carry it, and **what sits next to a control decides which one it gets**:
+
+- **A stacked row grows** (sidebar rows 28→44, member rows 38→44, overflow-menu rows 34→44, prefs rail items). A hit area taller than the row would reach into the rows above and below, where the neighbour is another target and a finger cannot tell them apart. Rows are the one place the floor is allowed to cost pixels.
+- **Everything else keeps its box** and gains a centred `::after` sized `max(100%, var(--eb-touch-target))`, so it expands only in the dimension it is short in and shrinks nothing.
+
+**Adjacency rule:** where two expanded neighbours would contest the same pixels, the **row opens up** — a wider `gap` on `phone` (the conversation toolbar, composer toolbar, sidebar toolbar and MeBar go to 16px, the colour-swatch row to 22) — rather than shipping two controls fighting over one target. Two targets that share a boundary each lose the pixel on it, so the gap arithmetic is set from the measurement, not from the exact sum.
+
+Both mechanisms are gated on `data-layout="phone"` in the module that owns the control — the tier rather than a media query for the interface-zoom reason above, and the tier rather than `hover: none` because the rules that come with it are about a row's width, which is a layout question. Every module that expands a target says which mechanism it used and why.
+
+**Measured, not eyeballed.** An `::after` has no node for a rect API to report, so `e2e/touch-targets.ts` hit-tests every operable element on a surface and `mobile-targets.spec.ts` walks the shell asserting both rules over everything it finds, rather than over a hand-written list that stops catching the ninth control. `base.test.ts` asserts the stylesheet's `44px` and the sweep's `TARGET_MIN_PX` agree.
+
+**The documented shortfall** is message-log prose — sender names, name-mode eicon chips, links and mentions sit in a 21px line box whose neighbours above and below are the same kind of target, so a 44px hit area there would hand the press to the wrong line. Every action behind them stays reachable from a surface that does meet the floor (the member list, the action sheet). An exclusion added later without that argument is a bug in the change.
+
+### Invariants
+
+- Above `phone`, no change on a hover-capable device. Coarse-pointer `compact`/`wide` gaining a long-press opener is the one exception — the menu it opens is still the anchored one.
+- The log's scroll invariants (#266 / #360 / #372 / #454 / #464) hold under touch momentum and under a keyboard opening: a fling's tail must not re-stick a reader mid-scroll, and a log at the tail when the keyboard opens is at the tail after the resize settles.
+- Native text selection on message prose survives the recognizer.
+- No capability probes outside `lib/pointer.ts` / `lib/layout-mode.ts`; no `dvh`/`svh` units — `lib/visual-viewport.ts` is the one source of keyboard truth.
 
 ---
 

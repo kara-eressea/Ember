@@ -110,20 +110,218 @@ after the finger lifts) and overscroll (rubber-banding past the edge).
 ## 5. Package breakdown
 
 - **A — long-press + action sheets** (§1). Owns the menus, `RichText`,
-  sidebar/member/channel row press wiring, the sheet component.
+  sidebar/member/channel row press wiring, the sheet component. *Done:*
+  `lib/useLongPress.ts` is a React-free state machine behind a hook, so every
+  browser quirk it exists for is driven directly by a test — 450ms hold, 10px
+  slop, cancelled by `pointercancel` (the compositor announcing a scroll, and
+  the most reliable "this was a drag" signal there is) or by a second finger.
+  Pointer events rather than touch events, because a touch pointer is
+  implicitly captured to the element that got `pointerdown` — no
+  document-level listener — and it deliberately does **not** set
+  `touch-action: none`: every claimed target sits inside something scrollable,
+  and cleaner `pointermove` data is not worth the scroll it would cost. The
+  compatibility ("ghost") click is swallowed on `window` in the capture phase
+  and told apart from a real tap by its *lack of a `pointerdown`* rather than
+  by where it landed — measured in Chromium emulation, the click after a hold
+  on an eicon was dispatched to the **sheet's own backdrop**, closing the sheet
+  in the frame it appeared in, so a swallow scoped to the pressed subtree would
+  have missed it entirely. `MenuSurface` is keyed on the **tier alone** (§1
+  left this to the implementer): the sheet answers a geometric question — is
+  there room beside the finger — and that is what the tier already is, so
+  keying on the pointer too would hand a mouse user in a 390px window the
+  cramped popover and a tablet with a paired mouse a sheet it has the width to
+  avoid. The five menus render their items unchanged into it; the sheet sizes
+  its rows off `[role^="menuitem"]`, the one selector that crosses a CSS-module
+  boundary honestly. `data-eb-press` scopes the callout/selection suppression
+  to claimed elements, which is how §7's prose exemption is enforced rather
+  than merely intended.
+
+  **Outstanding, and it needs hardware:** Android's synthetic `contextmenu` is
+  deduplicated in both directions, and that path is covered by unit tests only
+  — Chromium's mobile emulation never synthesizes `contextmenu` from a
+  dispatched touch hold, so no E2E can reach it. "One hold opens one menu, not
+  two" is a real-Android check (see §6).
 - **B — keyboard + momentum** (§2 + §4). Owns `Composer` integration,
   `MessageLog`, `lib/visual-viewport.ts`, the shell row height on phone.
   §2 and §4 share MessageLog and the same test fixtures, so they ship
-  together.
+  together. *Done:* the inset is published as a CSS custom property written
+  imperatively on `:root`, not as React state — a keyboard animates open over
+  ~250ms and routing that through `useSyncExternalStore` would re-render the
+  virtualized log and every visible row ~15 times per keypress on the devices
+  with the least CPU to spare. **The shell shrinks** rather than the composer's
+  row gaining padding (§2 left this to the implementer): the shell is the one
+  element the phone layout hangs off, so `height: calc(100% - var(…))`
+  shortens the log's track and carries composer and toolbar up in one reflow,
+  and every fixed/absolute child positioned against it stays correct — padding
+  the row would leave the shell overlapping the keyboard and need a correction
+  per floating surface. The arithmetic divides by the interface scale for the
+  same reason `layout-mode.ts` does, which measurement showed is not optional:
+  at 125% both viewport heights keep reporting viewport pixels while a `100px`
+  term inside `calc()` on the zoomed root paints as 125 of them, so the raw
+  difference would shrink the shell by 1.25× the keyboard. A 120px floor keeps
+  a retracting Android address bar from ever being read as a keyboard.
+  `interactive-widget=resizes-content` was **not** added: it works, and it is
+  Chromium-only, so the module has to exist for iOS and Firefox regardless —
+  adding it would take the one engine most of our phone testing runs on out of
+  the code path.
+
+  **MessageLog is unchanged, and that is the finding.** The §4 suspicion was
+  measured rather than assumed: instrumenting synthesized flings shows
+  Chromium's deceleration is heavily front-loaded, and every gesture that
+  crosses the 120px stick-release hysteresis at all crosses it 21ms, 35ms and
+  145ms after `touchend` — far inside the 500ms intent window — while an upward
+  fling only ever grows the distance from the bottom, so the ungated re-stick
+  branch never sees `bottom`. The momentum-continuation fix drafted for this
+  would have widened the #411 stranding window from 500ms to 2500ms to fix a
+  bug that is not there, so it was dropped and the spec is the guard instead.
+
+  **Outstanding, and it needs hardware:** that fling table is *Chromium's*
+  deceleration curve. iOS's is a different curve on a different compositor, and
+  it is the engine the module exists for. If "flick, then the log is glued
+  again" ever shows up on an iPhone, the table above is where the investigation
+  starts — the question is whether Safari's tail crosses the hysteresis later
+  than 500ms after the finger lifts.
 - **C — touch targets** (§3). A CSS-heavy sweep; runs after A so it measures
-  the sheets too.
+  the sheets too. *Done:* `--eb-touch-target` in `base.css` names the floor
+  once, and which of the two mechanisms a control gets is decided by what sits
+  next to it — a stacked row grows (sidebar 28→44, member rows 38→44, menu
+  rows 34→44), everything else keeps its box and gains a centred `::after`
+  sized `max(100%, 44px)`. Where two expanded neighbours would then contest the
+  same pixels the **row** opens up instead (the toolbars and the MeBar to a
+  16px gap, the swatch row to 22), which is §3's adjacency rule taken
+  literally rather than shipped as overlapping targets. Two consequences worth
+  recording: the composer toolbar's width model had to learn about the phone
+  gap (a row that never wraps and never scrolls would otherwise push chips off
+  the screen — one more chip folds into `⋯` on a phone, which is what buys the
+  rest a thumb-sized target), and **the MP1 §4 preferences stopgap finally
+  landed here**. MP1 specified stacking the rail above a full-screen pane and
+  shipped without it, leaving a 204px rail beside a 157px pane and the
+  highlight-rule form's segmented switch clipped off the edge of the window —
+  which is not something a hit area can fix, so the stopgap had to precede the
+  floor it is measured against. Message-log prose is the documented shortfall,
+  and the argument is in the exclusion list rather than in a commit message: a
+  21px line box whose neighbours above and below are the same kind of target
+  cannot carry 44px without handing the press to the wrong line. Everything
+  measured by hit-testing (`e2e/touch-targets.ts`), because an `::after` has no
+  node for a rect API to report.
 - **D — mobile E2E additions + docs** (MP4's MP2 slice). New mobile specs for
   the sheets, the keyboard, and the fling; `COMPONENTS.md` gains the sheet
-  and target conventions; tracker updates. Runs last.
+  and target conventions; tracker updates. Runs last. *Done:* A, B and C each
+  shipped their own spec, so this package was an **audit** rather than the
+  suite — §1–§4 walked clause by clause against what already existed, and only
+  the genuine holes filled. Two, both of them wiring rather than behaviour.
+  `mobile-sheets.spec.ts` is a census: `useLongPress` is spread onto ten
+  elements across five files and a row that forgets `{...press}` fails
+  *silently* — it keeps its `onContextMenu`, so every desktop and unit test
+  still passes and the menu is simply gone on an iPhone, which is the bug §1
+  exists to fix re-introduced one surface at a time. One hold on each claimed
+  class, and on the two surfaces with a competing gesture (a picker tile
+  inserts, a member row opens the profile card) the hold also has to leave the
+  ghost click on the floor. §7's prose exemption is read off the rendered
+  document in the same file — no element from a message's words up to the log
+  carries `data-eb-press`, which is the whole enforcement — and a stylesheet
+  guard in `base.test.ts` closes §7's `dvh`/`svh` clause, which nothing else
+  could have noticed. `mobile-prefs.spec.ts` guards C's stopgap the only
+  way that works: **geometrically**, because a tap alone passes on the broken
+  layout — Playwright scrolls an element into view before clicking it, so the
+  clipped switch was reachable by a test and by nothing a user has. The CDP
+  hold moved to `e2e/long-press.ts` on its third copy, and learned to settle
+  the shell's animations before measuring: a row in the member overlay
+  measured mid-slide reported `x: 326` on a 393px screen, so the gesture went
+  to the backdrop and *nothing happened* — a press that never lands looks
+  exactly like a row that never claimed one, which is the failure this file is
+  supposed to catch. What was deliberately *not* re-tested is listed with the
+  audit in the PR: everything §7 states that a unit test already pins exactly.
 
-PR order: **A + B** in parallel (disjoint files), then **C**, then **D**.
+  **Two findings, neither fixed here.** The sheet is `position: fixed; bottom:
+  0` — pinned to the *layout* viewport, which no keyboard shrinks on iOS or
+  Chrome Android, and it does not read `--eb-keyboard-inset`. Under B's shim it
+  sits entirely behind the keyboard line. What saves it on a device is that it
+  is modal: opening it blurs the composer, and a blurred field is what retracts
+  the keyboard. That is an inference about engine behaviour, so the E2E pins
+  the half it can — the sheet takes focus off the composer — and §6 checks the
+  other half by hand. And the member menu's **"Invite to" submenu opens on
+  `onMouseEnter`**, which the engine's compatibility mouse events fire as the
+  sheet rises under the finger: a sheet raised from a DM row arrives with the
+  submenu already expanded, and since a touchscreen never sends the matching
+  `mouseleave` and the trigger is open-only by design, there is no gesture on a
+  phone that collapses it again — only Escape, which a phone does not have.
+  MP1 package F swept `:hover` *styles* for this; a hover-driven *behaviour*
+  inside the surface built for touch is the same bug one layer up.
 
-## 6. Invariants
+PR order, as planned: **A + B** in parallel (disjoint files), then **C**, then
+**D**. As shipped: **A** (#484), **B** (#485), **C** (#486), **D** (this one).
+A and B did run in parallel; C waited for A as designed, and picked up MP1's
+unbuilt §4 on the way.
+
+## 6. What only real hardware can answer
+
+Everything below was built and verified against Chromium's mobile emulation,
+which is a real Blink with a phone's viewport, touch pointer and `hover: none`
+— and is *not* a phone. Three engine behaviours it does not reproduce at all,
+and one it reproduces with its own numbers. One sitting on a real device
+clears the list; the notes say what to look for and where to start if it is
+wrong.
+
+**Android (Chrome), one device:**
+
+- [ ] **One hold, one menu.** Hold an eicon in a message, a sidebar row and a
+      member row. Exactly one action sheet must appear each time. Android
+      synthesizes its own `contextmenu` from a hold at roughly our threshold,
+      and the deduplication for it is unit-tested only — emulation never fires
+      that event, so no E2E on any machine can reach this. A *second* menu, or
+      a menu that opens and instantly replaces itself, is the failure.
+- [ ] **A hold on a message's text still selects the text**, and the selection
+      handles appear as usual. Only the discrete elements are claimed
+      (`data-eb-press`); prose must be untouched.
+- [ ] **The composer sits above the keyboard** with a conversation open, and
+      the log stays at the tail when the keyboard opens on a log that was at
+      the tail. Chrome Android and iOS take the same default path here, so if
+      it is wrong on one it is likely wrong on both.
+
+**iOS (Safari), one device — this is the engine `visual-viewport.ts` exists
+for, and none of it is reachable from any test we have:**
+
+- [ ] **The composer sits above the keyboard.** iOS leaves the layout viewport
+      alone, so a failure here is the whole module not working: the composer
+      will be *behind* the keyboard, exactly as it was before MP2.
+- [ ] **A long press opens the menu at all.** iOS Safari never fires
+      `contextmenu`, so before MP2 every one of these menus was unreachable on
+      an iPhone. If a hold does nothing, the recognizer is not attaching —
+      check that `hover: none` matches on the device.
+- [ ] **iOS's own callout does not race it.** No "Copy / Look Up / Share"
+      sheet, and no selection handles, on a claimed element.
+- [ ] **The action a sheet row performs happens once.** The ghost-click
+      swallow is the thing under test: a hold that opens a sheet must not also
+      insert the eicon, open the conversation or open the profile card behind
+      it. WebKit's compatibility-click timing is its own.
+- [ ] **Momentum feel.** Flick the log up into the backlog and let it coast.
+      The log must not snap back to the newest message as the fling runs out.
+      If it does — "flick, then glued" — start from package B's Chromium
+      deceleration table (§5-B): the question is whether WebKit's tail crosses
+      the 120px stick-release hysteresis *later* than 500ms after the finger
+      lifts, which would put it outside the #454 intent window.
+- [ ] **Stick release and return.** After the fling, an arriving message must
+      not yank the view; the jump-to-recent pill returns to the tail in one tap
+      and the glue re-engages for good.
+- [ ] **Rubber-banding stays inside the log.** Overscroll at the top of the
+      backlog must bounce the log, not the page.
+- [ ] **A sheet raised while the keyboard is up is fully on screen.** The sheet
+      is pinned to the layout viewport and does not read
+      `--eb-keyboard-inset`; what makes it visible is that opening it is modal
+      and blurs the composer, which retracts the keyboard. That inference is
+      the one thing the shim cannot check (a shimmed keyboard cannot retract),
+      so it is checked here.
+
+**Both, and not blocking:**
+
+- [ ] **Safe areas.** A notched or gesture-bar phone in portrait and
+      landscape: nothing important under the home indicator or the notch. The
+      sheet already pads itself with `env(safe-area-inset-bottom)`; the rest of
+      the shell does not, and that is **MP3 scope** — note what is clipped
+      rather than fixing it here.
+
+## 7. Invariants
 
 - Above `phone`, no change on hover-capable devices. Coarse-pointer `compact`/
   `wide` may gain long-press menus (§1) — that is the only exception.
