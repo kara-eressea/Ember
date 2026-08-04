@@ -267,16 +267,13 @@ test("phone device: every surface that claims a long press opens its sheet (#376
     // A people-section header (Sidebar.SectionHeader → SectionOfflineMenu).
     // The only route to the per-section "Show offline" toggle there is: no
     // chip, no menu item anywhere else (#329).
-    // The press is on the header row, not on its collapse toggle — hence the
-    // step up out of the button that names it.
-    await pressOpensSheet(
-      cdp,
-      page,
-      sidebar
-        .getByRole("button", { name: "Direct messages" })
-        .locator("xpath=.."),
-      "Direct messages section menu",
-    );
+    // Since #496 the header row and its collapse toggle are one element, so
+    // this presses the button itself — and the press has to open the sheet
+    // *without* the ghost click collapsing the section under it, which is the
+    // half of this that got harder.
+    const dmHeader = sidebar.getByRole("button", { name: "Direct messages" });
+    await pressOpensSheet(cdp, page, dmHeader, "Direct messages section menu");
+    await expect(dmHeader).toHaveAttribute("aria-expanded", "true");
 
     // An identity-rail item (IdentityRail.RailItem), which on this tier is a
     // strip inside the list pane's header rather than a column of its own.

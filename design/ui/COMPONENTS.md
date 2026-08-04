@@ -274,17 +274,21 @@ Vertical flex on `side`. Top→bottom: ServerHead · Search · NavScroll (sectio
 ### 3. SectionHeader
 Sidebar group label. Padding `12px 16px 4px`, 10.5px/700 uppercase, `.09em` tracking, `meta`. Optional right-aligned count (10px `meta`). Sections in order: **Pinned · Channels · Direct Messages · Friends · Bookmarks**.
 
+**The whole row is the collapse toggle** (#496) — one `<button>`, not a button hugging the label inside a wider strip, which left the gap after the word and the count at the far right looking exactly as clickable as the label while doing nothing. The count rides inside it and is `aria-hidden`, so the accessible name stays the section's word; anything *interactive* added to the right of a heading later goes outside the button. The heading is also a `data-eb-press` target (the people sections' "Show offline", #329), and it is the same element — MP2's ghost-click swallow is what keeps a hold from also collapsing the section.
+
 > Pinning is cross-type: a pinned channel *or* pinned DM both surface under **Pinned** and auto-rejoin/reopen on connect. The same item still logically belongs to its type.
 
 ### 4. NavItem (channel / DM / friend / bookmark row)
 One row component, variants by `glyph` + presence. Padding `5px 10px`, margin `1px 6px`, `radius`.
-- **Leading glyph** (13px mono, `faint`): `#` channel · none for DMs (presence dot instead) · `☆` friend · `⚑` bookmark.
+- **Leading glyph** (`faint`): `#` channel (13px mono, or the round tinted token when sidebar avatars are on) · none for DMs (presence dot instead) · star friend · pennant bookmark.
 - **Presence dot** (7px) for people rows.
 - **Label** (13px): ellipsis. Weight 600 active / 500 normal / 400 muted. Color: `text` active or unread/mention; `dim` normal; `faint` muted.
-- **Pin marker** `⚲` (mono 10px `faint`, rotated 45°) when pinned.
-- **Badge** (trailing): unread number (`accentMed` bg, `text`) or mention `@`/`@n` (`accent` bg, `bg` text). Radius 9px, mono 10px/700.
+- **Trailing column** — one right-aligned slot, same order on every row: **muted** (bell-with-slash) · **pinned** (thumbtack) · **badge**. The two state glyphs are `faint`, `role="img"` with a name ("Muted", "Pinned"). The hover-revealed ✕ (#291) takes the whole column's turn, not the badge's alone; under `hover: none` both stay and the row reserves the ✕'s width.
+- **Badge:** unread number (`accentMed` bg, `text`) or mention `@`/`@n` (`accent` bg, `bg` text). Radius 9px, mono 10px/700.
 - **Active:** `background: accentSoft` + `inset 2px 0 0 accent`.
 - **Data:** `{ kind:'channel'|'dm'|'friend'|'bookmark', label, pinned, muted, presence?, unread?, mention?, active }`.
+
+**Glyphs are stroked inline SVG** at 14px, from the shared `icons/Glyphs.tsx` set the conversation toolbar uses (#490) — the sidebar's own row and heading markers (`▸ ▾ ⚲ ★ ⚑`) were the last Unicode ones in the shell, set at 9–11px, i.e. *below* the type they annotate, and at that size a font decides how much of a `⚲` survives. Every glyph in that module takes a `size`, and the stroke is re-derived from it so a 14px glyph paints the same 1.2px line as a 17px one.
 
 ### 5. ConversationHeader (channel + DM toolbar)
 One row, both conversation kinds, on `head` with a bottom border: fixed `--eb-topbar-height` (46px) height — shared with the sidebar's ServerHead, which is the other half of the same top line — and `padding: 0 10px 0 18px`, so the log never shifts when a conversation has no topic. It runs on the **composer toolbar's language** (component 8) — the same 30×30 IconBtn, the same 1×18px `border` cluster dividers — so the top and bottom edges of a conversation read as one instrument. No system emoji anywhere: every action is a stroked inline SVG in `currentColor`.

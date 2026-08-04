@@ -454,44 +454,63 @@
   padding-bottom: 8px;
 }
 
+/* Collapsible heading (#168, #496): the whole band is the toggle button, so
+   there is no dead strip between the word and the count — the row looks
+   uniformly clickable and now is. It keeps the header's own uppercase micro
+   type and padding; only the element changed. */
 .sectionHeader {
   display: flex;
-  justify-content: space-between;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
   padding: 12px 16px 4px;
+  font-family: inherit;
   font-size: calc(10.5px * var(--eb-font-ui-scale));
   font-weight: 700;
   letter-spacing: 0.09em;
+  text-align: left;
   text-transform: uppercase;
   color: var(--eb-meta);
-}
-
-/* Collapsible heading (#168): the label + chevron are one toggle button,
-   inheriting the header's uppercase micro type. */
-.sectionToggle {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  padding: 0;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: inherit;
   cursor: pointer;
   background: none;
   border: none;
 }
 
-.sectionToggle:hover {
+.sectionHeader:hover {
   color: var(--eb-text);
 }
 
-/* Collapse/expand chevron (#414): the triangles were set at the decorative
-   floor (9px, --eb-faint) and read as smudges. They carry real state — open
-   vs collapsed — so they take a legible size and the readable meta tone. */
+/* The label takes the slack, which is what puts the count against the right
+   edge without a justify-content that the chevron would also answer to. */
+.sectionLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapse/expand chevron (#414, #490): the ▸ ▾ triangles were 11px of
+   Unicode under the label's own size, and at that scale a font decides how
+   much of a triangle survives. An SVG chevron at the glyph size, in the
+   readable meta tone — it carries real state, so it is not decorative. */
 .sectionChevron {
-  width: 12px;
-  font-size: calc(11px * var(--eb-font-ui-scale));
+  flex: none;
+  display: inline-flex;
   color: var(--eb-meta);
+  transition: transform 0.15s ease;
+}
+
+/* Collapsed is the same chevron a quarter-turn anticlockwise — one shape in
+   two positions, so the two states read as one control, and the turn between
+   them is the §Animation allowance for a toggle. */
+.sectionChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sectionChevron {
+    transition: none;
+  }
 }
 
 /* Actionable channel-invite row (inbound CIU). */
@@ -561,15 +580,27 @@
 
 /* Right side of a section header when it holds count + refresh together. */
 .sectionMeta {
+  flex: none;
   display: flex;
   gap: 6px;
   align-items: center;
 }
 
-/* §4 relationship glyph on friend/bookmark rows (★ friend, ⚑ bookmark). */
+/* §4 relationship glyph on friend/bookmark rows (★ friend, ⚑ bookmark, drawn
+   as SVG since #490). Decorative — the section it sits in is the real answer
+   to "friend or bookmark" — so it keeps the faint tone. */
 .socialGlyph {
   flex: none;
-  font-size: calc(10px * var(--eb-font-ui-scale));
+  display: inline-flex;
+  color: var(--eb-faint);
+}
+
+/* A muted conversation (#490, COMPONENTS.md §4): the label drops to faint —
+   below the `dim` a normal row gets — and the trailing column carries the
+   bell. Ahead of .active/.unread in source order, which is how those two win
+   the tie: a muted room with unread traffic still counts, and still says so
+   in full contrast. */
+.navItem.mutedRow {
   color: var(--eb-faint);
 }
 
@@ -694,22 +725,35 @@
   bottom: -1px;
 }
 
-/* Trailing slot of a nav row: holds the counter badge. Fixed minimum size so
-   the X can overlay this spot instead of widening the row. */
+/* Trailing column of a nav row (#490): mute, pin, then the counter badge, in
+   that order on every row. It used to hold the badge alone, with the pin
+   floating loose immediately after the label — i.e. at a different horizontal
+   position on every row, since labels are different lengths. Fixed minimum
+   size so the X can overlay this spot instead of widening the row. */
 .navTrail {
   position: relative;
   margin-left: auto;
   flex: none;
   display: flex;
+  gap: 5px;
   align-items: center;
   min-width: 18px;
   min-height: 16px;
   justify-content: flex-end;
 }
 
+/* The two state glyphs. Faint, per the neutrals' glyph rule — they annotate
+   the row rather than being read as text. */
+.navPin,
+.navMute {
+  flex: none;
+  display: inline-flex;
+  color: var(--eb-faint);
+}
+
 /* Close a DM / leave a channel (#291): hidden until the row is hovered or
    the button itself is keyboard-focused. Kept in the DOM (opacity, not
-   display) so it stays tab-reachable; the counter badge swaps out for it. */
+   display) so it stays tab-reachable; the trailing column swaps out for it. */
 .navClose {
   position: absolute;
   right: 12px;
@@ -718,9 +762,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 5px;
-  font-size: var(--eb-font-ui-tiny);
-  line-height: 1;
+  padding: 3px;
+  line-height: 0;
   color: var(--eb-faint);
   cursor: pointer;
   background: none;
@@ -739,16 +782,20 @@
   color: var(--eb-text);
 }
 
-.navRowWrap:hover:has(.navClose) .navTrailBadge,
-.navRowWrap:has(.navClose:focus-visible) .navTrailBadge {
+/* The whole trailing column takes its turn with the ✕, not just the badge
+   (#490): with mute and pin in there too, a ✕ that only displaced the counter
+   would land on top of the pin instead. The swap is still the same MP1-F
+   decision, applied to the column the badge grew into. */
+.navRowWrap:hover:has(.navClose) .navTrail,
+.navRowWrap:has(.navClose:focus-visible) .navTrail {
   visibility: hidden;
 }
 
 /* Touch (MP1 §5-F): the ✕ is drawn permanently, so it can no longer take
-   turns with the counter badge the way the hover swap did — one of the two
+   turns with the trailing column the way the hover swap did — one of the two
    would be gone for good, and "how many I missed" is not a thing to trade for
    "leave". They both stay: the row reserves the ✕'s width on its right, and
-   the badge sits just inside it.
+   the column sits just inside it.
 
    The `:hover` rule above has to be undone rather than left alone, because
    mobile browsers latch :hover onto the last-tapped element and it would
@@ -758,13 +805,12 @@
     padding-right: 30px;
   }
 
-  .navRowWrap:hover:has(.navClose) .navTrailBadge {
+  .navRowWrap:hover:has(.navClose) .navTrail {
     visibility: visible;
   }
 }
 
 .navBadge {
-  margin-left: auto;
   flex: none;
   min-width: 18px;
   padding: 0 5px;
@@ -957,14 +1003,6 @@
 .meGear:hover {
   color: var(--eb-dim);
   text-decoration: none;
-}
-
-.navPin {
-  flex: none;
-  color: var(--eb-faint);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: calc(10px * var(--eb-font-ui-scale));
-  transform: rotate(45deg);
 }
 
 /* Mention badge (COMPONENTS.md §4): accent fill, bg text — reads as "@n". */
@@ -1265,7 +1303,7 @@
    except into the neighbour — which is a press that opens the conversation
    under the one the finger was on. Sidebar rows go 28 → 44, section headings
    30 → 44 (their own padding gives back most of it), switcher rows 34 → 44. */
-:root[data-layout="phone"] :is(.navItem, .switcherRow, .sectionToggle) {
+:root[data-layout="phone"] :is(.navItem, .switcherRow, .sectionHeader) {
   min-height: var(--eb-touch-target);
 }
 
@@ -1275,9 +1313,9 @@
   height: var(--eb-touch-target);
 }
 
-/* A section heading is a button inside a padded header; with the button at 44
-   the padding is what would push the list down, so the header hands its own
-   back and the band ends up ~11px taller than it was. */
+/* A section heading is the padded row itself (#496, previously a button inside
+   it); with the row at 44 its own padding is what would push the list down, so
+   it hands that back and the band ends up ~11px taller than it was. */
 :root[data-layout="phone"] .sectionHeader {
   align-items: center;
   padding-top: 0;
