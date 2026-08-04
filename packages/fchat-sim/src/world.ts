@@ -539,6 +539,33 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Sheet Wren"],
     },
+    // Reserved for the #375 mobile-device E2E (MP1 package G), which runs in
+    // the phone-emulating Playwright project rather than by resizing a desktop
+    // window (same isolation rules). Pocket Chase reads the collapsed toolbar,
+    // sends from the composer and opens a profile card at the screen edge;
+    // Slate Burn is the raw-SimClient partner whose backlog the tail is
+    // measured against, so no other character may speak into that room.
+    "pocket@example.test": {
+      password: "hunter2",
+      characters: ["Pocket Chase"],
+    },
+    "slateburn@example.test": {
+      password: "hunter2",
+      characters: ["Slate Burn"],
+    },
+    // Reserved for the #375 touch-affordance E2E (same isolation rules).
+    // Thumb Reeve taps what a mouse would hover — the sidebar row's ✕ and the
+    // name-only eicon chip; Chip Warren is the raw-SimClient partner who
+    // opens the DM both of those are exercised in and writes the one message
+    // carrying an eicon.
+    "thumb@example.test": {
+      password: "hunter2",
+      characters: ["Thumb Reeve"],
+    },
+    "chipwarren@example.test": {
+      password: "hunter2",
+      characters: ["Chip Warren"],
+    },
   },
   channels: [
     {
@@ -925,6 +952,19 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Panels over the pane.",
       oplist: ["Vane Overlay"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #375 mobile-device E2E: Slate Burn seeds the backlog
+    // Pocket Chase then sends into, and is the nick the profile card is
+    // opened from. Hidden and NPC-free — the spec measures the log's distance
+    // from the tail, and any other speaker would move it mid-assertion.
+    {
+      name: "ADH-375mobileshell66aa77bb",
+      title: "Pocket Room",
+      mode: "chat",
+      description: "Everything in one thumb's reach.",
+      oplist: ["Pocket Chase"],
       npcs: [],
       listed: false,
     },

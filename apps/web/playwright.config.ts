@@ -2,7 +2,7 @@
 // built server process are booted in global-setup; the vite dev server below
 // proxies /api to that server (same-origin, like production).
 
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 function envPort(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -25,6 +25,10 @@ export const WEB_PORT = envPort("E2E_WEB_PORT", 39312);
 // `vite preview` serving apps/web/dist — the bundle a self-host actually
 // ships. The Firefox caret project runs against this one (see below).
 export const PREVIEW_PORT = envPort("E2E_PREVIEW_PORT", WEB_PORT + 1);
+
+/** The phone-device slice, named once: the mobile project claims it and the
+ * Chromium project gives it up, so the two partition the suite. */
+const MOBILE_SPECS = "mobile-*.spec.ts";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -50,7 +54,10 @@ export default defineConfig({
     // fact — uploaded as an artifact from the workflow.
     trace: "retain-on-failure",
   },
-  // The suite is Chromium's; Firefox runs two small, named slices of it. Both
+  // The suite is Chromium's, on a desktop viewport, plus three small named
+  // slices: one on a phone device profile (MP1 package G) and two on Firefox.
+  // The phone slice is a partition — those specs run there instead of in the
+  // desktop project, not as well. The Firefox ones are a second pass. Both
   // are areas where the engines genuinely disagree and one engine can hide a
   // real bug: caret/font metrics (#408, #434 — a caret is painted, not
   // queryable, so it needs a second engine rather than a second assertion) and
@@ -58,7 +65,35 @@ export default defineConfig({
   // never reproduced on Chromium). Everything else behaves the same in both,
   // and a full second pass would roughly double the E2E leg of CI.
   projects: [
-    { name: "chromium", use: { browserName: "chromium" } },
+    {
+      name: "chromium",
+      use: { browserName: "chromium" },
+      // Everything except the phone-device slice below, so no spec runs twice.
+      testIgnore: [MOBILE_SPECS],
+    },
+    {
+      // MP1 package G (#375): the phone tier on an actual phone context —
+      // Pixel-class viewport, `isMobile`, `hasTouch`, coarse pointer, no
+      // hover. The descriptor is taken whole rather than hand-rolled: the
+      // properties that matter here (`hover: none` gating the reveal
+      // affordances, a real touch pointer for `page.tap`) come as a set, and
+      // half a phone is a worse test than none.
+      //
+      // Scoped by filename, the way the Firefox projects are: `mobile-*` runs
+      // here and nowhere else. It is *not* where the two viewport-crossing
+      // specs live (pane-stack, phone-overlays). `setViewportSize` does work
+      // inside a mobile context — it neither throws nor is ignored — but it
+      // leaves `isMobile` and `hasTouch` exactly as the context was built, so
+      // the "back on a desktop viewport" half of those specs would be
+      // asserting about a 1280px touchscreen with a phone's user agent and
+      // device pixel ratio. They assert about the desktop the shell actually
+      // has to restore, so they stay in the plain Chromium project and keep
+      // resizing; this project holds the specs that are phone from boot to
+      // teardown and never touch the viewport at all.
+      name: "mobile-chromium",
+      use: { ...devices["Pixel 5"] },
+      testMatch: [MOBILE_SPECS],
+    },
     {
       name: "firefox",
       // Gecko leaves the caret out of every screenshot, so the caret tests
