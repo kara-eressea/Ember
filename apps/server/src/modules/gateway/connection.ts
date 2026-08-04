@@ -34,6 +34,7 @@ import {
   conversations,
   flistAccounts,
   identities,
+  messages,
   userPreferences,
 } from "../../db/schema.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
@@ -902,6 +903,9 @@ export class GatewayConnection {
       case "msg.send":
         await this.#handleMsgSend(identity.id, cmd.d, id);
         return;
+      case "msg.retry":
+        await this.#handleMsgRetry(identity.id, cmd.d, id);
+        return;
       case "character.search": {
         // FKS bridge (M10): the session fires the query on the server's
         // 5s pace and correlates the reply; the outcome goes back to the
@@ -1270,6 +1274,70 @@ export class GatewayConnection {
         });
       },
     );
+  }
+
+  /**
+   * Re-sends a DM the server refused (#491). The stored BBCode is what went
+   * on the wire the first time, so it is exactly what goes back — no
+   * re-translation, no composer round trip — and the send is tagged with the
+   * row it belongs to, so the history sink clears that row's failure instead
+   * of writing a second line. Never delayed: retrying is a present-tense
+   * gesture, and the outbox would hide it for the length of the send delay.
+   */
+  async #handleMsgRetry(
+    identityId: string,
+    d: { convId: string; messageId: number },
+    id: number | undefined,
+  ): Promise<void> {
+    const session = this.#requireSession(identityId, id);
+    if (!session) {
+      return;
+    }
+    const [found] = await this.#ctx.db
+      .select({ message: messages, conversation: conversations })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(
+        and(
+          eq(messages.id, d.messageId),
+          eq(messages.conversationId, d.convId),
+          eq(conversations.identityId, identityId),
+        ),
+      )
+      .limit(1);
+    if (!found) {
+      this.#ack(id, { ok: false, error: "message not found" });
+      return;
+    }
+    // Only a refused own DM may be retried: anything else would put a
+    // message back on the wire that already reached its reader.
+    if (
+      found.message.failureReason === null ||
+      !found.message.sentByUs ||
+      found.conversation.kind !== "pm"
+    ) {
+      this.#ack(id, { ok: false, error: "message is not a failed send" });
+      return;
+    }
+    // Not awaited past the ack, like msg.send: the flood gate can hold the
+    // frame for seconds and must not stall the inbound queue.
+    session
+      .sendPrivateMessage(
+        found.conversation.partnerCharacter ?? "",
+        found.message.bbcode,
+        { retryOf: found.message.id },
+      )
+      .then(
+        () => {
+          this.#ack(id, { ok: true });
+        },
+        (error: unknown) => {
+          this.#ack(id, {
+            ok: false,
+            error: error instanceof Error ? error.message : "retry failed",
+          });
+        },
+      );
   }
 
   /**

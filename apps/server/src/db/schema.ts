@@ -170,6 +170,15 @@ export const messages = pgTable(
     /** Highlight-matcher verdict, stamped at persist time (M5). Immutable —
      * rule changes affect new messages only (decisions.md §10). */
     mention: boolean().notNull().default(false),
+    /**
+     * Own DMs only (#491): F-Chat answered this send with an ERR, so it
+     * reached nobody. The row stays — it is what the user wrote, and a log
+     * with a hole is less truthful than one that says "this never got
+     * through" — but no reader may render it as delivered. Cleared when a
+     * retry of the same row goes onto the wire. Null for every message that
+     * was never refused.
+     */
+    failureReason: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

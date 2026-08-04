@@ -527,6 +527,64 @@
   box-shadow: inset 3px 0 0 var(--eb-hl, var(--eb-accent));
 }
 
+/* A DM F-Chat refused (#491). Two stacked parts inside one block — the line
+   as it was written, and the cause with the retry under it — so the failure
+   reads as belonging to that message rather than as a system line that
+   happens to sit nearby. The inner row keeps .messageLine, which is what
+   makes the density, aligned-columns and grouping prefs apply to it
+   unchanged; everything here is the marking on top. Danger red is the one
+   place in the log that colour means "this did not happen". */
+.failedLine {
+  box-shadow: inset 3px 0 0 var(--eb-danger);
+  background: color-mix(in srgb, var(--eb-danger) 7%, transparent);
+}
+
+/* Mostly the danger token, with a little of the reading colour left in it:
+   at full strength a 13px body of it fights its own legibility, and the mark
+   only has to say "this one did not happen" — the reason line under it in
+   flat danger is what carries the alarm. */
+.failedBody,
+.failedBody:hover {
+  color: color-mix(in srgb, var(--eb-danger) 85%, var(--eb-text));
+  background: none;
+}
+
+.failedMeta {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 0 16px 3px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--eb-msg-meta-font, 11.5px);
+  color: var(--eb-danger);
+}
+
+.failedRetry {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.failedRetry:disabled {
+  color: var(--eb-meta);
+  text-decoration: none;
+  cursor: default;
+}
+
+/* Phone: the meta row GROWS rather than wearing a hit overlay (base.css
+   §--eb-touch-target). An overlay centred on this button would reach a
+   fingertip's worth into the message lines above and below it — the log's
+   own reason for keeping its inline elements overlay-free — and a failed
+   send is rare enough that the extra band costs nothing in practice. */
+:root[data-layout="phone"] .failedMeta {
+  align-items: center;
+  min-height: var(--eb-touch-target);
+}
+
 .time {
   flex: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;

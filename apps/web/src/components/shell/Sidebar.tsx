@@ -33,7 +33,17 @@ import { displayVersion, useServerMeta } from "../../lib/use-meta.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { decodeWireEntities } from "../../lib/wire-text.js";
 import { patchPrefs } from "../prefs/patch.js";
-import { SearchGlyph, GearGlyph, PowerGlyph } from "../icons/Glyphs.js";
+import {
+  BellOffGlyph,
+  ChevronGlyph,
+  CloseGlyph,
+  FlagGlyph,
+  GearGlyph,
+  PinGlyph,
+  PowerGlyph,
+  SearchGlyph,
+  StarGlyph,
+} from "../icons/Glyphs.js";
 import {
   useSessionsStore,
   type ChannelInvite,
@@ -97,6 +107,16 @@ async function waitForJoin(
 /** Rough pre-clamp so the context menu doesn't flash off-screen for a
  * frame; the menu re-clamps against its measured size once rendered. */
 const MENU_WIDTH = 216;
+
+/**
+ * Row and heading glyphs (#490): 14px rather than the toolbar's 17, and the
+ * only size in this file. The sidebar's type is 13px, so a glyph beside it
+ * wants to be about the same height — the old 9–11px Unicode markers were
+ * *below* the text they annotated, which is what made them unreadable rather
+ * than merely small. The stroke is re-derived from the box (Glyphs.tsx), so
+ * these paint at the same weight as the conversation toolbar's.
+ */
+const SIDEBAR_GLYPH_SIZE = 14;
 
 /** Friend-request reveal flash (#467) — matches the log's jump flash. */
 const FLASH_MS = 2400;
@@ -496,6 +516,11 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   // text-only rows. The row's own dot and colouring are unaffected either way.
   const avatars = session.prefs.sidebarAvatars;
 
+  // Muted conversations (#490). The mute lives in prefs keyed by convId, and
+  // until now showed only inside the conversation it silenced — so a channel
+  // muted last week looked exactly like one that was simply quiet.
+  const mutedConvs = new Set(session.prefs.mutedConvIds);
+
   const channelRow = (channel: ChannelView, pinned: boolean) => (
     <NavRow
       key={`c:${channel.key}`}
@@ -504,6 +529,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       unread={channel.unread}
       mentions={channel.mentions}
       pinned={pinned}
+      muted={mutedConvs.has(channel.convId)}
       glyph="#"
       avatars={avatars}
       token={isPrivateRoom(channel.key) ? "private" : "official"}
@@ -534,6 +560,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       active={dm.convId === activeConvId}
       unread={dm.unread}
       pinned={pinned}
+      muted={mutedConvs.has(dm.convId)}
       dot={presenceDot(dm.online, dm.status)}
       offline={!dm.online}
       avatars={avatars}
@@ -778,8 +805,19 @@ function SidebarHead() {
   );
 }
 
-/** Collapsible section heading (#168): the chevron + label toggle; the
- * right side keeps the count. */
+/**
+ * Collapsible section heading (#168). The whole row is the toggle (#496): it
+ * used to be a button hugging the label, so the chevron worked, the word
+ * worked, and the other two thirds of the band — including the count at the
+ * far right — were dead pixels that looked exactly as clickable as the rest.
+ *
+ * One element rather than a button stretched inside a wrapper, because the
+ * long-press that opens the section menu (#329) has to be on the same element:
+ * a wrapper claiming the press while its child claims the click is two targets
+ * over one row of pixels, and MP2's ghost-click swallow is what keeps the hold
+ * from also collapsing the section. Any *interactive* trailing control added
+ * here later stays outside this button — the count is text, and rides inside.
+ */
 function SectionHeader({
   label,
   count,
@@ -797,24 +835,29 @@ function SectionHeader({
 }) {
   const press = useLongPress(onContextMenu);
   return (
-    <div
+    <button
+      type="button"
       className={styles.sectionHeader}
+      aria-expanded={!collapsed}
+      onClick={onToggle}
       onContextMenu={onContextMenu}
       {...press}
     >
-      <button
-        type="button"
-        className={styles.sectionToggle}
-        aria-expanded={!collapsed}
-        onClick={onToggle}
+      <span
+        className={`${styles.sectionChevron} ${
+          collapsed ? (styles.sectionChevronCollapsed ?? "") : ""
+        }`}
       >
-        <span className={styles.sectionChevron} aria-hidden>
-          {collapsed ? "▸" : "▾"}
-        </span>
-        {label}
-      </button>
-      <span className={styles.sectionMeta}>{count || ""}</span>
-    </div>
+        <ChevronGlyph size={SIDEBAR_GLYPH_SIZE} />
+      </span>
+      <span className={styles.sectionLabel}>{label}</span>
+      {/* Hidden from the accessible name so the button stays "Channels" and
+          not "Channels 7" — the number duplicates the rows underneath it,
+          which a screen reader is already walking. */}
+      <span className={styles.sectionMeta} aria-hidden>
+        {count || ""}
+      </span>
+    </button>
   );
 }
 
@@ -1087,6 +1130,11 @@ interface RowAffordance {
   onActivate: () => void;
 }
 
+/** Which relationship a people row is showing — the leading §4 glyph. Named
+ * rather than passed as the character itself (#490): the glyphs are SVG now,
+ * and a row shouldn't be handing another component a drawing. */
+type SocialGlyph = "friend" | "bookmark";
+
 /** Drag-to-reorder wiring for a sidebar row (#391). `indicator` renders the
  * drop bar above/below the row when it is the current drop target. */
 export interface RowDrag {
@@ -1154,6 +1202,65 @@ function ChannelToken({ kind }: { kind: "official" | "private" }) {
   );
 }
 
+/**
+ * The state glyphs of a row, right-aligned in one column (#490).
+ *
+ * Order is fixed and the same on every row — muted, pinned, then the counter —
+ * so a reader scanning the column down the sidebar finds each fact in the same
+ * place. Before this the pin sat immediately after the label, i.e. at a
+ * different horizontal position on every row, and mute did not show at all.
+ */
+function RowTrail({
+  muted = false,
+  pinned = false,
+  unread,
+  mentions = 0,
+}: {
+  muted?: boolean;
+  pinned?: boolean;
+  unread: number;
+  mentions?: number;
+}) {
+  return (
+    <span className={styles.navTrail}>
+      {muted && (
+        <span
+          className={styles.navMute}
+          role="img"
+          aria-label="Muted"
+          title="Muted — no sounds or notifications"
+        >
+          <BellOffGlyph size={SIDEBAR_GLYPH_SIZE} />
+        </span>
+      )}
+      {pinned && (
+        <span
+          className={styles.navPin}
+          role="img"
+          aria-label="Pinned"
+          title="Pinned — reopens when you reconnect"
+        >
+          <PinGlyph size={SIDEBAR_GLYPH_SIZE} />
+        </span>
+      )}
+      {mentions > 0 ? (
+        <span
+          className={`${styles.navBadge} ${styles.navBadgeMention ?? ""}`}
+          data-testid="nav-badge"
+        >
+          @{clampBadge(mentions)}
+        </span>
+      ) : (
+        unread > 0 && (
+          <span className={styles.navBadge} data-testid="nav-badge">
+            {clampBadge(unread)}
+          </span>
+        )
+      )}
+    </span>
+  );
+}
+
 interface NavRowProps {
   to: string;
   active: boolean;
@@ -1161,6 +1268,9 @@ interface NavRowProps {
   label: string;
   mentions?: number;
   pinned?: boolean;
+  /** In `prefs.mutedConvIds` (#490): the row says so, and reads back a step
+   * — muting was invisible everywhere except inside the conversation. */
+  muted?: boolean;
   glyph?: string;
   dot?: DotKind;
   offline?: boolean;
@@ -1186,6 +1296,7 @@ function NavRow({
   label,
   mentions = 0,
   pinned = false,
+  muted = false,
   glyph,
   dot,
   offline,
@@ -1198,6 +1309,9 @@ function NavRow({
 }: NavRowProps) {
   const press = useLongPress(onContextMenu);
   const classes = [styles.navItem];
+  if (muted) {
+    classes.push(styles.mutedRow ?? "");
+  }
   if (active) {
     classes.push(styles.active);
   }
@@ -1241,34 +1355,20 @@ function NavRow({
           <span className={`${styles.navDot} ${DOT_CLASS[dot]}`} />
         )}
         <span className={styles.navLabel}>{label}</span>
-        {pinned && <span className={styles.navPin}>⚲</span>}
-        <span className={styles.navTrail}>
-          {mentions > 0 ? (
-            <span
-              className={`${styles.navBadge} ${styles.navBadgeMention ?? ""} ${styles.navTrailBadge ?? ""}`}
-              data-testid="nav-badge"
-            >
-              @{clampBadge(mentions)}
-            </span>
-          ) : (
-            unread > 0 && (
-              <span
-                className={`${styles.navBadge} ${styles.navTrailBadge ?? ""}`}
-                data-testid="nav-badge"
-              >
-                {clampBadge(unread)}
-              </span>
-            )
-          )}
-        </span>
+        <RowTrail
+          muted={muted}
+          pinned={pinned}
+          unread={unread}
+          mentions={mentions}
+        />
       </Link>
       {affordance && (
         <button
           type="button"
           className={styles.navClose}
           // Revealed by row hover; permanently drawn where nothing can hover
-          // (base.css §5-F), which is also why the badge stops yielding to it
-          // there — see .navTrailBadge below.
+          // (base.css §5-F), which is also why the trailing column stops
+          // yielding to it there — see .navTrail below.
           data-eb-hover-reveal
           aria-label={affordance.label}
           title={affordance.label}
@@ -1278,7 +1378,7 @@ function NavRow({
             affordance.onActivate();
           }}
         >
-          ✕
+          <CloseGlyph size={SIDEBAR_GLYPH_SIZE} />
         </button>
       )}
     </div>
@@ -1423,6 +1523,7 @@ function SocialSections({
 }) {
   const identityId = session.identityId;
   const social = session.social;
+  const mutedConvs = new Set(session.prefs.mutedConvIds);
   const [loadError, setLoadError] = useState<string>();
   // The notification inbox sends the user here when they click a friend
   // request (#467). The rows already render regardless of the section's
@@ -1481,7 +1582,7 @@ function SocialSections({
 
   const row = (
     character: SocialCharacter,
-    glyph: string,
+    glyph: SocialGlyph,
     section: "friends" | "bookmarks",
   ) => {
     // #290: a friend/bookmark with an open DM carries the DM's unread badge
@@ -1495,6 +1596,7 @@ function SocialSections({
         glyph={glyph}
         unread={dm?.unread ?? 0}
         pinned={dm?.pinned ?? false}
+        muted={dm !== undefined && mutedConvs.has(dm.convId)}
         active={dm !== undefined && dm.convId === activeConvId}
         drag={rowDrag(section, character.name)}
         onContextMenu={(event) => {
@@ -1556,7 +1658,7 @@ function SocialSections({
         ))}
       </div>
       {openSection("friends") &&
-        friends.map((friend) => row(friend, "★", "friends"))}
+        friends.map((friend) => row(friend, "friend", "friends"))}
       {openSection("friends") &&
         !filtering &&
         social !== undefined &&
@@ -1574,7 +1676,7 @@ function SocialSections({
         onContextMenu={onSectionContextMenu("bookmarks")}
       />
       {openSection("bookmarks") &&
-        bookmarks.map((bookmark) => row(bookmark, "⚑", "bookmarks"))}
+        bookmarks.map((bookmark) => row(bookmark, "bookmark", "bookmarks"))}
       {openSection("bookmarks") &&
         !filtering &&
         social !== undefined &&
@@ -1586,25 +1688,29 @@ function SocialSections({
 }
 
 /** One friend/bookmark: presence dot + relationship glyph (§4: ★ friend,
- * ⚑ bookmark — same vocabulary as the profile badges) + name; clicking
- * opens the DM, right-clicking the identity menu (#167). */
+ * ⚑ bookmark — same vocabulary as the profile badges, drawn as SVG since
+ * #490) + name; clicking opens the DM, right-clicking the identity menu
+ * (#167). */
 function SocialRow({
   session,
   character,
   glyph,
   unread,
   pinned = false,
+  muted = false,
   active,
   drag,
   onContextMenu,
 }: {
   session: IdentitySession;
   character: SocialCharacter;
-  glyph: string;
+  glyph: SocialGlyph;
   unread: number;
   /** The partner's DM pin (#290): the row moved out of Direct messages, so
    * this is the only place the pin — and its offline keep-alive — shows. */
   pinned?: boolean;
+  /** Likewise the partner's DM mute (#490). */
+  muted?: boolean;
   active: boolean;
   drag?: RowDrag;
   onContextMenu: (event: PressEvent) => void;
@@ -1637,6 +1743,9 @@ function SocialRow({
   }
 
   const classes = [styles.navItem, styles.socialRow ?? ""];
+  if (muted) {
+    classes.push(styles.mutedRow ?? "");
+  }
   if (active) {
     classes.push(styles.active ?? "");
   }
@@ -1675,21 +1784,15 @@ function SocialRow({
       <span
         className={`${styles.navDot} ${DOT_CLASS[presenceDot(character.online, character.status)]}`}
       />
-      <span className={styles.socialGlyph} aria-hidden>
-        {glyph}
+      <span className={styles.socialGlyph}>
+        {glyph === "friend" ? (
+          <StarGlyph size={SIDEBAR_GLYPH_SIZE} />
+        ) : (
+          <FlagGlyph size={SIDEBAR_GLYPH_SIZE} />
+        )}
       </span>
       <span className={styles.navLabel}>{character.name}</span>
-      {pinned && <span className={styles.navPin}>⚲</span>}
-      {unread > 0 && (
-        <span className={styles.navTrail}>
-          <span
-            className={`${styles.navBadge} ${styles.navTrailBadge ?? ""}`}
-            data-testid="nav-badge"
-          >
-            {clampBadge(unread)}
-          </span>
-        </span>
-      )}
+      <RowTrail muted={muted} pinned={pinned} unread={unread} />
     </button>
   );
 }

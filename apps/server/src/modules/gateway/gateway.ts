@@ -67,6 +67,12 @@ export class GatewayHub {
         d: { convId: message.conversationId, message: messageDto(message) },
       });
     });
+    options.history.events.on("messageUpdated", ({ identityId, message }) => {
+      this.broadcast(identityId, {
+        kind: "message.updated",
+        d: { convId: message.conversationId, message: messageDto(message) },
+      });
+    });
     options.history.events.on(
       "conversation",
       ({ identityId, conversation }) => {

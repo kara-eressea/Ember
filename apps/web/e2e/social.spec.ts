@@ -121,7 +121,9 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   ).toBeVisible();
   await filter.fill("");
 
-  // Section headings collapse and expand.
+  // Section headings collapse and expand — and since #496 the heading is the
+  // whole row, so Playwright's click lands at the centre of the sidebar, well
+  // past the end of the word. That is the point: it used to do nothing there.
   await sidebar.getByRole("button", { name: "Bookmarks", exact: true }).click();
   await expect(
     sidebar.getByRole("button", { name: "Old Greywhisker", exact: true }),

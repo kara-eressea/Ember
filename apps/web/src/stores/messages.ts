@@ -80,6 +80,14 @@ interface MessagesState {
   appendLive(convId: string, message: MessageDto): void;
   appendMany(convId: string, messages: MessageDto[]): void;
   /**
+   * An already-buffered row changed server-side (#491: a DM the server
+   * refused, or its failure clearing on a retry). Replaces in place, keyed
+   * by id — never inserts, so a row scrolled out of the window (or in a
+   * detached view) is simply not there to update, and the next load brings
+   * the current state anyway.
+   */
+  applyUpdate(convId: string, message: MessageDto): void;
+  /**
    * Replace a conversation's buffer with a fresh window (catchup gap): the
    * old prefix is non-contiguous with the replay and would be an unreachable
    * hole, so drop it and mark the missed span as scroll-back-reachable.
@@ -212,6 +220,19 @@ export const useMessagesStore = create<MessagesState>()((set, get) => {
         return;
       }
       put(convId, messages);
+    },
+
+    applyUpdate(convId, message) {
+      const buffer = get().buffers[convId];
+      if (!buffer?.messages.some((row) => row.id === message.id)) {
+        return;
+      }
+      patch(convId, (current) => ({
+        ...current,
+        messages: current.messages.map((row) =>
+          row.id === message.id ? message : row,
+        ),
+      }));
     },
 
     resetTo(convId, messages) {

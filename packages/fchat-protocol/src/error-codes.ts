@@ -80,6 +80,24 @@ export function isChannelGoneError(code: number): boolean {
   );
 }
 
+/**
+ * The "your PRI was refused" family (#491): the two errors F-Chat answers a
+ * private message with when it did not deliver it — 6 when the recipient is
+ * not online (the common case: they logged off between the composer and the
+ * wire) and 20 when they ignore us.
+ *
+ * Deliberately NOT including 15 (message too long): the session pre-checks
+ * `priv_max` before sending, and a channel MSG in the same breath can raise
+ * 15 too, which would be attributed to the wrong send. Codes here must be
+ * ones only a PRI can produce for us.
+ */
+export function isPrivateMessageRefusal(code: number): boolean {
+  return (
+    code === FchatErrorCode.CharacterNotFound || // 6
+    code === FchatErrorCode.IgnoredByRecipient // 20
+  );
+}
+
 export const FCHAT_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   0: "Operation completed successfully.",
   1: "Syntax error.",
