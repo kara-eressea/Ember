@@ -49,7 +49,7 @@ function toolbar(page: Page): Locator {
 function sidebar(page: Page): Locator {
   return page
     .getByRole("navigation")
-    .filter({ has: page.getByLabel("Filter the channel list") });
+    .filter({ has: page.getByLabel("Find in the channel list") });
 }
 
 test("the phone stack can reconnect from either pane (#377)", async ({

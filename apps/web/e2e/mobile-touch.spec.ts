@@ -51,7 +51,7 @@ test("phone device: hover-only affordances are reachable by tap (#375)", async (
 
     const sidebar = page
       .getByRole("navigation")
-      .filter({ has: page.getByLabel("Filter the channel list") });
+      .filter({ has: page.getByLabel("Find in the channel list") });
     const dmRow = sidebar.getByRole("link", { name: new RegExp(PARTNER) });
     const close = sidebar.getByRole("button", {
       name: `Close conversation with ${PARTNER}`,

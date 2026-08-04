@@ -390,7 +390,7 @@ Right-click popover on a member. `side` fill, `border`, `radius+2`, popover shad
 ### 11. ChannelBrowser (dialog)
 620×588 modal, `side`, `radius+5`, modal shadow.
 - **Header:** "Browse channels" (17px/700) + mono sub ("emberchat · irc.emberchat.chat · 142 rooms", room count in `ok`); close `✕`.
-- **Search** row (38px, `bg`, `border`): "Filter by name or topic…".
+- **Search** row (38px, `bg`, `border`): "Find by name or topic…" (#492 — every search field in the app says *find*, never *filter*).
 - **Tabs:** **Official** and **Open rooms**, each with a mono count pill. Active tab: `bg` fill + `border`; count pill in `accentSoft`/`accent`.
   - *Official* = curated server channels. *Open rooms* = user-created public rooms. (Server returns these as two query types.)
 - **Row** (single line, `align-items:center`, `border-bottom` hairline): `#` · name (mono 14px/600) · type chip (`official` = `accent` on `accentSoft`; `open` = `dim` outline) · spacer · **member count** in a fixed **62px right-aligned column** (mono, `ok` dot + number) · **action button** fixed **86×30** so all right edges align.

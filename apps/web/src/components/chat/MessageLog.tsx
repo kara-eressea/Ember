@@ -63,6 +63,20 @@ const FONT_RAMP_PX = {
   l: { body: 15, meta: 13 },
 } as const;
 
+/** Message-body face (`messageFont` pref), published as `--eb-msg-family` on
+ * the log root beside the size vars — the same plumbing, so one pane controls
+ * one log and nothing outside it. Sans is `inherit`, i.e. literally today's
+ * rendering: the app body face reaches the row unchanged rather than being
+ * restated here, where it could drift from base.css. Mono is the face the app
+ * already loads; the serif is a system stack, since shipping a fourth webfont
+ * for a preference most readers will never turn on is a lot of bytes for a
+ * taste. */
+const MESSAGE_FONT_STACKS: Record<UserPrefs["messageFont"], string> = {
+  sans: "inherit",
+  serif: 'Georgia, "Times New Roman", Times, serif',
+  mono: '"IBM Plex Mono", ui-monospace, monospace',
+};
+
 const EMPTY: MessageDto[] = [];
 const EMPTY_IGNORES: string[] = [];
 const EMPTY_OUTBOX: OutboxItemDto[] = [];
@@ -263,6 +277,9 @@ export function MessageLog({
    * reflows every row, so the remembered heights are dropped wholesale. */
   const layoutSignature = [
     prefs.fontSize,
+    // The body face changes where every line wraps, so it invalidates the
+    // remembered heights exactly like the size ramp does.
+    prefs.messageFont,
     prefs.density,
     prefs.alignedColumns,
     prefs.groupConsecutive,
@@ -1112,6 +1129,7 @@ export function MessageLog({
   const styleVars: Record<string, string> = {
     "--eb-msg-font": `${String(ramp.body)}px`,
     "--eb-msg-meta-font": `${String(ramp.meta)}px`,
+    "--eb-msg-family": MESSAGE_FONT_STACKS[prefs.messageFont],
   };
   if (prefs.highlightTint !== "accent") {
     styleVars["--eb-hl"] = ACCENTS[prefs.highlightTint].hex;

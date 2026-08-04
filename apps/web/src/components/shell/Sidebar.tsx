@@ -598,8 +598,8 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
               setQuery("");
             }
           }}
-          placeholder="Filter channels and people…"
-          aria-label="Filter the channel list"
+          placeholder="Find channels and people…"
+          aria-label="Find in the channel list"
         />
         <button
           type="button"

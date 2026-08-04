@@ -632,8 +632,14 @@
   text-decoration: underline;
 }
 
+/* The prose face is the one thing here a reader may choose (`messageFont`,
+   var written on the log root beside the size ramp). It lands on the message
+   text and on ad bodies — the two places a person's own words render — and
+   deliberately nowhere else: names inherit the ROW (#438, see .nick) and
+   timestamps are mono by spec, so a serif log still reads as this app's log. */
 .body {
   min-width: 0;
+  font-family: var(--eb-msg-family, inherit);
   font-size: var(--eb-msg-font, 13px);
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -746,6 +752,7 @@
 }
 
 .adBlockBody {
+  font-family: var(--eb-msg-family, inherit);
   font-size: var(--eb-msg-font, 13px);
   line-height: 1.5;
 }

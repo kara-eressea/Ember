@@ -245,7 +245,7 @@ test("phone device: every surface that claims a long press opens its sheet (#376
 
     const sidebar = page
       .getByRole("navigation")
-      .filter({ has: page.getByLabel("Filter the channel list") });
+      .filter({ has: page.getByLabel("Find in the channel list") });
 
     // A channel row (Sidebar.NavRow → ChannelContextMenu).
     await pressOpensSheet(

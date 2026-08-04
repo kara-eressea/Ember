@@ -167,8 +167,8 @@ export function ChannelBrowser({
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Filter by name or topic…"
-            aria-label="Filter channels"
+            placeholder="Find by name or topic…"
+            aria-label="Find channels"
           />
         </div>
 

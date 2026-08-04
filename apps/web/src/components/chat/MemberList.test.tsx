@@ -87,7 +87,7 @@ describe("MemberList Find field (#497)", () => {
 
   /** Type `query` into the Find field and read back the surviving rows. */
   async function filterBy(query: string): Promise<string> {
-    const field = screen.getByLabelText("Filter members");
+    const field = screen.getByLabelText("Find members");
     await userEvent.clear(field);
     await userEvent.type(field, query);
     return screen
