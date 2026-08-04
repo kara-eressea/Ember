@@ -711,6 +711,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Shingle Harrow"],
     },
+    // Reserved for the #516 link-wrap E2E, which needs no partner: the browser
+    // character writes the two links itself and the spec measures where the
+    // caption wrapped.
+    "vellum@example.test": {
+      password: "hunter2",
+      characters: ["Vellum Prine"],
+    },
   },
   channels: [
     {
@@ -1229,6 +1236,17 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "A deep spool of very tall posts, on a phone.",
       oplist: ["Marram Dune"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #516 link-wrap E2E (link-wrap.spec): an empty room whose
+    // only two messages are the links under measurement.
+    {
+      name: "ADH-516linkwrap55ee66ff",
+      title: "Vellum Reading Room",
+      mode: "chat",
+      description: "Two links and nothing else.",
+      oplist: ["Vellum Prine"],
       npcs: [],
       listed: false,
     },
