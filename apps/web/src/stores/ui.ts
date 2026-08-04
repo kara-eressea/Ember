@@ -23,8 +23,16 @@ interface UiState {
    * Optimistic until startWindowFocusTracking() reads the real state at mount
    * (a tab opened in the background never fires a blur to correct it). */
   windowFocused: boolean;
-  /** Members column visibility (header ☰ toggle). */
+  /** Members column visibility (header ☰ toggle) — the docked right column on
+   * compact and wide. */
   membersOpen: boolean;
+  /** The member list as a full-height overlay on the phone tier, where there
+   * is no column to dock into (#375, MP1 package D) — transient (never
+   * persisted) and always starts closed, exactly like the DM drawer below.
+   * Keeping it separate from `membersOpen` is the point: that pref defaults to
+   * open, and sharing it would put a member list over every conversation a
+   * phone opens. */
+  membersDrawerOpen: boolean;
   /** DM profile sidebar — the persisted global open preference (header ◨ /
    * sidebar » toggle). Governs the wide-window grid column (#170). */
   dmSidebarOpen: boolean;
@@ -63,6 +71,8 @@ interface UiState {
   setGatewayStatus: (status: GatewayConnectionStatus) => void;
   setWindowFocused: (focused: boolean) => void;
   toggleMembers: () => void;
+  toggleMembersDrawer: () => void;
+  setMembersDrawerOpen: (open: boolean) => void;
   toggleDmSidebar: () => void;
   setDmSidebarOpen: (open: boolean) => void;
   toggleDmDrawer: () => void;
@@ -85,6 +95,7 @@ export const useUiStore = create<UiState>()((set) => ({
   gatewayStatus: "offline",
   windowFocused: true,
   membersOpen: true,
+  membersDrawerOpen: false,
   dmSidebarOpen: savedDmSidebarOpen(),
   dmDrawerOpen: false,
   prefsOpen: false,
@@ -116,6 +127,12 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   toggleMembers() {
     set((state) => ({ membersOpen: !state.membersOpen }));
+  },
+  toggleMembersDrawer() {
+    set((state) => ({ membersDrawerOpen: !state.membersDrawerOpen }));
+  },
+  setMembersDrawerOpen(open) {
+    set({ membersDrawerOpen: open });
   },
   toggleDmSidebar() {
     set((state) => {

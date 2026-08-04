@@ -6,11 +6,12 @@
 // (which pulls in gateway/store machinery) never mounts.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ChannelHeader, DmHeader } from "./ChannelHeader.js";
 import { useProfileStore } from "../../stores/profile.js";
+import { useUiStore } from "../../stores/ui.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -68,6 +69,7 @@ const initialSessions = useSessionsStore.getState().sessions;
 afterEach(() => {
   useSessionsStore.setState({ sessions: initialSessions });
   useProfileStore.setState({ profiles: {} });
+  useUiStore.setState({ membersOpen: true, membersDrawerOpen: false });
   setWindowWidth(1024); // jsdom's default
 });
 
@@ -358,5 +360,101 @@ describe("conversation toolbar collapse", () => {
     expect(screen.getByRole("dialog", { name: OVERFLOW })).toHaveTextContent(
       "Warm glass and growing things.",
     );
+  });
+});
+
+// The member-list toggle is the one control whose job changes with the tier
+// (#375 package D). On compact and wide it flips the docked column's persisted
+// preference; on the phone stack — where there is no column to dock into — it
+// opens the full-height overlay, whose open state is transient and starts
+// closed. Package B removed the chip from that tier entirely while the overlay
+// did not exist yet; this is it doing something again.
+describe("member-list toggle across the tiers", () => {
+  const OVERFLOW = "More conversation actions";
+  const TOGGLE = "Toggle member list";
+
+  function busyRoom(): ChannelView {
+    return {
+      ...channelTitled("Frontpage"),
+      members: [
+        {
+          character: "Rowan Ash",
+          gender: "Female",
+          status: "online",
+          statusmsg: "",
+        },
+        {
+          character: "Dell Marsh",
+          gender: "Male",
+          status: "online",
+          statusmsg: "",
+        },
+      ],
+    };
+  }
+
+  function renderRoom() {
+    return render(
+      <MemoryRouter>
+        <ChannelHeader identityId="id1" channel={busyRoom()} />
+      </MemoryRouter>,
+    );
+  }
+
+  /** The ⋯ menu, which is where the toggle lives on a phone (spec §3). */
+  async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: OVERFLOW }));
+    return screen.getByRole("dialog", { name: OVERFLOW });
+  }
+
+  it("keeps the toggle on a phone, in the ⋯ menu, count and all", async () => {
+    const user = userEvent.setup();
+    setWindowWidth(390);
+    renderRoom();
+    measureRow(390);
+
+    // Not on the row — the phone keeps two chips, and this is not one of them.
+    expect(screen.queryByRole("button", { name: TOGGLE })).toBeNull();
+
+    const chip = within(await openMenu(user)).getByRole("button", {
+      name: TOGGLE,
+    });
+    expect(chip).toHaveTextContent("Member list");
+    expect(chip).toHaveTextContent("2");
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("drives the overlay on a phone, never the docked preference", async () => {
+    const user = userEvent.setup();
+    setWindowWidth(390);
+    renderRoom();
+    measureRow(390);
+
+    await user.click(
+      within(await openMenu(user)).getByRole("button", { name: TOGGLE }),
+    );
+    expect(useUiStore.getState().membersDrawerOpen).toBe(true);
+    // The persisted column preference is untouched: it is open by default, and
+    // it is what would otherwise have put a member list over every
+    // conversation a phone opens.
+    expect(useUiStore.getState().membersOpen).toBe(true);
+
+    // Reopening the menu, the chip reads the overlay's real state.
+    expect(
+      within(await openMenu(user)).getByRole("button", { name: TOGGLE }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("drives the docked column on the desktop grid, as it always has", async () => {
+    const user = userEvent.setup();
+    setWindowWidth(1200);
+    renderRoom();
+
+    const chip = screen.getByRole("button", { name: TOGGLE });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    await user.click(chip);
+    expect(useUiStore.getState().membersOpen).toBe(false);
+    expect(useUiStore.getState().membersDrawerOpen).toBe(false);
+    expect(chip).toHaveAttribute("aria-pressed", "false");
   });
 });

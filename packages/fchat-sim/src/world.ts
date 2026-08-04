@@ -526,6 +526,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Stack Fell"],
     },
+    // Reserved for the #375 phone-overlay E2E (same isolation rules). Vane
+    // Overlay opens the member list and the DM profile as overlays on a phone
+    // viewport; Sheet Wren is the raw-SimClient other side — she joins the
+    // room so the roster has someone in it, and opens the DM the profile
+    // overlay is measured on.
+    "vaneoverlay@example.test": {
+      password: "hunter2",
+      characters: ["Vane Overlay"],
+    },
+    "sheetwren@example.test": {
+      password: "hunter2",
+      characters: ["Sheet Wren"],
+    },
   },
   channels: [
     {
@@ -900,6 +913,18 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "One pane at a time.",
       oplist: ["Pane Hollow"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #375 phone-overlay E2E: the roster the member overlay
+    // is opened over. Hidden and NPC-free — the spec measures the panel, and
+    // an NPC joining or parting would rewrite what is under it mid-assertion.
+    {
+      name: "ADH-375overlays33cc44dd",
+      title: "Overlay Room",
+      mode: "chat",
+      description: "Panels over the pane.",
+      oplist: ["Vane Overlay"],
       npcs: [],
       listed: false,
     },

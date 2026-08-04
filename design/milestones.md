@@ -18,7 +18,7 @@ Statuses: `not started` · `in progress` · `done` · `blocked`
 | 10 | Ads & character search | **shipped — v0.9.0, 2026-07-20** | M8, M6 | [milestone-10-ads-and-search.md](milestone-10-ads-and-search.md) |
 | 11 | Discovery extras: ad rotation & ratings | **shipped — v0.10.0, 2026-07-20** | M10 | [milestone-11-discovery-extras.md](milestone-11-discovery-extras.md) |
 | MX | Desktop client (Electron/embedded bouncer + thin-client mode) | **planned** — GitHub milestone "MX — Desktop client" (11 issues, 2026-07-22); built after MP | M8+; design in [standalone-client.md](standalone-client.md) | [standalone-client.md](standalone-client.md) |
-| MP | Mobile web client (responsive/PWA — planned 2026-07-23, after the polish soak; ordered ahead of the MX build) | **MP1 in progress** (started 2026-08-03) — GitHub milestone "MP — Mobile web (PWA)" (issues #375–#378); packages A/E/F merged, B/C in flight, D/G to come | presentation-layer only; no store distribution | [mobile-client.md](mobile-client.md), [mp1-responsive-shell.md](mp1-responsive-shell.md) |
+| MP | Mobile web client (responsive/PWA — planned 2026-07-23, after the polish soak; ordered ahead of the MX build) | **MP1 in progress** (started 2026-08-03) — GitHub milestone "MP — Mobile web (PWA)" (issues #375–#378); packages A–F merged, G to come | presentation-layer only; no store distribution | [mobile-client.md](mobile-client.md), [mp1-responsive-shell.md](mp1-responsive-shell.md) |
 
 ## Milestone 1 step checklist
 

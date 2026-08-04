@@ -133,7 +133,31 @@ against each other.
   the picker was built. Five tiles fit exactly now, and reflow below that.
 - **D — members + DM profile overlay (phone).** The right column becomes a
   full-height overlay on `phone`, extending the drawer shim `DmProfile`
-  already has for `narrow`. Member list gets the same treatment.
+  already has for `narrow`. Member list gets the same treatment. *Done:* one
+  shell for both (`components/chat/PanelOverlay.tsx`) — the DM drawer's
+  geometry, plus what a surface covering the only pane on screen has to have
+  and an ambient drawer beside a two-column layout does not: `aria-modal` with
+  a focus trap, and a place on the shared Escape stack as an `overlay` rather
+  than the drawer's `ambient`. The panels themselves needed no phone mode at
+  all; their docked form is a full-height flex column, which is exactly what
+  belongs inside, so the overlay renders them as they are and supplies the
+  title and the way out that the docked column gets from the toolbar spanning
+  it. Open state is transient (`ui.membersDrawerOpen`, and the existing
+  `dmDrawerOpen`) and never the persisted docked prefs, and AppShell closes
+  both on every arrival at a conversation: `membersOpen` defaults to *open*,
+  which is precisely what made package B pull the list off this tier. The
+  compact drawer keeps its own shim rather than being folded in — making it
+  modal would change how `compact` behaves, and only `phone` may move. The
+  panel's one width is zoom-corrected the way §2 and package E's caps are
+  (`min(320px, calc(88vw / var(--eb-ui-zoom, 1)))`): `vw` is a visual length,
+  so at 125% on a 390px screen the uncorrected form painted 400px, ran off the
+  left edge and took the tap-to-close sliver with it. `data-eb-surface` would
+  have capped it too, but that cap means "a floating surface clamped to
+  POPOVER_MARGIN on both sides", where this panel is anchored to one edge and
+  the space beside it is a tap target rather than a margin. The
+  member-list chip is back on the phone toolbar with its count, in the ⋯ menu
+  (spec §3 leaves it nowhere else), reading and driving the overlay's state
+  the way the DM header's profile-panel chip has driven the drawer since #170.
 - **E — popover width caps.** Mini profile cards, eicon previews, topic
   popovers and context menus must cap at the viewport with a margin and never
   induce horizontal page scroll on a 360px screen. Builds on `popover.ts`'s
