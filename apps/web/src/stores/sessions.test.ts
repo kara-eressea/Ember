@@ -342,6 +342,48 @@ describe("read-ack echo vs. live unread (#264)", () => {
   });
 });
 
+// #515: the people sections sort on DM activity, so the store has to hold a
+// per-DM activity id that counts messages in BOTH directions and survives the
+// badge being cleared. Message ids are one global server-assigned sequence —
+// no clocks are involved, which is also what makes the order identical on
+// every attached device.
+describe("DM activity stamp (#515)", () => {
+  const dmState = () =>
+    useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV];
+
+  it("advances on a message and never goes backwards", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    expect(dmState()?.lastActivityId).toBe(0);
+    store.noteDmActivity(IDENTITY, CONV, 300);
+    expect(dmState()?.lastActivityId).toBe(300);
+    // A late/duplicate delivery of an older id must not un-rank the row.
+    store.noteDmActivity(IDENTITY, CONV, 120);
+    expect(dmState()?.lastActivityId).toBe(300);
+  });
+
+  it("survives the unread badge being cleared", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    store.bumpUnread(IDENTITY, CONV, 300);
+    store.noteDmActivity(IDENTITY, CONV, 300);
+    store.clearUnread(IDENTITY, CONV);
+    expect(dmState()?.unread).toBe(0);
+    // Reading is not "this conversation stopped existing" — the row keeps its
+    // rank, which is the whole point of retiring the unread float.
+    expect(dmState()?.lastActivityId).toBe(300);
+  });
+
+  it("is a no-op for a channel conversation", () => {
+    const store = useSessionsStore.getState();
+    store.applyConversation(IDENTITY, channelConversation(null));
+    expect(() => {
+      store.noteDmActivity(IDENTITY, CONV, 300);
+    }).not.toThrow();
+    expect(channelState()).toMatchObject({ unread: 0 });
+  });
+});
+
 describe("case-insensitive member-set moves (#265)", () => {
   beforeEach(() => {
     useSessionsStore.getState().applyChannelMembers(IDENTITY, {

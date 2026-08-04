@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bumpUnread,
+  orderByActivity,
   orderRows,
   orderSocial,
   socialNameSet,
@@ -44,6 +44,16 @@ describe("orderRows", () => {
     order(rows, true);
     expect(rows.map((r) => r.name)).toEqual(["B", "A"]);
   });
+
+  // The Direct-messages section calls it this way since #515: alphabetical
+  // only, with recency supplied by orderByActivity instead of the bump pref.
+  it("sorts alphabetically with no stamp accessor at all", () => {
+    expect(
+      orderRows([row("Cider", 500), row("Alder"), row("Birch", 100)], (r) =>
+        String(r.name),
+      ).map((r) => r.name),
+    ).toEqual(["Alder", "Birch", "Cider"]);
+  });
 });
 
 describe("orderSocial", () => {
@@ -72,60 +82,75 @@ describe("orderSocial", () => {
   });
 });
 
-describe("bumpUnread", () => {
+// #515: recent DM activity is the people sections' base sort. These cases are
+// the #462/#463 unread-float suite ported onto the new invariant — the float
+// itself is gone, and what it used to prove ("the row with traffic is at the
+// top") now has to hold whether or not that traffic is still unread.
+describe("orderByActivity", () => {
   interface Person {
     name: string;
-    highlightedAt?: number;
-    newestMessageId?: number;
+    /** Newest message id in this person's DM; 0 = no conversation. */
+    activity?: number;
   }
   const order = (rows: Person[]) =>
-    bumpUnread(rows, (r) =>
-      r.highlightedAt === undefined && r.newestMessageId === undefined
-        ? undefined
-        : {
-            highlightedAt: r.highlightedAt ?? 0,
-            newestMessageId: r.newestMessageId ?? 0,
-          },
-    ).map((r) => r.name);
+    orderByActivity(rows, (r) => r.activity ?? 0).map((r) => r.name);
 
-  it("floats rows with activity to the top, most recent first", () => {
+  it("puts rows with activity on top, most recent first", () => {
     expect(
       order([
         { name: "Dell" },
-        { name: "Alder", highlightedAt: 100 },
+        { name: "Alder", activity: 100 },
         { name: "Birch" },
-        { name: "Cider", highlightedAt: 200 },
+        { name: "Cider", activity: 200 },
       ]),
     ).toEqual(["Cider", "Alder", "Dell", "Birch"]);
   });
 
-  it("keeps the incoming order below the bumped rows", () => {
+  it("keeps the incoming order (presence groups, alphabetical) as the tail", () => {
     expect(
       order([{ name: "Dell" }, { name: "Alder" }, { name: "Birch" }]),
     ).toEqual(["Dell", "Alder", "Birch"]);
   });
 
-  it("breaks highlight ties on the newest message id", () => {
+  // The invariant the retired float used to carry: an unread row is
+  // recently-active by construction, so it lands above older read ones
+  // without any unread-specific rule. (Unread is not an input here — that is
+  // the point.)
+  it("sorts a just-arrived (unread) row above read rows with older activity", () => {
     expect(
       order([
-        { name: "Alder", newestMessageId: 5 },
-        { name: "Birch", newestMessageId: 9 },
-        { name: "Cider", highlightedAt: 1, newestMessageId: 2 },
+        { name: "ReadYesterday", activity: 40 },
+        { name: "ReadThisMorning", activity: 90 },
+        { name: "UnreadJustNow", activity: 120 },
       ]),
-    ).toEqual(["Cider", "Birch", "Alder"]);
+    ).toEqual(["UnreadJustNow", "ReadThisMorning", "ReadYesterday"]);
+  });
+
+  // The complaint that opened #515: reading used to drop the row back to its
+  // alphabetical seat. Clearing unread does not touch the activity id, so the
+  // order is identical before and after the read.
+  it("does not move a row when its unread clears", () => {
+    const rows = [
+      { name: "Alder", activity: 0 },
+      { name: "Cider", activity: 200 },
+      { name: "Birch", activity: 0 },
+    ];
+    expect(order(rows)).toEqual(["Cider", "Alder", "Birch"]);
+    // Same rows, same activity, badge cleared elsewhere in the store.
+    expect(order(rows)).toEqual(["Cider", "Alder", "Birch"]);
   });
 
   it("is stable for rows with identical activity", () => {
     expect(
       order([
-        { name: "Birch", highlightedAt: 7 },
-        { name: "Alder", highlightedAt: 7 },
+        { name: "Birch", activity: 7 },
+        { name: "Alder", activity: 7 },
       ]),
     ).toEqual(["Birch", "Alder"]);
   });
 
   it("does not mutate the input", () => {
-    const rows = [{ name: "B" }, { name: "A", highlightedAt: 1 }];
+    const rows = [{ name: "B" }, { name: "A", activity: 1 }];
     order(rows);
     expect(rows.map((r) => r.name)).toEqual(["B", "A"]);
   });

@@ -119,6 +119,11 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       const convId = event.d.convId;
       useMessagesStore.getState().appendLive(convId, message);
       if (message.sentByUs) {
+        // An own send is activity in that conversation (#515): the sidebar's
+        // people sections sort on it, and the partner you just answered is
+        // the most recently active one by definition. Nothing else here
+        // applies to our own line — no unread, no alerts.
+        sessions.noteDmActivity(identityId, convId, message.id);
         return;
       }
       const ui = useUiStore.getState();
@@ -151,6 +156,12 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       ) {
         return;
       }
+      // Inbound activity (#515), stamped after the ad and ignore filters
+      // above (a line no view renders must not reorder the sidebar either)
+      // and BEFORE the attended check below: a message arriving in the
+      // conversation on screen raises no unread, but it is exactly the
+      // traffic that must keep that row at the top while it is being read.
+      sessions.noteDmActivity(identityId, convId, message.id);
       const muted =
         prefs !== undefined &&
         (prefs.mutedIdentityIds.includes(identityId) ||

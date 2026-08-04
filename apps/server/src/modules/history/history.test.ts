@@ -23,7 +23,11 @@ import {
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
 import { FlistApiClient } from "../flist-api/api-client.js";
-import { CATCHUP_REPLAY_BUDGET, catchupPlan } from "../gateway/snapshot.js";
+import {
+  buildSnapshot,
+  CATCHUP_REPLAY_BUDGET,
+  catchupPlan,
+} from "../gateway/snapshot.js";
 import type { FchatSession } from "../session-engine/fchat-session.js";
 import { RetentionJob } from "./retention.js";
 import { exportChunks, type ExportRow } from "./routes.js";
@@ -452,6 +456,45 @@ describe("history sink", () => {
     // Still monotonic: a stale ack never regresses the cursor.
     const stale = await app.history.markRead(identityId, conv!.id, 1);
     expect(stale?.lastReadMessageId).toBe(message!.id);
+  });
+
+  it("carries each DM's newest message id into the snapshot (#515)", async () => {
+    const { identityId, session } = await startIdentity();
+    // A DM with traffic, and one opened but never spoken in.
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "first" },
+    });
+    await inject(session, {
+      cmd: "PRI",
+      payload: { character: "Nyx Firemane", message: "second" },
+    });
+    await app.history.ensurePmConversation(identityId, "Tally Marsh");
+    await app.history.flush();
+
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.identityId, identityId),
+          eq(conversations.partnerCharacter, "Nyx Firemane"),
+        ),
+      );
+    const rows = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conv!.id))
+      .orderBy(messages.id);
+
+    const snapshot = await buildSnapshot(db, identityId, undefined);
+    const talked = snapshot.dms.find((dm) => dm.partner === "Nyx Firemane");
+    const silent = snapshot.dms.find((dm) => dm.partner === "Tally Marsh");
+    // The sidebar's activity sort key: the newest message either direction,
+    // read or not — it is what keeps a row in place when its badge clears.
+    expect(talked?.lastActivityId).toBe(rows.at(-1)!.id);
+    // Nothing said yet: the row sorts in the alphabetical tail.
+    expect(silent?.lastActivityId).toBe(0);
   });
 
   it("pins conversations and seeds connect/resume channel sets (decisions.md §9)", async () => {

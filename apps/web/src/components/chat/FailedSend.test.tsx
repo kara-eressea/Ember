@@ -60,6 +60,7 @@ function dm(online: boolean): DmView {
     highlightedAt: 0,
     lastReadMessageId: null,
     newestMessageId: null,
+    lastActivityId: 0,
   };
 }
 

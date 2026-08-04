@@ -272,6 +272,19 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Cress Dell"],
     },
+    // Reserved for the #515 sidebar activity-sort E2E (same isolation rules).
+    // Alder Quill and Wren Sable are its raw-SimClient "other sides" — two DM
+    // partners whose alphabetical order is the reverse of the order they
+    // write in, which is what makes the assertion mean something. One account
+    // between them is safe: each connects exactly once and neither reconnects.
+    "wisp@example.test": {
+      password: "hunter2",
+      characters: ["Wisp Harrow"],
+    },
+    "quillsable@example.test": {
+      password: "hunter2",
+      characters: ["Alder Quill", "Wren Sable"],
+    },
     // Reserved for the M6 social E2E (same isolation rules). Fern arrives
     // with a bookmark, a friend, and a pending incoming request from Tally.
     "fern@example.test": {

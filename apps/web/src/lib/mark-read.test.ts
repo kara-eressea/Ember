@@ -80,6 +80,7 @@ function snapshot(): ServerFrame {
           pinned: false,
           unread: 4,
           lastReadMessageId: 20,
+          lastActivityId: 20,
         },
       ],
     },
