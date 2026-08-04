@@ -200,6 +200,12 @@ function dispatchEvent(identityId: string, event: GatewayEvent): void {
       }
       return;
     }
+    case "message.updated":
+      // A row we already have changed (#491) — no unread, no alert, no
+      // notification: nothing new arrived, an own send merely turned out to
+      // have failed (or stopped failing).
+      useMessagesStore.getState().applyUpdate(event.d.convId, event.d.message);
+      return;
     case "conversation.updated":
       sessions.applyConversation(identityId, event.d.conversation);
       return;

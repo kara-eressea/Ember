@@ -216,6 +216,18 @@ const cmdSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     identityId: z.uuid(),
+    // #491: re-send a DM the server refused (its row carries a
+    // failureReason). The stored BBCode goes back on the wire as an ordinary
+    // PRI; the same row is reused, so a successful retry clears the red mark
+    // in place instead of leaving a dead line above a duplicate.
+    action: z.literal("msg.retry"),
+    d: z.object({
+      convId: z.uuid(),
+      messageId: z.number().int().positive(),
+    }),
+  }),
+  z.object({
+    identityId: z.uuid(),
     // M10: per-channel ad-cooldown query for the post flow. The reply is an
     // `ads.cooldowns` event delivered to the asking connection only — the
     // remaining waits are per-session volatile state, not shared fan-out.
@@ -444,6 +456,14 @@ export interface MessageDto {
   mention: boolean;
   /** ISO timestamp. */
   createdAt: string;
+  /**
+   * Set on an own DM the server correlated to an F-Chat refusal (#491): the
+   * frame went onto the wire but the server answered with an ERR, so nobody
+   * received it. Plain-language cause ("Nyx Firemane is offline"). Cleared
+   * when a `msg.retry` of the same row goes through. Absent on every message
+   * that was not refused — which is nearly all of them.
+   */
+  failureReason?: string;
 }
 
 /** What produced a notification-inbox entry (#467). */
@@ -571,6 +591,15 @@ export interface SnapshotDm {
 export type GatewayEvent =
   | {
       kind: "message.new";
+      d: { convId: string; message: MessageDto };
+    }
+  | {
+      kind: "message.updated";
+      /** An already-delivered messages row changed after the fact (#491: a
+       * DM the server refused, or the same row's failure clearing on a
+       * successful retry). The full row rides along — an idempotent
+       * overwrite, keyed by `message.id`. A client that never saw the row
+       * (outside its buffer window) drops the event. */
       d: { convId: string; message: MessageDto };
     }
   | { kind: "conversation.updated"; d: { conversation: ConversationDto } }

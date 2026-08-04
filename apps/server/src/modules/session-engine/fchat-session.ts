@@ -12,11 +12,13 @@
 // - Unknown inbound commands are logged and swallowed, never fatal.
 
 import { Buffer } from "node:buffer";
+import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import {
   canonicalChannelKey,
   FchatErrorCode,
   isKnownServerCommand,
+  isPrivateMessageRefusal,
   parseServerCommand,
   serializeClientCommand,
   type ClientCommand,
@@ -69,6 +71,49 @@ export const FKS_PACE_SECONDS = 5;
 export const STATUS_GATE_MS = 5_500;
 /** How long a fired search waits for its FKS/ERR before giving up. */
 const SEARCH_RESPONSE_TIMEOUT_MS = 10_000;
+
+/**
+ * How long a sent PRI stays eligible to own an incoming refusal ERR (#491).
+ *
+ * F-Chat acknowledges nothing and its ERRs name no frame, so attribution is
+ * positional: the connection is ordered, the server answers a refused PRI
+ * before it answers anything sent after it, and a round trip is far shorter
+ * than the flood gate between two of our own PRIs. Anything older than this
+ * window is treated as delivered — a late ERR is dropped rather than pinned
+ * on a message that probably arrived. Not a protocol constant (no VAR
+ * carries it): our own heuristic, generous enough for a slow link.
+ */
+export const PM_REFUSAL_WINDOW_MS = 10_000;
+/** Never track more than this many un-answered PRIs; the oldest fall off. */
+const MAX_PENDING_PMS = 32;
+/**
+ * Commands that can make the server answer with ERR 6 or 20 for reasons that
+ * have nothing to do with a private message (an invite to a character who
+ * logged off, a report, an ignore of a name that no longer exists…).
+ * Sending one closes the correlation window: a *missing* red mark is a far
+ * cheaper mistake than a red mark on a message that was delivered.
+ */
+const REFUSAL_AMBIGUOUS_COMMANDS: ReadonlySet<string> = new Set([
+  "IGN",
+  "CIU",
+  "SFC",
+  "PRO",
+  "KIN",
+  "CKU",
+  "CBU",
+  "CTU",
+  "CUB",
+  "COA",
+  "COR",
+  "CSO",
+]);
+
+/** One PRI on the wire, awaiting the silence that means it was delivered. */
+interface PendingPrivateMessage {
+  readonly sendId: string;
+  readonly recipient: string;
+  readonly sentAt: number;
+}
 /** ERR codes that are search outcomes: 18 no results, 50 pace, 61 too
  * many terms, 72 too many results. */
 const SEARCH_ERROR_CODES = new Set([18, 50, 61, 72]);
@@ -266,6 +311,14 @@ export class FchatSession {
   /** Last TPN status sent per recipient (lowercased) — only changes go on
    * the wire; a keystroke storm must never become a TPN storm. */
   readonly #typingSent = new Map<string, TypingStatus>();
+  /**
+   * PRIs on the wire whose fate is still open (#491), oldest first. A
+   * refusal ERR arriving while one of these is young is attributed to it;
+   * see #correlatePrivateMessageRefusal for the matching rules and their
+   * limits. Emptied on every teardown — an ERR that arrives after a
+   * reconnect cannot belong to a frame the old socket carried.
+   */
+  #pendingPms: PendingPrivateMessage[] = [];
 
   constructor(options: FchatSessionOptions) {
     this.character = options.character;
@@ -537,14 +590,34 @@ export class FchatSession {
     });
   }
 
-  async sendPrivateMessage(recipient: string, message: string): Promise<void> {
+  /**
+   * Sends a DM. `retryOf` marks the send as a second attempt at an existing,
+   * failed messages row (#491) — it rides the `sent` event so the history
+   * sink updates that row instead of writing a duplicate.
+   */
+  async sendPrivateMessage(
+    recipient: string,
+    message: string,
+    options: { retryOf?: number } = {},
+  ): Promise<void> {
     this.#assertOnline();
     this.#assertLength(message, this.state.vars.priv_max);
     await this.#rateGate.schedule("PRI", () => {
       if (!this.#send({ cmd: "PRI", payload: { recipient, message } })) {
         throw new SessionNotOnlineError(this.#status);
       }
-      this.events.emit("sent", { kind: "pm", recipient, message });
+      const sendId = randomUUID();
+      this.#pendingPms.push({ sendId, recipient, sentAt: Date.now() });
+      if (this.#pendingPms.length > MAX_PENDING_PMS) {
+        this.#pendingPms.shift();
+      }
+      this.events.emit("sent", {
+        kind: "pm",
+        recipient,
+        message,
+        sendId,
+        ...(options.retryOf !== undefined ? { retryOf: options.retryOf } : {}),
+      });
     });
   }
 
@@ -1003,6 +1076,10 @@ export class FchatSession {
       }
       case "ERR":
         this.#handleError(command.payload.number);
+        this.#correlatePrivateMessageRefusal(
+          command.payload.number,
+          command.payload.message,
+        );
         this.events.emit("command", command);
         return;
       case "PRI":
@@ -1164,6 +1241,9 @@ export class FchatSession {
     this.#rateGate.clear();
     this.#notifiedIgnored.clear();
     this.#typingSent.clear();
+    // Un-answered PRIs die with the socket: an ERR on the NEXT connection
+    // can never belong to a frame this one carried (#491).
+    this.#pendingPms = [];
     this.state.resetVolatile();
     const socket = this.#socket;
     if (socket) {
@@ -1191,8 +1271,101 @@ export class FchatSession {
   /** Returns false when the socket cannot take the frame (closing/closed). */
   #send(command: ClientCommand): boolean {
     if (this.#socket?.readyState === WebSocket.OPEN) {
+      // A command that could raise ERR 6/20 on its own account makes every
+      // open PRI ambiguous — give the correlation up rather than risk
+      // reddening a delivered message (#491).
+      if (
+        this.#pendingPms.length > 0 &&
+        REFUSAL_AMBIGUOUS_COMMANDS.has(command.cmd)
+      ) {
+        this.#pendingPms = [];
+      }
       this.#socket.send(serializeClientCommand(command));
       return true;
+    }
+    return false;
+  }
+
+  /**
+   * Attributes a refusal ERR to the DM that caused it (#491).
+   *
+   * F-Chat gives us nothing to key on: a PRI is never acknowledged, and an
+   * ERR names no frame. What the wire does guarantee is order — one
+   * connection, commands processed in sequence — so an ERR that arrives
+   * while exactly one recent PRI is unaccounted for belongs to that PRI.
+   * Three rules narrow the rest:
+   *
+   * - ERR 20 renders the recipient's name into its message; a pending send
+   *   to that name wins outright.
+   * - ERR 6 means "not online", so a pending send whose recipient is absent
+   *   from the live roster is preferred — the usual case of the partner
+   *   logging off mid-compose.
+   * - Otherwise the oldest send in the window takes it (FIFO: the server
+   *   answers in the order it received).
+   *
+   * Known limits, all of which fail towards saying nothing:
+   * - Two PRIs in flight to two offline characters within the window can be
+   *   attributed to each other — the text and the reason are still right,
+   *   the row marked may be the sibling.
+   * - A send whose ERR never comes stays in the window until it ages out;
+   *   an unrelated ERR 6 arriving first would take its place. The command
+   *   guard in #send closes the realistic sources of that.
+   * - Nothing survives a reconnect: the window is cleared on teardown, so a
+   *   refusal that crossed with a dropped socket is simply lost.
+   */
+  #correlatePrivateMessageRefusal(code: number, message: string): void {
+    if (!isPrivateMessageRefusal(code)) {
+      return;
+    }
+    const cutoff = Date.now() - PM_REFUSAL_WINDOW_MS;
+    this.#pendingPms = this.#pendingPms.filter(
+      (pending) => pending.sentAt >= cutoff,
+    );
+    if (this.#pendingPms.length === 0) {
+      return;
+    }
+    const lowered = message.toLowerCase();
+    const named =
+      code === FchatErrorCode.IgnoredByRecipient
+        ? this.#pendingPms.find((pending) =>
+            lowered.includes(pending.recipient.toLowerCase()),
+          )
+        : undefined;
+    const offline =
+      code === FchatErrorCode.CharacterNotFound
+        ? this.#pendingPms.find(
+            (pending) => !this.#isCharacterOnline(pending.recipient),
+          )
+        : undefined;
+    const pending = named ?? offline ?? this.#pendingPms[0]!;
+    this.#pendingPms = this.#pendingPms.filter((entry) => entry !== pending);
+    this.#log.info(
+      { number: code, recipient: pending.recipient },
+      "private message refused",
+    );
+    this.events.emit("sendFailed", {
+      sendId: pending.sendId,
+      recipient: pending.recipient,
+      code,
+      reason:
+        code === FchatErrorCode.IgnoredByRecipient
+          ? `${pending.recipient} is not accepting messages from you`
+          : `${pending.recipient} is offline`,
+    });
+  }
+
+  /** Roster membership, case-insensitively — F-Chat resolves PRI recipients
+   * regardless of casing, so a DM row's stored casing may differ from the
+   * one the roster carries. The linear fallback only runs on a refusal. */
+  #isCharacterOnline(name: string): boolean {
+    if (this.state.characters.has(name)) {
+      return true;
+    }
+    const lowered = name.toLowerCase();
+    for (const known of this.state.characters.keys()) {
+      if (known.toLowerCase() === lowered) {
+        return true;
+      }
     }
     return false;
   }

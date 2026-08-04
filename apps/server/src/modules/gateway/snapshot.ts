@@ -166,6 +166,10 @@ export function messageDto(row: MessageRow): MessageDto {
     sentByUs: row.sentByUs,
     mention: row.mention,
     createdAt: row.createdAt.toISOString(),
+    // Refused sends carry their cause everywhere the row goes — live
+    // fan-out, snapshot, scroll-back, catch-up — so no reader ever paints a
+    // message F-Chat rejected as delivered (#491).
+    ...(row.failureReason !== null ? { failureReason: row.failureReason } : {}),
   };
 }
 

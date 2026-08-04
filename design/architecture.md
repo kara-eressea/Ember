@@ -87,6 +87,7 @@ States: `idle → acquiring_ticket → connecting → identifying → online →
 - Reconnect: jittered exponential backoff **floored at 10s** (developer policy), capped ~5 min; rejoin pinned channels on reconnect.
 - All outbound commands pass through rate-gate (token bucket seeded from VARs) and length checks (chat_max/priv_max).
 - Unknown inbound commands: structured-log and swallow.
+- **DM send-failure correlation (#491).** F-Chat never acknowledges a PRI and its ERRs reference no frame, so a refusal is attributed positionally: each sent PRI is remembered with a `sendId` for `PM_REFUSAL_WINDOW_MS`, and an ERR 6/20 inside that window is matched to one of them — by the name the ERR renders (20), else by which recipient the roster says is offline (6), else oldest-first. Sending any command that could raise 6/20 on its own account (IGN, CIU, SFC, PRO/KIN, the chanop set) closes the window, and a teardown empties it: the mechanism always fails towards *no* mark rather than a wrong one. The history sink maps `sendId → messages.id` and stamps `messages.failure_reason`, which fans out as `message.updated`.
 
 ### TicketManager
 
@@ -110,7 +111,7 @@ conversations        id, identity_id, kind ('channel'|'pm'), channel_key nullabl
                      last_read_message_id bigint, uniq(identity_id, kind, coalesce(channel_key,partner_character))
 messages             id bigserial PK, conversation_id FK, sender_character,
                      kind ('msg'|'lrp'|'rll'|'sys'|'pm'), bbcode text, source_markdown text null,
-                     sent_by_us bool, created_at timestamptz
+                     sent_by_us bool, failure_reason text null, created_at timestamptz  -- failure_reason: #491
 outbox_messages      id, identity_id, conversation_id, markdown, bbcode, release_at, state    -- M4
 highlight_rules      id, user_id, kind ('word'|'nick'|'regex'), pattern, created_at            -- M5
 user_preferences     user_id PK, prefs jsonb                                                   -- M5
@@ -179,7 +180,8 @@ Client→server:
 hello    { token, protocolVersion, resume?: { [identityId]: { convCursors: {convId: lastMessageId} } } }
 sub      { identityId }                      # attach to a session's event stream
 unsub    { identityId }
-cmd      { identityId, action, d }           # action ∈ 'msg.send' {convId, markdown|bbcode}, 'pm.open',
+cmd      { identityId, action, d }           # action ∈ 'msg.send' {convId, markdown|bbcode},
+                                             #   'msg.retry' {convId, messageId} (re-send a refused DM), 'pm.open',
                                              #   'channel.join' {key}, 'channel.leave', 'status.set',
                                              #   'typing.set', 'ignore.add/remove',
                                              #   'session.connect'/'session.disconnect'
@@ -194,6 +196,8 @@ ready    { userId, identities: [{id, name, sessionStatus}] }
 snapshot { identityId, self, channels: [{convId, key, title, topic, desc, pinned, members, mode, unread, mention}],
            dms, friends, bookmarks, ignored, presenceVersion }
 event    { identityId, kind, d }             # 'message.new' (persisted, carries messages.id),
+                                             #   'message.updated' (a persisted row changed after the fact — a
+                                             #     refused DM's cause, or its clearing on a retry),
                                              #   'conversation.updated' (created/joined flag/read cursor — unread
                                              #   counters converge across tabs), 'member.join/leave',
                                              #   'channel.members' (ICH full list), 'channel.info' (desc/mode/oplist),

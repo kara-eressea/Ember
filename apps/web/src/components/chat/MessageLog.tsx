@@ -1214,6 +1214,7 @@ export function MessageLog({
                     prefs={prefs}
                     grouped={row.grouped === true}
                     identityId={identityId}
+                    convId={convId}
                   />
                 )}
               </div>
@@ -1478,11 +1479,13 @@ function MessageLine({
   prefs,
   grouped,
   identityId,
+  convId,
 }: {
   message: MessageDto;
   prefs: UserPrefs;
   grouped: boolean;
   identityId: string;
+  convId: string;
 }) {
   const emote = parseEmote(message.bbcode);
   const time = formatTime(message.createdAt, timeFormat(prefs));
@@ -1494,6 +1497,18 @@ function MessageLine({
   // `sentByUs` rides the DTO, so the tint needs no name comparison — it is
   // correct for renames and for every identity sharing the log.
   const own = prefs.ownMessageTint && message.sentByUs;
+  const failure = message.failureReason;
+  if (failure !== undefined) {
+    return (
+      <FailedMessageLine
+        message={message}
+        prefs={prefs}
+        identityId={identityId}
+        convId={convId}
+        reason={failure}
+      />
+    );
+  }
   return (
     <div
       className={`${styles.messageLine} ${own ? (styles.ownLine ?? "") : ""} ${
@@ -1550,6 +1565,96 @@ function MessageLine({
           <RichText bbcode={message.bbcode} />
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * A DM F-Chat refused (#491): the frame reached the server, the server said
+ * no, and nobody read it. Discord's treatment — the line stays where it was
+ * written, marked, with the cause under it and a way to try again — because
+ * the alternative (a message that looks sent forever) is the bug being
+ * fixed. Retry re-sends the same row, so a success un-marks this line rather
+ * than stacking a duplicate underneath it.
+ */
+function FailedMessageLine({
+  message,
+  prefs,
+  identityId,
+  convId,
+  reason,
+}: {
+  message: MessageDto;
+  prefs: UserPrefs;
+  identityId: string;
+  convId: string;
+  reason: string;
+}) {
+  const time = formatTime(message.createdAt, timeFormat(prefs));
+  const emote = parseEmote(message.bbcode);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  // Presence is already tracked per DM row; a retry while the partner is
+  // still offline would only fail the same way, so the button waits for
+  // them (the reason line keeps saying why in the meantime).
+  const partnerOnline = useSessionsStore(
+    (s) => s.sessions[identityId]?.dms[convId]?.online ?? false,
+  );
+  return (
+    <div className={styles.failedLine} data-testid="failed-send" data-failed>
+      <div className={`${styles.messageLine} ${styles.failedBody ?? ""}`}>
+        {time !== "" && (
+          <span
+            className={styles.time}
+            title={formatFullDateTime(message.createdAt)}
+          >
+            {time}
+          </span>
+        )}
+        <span className={styles.nick}>{message.senderCharacter}</span>
+        <span
+          className={`${styles.body} ${emote ? (styles.emoteBody ?? "") : ""}`}
+        >
+          <RichText bbcode={emote ? emote.action : message.bbcode} />
+        </span>
+      </div>
+      <div className={styles.failedMeta}>
+        <span data-testid="failed-send-reason">
+          Not sent — {error ?? reason}
+        </span>
+        <button
+          type="button"
+          className={styles.failedRetry}
+          disabled={busy || !partnerOnline}
+          title={
+            partnerOnline
+              ? "Send this message again"
+              : "Available when they come back online"
+          }
+          data-testid="failed-send-retry"
+          onClick={() => {
+            setBusy(true);
+            setError(undefined);
+            void gateway
+              .cmd({
+                identityId,
+                action: "msg.retry",
+                d: { convId, messageId: message.id },
+              })
+              .then((ack) => {
+                setBusy(false);
+                if (!ack.ok) {
+                  setError(ack.error ?? "retry failed");
+                }
+                // A successful retry clears the row's failure server-side and
+                // fans the updated row back — this component simply stops
+                // being rendered.
+              });
+          }}
+        >
+          {busy ? "Retrying…" : "Retry"}
+        </button>
+      </div>
     </div>
   );
 }
