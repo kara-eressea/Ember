@@ -5,11 +5,11 @@
 // initial-on-color fallback (decisions.md §6). Rows are interactive:
 // left-click opens the mini profile card (M8), right-click opens the
 // MemberContextMenu — the f-list.net website link lives there. One filter
-// query matches every group, offline included.
+// query matches every group, offline included — over the nick and the
+// profile facts a row already holds (#497), never a network lookup.
 
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { MemberDto, SeenMemberDto } from "@emberchat/protocol";
-import { wireToPlainText } from "../../lib/wire-text.js";
 import { presenceDot } from "../../lib/presence.js";
 import { loadSocial } from "../../lib/social.js";
 import { useLongPress, type PressEvent } from "../../lib/useLongPress.js";
@@ -19,9 +19,10 @@ import { genderColorVar } from "../../theme/tokens.js";
 import { Avatar } from "../common/Avatar.js";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { groupMembers, nameSet } from "./member-sort.js";
+import { MemberStatus } from "./MemberStatus.js";
 import {
   isOfflineExpanded,
-  matchesMemberQuery,
+  matchesMemberFilter,
   offlineRows,
   relativeSeen,
   setOfflineExpanded,
@@ -101,9 +102,7 @@ export function MemberList({
     () =>
       groupMembers({
         members: searching
-          ? channel.members.filter((m) =>
-              matchesMemberQuery(m.character, query),
-            )
+          ? channel.members.filter((m) => matchesMemberFilter(m, query))
           : channel.members,
         oplist: channel.oplist,
         friends,
@@ -183,7 +182,9 @@ export function MemberList({
         className={styles.memberFilter}
         type="search"
         aria-label="Filter members"
-        placeholder="Filter members"
+        // The placeholder is where the fields it searches are advertised
+        // (#497) — a gender filter nobody knows about is no filter.
+        placeholder="Name, gender, status"
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -274,7 +275,8 @@ type OpenMenu = (
 
 // Memoized: with a stable `onOpenMenu` and store-preserved `member` identity
 // (#355), a presence event that doesn't touch this member skips the row
-// entirely — no re-render, no re-run of bbcodeToText on the status line.
+// entirely — no re-render, and no re-parse of the status line (MemberStatus
+// is memoized on the wire string for the same reason).
 const MemberRow = memo(function MemberRow({
   member,
   role,
@@ -285,9 +287,6 @@ const MemberRow = memo(function MemberRow({
   onOpenMenu: OpenMenu;
 }) {
   const dot = presenceDot(true, member.status);
-  // Status shows on a second line under the name (#217). BBCode is stripped to
-  // its text content — one-line/dense context, raw tags must never show (#210).
-  const status = member.statusmsg ? wireToPlainText(member.statusmsg) : "";
   // Gender tint is supplementary (#177): the name keeps AA contrast regardless,
   // so it stays fully readable without the colour.
   const genderColor = genderColorVar(member.gender);
@@ -336,11 +335,10 @@ const MemberRow = memo(function MemberRow({
             {member.character}
           </span>
         </span>
-        {status && (
-          <span className={styles.memberStatus} title={status}>
-            {status}
-          </span>
-        )}
+        {/* Status on a second line under the name (#217), in the restricted
+            BBCode subset a row can carry (#494) — colours and line-height
+            images, never the full message renderer. */}
+        <MemberStatus statusmsg={member.statusmsg} />
       </span>
     </button>
   );
