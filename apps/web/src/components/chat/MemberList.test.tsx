@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 //
-// #350: the channel member list renders a member's status on a second line as
-// PLAIN text (BBCode stripped, one-line/dense — never through RichText), so it
-// must decode the server's wire entities itself or it shows raw "&amp;". This
-// is the exact surface from the live v0.14.0 screenshot.
+// #350: the channel member list renders a member's status on a second line
+// outside RichText — its own restricted subset since #494 — so it must decode
+// the server's wire entities itself or it shows raw "&amp;". This is the exact
+// surface from the live v0.14.0 screenshot.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemberList } from "./MemberList.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import { presenceDot } from "../../lib/presence.js";
@@ -65,6 +66,63 @@ describe("MemberList status entity decode (#350)", () => {
       screen.getByText("Other canons & Summer Vibes!"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/&amp;/)).not.toBeInTheDocument();
+  });
+});
+
+describe("MemberList Find field (#497)", () => {
+  const members: MemberDto[] = [
+    {
+      character: "Vesna Kohl",
+      gender: "Female",
+      status: "online",
+      statusmsg: "",
+    },
+    {
+      character: "Dell Marsh",
+      gender: "Male",
+      status: "looking",
+      statusmsg: "open for [b]dragon[/b] RP",
+    },
+  ];
+
+  /** Type `query` into the Find field and read back the surviving rows. */
+  async function filterBy(query: string): Promise<string> {
+    const field = screen.getByLabelText("Filter members");
+    await userEvent.clear(field);
+    await userEvent.type(field, query);
+    return screen
+      .queryAllByRole("listitem")
+      .map((row) => row.textContent ?? "")
+      .join("|");
+  }
+
+  beforeEach(() => {
+    render(
+      <MemberList
+        identityId="id1"
+        ownCharacter="Moss Tinker"
+        channel={channelWith(members)}
+      />,
+    );
+  });
+
+  it("filters by gender, not only by nick", async () => {
+    const rows = await filterBy("female");
+    expect(rows).toContain("Vesna Kohl");
+    expect(rows).not.toContain("Dell Marsh");
+  });
+
+  // The male/female substring trap, at the surface the user sees it.
+  it("does not return the female character for a 'male' query", async () => {
+    const rows = await filterBy("male");
+    expect(rows).toContain("Dell Marsh");
+    expect(rows).not.toContain("Vesna Kohl");
+  });
+
+  it("filters by status and by what the status line says", async () => {
+    expect(await filterBy("looking")).toContain("Dell Marsh");
+    expect(await filterBy("dragon")).toContain("Dell Marsh");
+    expect(await filterBy("dragon")).not.toContain("Vesna Kohl");
   });
 });
 
