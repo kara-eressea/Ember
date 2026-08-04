@@ -100,6 +100,7 @@ function session(): IdentitySession {
         highlightedAt: 0,
         lastReadMessageId: null,
         newestMessageId: null,
+        lastActivityId: 0,
       },
     },
     channelByConvId: { "c-1": "Frontpage", "c-2": "ADH-abc123" },

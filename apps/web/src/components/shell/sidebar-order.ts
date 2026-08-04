@@ -1,13 +1,23 @@
-// Sidebar section ordering (M5 "bump to top" when-highlighted action):
-// with the pref on, rows a live mention touched float to the top, most
-// recent first; everything else keeps the plain alphabetical order. The
-// bump stamps are volatile client state — a reload starts alphabetical.
+// Sidebar section ordering. Two independent mechanisms live here:
+//
+//   * `orderRows` — the Channels section: alphabetical, or with the M5
+//     "bump to top" when-highlighted pref on, rows a live mention touched
+//     float above it, most recent first. The bump stamps are volatile client
+//     state, so a reload starts alphabetical.
+//   * `orderSocial` + `orderByActivity` — the people sections, whose base
+//     sort is recent DM activity (#515).
 
+/**
+ * Channels ordering: alphabetical by label, with the optional highlight bump
+ * (M5) floating recently-mentioned rows above it. `highlightedAt`/`bump` are
+ * omitted by callers that only want the alphabetical base — the DM section
+ * takes its recency from `orderByActivity` instead (#515).
+ */
 export function orderRows<T>(
   rows: readonly T[],
   label: (row: T) => string,
-  highlightedAt: (row: T) => number,
-  bumpOnHighlight: boolean,
+  highlightedAt: (row: T) => number = () => 0,
+  bumpOnHighlight = false,
 ): T[] {
   return [...rows].sort((a, b) => {
     if (bumpOnHighlight) {
@@ -40,7 +50,8 @@ export function socialNameSet(names: Iterable<string>): Set<string> {
 /**
  * Friends/Bookmarks ordering (#164): online characters first, alphabetical
  * within each presence group. Pure grouping — presence correctness is the
- * store's problem, this just renders whatever flag it holds.
+ * store's problem, this just renders whatever flag it holds. Since #515 this
+ * is the *tail* order: rows with DM history sort above it by recency.
  */
 export function orderSocial<T>(
   rows: readonly T[],
@@ -56,51 +67,37 @@ export function orderSocial<T>(
   });
 }
 
-/** A row's DM activity: the highlight stamp, plus the newest message id as
- * the tiebreaker for conversations no highlight ever stamped. */
-export interface RowActivity {
-  highlightedAt: number;
-  newestMessageId: number;
-}
-
 /**
- * Activity bump for the people sections (#462): rows carrying unread DM
- * traffic float to the top of their section, most recent first; everything
- * else keeps the order it arrived in (presence groups + manual order). Same
- * instinct as the Direct-messages bump above, extended to Friends/Bookmarks
- * because one-row-per-character (#290) leaves the social row as the only
- * surface a friend's unread has. Presence deliberately does not gate it — an
- * offline friend who just wrote outranks idle online ones, consistent with
- * unread already overriding the offline filter (#329).
+ * The people sections' base sort (#515): rows with DM history first, most
+ * recent message either direction at the top; rows with none keep the order
+ * they arrived in (presence groups + alphabetical from `orderSocial`, plain
+ * alphabetical for Direct messages) as the tail.
  *
- * `activity` returns undefined for a row with nothing unread. highlightedAt
- * leads (a live highlight is the strongest signal, and it is what the DM bump
- * sorts on) but is 0 unless the bump pref stamped it, so newestMessageId —
- * monotonic across conversations — decides the rest instead of leaving the
- * order to jitter.
+ * `activity` is the conversation's newest message id, 0 for a row with no DM
+ * — one global server-assigned sequence, so it orders conversations against
+ * each other without a clock and identically on every attached device.
+ *
+ * This replaces the #462/#463 unread float, which lifted a row only while it
+ * carried unread and dropped it back to its alphabetical seat the moment it
+ * was read — the person you were mid-conversation with teleported away as you
+ * read them. An unread row is recently-active by construction, so the float
+ * is subsumed: it needed no special case, only a base sort that remembers.
+ * Presence deliberately does not gate this — an offline friend who wrote an
+ * hour ago outranks idle online ones, consistent with unread already
+ * overriding the offline filter (#329).
+ *
+ * Stable: rows tied at 0 (the whole no-history tail) keep their incoming
+ * order. Ids are unique, so active rows never tie.
  */
-export function bumpUnread<T>(
+export function orderByActivity<T>(
   rows: readonly T[],
-  activity: (row: T) => RowActivity | undefined,
+  activity: (row: T) => number,
 ): T[] {
   return rows
     .map((row, index) => ({ row, index, activity: activity(row) }))
     .sort((a, b) => {
-      if ((a.activity === undefined) !== (b.activity === undefined)) {
-        return a.activity === undefined ? 1 : -1;
-      }
-      if (a.activity && b.activity) {
-        const byHighlight = b.activity.highlightedAt - a.activity.highlightedAt;
-        if (byHighlight !== 0) {
-          return byHighlight;
-        }
-        const byMessage =
-          b.activity.newestMessageId - a.activity.newestMessageId;
-        if (byMessage !== 0) {
-          return byMessage;
-        }
-      }
-      return a.index - b.index;
+      const byActivity = b.activity - a.activity;
+      return byActivity !== 0 ? byActivity : a.index - b.index;
     })
     .map((entry) => entry.row);
 }

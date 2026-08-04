@@ -3,7 +3,7 @@
 // sub; durable state (messages) resumes via per-conversation messages.id
 // cursors read straight from the messages table — it *is* the resume log.
 
-import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, lt, sql } from "drizzle-orm";
 import type {
   MemberDto,
   MessageDto,
@@ -179,7 +179,19 @@ export async function buildSnapshot(
   session: FchatSession | undefined,
 ): Promise<SnapshotData> {
   const rows = await db
-    .select()
+    .select({
+      ...getTableColumns(conversations),
+      // Newest message either direction, 0 for a conversation with none: the
+      // sidebar's activity sort key for DM rows (#515). A correlated max, not
+      // a join+groupBy — O(1) per conversation on the (conversation_id, id
+      // desc) index, the same shape catchupPlan uses. Static identifiers on
+      // purpose: drizzle renders interpolated columns in selected fields
+      // unqualified, which mis-scopes the correlated outer reference.
+      lastActivityId:
+        sql<number>`(select coalesce(max(m.id), 0) from messages m where m.conversation_id = conversations.id)`.mapWith(
+          Number,
+        ),
+    })
     .from(conversations)
     // Hidden rows (a left/closed channel, #327) stay in the DB for their kept
     // history and log export, but never seed the sidebar. PMs are never
@@ -260,6 +272,7 @@ export async function buildSnapshot(
         pinned: row.pinned,
         unread: counts.get(row.id)?.unread ?? 0,
         lastReadMessageId: row.lastReadMessageId,
+        lastActivityId: row.lastActivityId,
       });
     }
   }

@@ -574,6 +574,15 @@ export interface SnapshotDm {
   pinned: boolean;
   unread: number;
   lastReadMessageId: number | null;
+  /**
+   * `messages.id` of the newest message in this conversation, either
+   * direction; 0 when it holds none (#515). The sidebar's people sections
+   * sort on it — message ids are one global server-assigned sequence, so it
+   * is a monotonic activity clock that needs no timestamps and agrees across
+   * devices. Read *and* unread rows carry it, which is the whole point:
+   * reading a conversation clears its badge without moving the row.
+   */
+  lastActivityId: number;
 }
 
 // ── Server → client ──────────────────────────────────────────────────────────

@@ -137,6 +137,7 @@ function dm(): DmView {
     highlightedAt: 0,
     lastReadMessageId: null,
     newestMessageId: null,
+    lastActivityId: 0,
   };
 }
 

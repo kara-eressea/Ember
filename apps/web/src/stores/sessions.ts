@@ -69,6 +69,22 @@ export interface DmView {
   lastReadMessageId: number | null;
   /** Highest live message id seen for this DM (#264) — see ChannelView. */
   newestMessageId: number | null;
+  /**
+   * Newest message id in this conversation, either direction; 0 for a
+   * conversation with none. The sidebar's people sections sort on it (#515):
+   * ids are one global server-assigned sequence, so it is a monotonic
+   * activity clock — no wall clocks, and every attached device derives the
+   * same order.
+   *
+   * Deliberately NOT `newestMessageId`: that one is the #264 read-cursor
+   * guard and must count only messages that raised unread, so it skips own
+   * sends and messages arriving in the attended conversation. Activity counts
+   * both — the person you just answered is the most recently active by
+   * definition, and the conversation you are reading must not sink while you
+   * read it. The snapshot seeds this from the DB (SnapshotDm.lastActivityId),
+   * so it survives a reload rather than resetting to "alphabetical".
+   */
+  lastActivityId: number;
 }
 
 export interface IdentitySession {
@@ -276,6 +292,14 @@ interface SessionsState {
   ): void;
   /** Stamp the conversation's bump sort key (highlightBump pref). */
   bumpHighlight(identityId: string, convId: string): void;
+  /**
+   * Record DM activity (#515): a message in this conversation, either
+   * direction. DMs only — the people sections are the only surface that
+   * sorts on activity, and stamping every channel message would patch the
+   * session store (and re-render the sidebar) once per line of a busy room
+   * for an order nobody reads.
+   */
+  noteDmActivity(identityId: string, convId: string, messageId: number): void;
   clearUnread(identityId: string, convId: string): void;
   reset(): void;
 }
@@ -879,6 +903,11 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
               highlightedAt: 0,
               lastReadMessageId: conversation.lastReadMessageId,
               newestMessageId: null,
+              // A conversation row created outside a snapshot (pm.open, an
+              // inbound PM's upsert) has no history worth sorting on yet —
+              // the message that created it stamps this a beat later, and an
+              // existing row keeps the value it already holds (spread above).
+              lastActivityId: 0,
             };
         return { ...session, dms: { ...session.dms, [conversation.id]: dm } };
       });
@@ -1175,6 +1204,22 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
           };
         }
         return session;
+      });
+    },
+
+    noteDmActivity(identityId, convId, messageId) {
+      patch(identityId, (session) => {
+        const dm = session.dms[convId];
+        if (!dm || messageId <= dm.lastActivityId) {
+          return session;
+        }
+        return {
+          ...session,
+          dms: {
+            ...session.dms,
+            [convId]: { ...dm, lastActivityId: messageId },
+          },
+        };
       });
     },
 

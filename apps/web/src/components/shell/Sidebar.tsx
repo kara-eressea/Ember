@@ -1,10 +1,10 @@
 // Sidebar (COMPONENTS.md §2–4): ServerHead · toolbar (filter + browser
 // entry points, #196) · sections (Pinned, Channels, Direct Messages,
 // Friends, Bookmarks) · MeBar. Section headings collapse (#168, per-device
-// localStorage); friends/bookmarks sort online-first (#164) — with unread DM
-// traffic bumping a row to the top of its section (#462) — and offline
-// rows hide behind each section's own show-offline pref (#165, #329), with
-// pinned/unread/open conversations always shown. The social
+// localStorage); the three people sections sort on recent DM activity (#515),
+// with presence grouping (#164) as the tail for rows that have no
+// conversation; offline rows hide behind each section's own show-offline pref
+// (#165, #329), with pinned/unread/open conversations always shown. The social
 // sections load lazily (four upstream F-List calls) and stay fresh via RTB;
 // incoming friend requests render as actionable rows like channel invites.
 
@@ -67,7 +67,7 @@ import {
   type OfflineSection,
 } from "./offline-filter.js";
 import {
-  bumpUnread,
+  orderByActivity,
   orderRows,
   orderSocial,
   socialNameSet,
@@ -164,12 +164,22 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   const openSection = (section: SidebarSection) =>
     filtering || collapsed[section] !== true;
 
-  // Drag-to-reorder (#391): a per-identity manual order, synced through the
-  // `sidebarOrder` pref (#412) so every attached browser agrees and a drop
-  // lands live on the other clients' `prefs.updated`. Reordering is disabled
-  // while the toolbar filter is active — a filtered subset isn't the real
-  // section order. `drag` tracks the row being dragged and the current drop
-  // target/side so a subtle indicator can render. One pref write per drop.
+  // Drag-to-reorder (#391), Channels only since #515: a per-identity manual
+  // order, synced through the `sidebarOrder` pref (#412) so every attached
+  // browser agrees and a drop lands live on the other clients' `prefs.updated`.
+  // Reordering is disabled while the toolbar filter is active — a filtered
+  // subset isn't the real section order. `drag` tracks the row being dragged
+  // and the current drop target/side so a subtle indicator can render. One
+  // pref write per drop.
+  //
+  // The people sections dropped out of this: their base sort is recent
+  // activity, which moves rows on its own, so a hand-placed order was dead
+  // weight that only fought the sort. A channel's position is a genuine
+  // standing preference and keeps its drag. Stored orders for the people
+  // sections are simply never read — the pref schema still accepts the keys,
+  // so an existing order is inert rather than a migration (and stays intact
+  // for a future mixed channels+people grouping, which would build on this
+  // same machinery).
   const orders = session.prefs.sidebarOrder;
   // One-shot migration off the pre-#412 localStorage key: if this browser
   // still holds a drag order and the synced pref has none, push it up once
@@ -193,14 +203,12 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     });
   }, [identityId, hasSyncedOrder]);
   const [drag, setDrag] = useState<{
-    section: SidebarSection;
     draggedId: string;
     overId?: string;
     position?: "before" | "after";
   }>();
   const reorderable = !filtering;
-  const rowDrag = (
-    section: SidebarSection,
+  const channelDrag = (
     id: string,
     ids: readonly string[],
   ): RowDrag | undefined => {
@@ -209,10 +217,10 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     }
     return {
       onDragStart: () => {
-        setDrag({ section, draggedId: id });
+        setDrag({ draggedId: id });
       },
       onDragOver: (event) => {
-        if (!drag || drag.section !== section) {
+        if (!drag) {
           return;
         }
         event.preventDefault();
@@ -225,7 +233,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       },
       onDrop: (event) => {
         event.preventDefault();
-        if (!drag || drag.section !== section) {
+        if (!drag) {
           return;
         }
         const next = moveRow(
@@ -238,7 +246,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           sidebarOrder: withSectionOrder(
             orders,
             session.identityId,
-            section,
+            "channels",
             next,
           ),
         });
@@ -248,10 +256,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
         setDrag(undefined);
       },
       indicator:
-        drag &&
-        drag.section === section &&
-        drag.overId === id &&
-        drag.draggedId !== id
+        drag && drag.overId === id && drag.draggedId !== id
           ? drag.position
           : undefined,
     };
@@ -333,51 +338,55 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   // offline hiding applied like the social sections (#329) — an offline,
   // read, unpinned, unopened DM row hides unless the section shows offline.
   const showOfflineDms = showOfflineFor(session.prefs, "dms");
-  const allDms = orderRows(
-    Object.values(session.dms).filter(
-      (dm) =>
-        matches(dm.partner) &&
-        !socialNames.has(dm.partner.toLowerCase()) &&
-        keepRow({
-          online: dm.online,
-          showOffline: showOfflineDms,
-          pinned: dm.pinned,
-          unread: dm.unread,
-          active: dm.convId === activeConvId,
-        }),
+  // Recent activity first (#515), alphabetical for anything with no messages
+  // yet; pinned rows ride above both, below. The highlight-bump pref is not
+  // consulted here anymore: a mention IS a message in the conversation, so
+  // activity already floats the row the bump used to.
+  const allDms = orderByActivity(
+    orderRows(
+      Object.values(session.dms).filter(
+        (dm) =>
+          matches(dm.partner) &&
+          !socialNames.has(dm.partner.toLowerCase()) &&
+          keepRow({
+            online: dm.online,
+            showOffline: showOfflineDms,
+            pinned: dm.pinned,
+            unread: dm.unread,
+            active: dm.convId === activeConvId,
+          }),
+      ),
+      (d) => d.partner,
     ),
-    (d) => d.partner,
-    (d) => d.highlightedAt,
-    bump,
+    (d) => d.lastActivityId,
   );
-  // Manual reorder (#391) applies over the default sort: saved rows first in
-  // their dragged order, the rest stable after. Pinned rows still stay locked
-  // to the top (#169) — the manual order holds within the pinned and unpinned
-  // groups. applyManualOrder is stable, so the pinned filter keeps it.
+  // Manual reorder (#391) applies over the Channels default sort: saved rows
+  // first in their dragged order, the rest stable after. Pinned rows still
+  // stay locked to the top (#169) — the manual order holds within the pinned
+  // and unpinned groups. applyManualOrder is stable, so the pinned filter
+  // keeps it.
   const orderedChannels = applyManualOrder(
     allChannels,
     (c) => c.key,
     sectionOrder(orders, session.identityId, "channels"),
   );
-  const orderedDms = applyManualOrder(
-    allDms,
-    (d) => d.partner.toLowerCase(),
-    sectionOrder(orders, session.identityId, "dms"),
-  );
   const channels = [
     ...orderedChannels.filter((c) => c.pinned),
     ...orderedChannels.filter((c) => !c.pinned),
   ];
+  // Pin outranks recency (#169): the hoist runs last, and both filters are
+  // stable, so activity order holds within the pinned and unpinned groups.
   const dms = [
-    ...orderedDms.filter((d) => d.pinned),
-    ...orderedDms.filter((d) => !d.pinned),
+    ...allDms.filter((d) => d.pinned),
+    ...allDms.filter((d) => !d.pinned),
   ];
   const channelIds = channels.map((c) => c.key);
-  const dmIds = dms.map((d) => d.partner.toLowerCase());
 
-  // Friends/Bookmarks: online first (#164), offline hidden behind that
-  // section's own synced pref (#329), then the toolbar filter like everything
-  // else. Offline hiding now also covers a row carrying an open DM (#329) —
+  // Friends/Bookmarks visibility + tail order: online first (#164) — the base
+  // ordering the activity sort below then lifts conversations out of — offline
+  // hidden behind that section's own synced pref (#329), then the toolbar
+  // filter like everything else. Offline hiding also covers a row carrying an
+  // open DM (#329) —
   // it hides like any offline friend unless one of the always-show
   // exemptions applies (pinned, unread, or the currently open conversation),
   // so an opened DM no longer pins an offline partner into the list forever.
@@ -403,50 +412,21 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       (row) => row.online,
     );
   };
-  // Presence grouping (#164) stays the primary key for the people sections —
-  // a manual reorder (#391) holds within the online and offline groups, so a
-  // saved order never drags an offline row above the online ones. Unread DM
-  // traffic then bumps its row to the top of the section (#462), over both
-  // keys: display position only, the saved order in prefs is untouched, the
-  // same way pinned rows ride above the manual order in Channels/DMs (#169).
-  const orderSocialRows = (
-    rows: SocialCharacter[],
-    section: SidebarSection,
-  ): SocialCharacter[] => {
-    const saved = sectionOrder(orders, session.identityId, section);
-    const byName = (r: SocialCharacter) => r.name.toLowerCase();
-    const grouped = [
-      ...applyManualOrder(
-        rows.filter((r) => r.online),
-        byName,
-        saved,
-      ),
-      ...applyManualOrder(
-        rows.filter((r) => !r.online),
-        byName,
-        saved,
-      ),
-    ];
-    return bumpUnread(grouped, (row) => {
-      const dm = dmByPartner.get(row.name.toLowerCase());
-      return dm && dm.unread > 0
-        ? {
-            highlightedAt: dm.highlightedAt,
-            newestMessageId: dm.newestMessageId ?? 0,
-          }
-        : undefined;
-    });
-  };
-  const friends = orderSocialRows(
-    socialRows(session.social?.friends, "friends"),
-    "friends",
-  );
-  const bookmarks = orderSocialRows(
+  // Recent DM activity is the base sort (#515): a friend or bookmark you have
+  // a conversation with sits above the ones you don't, most recently active
+  // first, and reading that conversation changes nothing about where the row
+  // sits. Presence grouping (#164) survives as the tail order for rows with
+  // no DM at all — that is the only place it still decides anything, and it
+  // is where "who can I talk to right now" is the honest question.
+  const withActivity = (rows: SocialCharacter[]): SocialCharacter[] =>
+    orderByActivity(
+      rows,
+      (row) => dmByPartner.get(row.name.toLowerCase())?.lastActivityId ?? 0,
+    );
+  const friends = withActivity(socialRows(session.social?.friends, "friends"));
+  const bookmarks = withActivity(
     socialRows(session.social?.bookmarks, "bookmarks"),
-    "bookmarks",
   );
-  const friendIds = friends.map((f) => f.name.toLowerCase());
-  const bookmarkIds = bookmarks.map((b) => b.name.toLowerCase());
 
   const nothingMatched =
     filtering &&
@@ -534,7 +514,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       avatars={avatars}
       token={isPrivateRoom(channel.key) ? "private" : "official"}
       label={decodeWireEntities(channel.title)}
-      drag={rowDrag("channels", channel.key, channelIds)}
+      drag={channelDrag(channel.key, channelIds)}
       affordance={{
         label: `Leave ${decodeWireEntities(channel.title)}`,
         onActivate: () => {
@@ -566,7 +546,6 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
       avatars={avatars}
       avatarName={dm.partner}
       label={dm.partner}
-      drag={rowDrag("dms", dm.partner.toLowerCase(), dmIds)}
       affordance={{
         label: `Close conversation with ${dm.partner}`,
         onActivate: () => {
@@ -662,13 +641,6 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
           onToggle={toggleSection}
           onRowContextMenu={openPersonMenu}
           onSectionContextMenu={openSectionMenu}
-          rowDrag={(section, name) =>
-            rowDrag(
-              section,
-              name.toLowerCase(),
-              section === "friends" ? friendIds : bookmarkIds,
-            )
-          }
         />
 
         {nothingMatched && (
@@ -1145,8 +1117,9 @@ export interface RowDrag {
   indicator?: "before" | "after";
 }
 
-/** DOM props shared by every draggable row wrapper (the NavRow div and the
- * SocialRow button), so both render the same affordance and drop indicator. */
+/** DOM props of a draggable row wrapper (the NavRow div), carrying the drag
+ * affordance and the drop indicator. Channels only since #515 — the people
+ * sections sort themselves by activity and have no manual order to drag. */
 function dragWrapProps(drag: RowDrag | undefined) {
   if (!drag) {
     return {};
@@ -1478,12 +1451,15 @@ function InviteRow({
 }
 
 /**
- * Friends and Bookmarks (M6 step 7): lazily loaded through the social REST
- * endpoint (four upstream F-List calls behind the shared 1 req/s budget —
- * hence load-once + explicit ↻). Rows open a DM; incoming friend requests
- * are actionable like channel invites. The parent hands in the already
- * sorted/filtered row lists so the toolbar filter and the offline pref
- * apply uniformly.
+ * Friends and Bookmarks (M6 step 7): loaded once per identity through the
+ * social REST endpoint, which is served from the server's cache (#194) — the
+ * four upstream F-List calls behind the shared 1 req/s budget only run on a
+ * cold cache or a forced refetch. Staying current is the server's job, not a
+ * button's: it refetches the lists and fans them out on the RTB friend and
+ * bookmark events (#431), which is why the explicit ↻ that used to live here
+ * is gone (#367). Rows open a DM; incoming friend requests are actionable
+ * like channel invites. The parent hands in the already sorted/filtered row
+ * lists so the toolbar filter and the offline pref apply uniformly.
  */
 function SocialSections({
   session,
@@ -1496,7 +1472,6 @@ function SocialSections({
   onToggle,
   onRowContextMenu,
   onSectionContextMenu,
-  rowDrag,
 }: {
   session: IdentitySession;
   friends: SocialCharacter[];
@@ -1516,10 +1491,6 @@ function SocialSections({
   onSectionContextMenu: (
     section: OfflineSection,
   ) => (event: PressEvent) => void;
-  rowDrag: (
-    section: "friends" | "bookmarks",
-    name: string,
-  ) => RowDrag | undefined;
 }) {
   const identityId = session.identityId;
   const social = session.social;
@@ -1580,11 +1551,7 @@ function SocialSections({
     }
   }
 
-  const row = (
-    character: SocialCharacter,
-    glyph: SocialGlyph,
-    section: "friends" | "bookmarks",
-  ) => {
+  const row = (character: SocialCharacter, glyph: SocialGlyph) => {
     // #290: a friend/bookmark with an open DM carries the DM's unread badge
     // and active anchor onto its own row.
     const dm = dmByPartner.get(character.name.toLowerCase());
@@ -1598,7 +1565,6 @@ function SocialSections({
         pinned={dm?.pinned ?? false}
         muted={dm !== undefined && mutedConvs.has(dm.convId)}
         active={dm !== undefined && dm.convId === activeConvId}
-        drag={rowDrag(section, character.name)}
         onContextMenu={(event) => {
           onRowContextMenu(
             event,
@@ -1657,8 +1623,7 @@ function SocialSections({
           </div>
         ))}
       </div>
-      {openSection("friends") &&
-        friends.map((friend) => row(friend, "friend", "friends"))}
+      {openSection("friends") && friends.map((friend) => row(friend, "friend"))}
       {openSection("friends") &&
         !filtering &&
         social !== undefined &&
@@ -1676,7 +1641,7 @@ function SocialSections({
         onContextMenu={onSectionContextMenu("bookmarks")}
       />
       {openSection("bookmarks") &&
-        bookmarks.map((bookmark) => row(bookmark, "bookmark", "bookmarks"))}
+        bookmarks.map((bookmark) => row(bookmark, "bookmark"))}
       {openSection("bookmarks") &&
         !filtering &&
         social !== undefined &&
@@ -1699,7 +1664,6 @@ function SocialRow({
   pinned = false,
   muted = false,
   active,
-  drag,
   onContextMenu,
 }: {
   session: IdentitySession;
@@ -1712,7 +1676,6 @@ function SocialRow({
   /** Likewise the partner's DM mute (#490). */
   muted?: boolean;
   active: boolean;
-  drag?: RowDrag;
   onContextMenu: (event: PressEvent) => void;
 }) {
   const navigate = useNavigate();
@@ -1755,15 +1718,10 @@ function SocialRow({
   if (!character.online) {
     classes.push(styles.offlineRow ?? "");
   }
-  const { indicatorClass, ...dragProps } = dragWrapProps(drag);
-  if (indicatorClass) {
-    classes.push(indicatorClass);
-  }
   return (
     <button
       type="button"
       className={classes.join(" ")}
-      {...dragProps}
       onClick={() => {
         void open();
       }}
