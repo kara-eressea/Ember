@@ -53,7 +53,7 @@ test("identity rail: avatar toggle hides it without breaking the shell grid, sur
   const rail = page.getByRole("navigation", { name: "Identities" });
   const sidebar = page
     .getByRole("navigation")
-    .filter({ has: page.getByLabel("Filter the channel list") });
+    .filter({ has: page.getByLabel("Find in the channel list") });
   const chat = page.getByRole("main");
   const members = page.getByRole("complementary", { name: "Members" });
   const composer = page.getByRole("textbox", { name: /Message/ });

@@ -105,7 +105,7 @@ test("social: friends/bookmarks sections, request accept, bookmark round-trip", 
   await page.keyboard.press("Escape");
 
   // The toolbar filter narrows every section as you type.
-  const filter = page.getByLabel("Filter the channel list");
+  const filter = page.getByLabel("Find in the channel list");
   await filter.fill("nyx");
   await expect(
     sidebar.getByRole("button", { name: "Nyx Firemane", exact: true }),

@@ -3,11 +3,12 @@
 // checked, so a shared machine can stay clean.
 //
 // Refresh tokens are single-use server-side (rotation), so refreshing is
-// guarded three ways: a single-flight promise (concurrent 401s from parallel
+// guarded four ways: a single-flight promise (concurrent 401s from parallel
 // requests must not race each other), re-reading localStorage first (another
-// tab may have rotated already — adopt its token instead of burning it), and
-// only destroying local state when the server actually rejected the token —
-// a network blip must never log out a persisted session.
+// tab may have rotated already — adopt its token instead of burning it), a
+// BroadcastChannel that keeps two tabs from rotating at once at all (see
+// below), and only destroying local state when the server actually rejected
+// the token — a network blip must never log out a persisted session.
 
 import { create } from "zustand";
 import { api, ApiError, type UserDto } from "../lib/api.js";
@@ -74,6 +75,132 @@ function persist(state: {
 /** Single-flight guard: all concurrent callers await one rotation. */
 let refreshInFlight: Promise<RefreshOutcome> | undefined;
 
+// ── Cross-tab coordination ────────────────────────────────────────────────
+// The single-flight guard above is per tab, and two tabs of the same profile
+// refresh on their own schedules — both on boot, both when the access token
+// expires. The server's 30 s rotation grace (#456) means the loser of such a
+// race is not logged out on the spot, but it does NOT make the collision
+// harmless: the grace path issues its own new token, so after A rotates
+// T0→T1 and B redeems T0→T2, A is holding a token the server has already
+// replaced. Whichever tab wrote localStorage last decides what the storage
+// listener then hands the other one, and that can be the dead half of the
+// pair — one shared 401 later, both tabs are on the login screen.
+//
+// So: don't collide. A tab about to rotate says so; a tab that hears it waits
+// for the outcome instead of starting its own; every completed rotation is
+// broadcast so peers adopt the live pair — including the access token, which
+// the localStorage mirror does not carry. The grace window stays what it was
+// meant to be, the net for a lost response, rather than load-bearing.
+//
+// Two tabs that reach for the token in the same tick can still both go: the
+// channel delivers asynchronously, so neither hears the other's claim before
+// it commits. That residue is what the grace window is for, and it is why the
+// last-writer rule below (a rotation older than the one this tab already took
+// is dropped) matters — the pair converges on the newer token either way.
+//
+// Only successes are broadcast. A rejection is deliberately kept local: the
+// one tab that has to refuse a token is exactly the tab whose token was
+// superseded, and telling a peer holding the live token to sign out would
+// turn one tab's bad luck into everyone's logout.
+//
+// Where BroadcastChannel is absent — SSR, jsdom, an old engine — nothing here
+// runs and the store behaves exactly as it did before.
+
+const CHANNEL_NAME = "eb.auth";
+/** How long to wait on a peer's announced rotation before rotating anyway.
+ * Well inside ROTATION_GRACE_MS, so a peer that dies mid-request still leaves
+ * this tab time to redeem the token it already has. */
+const PEER_WAIT_MS = 5_000;
+
+type AuthMessage =
+  | { type: "refresh-started"; at: number; userId: string }
+  | {
+      type: "refresh-ok";
+      at: number;
+      userId: string;
+      accessToken: string;
+      refreshToken: string;
+    };
+
+const channel: BroadcastChannel | undefined =
+  typeof BroadcastChannel === "undefined"
+    ? undefined
+    : new BroadcastChannel(CHANNEL_NAME);
+
+/** When this tab last took a rotation (its own or a peer's). Out-of-order
+ * deliveries are dropped against it, so two tabs that did collide still
+ * converge on the newer of the two tokens rather than on the last message to
+ * arrive. */
+let lastRotationAt = 0;
+/** The peer rotation this tab is deferring to, armed by "refresh-started". */
+let peerRotation:
+  | {
+      settle: (message?: AuthMessage) => void;
+      waited: Promise<AuthMessage | undefined>;
+    }
+  | undefined;
+
+function adopt(message: Extract<AuthMessage, { type: "refresh-ok" }>): void {
+  lastRotationAt = message.at;
+  useAuthStore.setState({
+    accessToken: message.accessToken,
+    refreshToken: message.refreshToken,
+    status: "authenticated",
+  });
+  persist(useAuthStore.getState());
+}
+
+function armPeerRotation(): void {
+  peerRotation?.settle();
+  let settle: (message?: AuthMessage) => void = () => {};
+  const waited = new Promise<AuthMessage | undefined>((resolve) => {
+    const timer = setTimeout(() => {
+      resolve(undefined);
+    }, PEER_WAIT_MS);
+    settle = (message) => {
+      clearTimeout(timer);
+      resolve(message);
+    };
+  });
+  const armed = { settle, waited };
+  peerRotation = armed;
+  void waited.finally(() => {
+    if (peerRotation === armed) {
+      peerRotation = undefined;
+    }
+  });
+}
+
+/** Await a peer's in-flight rotation, if one was announced. Resolves to its
+ * result — already adopted by the listener — or to undefined, which means
+ * "nobody else is doing this, go ahead". */
+async function peerRotated(): Promise<boolean> {
+  const pending = peerRotation;
+  if (!pending) {
+    return false;
+  }
+  return (await pending.waited)?.type === "refresh-ok";
+}
+
+channel?.addEventListener("message", (event) => {
+  const message = (event as MessageEvent<AuthMessage>).data;
+  const state = useAuthStore.getState();
+  // A tab that isn't signed in (or is signed in as somebody else, which the
+  // shared localStorage makes unlikely but not impossible mid-switch) has no
+  // business adopting a token.
+  if (state.status === "anonymous" || message.userId !== state.user?.id) {
+    return;
+  }
+  if (message.type === "refresh-started") {
+    armPeerRotation();
+    return;
+  }
+  peerRotation?.settle(message);
+  if (message.at > lastRotationAt) {
+    adopt(message);
+  }
+});
+
 export const useAuthStore = create<AuthState>()((set, get) => ({
   user: undefined,
   accessToken: undefined,
@@ -113,6 +240,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   async refreshSession() {
     refreshInFlight ??= (async () => {
+      // A peer tab is already rotating: its result is this tab's result too,
+      // and the listener adopts the pair as it lands. Waiting beats racing —
+      // see the cross-tab section above for what a race actually costs.
+      if (await peerRotated()) {
+        return "ok";
+      }
       // Another tab may have rotated the token since we loaded ours — using
       // the stale one would burn the session, so adopt the persisted one.
       const persisted = loadPersisted();
@@ -120,14 +253,32 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (!refreshToken) {
         return "rejected"; // nothing to rotate — as final as a refusal
       }
+      const userId = get().user?.id;
+      if (userId !== undefined) {
+        channel?.postMessage({
+          type: "refresh-started",
+          at: Date.now(),
+          userId,
+        } satisfies AuthMessage);
+      }
       try {
         const rotated = await api.refresh(refreshToken);
+        lastRotationAt = Date.now();
         set({
           accessToken: rotated.accessToken,
           refreshToken: rotated.refreshToken,
           status: "authenticated",
         });
         persist(get());
+        if (userId !== undefined) {
+          channel?.postMessage({
+            type: "refresh-ok",
+            at: lastRotationAt,
+            userId,
+            accessToken: rotated.accessToken,
+            refreshToken: rotated.refreshToken,
+          } satisfies AuthMessage);
+        }
         return "ok";
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 401) {

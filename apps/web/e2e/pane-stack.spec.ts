@@ -99,7 +99,7 @@ test("phone: the route drives the pane stack, and the log stays at the tail acro
     const rail = page.getByRole("navigation", { name: "Identities" });
     const sidebar = page
       .getByRole("navigation")
-      .filter({ has: page.getByLabel("Filter the channel list") });
+      .filter({ has: page.getByLabel("Find in the channel list") });
     const log = page.getByTestId("message-log");
     const back = page.getByRole("link", { name: "Back to conversations" });
     const roomRow = sidebar.getByRole("link", { name: new RegExp(ROOM_TITLE) });

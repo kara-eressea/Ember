@@ -57,7 +57,7 @@ test("phone device: a hold opens the action sheet, a drag does not (#376)", asyn
 
     const sidebar = page
       .getByRole("navigation")
-      .filter({ has: page.getByLabel("Filter the channel list") });
+      .filter({ has: page.getByLabel("Find in the channel list") });
     await sidebar
       .getByRole("link", { name: new RegExp(PARTNER) })
       .click({ timeout: 15_000 });

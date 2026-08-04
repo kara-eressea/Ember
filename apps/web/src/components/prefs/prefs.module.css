@@ -506,6 +506,16 @@
   overflow-y: hidden;
   border-right: none;
   border-bottom: 1px solid var(--eb-border);
+  /* …and it hides its scrollbar (#502). On a touchscreen that bar is an
+     overlay that fades, but the phone tier is a *width*, so a narrow desktop
+     window lands here too — and there the platform may draw a classic one
+     instead (macOS does whenever a mouse is connected, which is why this was
+     only ever seen on one dev machine and never on CI). A classic horizontal
+     scrollbar lies across the bottom 11px of a 44px rail button and takes the
+     presses meant for it: the target census measured these buttons 33px tall,
+     not because the layout shrank but because the bottom of each one no longer
+     hit-tests to the button. The strip still scrolls by touch and by wheel. */
+  scrollbar-width: none;
 }
 
 :root[data-layout="phone"] :is(.railTitle, .railItem, .railFoot) {

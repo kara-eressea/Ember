@@ -315,9 +315,7 @@ describe("phone tier", () => {
     expect(
       within(overlay).getByRole("complementary", { name: "Members" }),
     ).toBeInTheDocument();
-    expect(
-      within(overlay).getByLabelText("Filter members"),
-    ).toBeInTheDocument();
+    expect(within(overlay).getByLabelText("Find members")).toBeInTheDocument();
     expect(within(overlay).getByText("Rowan Ash")).toBeInTheDocument();
     // The docked preference was not touched on the way (it governs the
     // columns on the tiers that have one).

@@ -73,10 +73,10 @@ test("seen recently: part → fold appears, expand, filter, rejoin clears", asyn
   // "{matches} of {total}".
   await fold.click();
   await expect(offlineRow).toHaveCount(0);
-  await page.getByLabel("Filter members").fill("dell");
+  await page.getByLabel("Find members").fill("dell");
   await expect(offlineRow).toBeVisible();
   await expect(fold).toContainText("1 of 1");
-  await page.getByLabel("Filter members").fill("");
+  await page.getByLabel("Find members").fill("");
   // Clearing the query restores the remembered collapsed state.
   await expect(offlineRow).toHaveCount(0);
 

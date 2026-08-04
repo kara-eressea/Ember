@@ -368,8 +368,8 @@ export function CharacterSearch({
           <input
             className={styles.nameFilter}
             value={nameFilter}
-            placeholder="Filter these names…"
-            aria-label="Filter result names"
+            placeholder="Find in these names…"
+            aria-label="Find in the result names"
             onChange={(event) => {
               setNameFilter(event.target.value);
             }}
