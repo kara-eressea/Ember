@@ -566,6 +566,17 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Chip Warren"],
     },
+    // Reserved for the MP2 §1 long-press E2E (#376), same isolation rules.
+    // Holt Barrow holds an eicon down until the action sheet rises; Marla
+    // Quinn is the raw-SimClient partner whose DM carries it.
+    "holt@example.test": {
+      password: "hunter2",
+      characters: ["Holt Barrow"],
+    },
+    "marlaquinn@example.test": {
+      password: "hunter2",
+      characters: ["Marla Quinn"],
+    },
   },
   channels: [
     {

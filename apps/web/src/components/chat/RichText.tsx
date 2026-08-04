@@ -19,6 +19,7 @@ import { avatarUrl, eiconUrl } from "../../lib/avatar.js";
 import { parseCharacterUrl } from "../../lib/character-url.js";
 import { chipHost, chipLabel, resolvePreview } from "../../lib/link-preview.js";
 import { useNoHover } from "../../lib/pointer.js";
+import { useLongPress } from "../../lib/useLongPress.js";
 import {
   openPreviewFrom,
   useLinkPreviewStore,
@@ -496,6 +497,7 @@ function EiconImage({
   src: string;
   animate: boolean;
 }) {
+  const press = useEiconPress(name);
   return animate ? (
     <img
       className={styles.bodyEicon}
@@ -508,6 +510,7 @@ function EiconImage({
       onContextMenu={(event) => {
         openEiconMenu(event, name);
       }}
+      {...press}
     />
   ) : (
     <FrozenImage name={name} src={src} />
@@ -523,6 +526,7 @@ function EiconImage({
  */
 function FrozenImage({ name, src }: { name: string; src: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const press = useEiconPress(name);
   useEffect(() => {
     let cancelled = false;
     const img = new Image();
@@ -551,8 +555,22 @@ function FrozenImage({ name, src }: { name: string; src: string }) {
       onContextMenu={(event) => {
         openEiconMenu(event, name);
       }}
+      {...press}
     />
   );
+}
+
+/**
+ * The eicon menu's second opener (MP2 §1): where the primary pointer cannot
+ * hover, a hold calls the same handler the right-click calls. Returns nothing
+ * at all on a hover-capable pointer, so a desktop eicon is untouched — which
+ * matters more here than anywhere else, since a name-only log mounts one of
+ * these per eicon.
+ */
+function useEiconPress(name: string) {
+  return useLongPress((press) => {
+    openEiconMenu(press, name);
+  });
 }
 
 const EICON_BOX = 60;
@@ -603,6 +621,7 @@ function EiconChip({
     },
   };
   const reveal = noHover ? (blocked ? {} : tapProps) : hoverProps;
+  const press = useEiconPress(name);
   return (
     <span
       className={styles.eiconChip}
@@ -610,6 +629,7 @@ function EiconChip({
         openEiconMenu(event, name);
       }}
       {...reveal}
+      {...press}
     >
       <span
         className={`${styles.bodyCode} ${blocked ? (styles.eiconBlockedName ?? "") : ""}`}

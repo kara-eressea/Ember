@@ -14,7 +14,6 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
   type FormEvent,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Link, useNavigate } from "react-router";
 import {
@@ -26,6 +25,7 @@ import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
 import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
+import { useLongPress, type PressEvent } from "../../lib/useLongPress.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
 import { channelPath, dmPath, identityPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
@@ -241,7 +241,7 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
   // channel member list uses, minus the channel-only sections.
   const [personMenu, setPersonMenu] = useState<PersonMenuState>();
   const openPersonMenu = (
-    event: ReactMouseEvent,
+    event: PressEvent,
     character: string,
     status: string,
     statusmsg: string,
@@ -272,17 +272,16 @@ export function Sidebar({ session, activeConvId }: SidebarProps) {
     section: OfflineSection;
     position: { x: number; y: number };
   }>();
-  const openSectionMenu =
-    (section: OfflineSection) => (event: ReactMouseEvent) => {
-      event.preventDefault();
-      setSectionMenu({
-        section,
-        position: {
-          x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
-          y: Math.min(event.clientY, window.innerHeight - 160),
-        },
-      });
-    };
+  const openSectionMenu = (section: OfflineSection) => (event: PressEvent) => {
+    event.preventDefault();
+    setSectionMenu({
+      section,
+      position: {
+        x: Math.min(event.clientX, window.innerWidth - MENU_WIDTH),
+        y: Math.min(event.clientY, window.innerHeight - 160),
+      },
+    });
+  };
 
   // convId "" = volatile placeholder whose conversation row is still being
   // written; it becomes routable one event later.
@@ -792,12 +791,17 @@ function SectionHeader({
   count: number;
   collapsed: boolean;
   onToggle: () => void;
-  /** Right-click the header (the people sections use it for the per-section
-   * "Show offline" menu, #329). */
-  onContextMenu?: (event: ReactMouseEvent) => void;
+  /** Right-click, or hold on a touchscreen, to open the header's menu (the
+   * people sections use it for the per-section "Show offline" toggle, #329). */
+  onContextMenu?: (event: PressEvent) => void;
 }) {
+  const press = useLongPress(onContextMenu);
   return (
-    <div className={styles.sectionHeader} onContextMenu={onContextMenu}>
+    <div
+      className={styles.sectionHeader}
+      onContextMenu={onContextMenu}
+      {...press}
+    >
       <button
         type="button"
         className={styles.sectionToggle}
@@ -1169,7 +1173,10 @@ interface NavRowProps {
   token?: "official" | "private";
   affordance?: RowAffordance;
   drag?: RowDrag;
-  onContextMenu?: (event: ReactMouseEvent) => void;
+  /** Opens the row's menu. Typed on what opening it needs rather than on
+   * MouseEvent, so the same handler serves the right-click and the
+   * long-press (MP2 §1). */
+  onContextMenu?: (event: PressEvent) => void;
 }
 
 function NavRow({
@@ -1189,6 +1196,7 @@ function NavRow({
   drag,
   onContextMenu,
 }: NavRowProps) {
+  const press = useLongPress(onContextMenu);
   const classes = [styles.navItem];
   if (active) {
     classes.push(styles.active);
@@ -1217,6 +1225,7 @@ function NavRow({
         to={to}
         draggable={false}
         onContextMenu={onContextMenu}
+        {...press}
       >
         {avatars && token !== undefined ? (
           <ChannelToken kind={token} />
@@ -1398,7 +1407,7 @@ function SocialSections({
   openSection: (section: SidebarSection) => boolean;
   onToggle: (section: SidebarSection) => void;
   onRowContextMenu: (
-    event: ReactMouseEvent,
+    event: PressEvent,
     character: string,
     status: string,
     statusmsg: string,
@@ -1406,7 +1415,7 @@ function SocialSections({
   ) => void;
   onSectionContextMenu: (
     section: OfflineSection,
-  ) => (event: ReactMouseEvent) => void;
+  ) => (event: PressEvent) => void;
   rowDrag: (
     section: "friends" | "bookmarks",
     name: string,
@@ -1598,9 +1607,10 @@ function SocialRow({
   pinned?: boolean;
   active: boolean;
   drag?: RowDrag;
-  onContextMenu: (event: ReactMouseEvent) => void;
+  onContextMenu: (event: PressEvent) => void;
 }) {
   const navigate = useNavigate();
+  const press = useLongPress(onContextMenu);
 
   async function open() {
     const ack = await gateway.cmd({
@@ -1649,6 +1659,7 @@ function SocialRow({
         void open();
       }}
       onContextMenu={onContextMenu}
+      {...press}
       title={
         character.online
           ? `${character.status}${character.statusmsg ? ` — ${decodeWireEntities(character.statusmsg)}` : ""}`

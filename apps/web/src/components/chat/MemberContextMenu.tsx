@@ -1,4 +1,5 @@
-// MemberContextMenu (COMPONENTS.md §10): right-click popover on a member
+// MemberContextMenu (COMPONENTS.md §10): the right-click — or, on a
+// touchscreen, long-press (MP2 §1) — menu on a member
 // row. Header = avatar + nick + role tag; items are gated by the target
 // relationship (own row loses Message/Ignore; an ignored target offers
 // Unignore). The admin section (kick/timeout/ban/promote/demote/set-owner,
@@ -8,7 +9,6 @@
 
 import {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -22,8 +22,7 @@ import { api } from "../../lib/api.js";
 import { markConversationRead } from "../../lib/mark-read.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
-import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
-import { placeAtPointInWindow } from "../profile/popover.js";
+import { MenuSurface } from "../common/MenuSurface.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { Avatar } from "../common/Avatar.js";
@@ -81,22 +80,6 @@ export function MemberContextMenu({
   const [reportText, setReportText] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  // Clamp against the *measured* menu — a full social+admin menu is 2–3×
-  // the old fixed guess and could run off-screen (M6 audit). DOM write,
-  // not state: the pre-paint nudge must not re-render. Re-runs when the
-  // report form expands the menu.
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!el) {
-      return;
-    }
-    const { top, left } = placeAtPointInWindow(position, {
-      width: el.offsetWidth,
-      height: el.offsetHeight,
-    });
-    el.style.left = `${String(left)}px`;
-    el.style.top = `${String(top)}px`;
-  }, [position, reporting]);
   const self = member.character.toLowerCase() === ownCharacter.toLowerCase();
   const powers = modPowers({
     viewer: viewerRole,
@@ -143,9 +126,10 @@ export function MemberContextMenu({
 
   // While drafting a report, the first Escape collapses the form back to the
   // menu (so a reflexive tap doesn't discard the complaint); a second Escape
-  // closes the menu as usual. Either way the event is claimed by the shared
-  // stack so MessageLog's jump/mark-read doesn't also fire.
-  useEscapeToClose(() => {
+  // closes the menu as usual. Handed to MenuSurface, which is what puts it on
+  // the shared stack — so the event is still claimed there and MessageLog's
+  // jump/mark-read doesn't also fire.
+  function onEscape() {
     // Escape closes one level: an open submenu first, then a drafting report,
     // then the menu itself.
     if (inviteOpen) {
@@ -159,7 +143,7 @@ export function MemberContextMenu({
       return;
     }
     onClose();
-  });
+  }
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {
@@ -345,24 +329,18 @@ export function MemberContextMenu({
   }
 
   return (
-    <>
-      <div
-        className={styles.memberMenuOverlay}
-        onClick={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <div
-        ref={menuRef}
-        className={styles.memberMenu}
-        data-eb-surface
-        role="menu"
-        aria-label={`${member.character} menu`}
-        style={{ left: position.x, top: position.y }}
-        onKeyDown={onMenuKeyDown}
-      >
+    <MenuSurface
+      className={styles.memberMenu}
+      overlayClassName={styles.memberMenuOverlay}
+      label={`${member.character} menu`}
+      point={position}
+      onClose={onClose}
+      onEscape={onEscape}
+      onKeyDown={onMenuKeyDown}
+      // The report form expands the anchored menu; it has to re-clamp.
+      reflow={reporting}
+      menuRef={menuRef}
+      head={
         <div className={styles.memberMenuHead}>
           <Avatar name={member.character} size={26} />
           <span className={styles.memberMenuNick}>{member.character}</span>
@@ -370,296 +348,297 @@ export function MemberContextMenu({
             <span className={styles.memberMenuRole}>{roleTag(role)}</span>
           )}
         </div>
-        {markRead && (
-          <>
-            <button
-              className={styles.memberMenuItem}
-              role="menuitem"
-              disabled={markRead.unread === 0}
-              title="Clear the unread count without opening the conversation"
-              onClick={() => {
-                onClose();
-                markConversationRead(identityId, markRead.convId);
-              }}
-            >
-              Mark as read
-            </button>
-            <div className={styles.memberMenuDivider} />
-          </>
-        )}
-        {!self && (
+      }
+    >
+      {markRead && (
+        <>
           <button
             className={styles.memberMenuItem}
             role="menuitem"
-            onClick={message}
+            disabled={markRead.unread === 0}
+            title="Clear the unread count without opening the conversation"
+            onClick={() => {
+              onClose();
+              markConversationRead(identityId, markRead.convId);
+            }}
           >
-            Message
+            Mark as read
           </button>
-        )}
+          <div className={styles.memberMenuDivider} />
+        </>
+      )}
+      {!self && (
         <button
           className={styles.memberMenuItem}
           role="menuitem"
-          onClick={() => {
-            useProfileStore.getState().open(member.character);
-            onClose();
+          onClick={message}
+        >
+          Message
+        </button>
+      )}
+      <button
+        className={styles.memberMenuItem}
+        role="menuitem"
+        onClick={() => {
+          useProfileStore.getState().open(member.character);
+          onClose();
+        }}
+      >
+        View profile
+      </button>
+      <a
+        className={styles.memberMenuItem}
+        role="menuitem"
+        href={`https://www.f-list.net/c/${encodeURIComponent(member.character)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onClose}
+      >
+        Open on f-list.net{" "}
+        <span className={styles.memberMenuHint}>↗ website</span>
+      </a>
+      {!self && targets.length > 0 && (
+        <div
+          className={styles.memberMenuSub}
+          onMouseEnter={() => {
+            setInviteOpen(true);
+          }}
+          onMouseLeave={() => {
+            setInviteOpen(false);
           }}
         >
-          View profile
-        </button>
-        <a
-          className={styles.memberMenuItem}
-          role="menuitem"
-          href={`https://www.f-list.net/c/${encodeURIComponent(member.character)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={onClose}
-        >
-          Open on f-list.net{" "}
-          <span className={styles.memberMenuHint}>↗ website</span>
-        </a>
-        {!self && targets.length > 0 && (
-          <div
-            className={styles.memberMenuSub}
-            onMouseEnter={() => {
+          <button
+            className={styles.memberMenuItem}
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={inviteOpen}
+            // Open-only, never a toggle: the pointer must enter the wrapper
+            // before it can click, so onMouseEnter has already opened the
+            // panel and a toggle would shut it again. Leaving the wrapper is
+            // the mouse's close path; ArrowLeft/Escape the keyboard's.
+            onClick={() => {
               setInviteOpen(true);
             }}
-            onMouseLeave={() => {
-              setInviteOpen(false);
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+                setInviteOpen(true);
+              }
             }}
           >
-            <button
-              className={styles.memberMenuItem}
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={inviteOpen}
-              // Open-only, never a toggle: the pointer must enter the wrapper
-              // before it can click, so onMouseEnter has already opened the
-              // panel and a toggle would shut it again. Leaving the wrapper is
-              // the mouse's close path; ArrowLeft/Escape the keyboard's.
-              onClick={() => {
-                setInviteOpen(true);
-              }}
+            Invite to
+            <span className={styles.memberMenuSubArrow} aria-hidden>
+              ▸
+            </span>
+          </button>
+          {inviteOpen && (
+            <div
+              className={styles.memberMenuSubPanel}
+              role="menu"
+              aria-label={`Invite ${member.character} to a channel`}
               onKeyDown={(event) => {
-                if (event.key === "ArrowRight" || event.key === "Enter") {
-                  event.preventDefault();
+                if (event.key === "ArrowLeft") {
                   event.stopPropagation();
-                  setInviteOpen(true);
+                  setInviteOpen(false);
+                  enabledItems(menuRef.current)[0]?.focus();
                 }
               }}
             >
-              Invite to
-              <span className={styles.memberMenuSubArrow} aria-hidden>
-                ▸
-              </span>
-            </button>
-            {inviteOpen && (
-              <div
-                className={styles.memberMenuSubPanel}
-                role="menu"
-                aria-label={`Invite ${member.character} to a channel`}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowLeft") {
-                    event.stopPropagation();
-                    setInviteOpen(false);
-                    enabledItems(menuRef.current)[0]?.focus();
-                  }
-                }}
-              >
-                {targets.map((target) => (
-                  <button
-                    key={target.key}
-                    className={styles.memberMenuItem}
-                    role="menuitem"
-                    onClick={() => {
-                      invite(target.key);
-                    }}
-                  >
-                    {target.title}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {!self && social !== undefined && (
-          <>
-            <div className={styles.memberMenuDivider} />
+              {targets.map((target) => (
+                <button
+                  key={target.key}
+                  className={styles.memberMenuItem}
+                  role="menuitem"
+                  onClick={() => {
+                    invite(target.key);
+                  }}
+                >
+                  {target.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {!self && social !== undefined && (
+        <>
+          <div className={styles.memberMenuDivider} />
+          <button
+            className={styles.memberMenuItem}
+            role="menuitem"
+            onClick={() => {
+              mutateSocial(() =>
+                api.postBookmark(
+                  identityId,
+                  bookmarked ? "remove" : "add",
+                  member.character,
+                ),
+              );
+            }}
+          >
+            {bookmarked ? "Remove bookmark" : "Add bookmark"}
+          </button>
+          {friend ? (
             <button
               className={styles.memberMenuItem}
               role="menuitem"
               onClick={() => {
                 mutateSocial(() =>
-                  api.postBookmark(
-                    identityId,
-                    bookmarked ? "remove" : "add",
-                    member.character,
-                  ),
+                  api.postFriendRequest(identityId, {
+                    action: "remove-friend",
+                    character: member.character,
+                  }),
                 );
               }}
             >
-              {bookmarked ? "Remove bookmark" : "Add bookmark"}
+              Remove friend
             </button>
-            {friend ? (
-              <button
-                className={styles.memberMenuItem}
-                role="menuitem"
-                onClick={() => {
-                  mutateSocial(() =>
-                    api.postFriendRequest(identityId, {
-                      action: "remove-friend",
-                      character: member.character,
-                    }),
-                  );
+          ) : incomingRequest ? (
+            <button
+              className={styles.memberMenuItem}
+              role="menuitem"
+              onClick={() => {
+                mutateSocial(() =>
+                  api.postFriendRequest(identityId, {
+                    action: "accept",
+                    requestId: incomingRequest.id,
+                  }),
+                );
+              }}
+            >
+              Accept friend request
+            </button>
+          ) : outgoingRequest ? (
+            <button
+              className={styles.memberMenuItem}
+              role="menuitem"
+              onClick={() => {
+                mutateSocial(() =>
+                  api.postFriendRequest(identityId, {
+                    action: "cancel",
+                    requestId: outgoingRequest.id,
+                  }),
+                );
+              }}
+            >
+              Cancel friend request
+            </button>
+          ) : (
+            <button
+              className={styles.memberMenuItem}
+              role="menuitem"
+              onClick={() => {
+                mutateSocial(() =>
+                  api.postFriendRequest(identityId, {
+                    action: "send",
+                    character: member.character,
+                  }),
+                );
+              }}
+            >
+              Add friend
+            </button>
+          )}
+        </>
+      )}
+      {!self && (
+        <>
+          <div className={styles.memberMenuDivider} />
+          <button
+            className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}
+            role="menuitem"
+            onClick={toggleIgnore}
+          >
+            {ignored ? "Unignore" : "Ignore"}
+          </button>
+          {reporting ? (
+            <form className={styles.reportForm} onSubmit={submitReport}>
+              <textarea
+                className={styles.reportInput}
+                aria-label={`Report ${member.character} to staff`}
+                placeholder="What happened? This goes to F-List's moderators."
+                value={reportText}
+                maxLength={2000}
+                rows={3}
+                autoFocus
+                onChange={(e) => {
+                  setReportText(e.target.value);
                 }}
-              >
-                Remove friend
-              </button>
-            ) : incomingRequest ? (
+              />
               <button
-                className={styles.memberMenuItem}
-                role="menuitem"
-                onClick={() => {
-                  mutateSocial(() =>
-                    api.postFriendRequest(identityId, {
-                      action: "accept",
-                      requestId: incomingRequest.id,
-                    }),
-                  );
-                }}
+                className={styles.reportSend}
+                type="submit"
+                disabled={reportText.trim() === ""}
               >
-                Accept friend request
+                Send report
               </button>
-            ) : outgoingRequest ? (
-              <button
-                className={styles.memberMenuItem}
-                role="menuitem"
-                onClick={() => {
-                  mutateSocial(() =>
-                    api.postFriendRequest(identityId, {
-                      action: "cancel",
-                      requestId: outgoingRequest.id,
-                    }),
-                  );
-                }}
-              >
-                Cancel friend request
-              </button>
-            ) : (
-              <button
-                className={styles.memberMenuItem}
-                role="menuitem"
-                onClick={() => {
-                  mutateSocial(() =>
-                    api.postFriendRequest(identityId, {
-                      action: "send",
-                      character: member.character,
-                    }),
-                  );
-                }}
-              >
-                Add friend
-              </button>
-            )}
-          </>
-        )}
-        {!self && (
-          <>
-            <div className={styles.memberMenuDivider} />
+            </form>
+          ) : (
             <button
               className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}
               role="menuitem"
-              onClick={toggleIgnore}
+              onClick={() => {
+                setReporting(true);
+              }}
             >
-              {ignored ? "Unignore" : "Ignore"}
+              Report to staff…
             </button>
-            {reporting ? (
-              <form className={styles.reportForm} onSubmit={submitReport}>
-                <textarea
-                  className={styles.reportInput}
-                  aria-label={`Report ${member.character} to staff`}
-                  placeholder="What happened? This goes to F-List's moderators."
-                  value={reportText}
-                  maxLength={2000}
-                  rows={3}
-                  autoFocus
-                  onChange={(e) => {
-                    setReportText(e.target.value);
-                  }}
-                />
-                <button
-                  className={styles.reportSend}
-                  type="submit"
-                  disabled={reportText.trim() === ""}
-                >
-                  Send report
-                </button>
-              </form>
-            ) : (
-              <button
-                className={`${styles.memberMenuItem} ${styles.memberMenuDanger ?? ""}`}
-                role="menuitem"
-                onClick={() => {
-                  setReporting(true);
-                }}
-              >
-                Report to staff…
-              </button>
-            )}
-          </>
-        )}
-        {anyPower && (
-          <>
-            <div className={styles.memberMenuDivider} />
-            {powers.remove && (
-              <>
-                <AdminItem
-                  label="Kick"
-                  onClick={() => {
-                    moderate("channel.kick");
-                  }}
-                />
-                <AdminItem
-                  label={`Timeout ${String(MENU_TIMEOUT_MINUTES)}m`}
-                  onClick={() => {
-                    moderate("channel.timeout");
-                  }}
-                />
-                <AdminItem
-                  label="Ban"
-                  onClick={() => {
-                    moderate("channel.ban");
-                  }}
-                />
-              </>
-            )}
-            {powers.promote && (
+          )}
+        </>
+      )}
+      {anyPower && (
+        <>
+          <div className={styles.memberMenuDivider} />
+          {powers.remove && (
+            <>
               <AdminItem
-                label="Make channel op"
+                label="Kick"
                 onClick={() => {
-                  moderate("channel.promote");
+                  moderate("channel.kick");
                 }}
               />
-            )}
-            {powers.demote && (
               <AdminItem
-                label="Remove channel op"
+                label={`Timeout ${String(MENU_TIMEOUT_MINUTES)}m`}
                 onClick={() => {
-                  moderate("channel.demote");
+                  moderate("channel.timeout");
                 }}
               />
-            )}
-            {powers.setOwner && (
               <AdminItem
-                label="Make owner"
+                label="Ban"
                 onClick={() => {
-                  moderate("channel.owner");
+                  moderate("channel.ban");
                 }}
               />
-            )}
-          </>
-        )}
-      </div>
-    </>
+            </>
+          )}
+          {powers.promote && (
+            <AdminItem
+              label="Make channel op"
+              onClick={() => {
+                moderate("channel.promote");
+              }}
+            />
+          )}
+          {powers.demote && (
+            <AdminItem
+              label="Remove channel op"
+              onClick={() => {
+                moderate("channel.demote");
+              }}
+            />
+          )}
+          {powers.setOwner && (
+            <AdminItem
+              label="Make owner"
+              onClick={() => {
+                moderate("channel.owner");
+              }}
+            />
+          )}
+        </>
+      )}
+    </MenuSurface>
   );
 }
 
