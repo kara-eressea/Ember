@@ -15,8 +15,9 @@
 //     primitive e2e/long-press.ts already uses), so the pull is exercised as
 //     the engine's own pointer events under a live `touch-action`. Its other
 //     half — that a vertical gesture still SCROLLS under that declaration —
-//     needs `Input.synthesizeScrollGesture` instead; see `scrollByTouch` for
-//     the measurement that says why.
+//     needs `Input.synthesizeScrollGesture` instead, and is asserted as a
+//     floor rather than a distance; `touchScrolledDistance` carries both
+//     arguments and the numbers behind them.
 //   - WebKit gets synthetic `PointerEvent`s dispatched at the element under
 //     the point. `newCDPSession` throws on anything that is not Chromium and
 //     Playwright's cross-engine touch API only taps, so this is the whole
@@ -41,10 +42,13 @@ import {
 
 /** Mirrors AT_BOTTOM_SLACK_PX in MessageLog — within this counts as bottom. */
 const AT_BOTTOM_SLACK_PX = 60;
-/** Mirrors STICK_RELEASE_PX in MessageLog. */
-const STICK_RELEASE_PX = 120;
 /** Mirrors REVEAL_MAX_PX in pull-reveal.ts. */
 const REVEAL_MAX_PX = 72;
+/** "The log moved at all", for the one assertion about the compositor rather
+ * than about our code — see `touchScrolledDistance` for why this is a floor and
+ * not a distance. Deliberately well under the 60px at-bottom slack: it is not
+ * asking the log to leave the tail, only to move. */
+const SCROLLED_FLOOR_PX = 24;
 
 const ROOM = "ADH-513phonelogflow55dd66ee";
 const ROOM_TITLE = "Ribbon Room";
@@ -210,6 +214,47 @@ async function scrollByTouch(page: Page, distance: number): Promise<void> {
   await cdp.detach();
 }
 
+/**
+ * How far a real touch gesture actually moved the log — the furthest it got,
+ * over a few attempts.
+ *
+ * A **floor**, never a distance, and the difference is the whole point of this
+ * helper. The claim under test is binary: a `touch-action` that had taken the
+ * vertical scroll away from the compositor would move the log zero pixels,
+ * every time, on every machine. How far a *synthesized* gesture travels when it
+ * does work is a property of the runner — the same call moved this log 567px on
+ * a dev box, and this assertion, first written as "past the 120px stick
+ * hysteresis", went red on CI twice while every local run passed. So the
+ * threshold tests the product and the distance tested the hardware.
+ *
+ * Retried and polled for the same reason mobile-keyboard-scroll's `leaveTheTail`
+ * is: a gesture that lands while the bottom-stick's multi-frame settle is still
+ * writing scrollTop is fighting that loop rather than scrolling, and on a loaded
+ * runner that has been measured to swallow most of a drag. The maximum across
+ * the polls is what is reported, because a scroll short of the 120px hysteresis
+ * never releases the stick — the log is entitled to slide back, and it still
+ * moved.
+ *
+ * The distance-grade claims — a drag that leaves the tail for good, and a
+ * fling's momentum tail after it — belong to mobile-keyboard-scroll, which owns
+ * the escalation machinery for exactly this reason and runs against this same
+ * `touch-action`.
+ */
+async function touchScrolledDistance(page: Page): Promise<number> {
+  let furthest = 0;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await scrollByTouch(page, 500);
+    for (let poll = 0; poll < 20; poll += 1) {
+      furthest = Math.max(furthest, await distanceFromBottom(page));
+      if (furthest > SCROLLED_FLOOR_PX) {
+        return furthest;
+      }
+      await delay(100);
+    }
+  }
+  return furthest;
+}
+
 /** Seed the room and settle at the tail. */
 async function seedAndSettle(page: Page, partner: SimClient): Promise<void> {
   for (let i = 1; i <= 14; i += 1) {
@@ -367,7 +412,7 @@ test("phone: the log is full width with aligned columns on, and the pull brings 
   }
 });
 
-test("phone: a vertical drag scrolls and reveals nothing, and a pull over a claimed element opens no sheet (#513)", async ({
+test("phone: a pull over a claimed element opens no sheet, and a vertical gesture reveals nothing (#513)", async ({
   page,
   browserName,
 }) => {
@@ -398,46 +443,11 @@ test("phone: a vertical drag scrolls and reveals nothing, and a pull over a clai
       y: Math.round(logBox.y + logBox.height * 0.7),
     };
 
-    // ── The axis lock releases a vertical gesture entirely ───────────────
-    // Including one that turns sideways halfway through: the decision is made
-    // once, on the first movement past the threshold, and a scroll already
-    // handed to the compositor is never taken back.
-    await drag(hand, centre, { dx: 0, dy: -160 });
-    expect(await revealPx(page)).toBe(0);
-    await hand.move(centre.x + 140, centre.y - 160);
-    expect(await revealPx(page)).toBe(0);
-    await hand.up();
-    expect(await revealPx(page)).toBe(0);
-
-    // ── …and the compositor still owns the vertical scroll ───────────────
-    // The other half of `touch-action: pan-y`, and the half no synthetic event
-    // can speak to: the declaration is read by the compositor, so only a real
-    // finger says whether the log still scrolls under one.
-    //
-    // `Input.synthesizeScrollGesture` rather than the hand-rolled touch drag
-    // above, and the difference is measured: the same 160px of dispatched
-    // touchmoves moved this log 11px. Raw `Input.dispatchTouchEvent` is a
-    // faithful way to deliver *events* (which is all long-press.ts asks of it)
-    // and a poor way to drive a *scroll*; the synthesize call is the one API
-    // that hands the compositor a gesture, which is the thing under test here.
-    // Chromium-only for exactly that reason — the same scope-out
-    // mobile-keyboard-scroll's fling carries.
-    if (cdp !== undefined) {
-      await scrollByTouch(page, 500);
-      await expect
-        .poll(() => distanceFromBottom(page), { timeout: 10_000 })
-        .toBeGreaterThan(STICK_RELEASE_PX);
-      expect(await revealPx(page)).toBe(0);
-      // The reader left the tail under their own steam, so the pill is there
-      // to bring them back — the #454 machinery working normally, which is
-      // the point: the pull changed none of it.
-      await page.getByTestId("jump-to-recent").click();
-      await expect
-        .poll(() => distanceFromBottom(page), { timeout: 10_000 })
-        .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
-    }
-
     // ── A pull that starts on a long-press target opens nothing ──────────
+    // First, while the log is settled at the tail: this half needs the eicon
+    // rendered, and the log is virtualized, so it has to run before anything
+    // scrolls away from the newest messages.
+    //
     // The two recognizers nest by threshold rather than by arbitration: the
     // axis lock claims at 8px and `useLongPress` cancels at 10px of slop, so
     // any pull that is doing anything visible has already disarmed the press
@@ -472,6 +482,37 @@ test("phone: a vertical drag scrolls and reveals nothing, and a pull over a clai
     await hand.up();
     await expect.poll(() => revealPx(page), { timeout: 5_000 }).toBe(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // ── The axis lock releases a vertical gesture entirely ───────────────
+    // Including one that turns sideways halfway through: the decision is made
+    // once, on the first movement past the threshold, and a scroll already
+    // handed to the compositor is never taken back.
+    await drag(hand, centre, { dx: 0, dy: -160 });
+    expect(await revealPx(page)).toBe(0);
+    await hand.move(centre.x + 140, centre.y - 160);
+    expect(await revealPx(page)).toBe(0);
+    await hand.up();
+    expect(await revealPx(page)).toBe(0);
+
+    // ── …and the compositor still owns the vertical scroll ───────────────
+    // The other half of `touch-action: pan-y`, and the half no synthetic event
+    // can speak to: the declaration is read by the compositor, so only a real
+    // finger says whether the log still scrolls under one. Last in the test,
+    // because it is the one step that deliberately leaves the tail.
+    //
+    // Chromium-only: `Input.synthesizeScrollGesture` is the only API anywhere
+    // that hands a compositor a gesture, and `newCDPSession` throws on
+    // anything else — the same scope-out mobile-keyboard-scroll's fling
+    // carries. The hand-rolled `Finger` above will not do instead: the same
+    // 160px of dispatched touchmoves moved this log 11px, because raw
+    // `Input.dispatchTouchEvent` is a faithful way to deliver *events* (all
+    // long-press.ts asks of it) and a poor way to drive a *scroll*.
+    if (cdp !== undefined) {
+      expect(await touchScrolledDistance(page)).toBeGreaterThan(
+        SCROLLED_FLOOR_PX,
+      );
+      expect(await revealPx(page)).toBe(0);
+    }
   } finally {
     await cdp?.detach();
     partner.close();
