@@ -354,6 +354,7 @@ export function AdCenter({
           </span>
           <input
             type="checkbox"
+            className={styles.disabledCheck}
             checked={draft.disabled}
             onChange={() => {
               setDraft((d) => ({ ...d, disabled: !d.disabled }));

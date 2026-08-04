@@ -269,6 +269,12 @@
   cursor: pointer;
 }
 
+/* Named only so the touch sweep can point at it — see the phone rules at the
+   foot of this file for what stands in for a native checkbox's hit area. */
+.selectAllCheck {
+  flex: none;
+}
+
 .list {
   display: flex;
   flex-direction: column;
@@ -650,4 +656,58 @@
 .buttonPrimary:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #487) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target. This window is a single column of steps
+   and rows and needs no layout stopgap — only the footer, where the note and
+   three buttons shared one line and the line was 361px wide: on a phone the
+   note takes its own line and the buttons keep theirs.
+
+   Everything else grows: rows, chips and buttons are each the only target on
+   their line, and the neighbour above is another row. */
+:root[data-layout="phone"] .footer {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+:root[data-layout="phone"] .footNote {
+  flex: 1 1 100%;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .tagPick,
+    .adPick,
+    .chanRow,
+    .rotateButton,
+    .campaignLive,
+    .button,
+    .buttonPrimary,
+    .edgeCta
+  ) {
+  min-height: var(--eb-touch-target);
+}
+
+/* The "Select all eligible" checkbox is the same native input the Ad Center's
+   Disabled toggle is (ads.module.css): no pseudo-element box to hang a hit
+   area on, and a label around it that toggles it. The band is the target —
+   grown here, excluded and asserted by name in mobile-targets.spec.ts. */
+:root[data-layout="phone"] .selectAllLabel {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .close {
+  position: relative;
+}
+
+:root[data-layout="phone"] .close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
 }

@@ -50,7 +50,10 @@ export function RoomSettingsWindow({
       windowClassName={styles.roomWindow}
       onClose={onClose}
     >
-      <nav className={prefs.rail} aria-label="Room settings sections">
+      <nav
+        className={`${prefs.rail} ${styles.roomRail}`}
+        aria-label="Room settings sections"
+      >
         <div className={prefs.railTitle}>Room settings</div>
         <div className={styles.railSub}>{title}</div>
         {PANES.map((entry) => (

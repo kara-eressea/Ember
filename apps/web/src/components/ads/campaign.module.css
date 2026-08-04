@@ -861,3 +861,57 @@
   background: none;
   border: none;
 }
+
+/* ── Phone: 44px touch targets (MP2 §3, #487) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target. Like Post ads, this window is already a
+   single column at 393px; only its footer had to give — the note and the
+   buttons shared one line that had stopped being wide enough for both.
+
+   Both screens' controls grow rather than take overlays: every one of them
+   sits alone on its line (a tag chip, a channel row, a status row's action,
+   a footer button), so the height costs nothing but the height. */
+:root[data-layout="phone"] .footer {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+:root[data-layout="phone"] .footNote {
+  flex: 1 1 100%;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .tagPick,
+    .chanRow,
+    .resolveRow,
+    .statusRow,
+    .button,
+    .buttonPrimary,
+    .buttonPrimarySmall,
+    .replaceConfirm,
+    .replaceActions .button,
+    .renewButton,
+    .stopButton
+  ) {
+  min-height: var(--eb-touch-target);
+}
+
+/* The quiet text buttons — a status row's ✕, the edge state's way out, the
+   "post one by hand" link — keep their boxes and take an overlay: each has
+   room around it, and growing the line they sit on would move the reading
+   they belong to. */
+:root[data-layout="phone"] :is(.close, .dropButton, .edgeCta, .manualLink) {
+  position: relative;
+}
+
+:root[data-layout="phone"]
+  :is(.close, .dropButton, .edgeCta, .manualLink)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
