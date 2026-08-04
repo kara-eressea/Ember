@@ -14,14 +14,19 @@
   border-left: 1px solid var(--eb-border);
 }
 
-/* Narrow windows (< 900px): a right-edge overlay drawer over the log. */
+/* Narrow windows (< 900px): a right-edge overlay drawer over the log. The
+   86vw fallback is zoom-corrected (#388, MP1 §2): `vw` is a visual length and
+   is blind to the `zoom` the interface-scale pref puts on :root, so at 125%
+   the uncorrected form paints 1.07× the screen — the drawer runs off the left
+   edge and takes the tap-to-close sliver with it. Same form as the phone
+   overlay's cap in panel-overlay.module.css. */
 .overlay {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   z-index: 40;
-  width: min(280px, 86vw);
+  width: min(280px, calc(86vw / var(--eb-ui-zoom, 1)));
   box-shadow: -18px 0 50px -18px rgb(0 0 0 / 55%);
   animation: dmDrawerIn 0.15s ease;
 }

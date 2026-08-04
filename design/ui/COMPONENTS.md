@@ -118,7 +118,55 @@ CSS grid, full viewport. Columns (desktop):
 - Optional browser chrome strip (38px) above, only for the marketing/preview framing — not part of the real app.
 - Overlays (context menu, dialogs) are `position: absolute/fixed` above the grid.
 
-**Responsive:** below ~900px, collapse `members` to a toggle (header ☰ button), and turn `sidebar` into a slide-over drawer. Rail stays. Message rows stay single-line; let the body wrap.
+**Responsive:** see **Layout tiers** below — the shell has three named ones, and no component invents a fourth.
+
+---
+
+## Layout tiers
+
+The shell is responsive in exactly three shapes. They are named once, in `lib/layout-mode.ts`, and no stylesheet or component re-derives them from a pixel count of its own.
+
+| Tier | Effective width | Shell shape |
+|---|---|---|
+| `phone` | `< 768` | One pane at a time: conversation list ⇄ conversation. Rail folds into the list header. Members / DM profile are full-height overlays. |
+| `compact` | `768 – 940` | The desktop grid minus the right column by default; sidebar narrows; the conversation toolbar collapses into `⋯`. |
+| `wide` | `> 940` | The desktop grid, unchanged. |
+
+### The `data-layout` contract
+
+The live tier is stamped on `<html>` as `data-layout="phone" | "compact" | "wide"`, from boot (`main.tsx`, right after `applyInterface`) rather than from a React effect — nothing may paint untiered, and the login / identity-picker screens live outside `AppShell` but are still laid out.
+
+**Shell geometry keys off the attribute, never off a `max-width` media query.** `:root[data-layout="phone"] .sidebar { … }`, not `@media (max-width: 767px)`. This is not a style preference:
+
+- The interface-scale pref applies `zoom` to `:root`. Media queries and `getBoundingClientRect` are evaluated *before* that zoom, so at 125% a 1000px window lays the shell out as if it were 800px — cramped, single-column territory — while every media query still reports 1000 and hands it the full desktop grid. The columns then overflow.
+- So the tier is decided in JS from the **effective width**, `window.innerWidth / uiZoom()`, and recomputed on two signals: the window's `resize`, and a `MutationObserver` on the root's `style` attribute (a scale change fires no resize event of its own). Both coalesce into one animation frame.
+
+Write the tier attribute selectors **positively** — `:is([data-layout="phone"], [data-layout="compact"])`, never `:not([data-layout="wide"])` — so a root that has not been stamped yet gets the desktop shape rather than a flash of the narrow one.
+
+Media queries remain right for questions genuinely about the *device* rather than the layout box: `prefers-reduced-motion`, `pointer: coarse`, `hover: none`.
+
+### `data-pane` — the phone stack
+
+On `phone` the shell carries `data-pane="list" | "conversation"` on `[data-testid="app-shell"]`, and only there: on `compact` and `wide` the attribute is absent, which is itself the contract — a rule that wants the two-column grid asks for the absence, and nothing has to keep a third value in sync. The value is derived from the route, not from state of its own: an identity route with no conversation is `list`, a conversation route is `conversation`. Back is therefore a route change, so the browser's Back button and the Android back gesture walk the stack for free.
+
+### `data-eb-surface` — floating surfaces cap at the viewport
+
+Every floating surface — popover, context menu, preview card, anchored panel — carries the bare attribute `data-eb-surface`, and `styles/base.css` caps all of them in one place at `calc(100vw / var(--eb-ui-zoom, 1) - 2 * var(--eb-popover-margin))`. Only `max-width`: a surface keeps its own preferred width and the cap bites only when the screen cannot hold it. A module that restates the arithmetic (`max-width: calc(100vw - 32px)`) is stating the zoom-blind version of the same rule and should carry the attribute instead.
+
+Anything sized against the viewport outside that cap — an edge-anchored drawer, a lightbox image — divides `vw`/`vh` by `var(--eb-ui-zoom, 1)` itself. `vw` is a *visual* length: inside the root's `zoom` a 100vw box paints 1.25× the screen.
+
+### `data-eb-hover-reveal` — controls that only exist on hover
+
+A control revealed by `:hover` does not exist on a touchscreen; the event never fires and nothing stands in for it. Each such control (sidebar row buttons, the unrated ad's rating pill, the eicon picker's ☆) carries the bare attribute `data-eb-hover-reveal`, and `base.css` leaves it at `opacity: 1` under `@media (hover: none)`. Hover-only *previews* (eicon, link) degrade to tap — never to an unreachable action. The behavioural half is `lib/pointer.ts` (`useNoHover()`).
+
+`hover: none` rather than `pointer: coarse`, deliberately: a touchscreen laptop reports a coarse pointer among its inputs but still has a mouse as its primary one, and should keep the quiet rows.
+
+### Invariants
+
+- Above `wide`, no visual or behavioural change, ever. A diff that has to edit a desktop assertion is a bug in the change.
+- No literal pixel breakpoint outside `layout-mode.ts`. A width that is about the *window* belongs there; a width that is about one *row* belongs to that row and is measured, not guessed (`lib/useRowWidth.ts`).
+- The message log's scroll invariants survive every tier flip — a layout change must not strand the log off-tail.
+- MP1 must not *reduce* any touch target; growing them is MP2.
 
 ---
 
@@ -175,7 +223,9 @@ Left → right:
 - **Inbox chip** (#467), between the view toggles and the search field — the notification inbox, per *identity* rather than per conversation, parked here because this row is the one thing always on screen while a conversation is open. An IconBtn like the rest, carrying a **paper-tray** glyph (deliberately not a bell: the bell two chips left is the mute toggle) and, when anything is unseen, a `accentSoft`/`accentText` count pill on its top-right corner — mono, `tabular-nums`, 9.5px, "99+" past the cap. Opening it marks everything seen, so the pill clears on the click.
 - **Search field**, last and flush to the window's right edge — the row spans the right column, so this is where a search box belongs. The sidebar filter's pill reused: 28px tall, 14px radius, `bg` fill, magnifier + "Search log" placeholder in `meta`. It **owns the query**; results drop out of a `side` card anchored under it — scope segments ("This conversation" / "Everywhere") and a close ✕ on a hairline-separated head, then the hit rows. Focus = `accent` border + `accentSoft` ring.
 
-**Narrow behaviour**, in the order things give way: the topic shrinks first, then (≤940px) the search field parks as a magnifier chip and grows back on focus — taking the topic's room, not the name's — and (≤820px) the topic and the partner clock step out entirely. The chips never collapse; they are the row's point. (The thresholds are window-wide, but the row is `window − rail − sidebar`.)
+**Narrow behaviour**, in the order things give way: the topic shrinks first, then — outside the `wide` tier — the search field parks as a magnifier chip and grows back on focus, taking the topic's room rather than the name's. Below that the row sheds controls into a `⋯` overflow menu, in this order: topic + clock, then pin + mute, then ignore / room settings / close, then the partner actions menu, then the member-list and profile-panel toggles. **Search and the inbox chip never collapse**, and on `phone` they are the only two left inline (see Layout tiers).
+
+The collapse point is **measured, not a breakpoint**: the row is `window − rail − sidebar`, both of which the user can hide or drag, so what a window width implies about this row is a guess. It watches its own width (`lib/useRowWidth.ts`) and drops the next item when what remains no longer fits — which is also why a channel header, carrying three chips fewer than a DM's, keeps its description a good deal longer. Above `wide` it never collapses at all, so the desktop row is unchanged by construction.
 
 - **Data:** `{ conversation, memberCount, pinned, muted, ignored?, topic, canManageRoom, notificationsUnseen }`.
 

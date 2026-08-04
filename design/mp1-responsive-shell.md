@@ -172,10 +172,29 @@ against each other.
   above is the swept inventory, not a guess.)*
 - **G — docs + mobile e2e project.** A scoped Playwright project on a phone
   viewport covering the pane stack, the overflow toolbar and the overlays,
-  plus the tier model written into `design/ui/COMPONENTS.md`.
+  plus the tier model written into `design/ui/COMPONENTS.md`. *Done:*
+  `mobile-chromium`, a Pixel-class device context (393×727, `isMobile`,
+  `hasTouch`, coarse pointer, no hover), scoped by filename the way the
+  Firefox projects are — `mobile-*.spec.ts` runs there and is excluded from
+  the Chromium project, so the two partition the suite rather than overlap
+  it. The pane-stack and overlay specs B and D wrote **stay** in the desktop
+  project: `setViewportSize` does work inside a mobile context, but it leaves
+  `isMobile`/`hasTouch` as the context was built, so their "back on a desktop
+  viewport" halves would be asserting about a 1280px touchscreen with a
+  phone's user agent. Those specs are about *crossing* the boundary; this
+  project is for the paths that are phone from boot to teardown. What it adds
+  over them is what a resized desktop cannot reach — `hover: none` (the
+  package-F fallbacks and the eicon chip's tap-to-preview), real touch taps —
+  plus the daily-driver path nothing exercised at this width: type, send,
+  read it back, still at the tail. Two specs, ~6s of wall clock on top of a
+  2m29 suite.
 
-PR order: **A + E + F** (foundation and the two independent polish packages),
-then **C**, then **B**, then **D**, then **G**.
+PR order, as planned: **A + E + F** (foundation and the two independent polish
+packages), then **C**, then **B**, then **D**, then **G**. As shipped: **A**
+(#475), **E + F** (#476), **B** (#478), **C** (#479), **D** (#480), **G**
+(this one), plus a tracker/spec pass in between (#477). B and C swapped —
+they turned out to be conflict-free against each other (B owns the shell grid
+and the routes, C owns the header row), so neither had to wait.
 
 ## 6. Invariants every package must hold
 
