@@ -732,6 +732,17 @@ export type GatewayEvent =
        * idempotent overwrite; the watermark only ever moves forward. */
       d: { lastSeenId: number; unseen: number };
     }
+  | {
+      kind: "notification.removed";
+      /** A row was deleted from the identity's inbox (#506), so every other
+       * attached device drops it from an open panel. `unseen` is the
+       * server's RECOUNT after the delete, not a decrement: the badge is
+       * `count(id > watermark AND NOT muted)`, so deleting an unseen row
+       * changes it and deleting a seen or muted one does not — and only the
+       * count that walked the rows knows which. Idempotent: a row already
+       * gone is simply not there to remove. */
+      d: { id: number; unseen: number };
+    }
   | { kind: "sys"; d: { message: string } }
   // Real-time bridge: website events (notes, friend requests, comment
   // replies) pushed over the chat socket. Volatile — the website remains

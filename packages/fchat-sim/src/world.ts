@@ -513,6 +513,23 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Bindweed Ash"],
     },
+    // Reserved for the #505/#506 inbox-actions E2E (same isolation rules).
+    // Quillon Reed reads one inbox from two attached browsers; Sable
+    // Arkwright and Thimble Ashgrove never join chat at all — they only send
+    // friend requests over the sim's JSON API, one to be answered from the
+    // inbox and one to be deleted from it while still unseen.
+    "quillon@example.test": {
+      password: "hunter2",
+      characters: ["Quillon Reed"],
+    },
+    "sable@example.test": {
+      password: "hunter2",
+      characters: ["Sable Arkwright"],
+    },
+    "thimble@example.test": {
+      password: "hunter2",
+      characters: ["Thimble Ashgrove"],
+    },
     // Reserved for the #375 phone pane-stack E2E (same isolation rules). Pane
     // Hollow walks the list ⇄ conversation stack while the viewport crosses
     // the phone boundary; Stack Fell is the raw-SimClient partner who writes
@@ -1003,6 +1020,19 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Where the mentions get buried.",
       oplist: ["Hazelmere Fen"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #505/#506 inbox-actions E2E: Quillon Reed's two
+    // browsers both need a conversation open, because the inbox chip rides
+    // the conversation toolbar. Nothing is ever said in here — the log is
+    // scenery, the inbox is the subject.
+    {
+      name: "ADH-505inboxactions9a8b7c6d5e",
+      title: "Quillon Actions",
+      mode: "chat",
+      description: "Somewhere to stand while the inbox is read.",
+      oplist: ["Quillon Reed"],
       npcs: [],
       listed: false,
     },

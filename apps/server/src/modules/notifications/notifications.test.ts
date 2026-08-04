@@ -441,6 +441,102 @@ describe("notification inbox — REST", () => {
     expect(after.json<{ unseen: number }>().unseen).toBe(1);
   });
 
+  it("deletes one entry, recounts the badge and fans the correction out (#506)", async () => {
+    const { identityId, token } = await startIdentity();
+    const headers = { authorization: `Bearer ${token}` };
+    const store = app.notifications;
+    for (let i = 1; i <= 3; i += 1) {
+      await store.recordRtb(
+        identityId,
+        "note",
+        "Nyx Firemane",
+        `d${String(i)}`,
+      );
+    }
+    const rows = await rowsFor(identityId);
+    expect(await store.unseenCount(identityId)).toBe(3);
+
+    const broadcasts = vi.spyOn(app.gatewayHub, "broadcast");
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/api/identities/${identityId}/notifications/${String(rows[1]!.id)}`,
+      headers,
+    });
+    expect(removed.statusCode).toBe(200);
+    // The count comes back RECOUNTED, not decremented client-side: the row
+    // was unseen, so the badge is one lower and the server is what says so.
+    expect(removed.json<{ removed: boolean; unseen: number }>()).toEqual({
+      removed: true,
+      unseen: 2,
+    });
+    expect((await rowsFor(identityId)).map((row) => row.excerpt)).toEqual([
+      "d1",
+      "d3",
+    ]);
+    // …and every other attached device drops the row and takes the same
+    // number, rather than each tab arriving at its own answer.
+    expect(broadcasts.mock.calls).toContainEqual([
+      identityId,
+      {
+        kind: "notification.removed",
+        d: { id: rows[1]!.id, unseen: 2 },
+      },
+    ]);
+
+    // Idempotent: the second tab's delete of a row that is already gone is a
+    // no-op with the current count, not an error the user has to read — and
+    // it fans nothing out, because nothing changed.
+    broadcasts.mockClear();
+    const again = await app.inject({
+      method: "DELETE",
+      url: `/api/identities/${identityId}/notifications/${String(rows[1]!.id)}`,
+      headers,
+    });
+    expect(again.json<{ removed: boolean; unseen: number }>()).toEqual({
+      removed: false,
+      unseen: 2,
+    });
+    expect(
+      broadcasts.mock.calls.filter(
+        ([, frame]) => frame.kind === "notification.removed",
+      ),
+    ).toEqual([]);
+
+    // A row the user has already seen is not in the count, so deleting it
+    // must not move the badge — the thing a decrement would have got wrong.
+    await store.markSeen(identityId, rows[0]!.id);
+    expect(await store.unseenCount(identityId)).toBe(1);
+    const seenRow = await app.inject({
+      method: "DELETE",
+      url: `/api/identities/${identityId}/notifications/${String(rows[0]!.id)}`,
+      headers,
+    });
+    expect(seenRow.json<{ unseen: number }>().unseen).toBe(1);
+    broadcasts.mockRestore();
+  });
+
+  it("refuses to delete an entry on an identity the caller does not own", async () => {
+    const mine = await startIdentity();
+    const other = await startIdentity();
+    await app.notifications.recordRtb(mine.identityId, "note", "Nyx Firemane");
+    const [row] = await rowsFor(mine.identityId);
+
+    const refused = await app.inject({
+      method: "DELETE",
+      url: `/api/identities/${mine.identityId}/notifications/${String(row!.id)}`,
+      headers: { authorization: `Bearer ${other.token}` },
+    });
+    expect(refused.statusCode).toBe(404);
+    expect(await rowsFor(mine.identityId)).toHaveLength(1);
+
+    // The store's own guard, straight: an id from another inbox matches
+    // nothing even when the identity is the caller's own.
+    expect(await app.notifications.remove(other.identityId, row!.id)).toBe(
+      false,
+    );
+    expect(await rowsFor(mine.identityId)).toHaveLength(1);
+  });
+
   it("refuses an identity the caller does not own", async () => {
     const mine = await startIdentity();
     const other = await startIdentity();
