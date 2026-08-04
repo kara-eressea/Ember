@@ -16,6 +16,7 @@ import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { markConversationRead } from "../../lib/mark-read.js";
 import { identityPath } from "../../lib/routes.js";
+import { useSubmenuTrigger } from "../../lib/useSubmenuTrigger.js";
 import { patchPrefs } from "../prefs/patch.js";
 import { MenuSurface } from "../common/MenuSurface.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
@@ -56,6 +57,7 @@ export function ChannelContextMenu({
   // The Chat/Ads/Both choice only means something where the server lets
   // both kinds of message through; elsewhere the item renders disabled.
   const canChooseView = channel.mode === "both";
+  const showTrigger = useSubmenuTrigger(showOpen, setShowOpen, canChooseView);
 
   // Menus move focus into themselves; arrow keys walk the enabled items.
   useEffect(() => {
@@ -217,15 +219,7 @@ export function ChannelContextMenu({
       >
         {muted ? "Unmute" : "Mute"}
       </button>
-      <div
-        className={styles.memberMenuSub}
-        onMouseEnter={() => {
-          setShowOpen(canChooseView);
-        }}
-        onMouseLeave={() => {
-          setShowOpen(false);
-        }}
-      >
+      <div className={styles.memberMenuSub} {...showTrigger.wrapper}>
         <button
           className={styles.memberMenuItem}
           role="menuitem"
@@ -242,12 +236,12 @@ export function ChannelContextMenu({
               ? "Choose whether this channel shows chat, roleplay ads, or both"
               : "This channel allows only one kind of message, so there is nothing to choose"
           }
-          // Open-only, never a toggle — see MemberContextMenu's "Invite
-          // to →": onMouseEnter has already opened the panel by the time a
-          // click can land, so toggling would shut it again.
-          onClick={() => {
-            setShowOpen(true);
-          }}
+          // Open-only under a mouse, a toggle under a finger — see
+          // MemberContextMenu's "Invite to →" and lib/useSubmenuTrigger.ts:
+          // onMouseEnter has already opened the panel by the time a click can
+          // land, so toggling would shut it again; on a touchscreen there is
+          // no enter and no leave, so the click is the only handle there is.
+          onClick={showTrigger.press}
           onKeyDown={(event) => {
             if (event.key === "ArrowRight" || event.key === "Enter") {
               event.preventDefault();

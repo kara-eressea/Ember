@@ -256,70 +256,18 @@ unbuilt §4 on the way.
 
 ## 6. What only real hardware can answer
 
-Everything below was built and verified against Chromium's mobile emulation,
-which is a real Blink with a phone's viewport, touch pointer and `hover: none`
-— and is *not* a phone. Three engine behaviours it does not reproduce at all,
-and one it reproduces with its own numbers. One sitting on a real device
-clears the list; the notes say what to look for and where to start if it is
-wrong.
+Everything MP2 built was verified against Chromium's mobile emulation, which is
+a real Blink with a phone's viewport, touch pointer and `hover: none` — and is
+*not* a phone. Three engine behaviours it does not reproduce at all, and one it
+reproduces with its own numbers: Android's synthetic `contextmenu`, iOS's
+callout and compatibility-click timing, iOS's keyboard, and WebKit's
+deceleration curve. MP4 put the layout half of that on a real WebKit (the
+`mobile-webkit` Playwright project); the rest still needs a phone.
 
-**Android (Chrome), one device:**
-
-- [ ] **One hold, one menu.** Hold an eicon in a message, a sidebar row and a
-      member row. Exactly one action sheet must appear each time. Android
-      synthesizes its own `contextmenu` from a hold at roughly our threshold,
-      and the deduplication for it is unit-tested only — emulation never fires
-      that event, so no E2E on any machine can reach this. A *second* menu, or
-      a menu that opens and instantly replaces itself, is the failure.
-- [ ] **A hold on a message's text still selects the text**, and the selection
-      handles appear as usual. Only the discrete elements are claimed
-      (`data-eb-press`); prose must be untouched.
-- [ ] **The composer sits above the keyboard** with a conversation open, and
-      the log stays at the tail when the keyboard opens on a log that was at
-      the tail. Chrome Android and iOS take the same default path here, so if
-      it is wrong on one it is likely wrong on both.
-
-**iOS (Safari), one device — this is the engine `visual-viewport.ts` exists
-for, and none of it is reachable from any test we have:**
-
-- [ ] **The composer sits above the keyboard.** iOS leaves the layout viewport
-      alone, so a failure here is the whole module not working: the composer
-      will be *behind* the keyboard, exactly as it was before MP2.
-- [ ] **A long press opens the menu at all.** iOS Safari never fires
-      `contextmenu`, so before MP2 every one of these menus was unreachable on
-      an iPhone. If a hold does nothing, the recognizer is not attaching —
-      check that `hover: none` matches on the device.
-- [ ] **iOS's own callout does not race it.** No "Copy / Look Up / Share"
-      sheet, and no selection handles, on a claimed element.
-- [ ] **The action a sheet row performs happens once.** The ghost-click
-      swallow is the thing under test: a hold that opens a sheet must not also
-      insert the eicon, open the conversation or open the profile card behind
-      it. WebKit's compatibility-click timing is its own.
-- [ ] **Momentum feel.** Flick the log up into the backlog and let it coast.
-      The log must not snap back to the newest message as the fling runs out.
-      If it does — "flick, then glued" — start from package B's Chromium
-      deceleration table (§5-B): the question is whether WebKit's tail crosses
-      the 120px stick-release hysteresis *later* than 500ms after the finger
-      lifts, which would put it outside the #454 intent window.
-- [ ] **Stick release and return.** After the fling, an arriving message must
-      not yank the view; the jump-to-recent pill returns to the tail in one tap
-      and the glue re-engages for good.
-- [ ] **Rubber-banding stays inside the log.** Overscroll at the top of the
-      backlog must bounce the log, not the page.
-- [ ] **A sheet raised while the keyboard is up is fully on screen.** The sheet
-      is pinned to the layout viewport and does not read
-      `--eb-keyboard-inset`; what makes it visible is that opening it is modal
-      and blurs the composer, which retracts the keyboard. That inference is
-      the one thing the shim cannot check (a shimmed keyboard cannot retract),
-      so it is checked here.
-
-**Both, and not blocking:**
-
-- [ ] **Safe areas.** A notched or gesture-bar phone in portrait and
-      landscape: nothing important under the home indicator or the notch. The
-      sheet already pads itself with `env(safe-area-inset-bottom)`; the rest of
-      the shell does not, and that is **MP3 scope** — note what is clipped
-      rather than fixing it here.
+The checks themselves now live in
+**[mobile-device-checklist.md](mobile-device-checklist.md)**, merged with
+MP3 §8's into one list ordered as one sitting — an Android pass, then an iOS
+pass. This section is the pointer; the list is there.
 
 ## 7. Invariants
 

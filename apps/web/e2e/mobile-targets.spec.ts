@@ -81,12 +81,25 @@ function excluded(target: TargetMeasurement): string | undefined {
 
 test("phone device: every control on screen is a 44px target, and no two contest the same pixels (#376)", async ({
   page,
+  browserName,
 }) => {
   test.setTimeout(240_000);
   await interceptAvatars(page);
 
   await provisionAndConnect(page, "reachpalmer@example.test", "Reach Palmer");
-  const cdp = await page.context().newCDPSession(page);
+  // The one surface in the walk that has to be *held* open (MP4, #378). CDP is
+  // Chromium-only and Playwright's cross-engine touch API only taps, so on
+  // WebKit that surface drops out of the sweep and every other one — the two
+  // panes, the overflow menu, the member overlay, the inbox, the switcher, the
+  // three preferences panes — is measured with the engine's own font metrics
+  // and layout. Which is the half worth having here: a hit area is a *layout*
+  // fact, and it is the second engine that says whether the boxes are the same
+  // size. The sheet's own rows are pinned at 44px by menu-surface.module.css
+  // and asserted in mobile-longpress.spec.ts on Chromium.
+  const cdp =
+    browserName === "webkit"
+      ? undefined
+      : await page.context().newCDPSession(page);
 
   const partner = await SimClient.connect(
     "pressley@example.test",
@@ -196,14 +209,16 @@ test("phone device: every control on screen is a 44px target, and no two contest
     await page.keyboard.press("Escape");
 
     // ── A long-press action sheet (package A's rows are part of this) ────
-    const eicon = log.getByRole("img", { name: EICON }).last();
-    await expect(eicon).toBeVisible();
-    await longPress(cdp, page, eicon);
-    await expect(
-      page.getByRole("dialog", { name: `${EICON} eicon menu` }),
-    ).toBeVisible();
-    await sweep("action sheet");
-    await page.keyboard.press("Escape");
+    if (cdp !== undefined) {
+      const eicon = log.getByRole("img", { name: EICON }).last();
+      await expect(eicon).toBeVisible();
+      await longPress(cdp, page, eicon);
+      await expect(
+        page.getByRole("dialog", { name: `${EICON} eicon menu` }),
+      ).toBeVisible();
+      await sweep("action sheet");
+      await page.keyboard.press("Escape");
+    }
 
     // ── The quick switcher ───────────────────────────────────────────────
     await page.keyboard.press("Control+k");

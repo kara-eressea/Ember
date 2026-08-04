@@ -20,6 +20,14 @@
 // to open a menu *and* leave the compatibility click on the floor — the
 // ghost-click swallow, on a real engine rather than in jsdom.
 //
+// Not in the `mobile-webkit` project (MP4, #378): the census is ten holds and
+// nothing else, and a hold is `Input.dispatchTouchEvent`, which is Chromium's
+// alone. The scope-out is in playwright.config.ts (WEBKIT_UNREACHABLE). It
+// costs less than it looks: what this file checks is *wiring* — whether each
+// row spreads `{...press}` — which is the same JSX on every engine. The
+// engine-dependent half (the ghost click's timing, iOS's callout) was never
+// reachable from a desktop WebKit build either, and is in mp2-touch.md §6.
+//
 // Owns knuckle@example.test (Knuckle Reed), palmwex@example.test (Palm
 // Wexford) and the Knuckle Room: spec files run in parallel and a character
 // holds one sim connection, so specs share neither (world.ts).

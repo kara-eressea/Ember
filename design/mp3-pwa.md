@@ -146,7 +146,16 @@ timers:
   which is only reached from `onclose`, so N queued timers landing in one tick
   are still one close per socket. The keepalive is a `setInterval`, which has
   at most one task pending at a time, so it fires once on thaw rather than N
-  times. A regression test pins both halves.
+  times. *This round claimed a regression test pinning both halves and shipped
+  without one; MP4 (#378) found the gap and wrote it.* What it pins is the two
+  structural facts the walk turned on rather than the burst itself — a fake
+  clock is the one instrument that cannot model a frozen document, whose timers
+  do not run at all, so "twenty queued tasks in one tick" is not a state the
+  harness can enter. Instead: a dead socket gets exactly one keepalive and one
+  verdict however long the silence (the interval never gets a second turn — the
+  first unanswered ping is already the close, and `#teardownSocket` clears it),
+  and the ladder is walked three rungs to show it doubles per dead socket and
+  never per fired timer.
 
 §5's recovery affordance was a real gap and is fixed in the toolbar: the
 sidebar chip (#465) is unreachable on `data-pane="conversation"` because that
@@ -194,68 +203,18 @@ can make one. Two measured facts bound what is already known — Chromium parses
 the manifest with zero errors and reports the page installable (checked over
 CDP against the built bundle behind the real static handler), and
 `display-mode` is **not** emulatable: `Emulation.setEmulatedMedia` accepts a
-`display-mode` feature and Blink ignores it, so every `@media (display-mode:
-standalone)` rule is unreachable from Playwright on any platform. The safe-area
-arithmetic underneath it was verified instead by driving the four tokens
-directly (browser tab → 0; insets alone → padded; keyboard taller than the
-inset → 0; keyboard shorter → the remainder). What is left needs a phone.
+`display-mode` feature and Blink ignores it, so every
+`@media (display-mode: standalone)` rule is unreachable from Playwright on any
+platform. The safe-area arithmetic underneath it was verified instead by
+driving the four tokens directly (browser tab → 0; insets alone → padded;
+keyboard taller than the inset → 0; keyboard shorter → the remainder), and MP4
+pinned the gating itself as a source assertion in `styles/base.test.ts` — every
+`env(safe-area-inset-*)` and the `overscroll-behavior-y` rule sit inside the
+standalone block, which is the "the browser tab changes in nothing" invariant
+(§7) written where a machine can check it. What is left needs a phone.
 
-**Android (Chrome):**
-
-- [ ] **Install prompt appears** and the installed icon is the flame, not a
-      screenshot of the page. A cropped or letterboxed icon means the maskable
-      512 is wrong, not the 192.
-- [ ] **The status bar matches the app's top bar**, and re-matches after
-      switching base theme in Preferences (`theme-color` sync, §4).
-- [ ] **The shortcut menu.** Long-press the installed icon: "Continue" and
-      "Identities" appear, and each opens on the right screen. Manifest
-      parsing of `shortcuts` is emulator-verifiable; the menu itself is not.
-
-**iOS (Safari) — the engine none of this is reachable from:**
-
-- [ ] **Add to Home Screen gives a standalone window** (no address bar) with
-      the `apple-touch-icon`, from the manifest's `display` alone — the
-      deprecated `apple-mobile-web-app-capable` is deliberately absent (§2)
-      and this is the check that the omission was right.
-- [ ] **Nothing sits under the notch or the home indicator** in the installed
-      window, in both orientations, on the shell, the login screen, the
-      identity picker, a long-press sheet and the member-list overlay.
-- [ ] **The composer clears the keyboard without an extra gap** above it —
-      the double-pad case §3's `max()` is there to prevent.
-- [ ] **A browser tab is unchanged** by all of the above: same layout, no
-      padding, `viewport-fit=cover` notwithstanding.
-
-**Lifecycle (package B) — Android/Chrome, where freezing actually happens:**
-
-Chrome freezes a backgrounded tab after roughly five minutes and may discard it
-entirely under memory pressure. Neither event is reachable from a test; both are
-routine on a phone. `chrome://discards` on the device can force a freeze
-directly, which is the cheapest way to run the first two.
-
-- [ ] **A frozen tab comes back live.** Open a conversation, background the app
-      for ten minutes or freeze it from `chrome://discards`, then return: new
-      messages arrive within a second or two and nothing needs a tap. Watch that
-      it does *not* flash through a visible reconnect when the socket survived
-      — that is the pong deadline being handed in on freeze (§6.1) doing its
-      job.
-- [ ] **A thaw onto a dead radio recovers quickly.** Same, but turn the radio
-      off before backgrounding and on again after returning: the reconnect
-      should land within a couple of seconds, not after the 30s ceiling. This is
-      the ladder reset, and it is the one fix whose failure mode is "it works,
-      just slowly", so it needs a clock rather than an impression.
-- [ ] **A discarded tab reloads cleanly.** Under memory pressure Chrome throws
-      the document away and reloads on return; the app should come back to the
-      same conversation from the URL, not to the identity picker.
-- [ ] **Pull-to-refresh is gone in the installed window** — drag down on the
-      toolbar and on the composer's chrome, in a conversation: nothing reloads.
-      Then confirm the *browser tab* still refreshes on the same gesture.
-- [ ] **The connection chip is reachable and tappable from a conversation**
-      with a real thumb (flight mode is the easiest way to produce one), and
-      pressing it does not catch the back chip beside it.
-
-**Lifecycle — iOS/Safari:**
-
-- [ ] **Returning from the app switcher resyncs.** iOS fires no `freeze`/
-      `resume` at all, so the recovery there rests entirely on
-      `visibilitychange` and the probe's staleness test — the paths #432 built.
-      Leave the app for half an hour, come back, and check the log catches up.
+Those checks now live in
+**[mobile-device-checklist.md](mobile-device-checklist.md)**, merged with
+MP2 §6's into one list ordered as one sitting — an Android pass, then an iOS
+pass, install first in each so everything after it happens in the window the
+checks are about. This section is the pointer; the list is there.

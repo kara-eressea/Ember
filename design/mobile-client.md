@@ -1,8 +1,29 @@
 # MP — Mobile web client (responsive/PWA)
 
-Planned 2026-07-23 with the user. Runs after the current polish soak; ordered
-ahead of the MX desktop client build (MX1's server-side extraction may still
-proceed in parallel — the two tracks touch disjoint code).
+**Closed track.** Planned 2026-07-23 with the user, built 2026-08-03/04:
+MP1 (v0.21.0), MP2 (v0.22.0), MP3 (v0.23.0), MP4 (tests and docs — no release
+of its own). The phone shell, its touch grammar, its install surface and its
+test tier all shipped; what is left is a real-device confidence pass, gathered
+into [mobile-device-checklist.md](mobile-device-checklist.md).
+
+This file is the track's plan and its rationale record — why mobile, and why
+not an app store. **The authoritative as-built specs are the three companion
+documents**, one per implementation milestone:
+
+| | Spec | What it holds |
+|---|---|---|
+| MP1 | [mp1-responsive-shell.md](mp1-responsive-shell.md) | The three zoom-corrected layout tiers, `data-layout`, the pane stack, the toolbar collapse, the phone overlays |
+| MP2 | [mp2-touch.md](mp2-touch.md) | Long-press action sheets, the keyboard inset, 44px targets, the momentum finding |
+| MP3 | [mp3-pwa.md](mp3-pwa.md) | Manifest and icons from config, safe areas, theme-color, the frozen-tab lifecycle fixes |
+
+MP4 (#500) has no spec of its own — it was an audit, and its findings are written into
+the three above, into `design/ui/COMPONENTS.md`, and into the checklist. Its
+one durable artefact is the `mobile-webkit` Playwright project: the phone specs
+on a second engine, which is as close to iOS Safari as anything automatable
+gets. See the tracker's log entry for what it found.
+
+The track was ordered ahead of the MX desktop client build (MX1's server-side
+extraction could proceed in parallel — the two touch disjoint code).
 
 ## Why mobile, and why not an app store
 
@@ -51,7 +72,12 @@ Desktop layout is unchanged above the breakpoint.
   display, and lifecycle only.
 - **MP4 — mobile e2e tier + docs.** Playwright mobile-emulation projects
   (touch, small viewports) covering the stack, keyboard, sheets, and scroll
-  invariants; self-host docs gain an install-to-home-screen section.
+  invariants; self-host docs gain an install-to-home-screen section. *As
+  built:* the suite arrived a package at a time with the milestones that
+  needed it (MP1 package G opened `mobile-chromium`, MP2 package D audited its
+  own spec, MP3 package B the install docs), so MP4 was the closing sweep
+  rather than the build — a second engine (`mobile-webkit`), the coverage
+  audit MP2 had had and MP1/MP3 had not, and this consolidation.
 
 MP1's "one breakpoint (~768px)" was superseded during planning by three named,
 zoom-corrected tiers — see [mp1-responsive-shell.md](mp1-responsive-shell.md),
@@ -70,4 +96,4 @@ invariants.
 ## Tracking
 
 GitHub milestone "MP — Mobile web (PWA)": #375 (MP1), #376 (MP2), #377 (MP3),
-#378 (MP4), dependency-ordered.
+#378 (MP4), dependency-ordered. All four closed; the milestone is complete.

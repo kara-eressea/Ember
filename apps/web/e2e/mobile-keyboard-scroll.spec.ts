@@ -47,6 +47,15 @@
 //    cannot cover is the engine's own focus auto-scroll, so the last test does
 //    that half for real, with a real tap and a real caret.
 //
+// The two halves split across the engines (MP4, #378). The FLING is Chromium's
+// alone — `Input.synthesizeScrollGesture` is the only API anywhere that hands a
+// compositor a velocity, and a hand-rolled touchmove sequence would carry this
+// file's momentum rather than the engine's. THE KEYBOARD runs on both, and is
+// the more valuable of the two to have there: the shim is `addInitScript`, not
+// CDP, so it reproduces the same signal on WebKit — and WebKit is the engine
+// `visual-viewport.ts` was written for. The inset arithmetic, the shell shrink
+// and the log's tail are now measured on it.
+//
 // Owns mitten@example.test (Mitten Vale), driftwood@example.test (Driftwood
 // Ash) and the Lantern Room: spec files run in parallel and a character holds
 // one sim connection, so specs share neither (world.ts).
@@ -288,7 +297,22 @@ async function settleAndTrackClosestApproach(page: Page): Promise<number> {
 
 test("a short touch flick releases the bottom-stick and the momentum tail never re-sticks it (#376)", async ({
   page,
+  browserName,
 }) => {
+  // Chromium only, and the reason is the subject rather than the tooling
+  // (MP4, #378). A fling is a *velocity* handed to the compositor, and
+  // `Input.synthesizeScrollGesture` is the only API on any engine that
+  // produces one; WebKit exposes no equivalent, and a hand-rolled sequence of
+  // touchmoves would carry whatever momentum this file synthesized, not
+  // whatever WebKit's compositor decides — i.e. it would test the test.
+  // Which is exactly the gap mp2-touch.md §6 already records as real-device
+  // work: the deceleration table in §5-B is Blink's, and whether WebKit's tail
+  // crosses the 120px hysteresis later than the 500ms intent window is a
+  // question only an iPhone can answer.
+  test.skip(
+    browserName === "webkit",
+    "Input.synthesizeScrollGesture is Chromium-only; a fling's momentum cannot be synthesized cross-engine (mp2-touch.md §6)",
+  );
   test.setTimeout(180_000);
   await interceptAvatars(page);
 

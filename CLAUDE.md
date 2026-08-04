@@ -4,7 +4,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 
 ## Current state
 
-**Milestones 1–11 shipped; releases continue past the milestone plan (v0.18.0, 2026-08-01)** — the bouncer, web client, self-host hardening, profile viewer/matcher/eicon search, client polish, ads + character search, and the rotation-campaigns + ratings round are implemented and released; post-milestone work is production bug-fix/polish rounds driven by the user's reports. Check `design/milestones.md` for current status, then work the next unchecked step (next up: to be planned with the user — the remaining discovery-extras pool and the MX desktop client are the standing candidates). Update the tracker as steps complete. Don't trust the version in this paragraph over `git tag`/`gh release list` — check those for the truth, then update this line when cutting a release.
+**Milestones 1–11 shipped, and the MP mobile track with them (v0.23.0, 2026-08-04)** — the bouncer, web client, self-host hardening, profile viewer/matcher/eicon search, client polish, ads + character search, the rotation-campaigns + ratings round, and the responsive/PWA phone client are implemented and released; other post-milestone work is production bug-fix/polish rounds driven by the user's reports. Check `design/milestones.md` for current status, then work the next unchecked step (next up: to be planned with the user — the remaining discovery-extras pool and the MX desktop client are the standing candidates). Update the tracker as steps complete. Don't trust the version in this paragraph over `git tag`/`gh release list` — check those for the truth, then update this line when cutting a release.
 
 ## Dev environment
 
@@ -22,10 +22,11 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/milestones.md` | **Status tracker** — open/closed milestones, M1 step checklist, standing to-dos. Keep this updated as work progresses |
 | `design/milestone-*.md` | One file per milestone (1–10), dependency-ordered |
 | `design/standalone-client.md` | Desktop-client design (M7 step 8): embedded bouncer, session-library boundary, pglite, Electron — built post-v1.0 |
-| `design/mobile-client.md` | MP track plan: responsive web client + PWA, why not an app store, MP1–MP4 scope |
+| `design/mobile-client.md` | **MP track — closed** (MP1–MP4 shipped): the plan, and the rationale record for why not an app store. Points at the three as-built specs below |
 | `design/mp1-responsive-shell.md` | **MP1 implementation spec** — the three zoom-corrected layout tiers, `data-layout`, package A–G cut and invariants |
-| `design/mp2-touch.md` | **MP2 implementation spec + as-built** — long-press action sheets, the keyboard inset, 44px targets, momentum; the real-device checklist no emulator can replace |
+| `design/mp2-touch.md` | **MP2 implementation spec + as-built** — long-press action sheets, the keyboard inset, 44px targets, the momentum finding |
 | `design/mp3-pwa.md` | **MP3 implementation spec** — manifest/icons from config, safe areas, theme-color, frozen-tab lifecycle; no service worker (decision + rationale) |
+| `design/mobile-device-checklist.md` | The MP track's real-device pass, MP2 §6 + MP3 §8 merged into one runnable list — Android, then iOS. What no emulator or second engine can answer |
 | `design/testing-strategy.md` | fchat-sim, unit/integration/E2E strategy, responsible live testing |
 | `design/risks-and-open-questions.md` | ToS exposure, protocol gaps, scaling ceiling |
 | `design/chat-protocol.md` | F-Chat wire protocol (copied from F-List wiki) |

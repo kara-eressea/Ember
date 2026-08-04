@@ -10,6 +10,14 @@
 // only taps. Which is also what makes the drag case meaningful — the same
 // primitive, with movement in the middle.
 //
+// …and therefore NOT in the `mobile-webkit` project (MP4, #378): `newCDPSession`
+// throws on anything that is not Chromium, and every test here is a hold. The
+// scope-out is in playwright.config.ts (WEBKIT_UNREACHABLE) rather than a skip,
+// because there would be nothing left of the file to run. What WebKit would
+// have added — iOS's own callout racing the recognizer, WebKit's
+// compatibility-click timing — is real-device work in mp2-touch.md §6, and no
+// desktop WebKit build answers it either.
+//
 // Owns holt@example.test (Holt Barrow) and marlaquinn@example.test (Marla
 // Quinn): spec files run in parallel and a character holds one sim
 // connection, so specs share neither.

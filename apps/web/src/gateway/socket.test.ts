@@ -368,6 +368,62 @@ it("leaves the backoff alone when the tab merely regains focus", async () => {
   expect(FakeSocket.instances).toHaveLength(attempts + 1);
 });
 
+// The hazard MP3 §5 named and §6.1 walked: a frozen tab's timer backlog fires
+// all at once on resume, and the reconnect backoff must not read that heap as
+// a run of rapid failures — a ladder at its 30s ceiling on an installed app is
+// thirty seconds of stale conversation with no address bar to reload from.
+//
+// It was walked and found sound rather than fixed, and this is the guard for
+// the walk. Note what a fake clock can and cannot say here: the one thing it
+// will not model is a frozen document, whose timers do not run at all, so
+// "twenty queued tasks arriving in one tick" is not a state this harness can
+// enter. What it *can* pin is the two structural facts the walk turned on, and
+// they are what make the burst harmless in the first place — one close per
+// socket however long the silence, and one doubling per close.
+
+it("gives a dead socket one keepalive and one verdict, however long the silence", async () => {
+  const { socket } = await connectClient();
+
+  // Ten keepalive periods of a peer that never answers. The interval gets
+  // exactly one turn regardless: the first unanswered ping is already the
+  // verdict, and `#teardownSocket` clears the interval on the way out — so
+  // there is no queue of pings for a thaw to deliver in a heap, and the deadline
+  // that would double the ladder is armed once (`#pongTimer === undefined`).
+  await vi.advanceTimersByTimeAsync(10 * 30_000);
+  expect(pings(socket)).toHaveLength(1);
+  expect(socket.closed).toBeDefined();
+});
+
+it("doubles the reconnect ladder once per dead socket, never once per timer", async () => {
+  const { socket } = await connectClient();
+
+  // `#backoffMs` doubles in `#scheduleReconnect` alone, and nothing but
+  // `onclose` reaches it. So the ladder is a function of how many sockets died,
+  // not of how many timers fired — which is the whole reason a backlog cannot
+  // escalate it. Walk three rungs and read the delays back.
+  await vi.advanceTimersByTimeAsync(40_000); // ping at 30s, no pong by 40s
+  expect(FakeSocket.instances).toHaveLength(1);
+
+  // Rung one: a second.
+  await vi.advanceTimersByTimeAsync(1_100);
+  expect(FakeSocket.instances).toHaveLength(2);
+  FakeSocket.instances.at(-1)!.close(1006, "still gone");
+
+  // Rung two: two seconds, not four and not thirty.
+  await vi.advanceTimersByTimeAsync(1_800);
+  expect(FakeSocket.instances).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(400);
+  expect(FakeSocket.instances).toHaveLength(3);
+  FakeSocket.instances.at(-1)!.close(1006, "still gone");
+
+  // Rung three: four.
+  await vi.advanceTimersByTimeAsync(3_800);
+  expect(FakeSocket.instances).toHaveLength(3);
+  await vi.advanceTimersByTimeAsync(400);
+  expect(FakeSocket.instances).toHaveLength(4);
+  expect(socket.closed).toBeDefined();
+});
+
 it("stops listening for the freeze after a deliberate teardown", async () => {
   const { client, socket } = await connectClient();
   await vi.advanceTimersByTimeAsync(30_000);

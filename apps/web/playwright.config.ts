@@ -30,6 +30,26 @@ export const PREVIEW_PORT = envPort("E2E_PREVIEW_PORT", WEB_PORT + 1);
  * Chromium project gives it up, so the two partition the suite. */
 const MOBILE_SPECS = "mobile-*.spec.ts";
 
+/**
+ * The two mobile specs a WebKit engine cannot run at all (MP4, #378).
+ *
+ * Both are built entirely out of `Input.dispatchTouchEvent` (e2e/long-press.ts)
+ * — a finger that goes down, stays down past 450ms and lifts. Playwright's
+ * cross-engine touch API only *taps*, and `newCDPSession` throws on anything
+ * that is not Chromium, so there is no hold to be had here: every test in both
+ * files is a hold. Ported to synthetic `PointerEvent`s they would still run,
+ * and would then be asserting about events this file dispatched rather than
+ * about WebKit's — which is the opposite of why the project exists. Scoped out
+ * whole rather than half-ported, and said so in each file's header too.
+ *
+ * The two mixed files (mobile-keyboard-scroll, mobile-targets) keep their
+ * CDP-free tests here and skip the rest per test, at the call site.
+ */
+const WEBKIT_UNREACHABLE = [
+  "mobile-longpress.spec.ts",
+  "mobile-sheets.spec.ts",
+];
+
 export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",
@@ -54,16 +74,19 @@ export default defineConfig({
     // fact — uploaded as an artifact from the workflow.
     trace: "retain-on-failure",
   },
-  // The suite is Chromium's, on a desktop viewport, plus three small named
-  // slices: one on a phone device profile (MP1 package G) and two on Firefox.
-  // The phone slice is a partition — those specs run there instead of in the
-  // desktop project, not as well. The Firefox ones are a second pass. Both
-  // are areas where the engines genuinely disagree and one engine can hide a
-  // real bug: caret/font metrics (#408, #434 — a caret is painted, not
-  // queryable, so it needs a second engine rather than a second assertion) and
-  // message-log scroll geometry (#411, reported off Firefox three times and
-  // never reproduced on Chromium). Everything else behaves the same in both,
-  // and a full second pass would roughly double the E2E leg of CI.
+  // The suite is Chromium's, on a desktop viewport, plus four small named
+  // slices: one on a phone device profile (MP1 package G), one repeat of that
+  // slice on WebKit (MP4), and two on Firefox. The phone slice is a partition
+  // — those specs run there instead of in the desktop project, not as well.
+  // The other three are second passes, each scoped to somewhere the engines
+  // genuinely disagree and one engine can hide a real bug: caret/font metrics
+  // (#408, #434 — a caret is painted, not queryable, so it needs a second
+  // engine rather than a second assertion), message-log scroll geometry (#411,
+  // reported off Firefox three times and never reproduced on Chromium), and
+  // the phone tier, whose keyboard, hover and install questions are all
+  // ultimately about iOS Safari and were all answered by Blink. Everything
+  // else behaves the same everywhere, and a full second pass of the desktop
+  // suite would roughly double the E2E leg of CI.
   projects: [
     {
       name: "chromium",
@@ -93,6 +116,28 @@ export default defineConfig({
       name: "mobile-chromium",
       use: { ...devices["Pixel 5"] },
       testMatch: [MOBILE_SPECS],
+    },
+    {
+      // MP4 (#378): the same phone specs on WebKit, on an iPhone-class
+      // descriptor. This is the closest automatable thing to iOS Safari, which
+      // is the engine every unanswered MP2/MP3 question points at — the
+      // keyboard inset (`visual-viewport.ts` exists for the engine that shrinks
+      // only the visual viewport), `hover: none` gating the touch fallbacks,
+      // and the safe-area/notch metadata. Blink answered all of those with its
+      // own numbers; nothing had ever asked WebKit.
+      //
+      // A dependency rather than a fourth concurrent project, and this is not
+      // a scheduling preference: the sim gives a character exactly one
+      // connection and a second IDN displaces the first (world.ts). These are
+      // the *same spec files*, so the same characters — run concurrently, the
+      // two projects would spend the run kicking each other offline. Serial is
+      // the only way to reuse the files rather than fork a parallel roster of
+      // fixtures for one engine.
+      name: "mobile-webkit",
+      use: { ...devices["iPhone 13"], browserName: "webkit" },
+      testMatch: [MOBILE_SPECS],
+      testIgnore: WEBKIT_UNREACHABLE,
+      dependencies: ["mobile-chromium"],
     },
     {
       name: "firefox",
