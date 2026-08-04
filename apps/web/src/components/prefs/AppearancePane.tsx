@@ -204,7 +204,7 @@ export function AppearancePane({ identityId }: { identityId: string }) {
       </FieldRow>
       <FieldRow
         label="Aligned columns"
-        help="Fixed time and name columns so message text lines up"
+        help="Fixed time and name columns so message text lines up. Phone-sized windows always use the full-width flow — there is no room for the columns"
       >
         <Toggle
           label="Aligned columns"

@@ -22,6 +22,7 @@ import {
   type TimeFormat,
 } from "../../lib/time.js";
 import { useSecondClock } from "../../lib/clock.js";
+import { useLayoutMode } from "../../lib/layout-mode.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useMessagesStore } from "../../stores/messages.js";
 import type { PresenceLine } from "../../stores/messages.js";
@@ -43,6 +44,7 @@ import {
   newMessagesBarHidden,
   unreadSinceLabel,
 } from "./NewMessagesBar.js";
+import { usePullReveal } from "./pull-reveal.js";
 import { parseEmote } from "./rich-text.js";
 import { PlainNamesProvider, RichText } from "./RichText.js";
 import {
@@ -214,7 +216,23 @@ export function MessageLog({
   // so revisiting resets it.
   const [newBarAcknowledged, setNewBarAcknowledged] = useState(false);
 
+  // The layout tier, which the log reads for one presentational decision and
+  // one behavioural one (#513). Presentational: below 768px the aligned
+  // timestamp/name columns are dropped whatever the pref says — a fixed 12em
+  // name column plus a timestamp costs over half a 393px screen, and the
+  // roleplay this client exists for then renders one word wide beside a dead
+  // gutter. The pref is untouched and keeps applying above phone; this is
+  // per-tier presentation of one synced preference, like the action sheet.
+  // Behavioural: the pull-to-reveal gesture below.
+  const layoutMode = useLayoutMode();
+  const phone = layoutMode === "phone";
+  const aligned = prefs.alignedColumns && !phone;
+
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Drag the rows sideways to bring the stamps in from the gutter. Installed
+  // on the tier alone; the recognizer itself leaves a mouse pointer alone so
+  // selecting prose in a narrow desktop window is untouched (pull-reveal.ts).
+  usePullReveal(scrollRef, phone);
   /** The virtualizer's inner sizing div — observed so content growth the
    * message-keyed effects never see (late row re-measures, image loads,
    * layout work deferred while an overlay obscures the log) still re-sticks
@@ -276,6 +294,13 @@ export function MessageLog({
    * the type ramp, the density, and the layout switches. A change to any of them
    * reflows every row, so the remembered heights are dropped wholesale. */
   const layoutSignature = [
+    // The tier, because it decides the row's whole shape (#513): phone drops
+    // the aligned columns and takes the timestamp out of the line, which moves
+    // every wrap point in the log. A tier flip also changes the log's width,
+    // and `noteLogWidth` would clear the store on its own — but that is a
+    // coincidence of the two thresholds, not a guarantee, and stale heights
+    // here are the #460 stacking bug. Say it directly.
+    layoutMode,
     prefs.fontSize,
     // The body face changes where every line wraps, so it invalidates the
     // remembered heights exactly like the size ramp does.
@@ -1117,7 +1142,7 @@ export function MessageLog({
   const logClass = [
     styles.log,
     prefs.density === "compact" ? styles.logCompact : "",
-    prefs.alignedColumns ? styles.logAligned : "",
+    aligned ? styles.logAligned : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -1186,6 +1211,10 @@ export function MessageLog({
         onPointerDown={() => {
           pointerHeldRef.current = true;
         }}
+        // Which of the two row shapes is on screen, as a fact rather than as a
+        // class name: the pref alone no longer answers it (#513), and both the
+        // unit tests and the phone E2E need to ask.
+        data-log-flow={aligned ? "aligned" : "inline"}
         data-testid="message-log"
       >
         {detachedTail && (
@@ -1580,6 +1609,9 @@ function MessageLine({
         <span
           className={styles.time}
           title={formatFullDateTime(message.createdAt)}
+          // On `phone` this same element is the pull-to-reveal stamp, parked
+          // outside the log's clip edge (#513) — the e2e measures where it is.
+          data-testid="message-time"
         >
           {time}
         </span>
