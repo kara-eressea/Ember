@@ -17,7 +17,7 @@ the confidence pass on work that shipped on measurement and inference.
 
 ## What is already known, and what is left
 
-Four facts bound the list, all of them measured rather than assumed:
+Five facts bound the list, all of them measured rather than assumed:
 
 - **Chromium parses the manifest with zero errors** and reports the page
   installable (checked over CDP against the built bundle behind the real static
@@ -41,6 +41,20 @@ Four facts bound the list, all of them measured rather than assumed:
   cross-engine way to hand a compositor a velocity), and it is a desktop
   WebKit, so it has neither iOS's callout, its compatibility-click timing, nor
   its deceleration curve. The iOS items below are exactly that remainder.
+- **A synthesized touch SCROLL does not work on CI at all** (#513/#517, three
+  rounds to establish). `Input.synthesizeScrollGesture` — the only API anywhere
+  that hands a compositor a gesture, and Chromium-only — moves the message log
+  500+px on a dev machine and *exactly 0px* on GitHub's runners: every retry, in
+  a fresh CDP session, in a fresh browser context, with the scrollable range
+  asserted first. `mobile-keyboard-scroll` is not a counter-example; it meets
+  the identical symptom (its header: "distance from the bottom sat at exactly 0
+  for the full 15s", root cause never established) and survives it with a
+  **silent `page.mouse.wheel` fallback**, so it is green because it stops
+  driving a finger. Hand-rolled `Input.dispatchTouchEvent`s deliver *pointer
+  events* faithfully — every pull/long-press assertion in the suite rides them —
+  but they are not a scroll (160px of touchmoves moved the log 11px). **So
+  anything whose claim is "the compositor scrolled it" belongs on this list, not
+  in a spec.** The declaration itself is still asserted as computed style.
 
 ---
 
@@ -74,6 +88,23 @@ Four facts bound the list, all of them measured rather than assumed:
       the compatibility `mouseenter` used to expand under the finger with no
       gesture left to close it (`lib/useSubmenuTrigger.ts`); the same goes for
       "Show" on a channel row's sheet.
+- [ ] **The log still scrolls, and pinch-zoom still works** (#513). Flick the
+      message log up and down; drag it sideways and the timestamps come in from
+      the left, snapping back on release. Then pinch it. The log declares
+      `touch-action: pan-y pinch-zoom` so a horizontal drag reaches JS while the
+      vertical scroll stays on the compositor — and **this is the one claim no
+      automation in this repo can make**: `Input.synthesizeScrollGesture` moves
+      the log exactly 0px on CI's runners (three rounds establishing that in
+      #517; `mobile-keyboard-scroll` meets the same wall and survives it with a
+      silent wheel fallback). The E2E asserts the declaration's computed value;
+      only a thumb can assert what the compositor did with it. A log that will
+      not scroll under a finger, or a page that will not zoom over it, is the
+      failure.
+- [ ] **A sideways drag on the log does not steal the scroll.** Flick up
+      through the backlog at a slight angle. The axis lock decides once, at 8px,
+      and a predominantly vertical gesture must scroll normally with the rows
+      never shifting sideways — not even by a pixel, and not at the end of a
+      fling.
 
 ### Keyboard
 
@@ -176,6 +207,14 @@ This is the engine none of MP2's or MP3's work is reachable from, and the one
       and the glue re-engages for good.
 - [ ] **Rubber-banding stays inside the log.** Overscroll at the top of the
       backlog must bounce the log, not the page.
+- [ ] **`touch-action: pan-y pinch-zoom` behaves on WebKit** (#513) — the same
+      two checks as the Android Touch pass, and they matter more here: the
+      declaration is written as a `pan-y` fallback followed by the pair, so an
+      engine that does not know the `pinch-zoom` keyword keeps the axis lock and
+      loses pinch. If pinching the log does nothing on iOS while it works on
+      Android, that fallback is what fired, and the pair needs revisiting.
+      Sideways drag reveals the timestamps; vertical flick scrolls and shifts
+      nothing sideways.
 
 ### Lifecycle
 
