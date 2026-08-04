@@ -35,6 +35,7 @@ import { ChannelHeader, DmHeader } from "../chat/ChannelHeader.js";
 import { Composer } from "../chat/Composer.js";
 import { DmProfile } from "../chat/DmProfile.js";
 import { MemberList } from "../chat/MemberList.js";
+import { PanelOverlay } from "../chat/PanelOverlay.js";
 import { useIsNarrow } from "../../lib/dm-sidebar.js";
 import { usePane } from "../../lib/pane.js";
 import { MessageLog } from "../chat/MessageLog.js";
@@ -89,6 +90,7 @@ export function AppShell() {
   const railPref = useRailStore((s) => s.hidden);
   const hideRail = railHidden(railPref, identities?.length ?? 0);
   const membersOpen = useUiStore((s) => s.membersOpen);
+  const membersDrawerOpen = useUiStore((s) => s.membersDrawerOpen);
   const dmSidebarOpen = useUiStore((s) => s.dmSidebarOpen);
   const dmDrawerOpen = useUiStore((s) => s.dmDrawerOpen);
   const narrow = useIsNarrow();
@@ -257,6 +259,20 @@ export function AppShell() {
     }
   }, [connectKey]);
 
+  // The phone overlays are per-visit (#375, package D): arriving at a
+  // conversation takes them down — a first open, a tap back in from the list,
+  // or the tier flipping under a drawer that was open on a compact window.
+  // The persisted prefs (membersOpen, dmSidebarOpen) govern the docked columns
+  // and must never lay a panel over the one pane a phone has; a transient flag
+  // that survived the trip in would do the same thing one navigation later.
+  useEffect(() => {
+    if (pane === undefined) {
+      return;
+    }
+    useUiStore.getState().setMembersDrawerOpen(false);
+    useUiStore.getState().setDmDrawerOpen(false);
+  }, [pane, convId]);
+
   // The read cursor follows the newest visible message of the active
   // conversation; the ack fans conversation.updated back to every tab.
   // Never while a search jump detached the view from the live tail — the
@@ -333,24 +349,56 @@ export function AppShell() {
     convId === undefined ? undefined : findConversation(session, convId);
   const channel =
     conversation?.kind === "channel" ? conversation.channel : undefined;
-  // The stack has no right-hand track to dock into, and `membersOpen` starts
-  // open — docked into the single column, every channel on a phone would open
-  // on its member list instead of its conversation. So the member list steps
-  // out on that tier, the same way the DM sidebar's grid column already steps
-  // out below the wide layout; MP1 package D brings it back as the full-height
-  // overlay DmProfile's narrow drawer already is, and until then the header
-  // hides its chip on the same tier rather than offering a toggle that does
-  // nothing.
-  const showMembers =
-    channel !== undefined && membersOpen && pane === undefined;
+  // Whether the shell is stacked — the phone tier, where there is no
+  // right-hand track to dock into and both panels open as overlays instead
+  // (#375, package D).
+  const stacked = pane !== undefined;
+  // The docked member column, on the tiers that have one. `membersOpen` starts
+  // open, so on a phone this pref would have every channel open on its member
+  // list instead of its conversation — which is why the overlay below reads a
+  // transient flag rather than this one.
+  const showMembers = channel !== undefined && membersOpen && !stacked;
+  const showMembersOverlay =
+    channel !== undefined && stacked && membersDrawerOpen;
   // The DM sidebar shares the same 232px right-column slot as MemberList; the
   // two are mutually exclusive by conversation kind. On the wide layout it's a
-  // grid column (persisted pref); below the responsive breakpoint it's a
-  // transient right-edge overlay drawer that starts closed.
+  // grid column (persisted pref); below it, a transient drawer that starts
+  // closed — a right-edge overlay on compact, and the same full-height panel
+  // the member list gets on phone.
   const dmView = conversation?.kind === "pm" ? conversation.dm : undefined;
   const showDmGrid = dmView !== undefined && dmSidebarOpen && !narrow;
-  const showDmOverlay = dmView !== undefined && narrow && dmDrawerOpen;
+  const showDmDrawer =
+    dmView !== undefined && narrow && !stacked && dmDrawerOpen;
+  const showDmOverlay = dmView !== undefined && stacked && dmDrawerOpen;
+  const closeDmPanel = () => {
+    if (narrow) {
+      useUiStore.getState().setDmDrawerOpen(false);
+    } else {
+      useUiStore.getState().toggleDmSidebar();
+    }
+  };
   const rightColumnOpen = showMembers || showDmGrid;
+  const membersPanel =
+    channel !== undefined && (showMembers || showMembersOverlay) ? (
+      <MemberList
+        identityId={activeId}
+        ownCharacter={session.character}
+        channel={channel}
+      />
+    ) : undefined;
+  const dmPanel =
+    dmView !== undefined && (showDmGrid || showDmDrawer || showDmOverlay) ? (
+      <DmProfile
+        identityId={activeId}
+        ownCharacter={session.character}
+        dm={dmView}
+        // The drawer shim is compact's alone now: on phone the panel renders
+        // in its docked form inside the overlay, which draws the label and
+        // the way out that the drawer draws for itself.
+        overlay={showDmDrawer}
+        onCollapse={closeDmPanel}
+      />
+    ) : undefined;
 
   return (
     <div
@@ -496,28 +544,35 @@ export function AppShell() {
         {/* In-log search now hangs off the header toolbar's search field
             (ChannelHeader), which owns the query — no shell-level mount. */}
       </main>
-      {showMembers && channel && (
-        <MemberList
-          identityId={activeId}
-          ownCharacter={session.character}
-          channel={channel}
-        />
-      )}
-      {(showDmGrid || showDmOverlay) && dmView && (
-        <DmProfile
-          identityId={activeId}
-          ownCharacter={session.character}
-          dm={dmView}
-          overlay={showDmOverlay}
-          onCollapse={() => {
-            if (narrow) {
-              useUiStore.getState().setDmDrawerOpen(false);
-            } else {
-              useUiStore.getState().toggleDmSidebar();
-            }
-          }}
-        />
-      )}
+      {/* Both right-hand panels render the same either way: docked, they are
+          the grid's fourth column; on phone the same element goes inside the
+          overlay, which supplies the chrome the docked column gets from the
+          toolbar spanning it. */}
+      {membersPanel !== undefined &&
+        (showMembersOverlay ? (
+          <PanelOverlay
+            label="Members"
+            onClose={() => {
+              useUiStore.getState().setMembersDrawerOpen(false);
+            }}
+          >
+            {membersPanel}
+          </PanelOverlay>
+        ) : (
+          membersPanel
+        ))}
+      {dmPanel !== undefined &&
+        dmView !== undefined &&
+        (showDmOverlay ? (
+          <PanelOverlay
+            label={`Profile: ${dmView.partner}`}
+            onClose={closeDmPanel}
+          >
+            {dmPanel}
+          </PanelOverlay>
+        ) : (
+          dmPanel
+        ))}
       {prefsOpen && (
         <PreferencesWindow
           identityId={activeId}

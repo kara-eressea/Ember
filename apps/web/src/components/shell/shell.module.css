@@ -1180,9 +1180,10 @@
 }
 
 /* No rule for the right column here on purpose: nothing docks into the stack.
-   AppShell holds the member list back on this tier (package D turns it into a
-   full-height overlay), and the DM profile is already a fixed-position drawer
-   below the wide layout, so it is out of the grid entirely. */
+   Both panels that would live there are fixed-position overlays on this tier
+   (package D, chat/panel-overlay.module.css), so neither is in the grid at
+   all — which is also why `.shell > aside`'s placement above cannot reach
+   them: the overlay wraps them in a dialog of its own. */
 
 /* The stack itself. `display: none` rather than an off-screen transform: the
    hidden pane must leave the tab order and the accessibility tree, or a

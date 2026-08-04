@@ -141,6 +141,17 @@ function HeaderOverflow({
   render: (id: HeaderControlId, menu: boolean) => ReactNode;
 }) {
   const [anchor, setAnchor] = useState<CardAnchor>();
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  /** Close, and hand focus back to the ⋯ button. A menu that lets focus fall
+   * to the body strands keyboard users mid-row — and it is what makes the
+   * overlays a menu row can open (the member list, the profile panel) return
+   * focus here when they close: they capture the opener at mount, and the ⋯
+   * button is the one element in this path that outlives the click. */
+  function close() {
+    setAnchor(undefined);
+    trigger.current?.focus();
+  }
 
   if (items.length === 0) {
     return null;
@@ -148,6 +159,7 @@ function HeaderOverflow({
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         className={chipClass({ on: anchor !== undefined })}
         aria-label="More conversation actions"
@@ -165,16 +177,9 @@ function HeaderOverflow({
         <ToolbarPopover
           anchor={anchor}
           label="More conversation actions"
-          onClose={() => {
-            setAnchor(undefined);
-          }}
+          onClose={close}
         >
-          <div
-            className={styles.hdrMenu}
-            onClick={() => {
-              setAnchor(undefined);
-            }}
-          >
+          <div className={styles.hdrMenu} onClick={close}>
             {items.map((id) => render(id, true))}
           </div>
         </ToolbarPopover>
@@ -650,11 +655,19 @@ export function ChannelHeader({
   /** Where the phone stack's back chip goes; absent on compact and wide. */
   backTo?: string;
 }) {
+  // The member-list toggle drives whichever member list this tier has: the
+  // docked column's persisted preference, or — on the single-pane stack, where
+  // there is no column to dock into — the transient open state of the
+  // full-height overlay (#375, package D). The same split DmHeader's
+  // profile-panel chip has made since #170.
   const toggleMembers = useUiStore((s) => s.toggleMembers);
+  const toggleMembersDrawer = useUiStore((s) => s.toggleMembersDrawer);
   const membersOpen = useUiStore((s) => s.membersOpen);
+  const membersDrawerOpen = useUiStore((s) => s.membersDrawerOpen);
   // The single-pane stack (#375) — the tier, not the route, so this is the
   // shell's shape rather than which pane is showing.
   const stacked = useLayoutMode() === "phone";
+  const membersShown = stacked ? membersDrawerOpen : membersOpen;
   const ownCharacter = useSessionsStore(
     (s) => s.sessions[identityId]?.character ?? "",
   );
@@ -676,16 +689,12 @@ export function ChannelHeader({
   const title = decodeWireEntities(channel.title);
 
   const rowRef = useRef<HTMLElement>(null);
-  // The member list has nowhere to dock on the phone stack, so AppShell holds
-  // it back there (#375) — and a toggle whose aria-pressed flips while nothing
-  // happens is worse than no toggle, in the ⋯ menu as much as on the row. MP1
-  // package D gives the list a full-height overlay and this chip its job back.
   const present: HeaderControlId[] = [
     ...(description === "" ? [] : (["topic"] as const)),
     "pin",
     "mute",
     ...(canManageRoom ? (["room"] as const) : []),
-    ...(stacked ? [] : (["members"] as const)),
+    "members",
   ];
   const collapsed = useHeaderCollapse(rowRef, present);
   const inline = (id: HeaderControlId) =>
@@ -741,9 +750,9 @@ export function ChannelHeader({
           <button
             key={id}
             type="button"
-            className={chipClass({ on: membersOpen, menu })}
-            onClick={toggleMembers}
-            aria-pressed={membersOpen}
+            className={chipClass({ on: membersShown, menu })}
+            onClick={stacked ? toggleMembersDrawer : toggleMembers}
+            aria-pressed={membersShown}
             aria-label="Toggle member list"
             title="Toggle member list"
           >

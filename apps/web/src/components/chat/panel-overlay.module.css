@@ -1,0 +1,114 @@
+/* PanelOverlay (MP1 package D, #375): the member list and the DM profile as a
+   full-height overlay on the phone tier. Geometry deliberately matches the DM
+   drawer this generalises (dm-sidebar.module.css .overlay / .backdrop) — a
+   right-edge panel over the conversation, with a sliver of it left showing to
+   tap on. Tokens only; no width here is a breakpoint (the tier decision lives
+   in lib/layout-mode.ts and reaches this file as a mounted component, never as
+   a media query).
+
+   The one width that is here is zoom-corrected, for the reason §5-E states
+   once in base.css: `vw` is a *visual* length and is blind to the `zoom` the
+   interface-scale pref puts on :root (#388), so inside that zoom an 88vw box
+   paints 88% of the screen times the scale. Uncorrected, a 390px phone at
+   125% put the panel's left edge ~10px past the screen and took the sliver
+   with it. Not `data-eb-surface`: that cap encodes a different intent — a
+   floating surface clamped to POPOVER_MARGIN on both sides — where this panel
+   is anchored to one edge on purpose and the space it leaves is the tap
+   target, not a margin. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgb(0 0 0 / 25%);
+}
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, calc(88vw / var(--eb-ui-zoom, 1)));
+  background: var(--eb-side2);
+  border-left: 1px solid var(--eb-border);
+  box-shadow: -18px 0 50px -18px rgb(0 0 0 / 55%);
+  animation: panel-overlay-in 0.15s ease;
+}
+
+@keyframes panel-overlay-in {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
+
+/* The docked column gets its heading from the conversation toolbar spanning
+   it; this one is over that toolbar, so it carries its own. */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 12px 11px 16px;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+.title {
+  overflow: hidden;
+  font-size: calc(10px * var(--eb-font-ui-scale));
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--eb-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  font-size: calc(13px * var(--eb-font-ui-scale));
+  line-height: 1;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 6px;
+}
+
+.close:hover {
+  color: var(--eb-dim);
+  background: var(--eb-hover);
+}
+
+/* The slot the panel drops into, unchanged from its docked form: a full-height
+   flex column that fills what it is given. */
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.body > * {
+  flex: 1;
+  min-height: 0;
+  /* Both panels carry a left border for the seam with the chat column. The
+     overlay is that seam here, and it draws its own. */
+  border-left: none;
+}
