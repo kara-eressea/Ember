@@ -35,6 +35,39 @@
   padding-left: 4px;
 }
 
+/* "Offline / Connecting…" beside the back chip (MP3 §5, #377), on the one
+   pane the sidebar's copy of it (shell.module.css .connState) cannot reach.
+   Deliberately the sidebar chip's shape rather than the row's IconBtn: it is
+   the same control saying the same thing, and it is a read-out with a tap on
+   it rather than one of the row's actions — reading as an action chip would
+   put it in a set it does not belong to. `flex: none` because the identity
+   block beside it is `flex: 1` and would otherwise squeeze the label. */
+.headerConn {
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--eb-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--eb-meta);
+  font-family: inherit;
+  font-size: calc(11px * var(--eb-font-ui-scale));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.headerConn:hover,
+.headerConn:focus-visible {
+  color: var(--eb-text);
+  border-color: var(--eb-meta);
+}
+
+/* Given up / not retrying right now — the loud one, as in the sidebar. */
+.headerConnOffline {
+  color: var(--eb-warn);
+  border-color: var(--eb-warn);
+}
+
 /* Name and topic share the row and take every spare pixel — everything to
    their right is fixed-width, so the topic is what gives way first. The
    floor is on the block, not the name inside it: a name that outgrew its
@@ -2927,6 +2960,27 @@
 
 :root[data-layout="phone"] :is(.iconBtn, .jumpToRecent) {
   position: relative;
+}
+
+/* The connection chip (MP3 §5) is 20px tall and sits directly beside the back
+   chip, so it takes the overlay mechanism — in height only: it is already
+   wider than 44 and expanding a target sideways under a neighbour is what the
+   rule below the token forbids. The extra 4px of gap is that rule's other
+   half: the back chip's overlay reaches 7px past its own box, which without
+   this would land 3px inside a target that is not it. */
+:root[data-layout="phone"] .headerConn {
+  position: relative;
+  margin-left: 4px;
+}
+
+:root[data-layout="phone"] .headerConn::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: var(--eb-touch-target);
+  transform: translateY(-50%);
 }
 
 /* The parked search pill is a chip like the others. Only while parked: once

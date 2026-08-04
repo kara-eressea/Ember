@@ -622,6 +622,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Dial Ashcombe"],
     },
+    // Reserved for the phone-lifecycle E2E (MP3 §5, #377). Thaw Caldwell sits
+    // in a conversation while the spec severs the gateway underneath it, so
+    // the connection chip is the only thing on screen that can put it back;
+    // one browser, no partner, since nothing has to be said in the room.
+    "thawcaldwell@example.test": {
+      password: "hunter2",
+      characters: ["Thaw Caldwell"],
+    },
   },
   channels: [
     {
@@ -1061,6 +1069,19 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "One hold, one menu.",
       oplist: ["Knuckle Reed"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the MP3 §5 phone-lifecycle E2E: the conversation Thaw
+    // Caldwell is reading when the gateway is severed underneath it. Hidden
+    // and NPC-free — the spec measures a toolbar chip, and an NPC joining
+    // would change what else the row is carrying while it does.
+    {
+      name: "ADH-377lifecycle4b7c2e19",
+      title: "Thaw Room",
+      mode: "chat",
+      description: "Frozen, thawed, still here.",
+      oplist: ["Thaw Caldwell"],
       npcs: [],
       listed: false,
     },

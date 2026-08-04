@@ -228,6 +228,49 @@ function HeaderBack({ to }: { to: string }) {
 }
 
 /**
+ * The gateway's connection state, on the one pane that cannot see the
+ * sidebar's copy of it (MP3 §5, #377).
+ *
+ * The sidebar head has carried "Offline / Connecting…, tap to retry" since
+ * #465, and on every tier with two panes on screen that is enough. The phone
+ * stack is the exception: `data-pane="conversation"` hides the sidebar
+ * outright, so a conversation is exactly where the chip is not — and installed
+ * to a home screen there is no address bar to reload from either, which leaves
+ * a stale conversation with no way out but the OS app switcher. So the
+ * conversation toolbar carries its own copy, rendered on the same condition
+ * the back chip is (AppShell passes `backTo` only while stacked) and doing the
+ * same thing on tap.
+ *
+ * Not in header-toolbar.ts's width model, deliberately and for the same reason
+ * the back chip is not: both are phone-stack-only, and this one is also
+ * transient — budgeting a permanent ~66px for a state that is normally absent
+ * would collapse a control out of every healthy row to make room for nothing.
+ * While it is up the conversation name gives way instead, which is the right
+ * order of importance for a tab showing stale everything.
+ */
+function HeaderConnState() {
+  const gatewayStatus = useUiStore((s) => s.gatewayStatus);
+  if (gatewayStatus === "online") {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className={`${styles.headerConn} ${
+        gatewayStatus === "offline" ? (styles.headerConnOffline ?? "") : ""
+      }`}
+      title="Reconnect now"
+      aria-label="Reconnect now"
+      onClick={() => {
+        gateway.reconnectNow();
+      }}
+    >
+      {gatewayStatus === "offline" ? "Offline" : "Connecting…"}
+    </button>
+  );
+}
+
+/**
  * The topic slot — a channel's CDS description or a DM partner's status, set
  * inline beside the name and clipped to the row. The inline copy is inert:
  * BBCode topics carry links, `[user]` chips and eicons that are unusable at
@@ -768,7 +811,12 @@ export function ChannelHeader({
 
   return (
     <header ref={rowRef} className={styles.header}>
-      {backTo !== undefined && <HeaderBack to={backTo} />}
+      {backTo !== undefined && (
+        <>
+          <HeaderBack to={backTo} />
+          <HeaderConnState />
+        </>
+      )}
       <div className={styles.headerIdentity}>
         <span className={styles.headerGlyph} aria-hidden>
           #
@@ -1045,7 +1093,12 @@ export function DmHeader({
 
   return (
     <header ref={rowRef} className={styles.header}>
-      {backTo !== undefined && <HeaderBack to={backTo} />}
+      {backTo !== undefined && (
+        <>
+          <HeaderBack to={backTo} />
+          <HeaderConnState />
+        </>
+      )}
       <div className={styles.headerIdentity}>
         <span
           className={styles.headerDot}
