@@ -3236,7 +3236,18 @@
   padding-left: 8px;
 }
 
-:root[data-layout="phone"] :is(.iconBtn, .jumpToRecent) {
+/* The chips need a positioned box for the overlay below to hang off. NOT the
+   jump pill: it is `position: absolute` already, which is positioned, so it
+   needs no help here — and relative would take it OUT of the layer it floats
+   in and put it back into `.logWrap`'s flex column, where its own appearance
+   shortens the log by its own height. That is a feedback loop, not a cosmetic
+   difference: the pill appears exactly when the reader leaves the tail, the
+   log then shrinks 30px under them, the #284 re-stick observer reads the
+   shrink as "the log moved, glue it back", and the reader is thrown at the
+   newest message — which hides the pill, restores the 30px, and arms the whole
+   thing again. Instrumented, that ran 160 times in 12 seconds of a phone climb
+   and never let the reading position leave the newest post (#514). */
+:root[data-layout="phone"] .iconBtn {
   position: relative;
 }
 

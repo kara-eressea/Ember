@@ -108,6 +108,10 @@ const SCROLL_KEYS = new Set([
   "ArrowDown",
   " ",
 ]);
+/** Of those, the ones that move the log AWAY from the tail (#514). Space is in
+ * neither set — it pages down bare and up with Shift, so its direction is read
+ * from the modifier at the call site. */
+const CLIMB_KEYS = new Set(["PageUp", "Home", "ArrowUp"]);
 /** Frames to keep re-applying a scroll correction while the newly rendered
  * variable-height rows (ads, grouped messages, dividers) settle their
  * measurements. Small — one paint is rarely enough, a dozen is plenty. */
@@ -279,6 +283,14 @@ export function MessageLog({
    * userDrivingScroll below for why scrollTop deltas alone are not evidence. */
   const scrollIntentAtRef = useRef(0);
   const pointerHeldRef = useRef(false);
+  /** When the reader last gave an input that moves the log AWAY from the tail
+   * — a wheel tick upward, a finger dragging the content down, PageUp/Home.
+   * Zeroed by any input toward the tail and by every deliberate "take me to
+   * the newest" command. Read through `userClimbing` (#514). */
+  const climbIntentAtRef = useRef(0);
+  /** The last touch position, so a `touchmove` can say which way the finger is
+   * travelling — the event itself only says that it moved. */
+  const touchYRef = useRef(0);
   /** Anchor a history prepend: the id of the row to keep visually fixed and
    * its distance below the viewport top (in px) captured *before* the
    * prepend. We restore against measured offsets, not the 26px estimate, so
@@ -359,6 +371,7 @@ export function MessageLog({
   useEffect(() => {
     atBottomRef.current = true;
     stickBottomRef.current = true;
+    climbIntentAtRef.current = 0;
   }, [identityId, convId]);
 
   // Search jump (M9): once the history page is in, scroll the target row
@@ -397,6 +410,7 @@ export function MessageLog({
     if (wasDetachedRef.current && !detachedTail) {
       atBottomRef.current = true;
       stickBottomRef.current = true;
+      climbIntentAtRef.current = 0;
     }
     wasDetachedRef.current = detachedTail;
   }, [detachedTail]);
@@ -438,7 +452,11 @@ export function MessageLog({
       return;
     }
     const observer = new ResizeObserver(() => {
-      if (!stickBottomRef.current) {
+      // …but never while the reader is climbing (#514). This observer is the
+      // net for geometry that moves with no scroll event and no effect re-run;
+      // a reader with their hand on the wheel is producing scroll events, so
+      // the net is not needed and its write is only a yank.
+      if (!stickBottomRef.current || userClimbing()) {
         return;
       }
       el.scrollTop = el.scrollHeight;
@@ -749,6 +767,56 @@ export function MessageLog({
     scrollIntentAtRef.current = performance.now();
   }
 
+  /** Record which way an input was pointing. `towardTail` undefined means the
+   * input said nothing about direction and the current answer stands. */
+  function noteScrollDirection(towardTail: boolean | undefined) {
+    if (towardTail === undefined) {
+      return;
+    }
+    climbIntentAtRef.current = towardTail ? 0 : performance.now();
+  }
+
+  /** Is the reader climbing the log right now — scrolling up, under their own
+   * steam, recently enough that the gesture is still running?
+   *
+   * The held stick intent alone is not a sufficient gate for a bottom-directed
+   * write, and this is the #514 report. Releasing the intent needs a user
+   * scroll further than STICK_RELEASE_PX from the bottom, which leaves a band
+   * right above the tail where the reader is already climbing and the glue is
+   * still on. A write that lands in that band does two things: it throws the
+   * reader at the newest message, and it resets the distance they had built up
+   * toward the release. Input that arrives in small increments — a finger drag,
+   * a slow trackpad, a channel of 500px roleplay rows where 120px is a quarter
+   * of one post — never gets a single step big enough to clear the band, so the
+   * band stops being a band and becomes a wall. Instrumented, a phone climb
+   * through tall history took 160 of those yanks in 12 seconds, undid 24 000px
+   * of travel, and never let the reading position leave the newest post; a
+   * desktop climb with messages arriving took fewer, which is the "same thing,
+   * less pronounced" half of the report.
+   *
+   * Direction is half the predicate, and it is what keeps this from re-opening
+   * #411/#372: a reader scrolling DOWN toward the tail is not climbing, so the
+   * #284 re-stick observer and the #372 settle pass go on working underneath
+   * them exactly as before. Only a write that would drag someone toward the
+   * tail while they are pulling away from it is suppressed — and while they
+   * are, their own scroll events are flowing, so onScroll keeps deriving the
+   * truth with no help from either.
+   *
+   * Read off the INPUT, like `userDrivingScroll`, and not off the scroll
+   * events it produces — for the #411 reason and for a second one. A scroll
+   * event lands a beat after the input that caused it, and the write we are
+   * gating happens in whatever frame a message arrives in: derived from
+   * scrolls, the answer was still "not climbing" for the first frames of every
+   * wheel tick, and the instrumented desktop climb kept 15 of its 239 yanks
+   * through that gap. An input handler runs before the scroll it causes, so
+   * there is no gap to fall through. */
+  function userClimbing(): boolean {
+    return (
+      climbIntentAtRef.current > 0 &&
+      performance.now() - climbIntentAtRef.current < SCROLL_INTENT_WINDOW_MS
+    );
+  }
+
   // Scroll keys are taken at the window: the log is not focusable itself, so a
   // keydown that scrolls it lands on whatever inside it has focus (a nick
   // button) or on the body.
@@ -769,6 +837,9 @@ export function MessageLog({
         return;
       }
       noteScrollIntent();
+      noteScrollDirection(
+        event.key === " " ? !event.shiftKey : !CLIMB_KEYS.has(event.key),
+      );
     }
     window.addEventListener("keydown", onKey);
     return () => {
@@ -857,6 +928,15 @@ export function MessageLog({
   // is released (a user scroll-up mid-settle).
   function stickToBottomSettling() {
     cancelAnimationFrame(stickRafRef.current);
+    // A reader climbing away from the tail outranks the glue (#514). This is
+    // the arrival path — a message landing while someone is mid-drag inside
+    // the release band — and the write it would make is the "rubberband tied to
+    // messages loading in" half of the report. The deliberate landings
+    // (mount/switch, jump-to-newest, the send catch-up) clear the climb before
+    // they call this, so a command to go to the newest still always wins.
+    if (userClimbing()) {
+      return;
+    }
     // We are gluing to the bottom, so reflect it immediately: on the
     // mount/switch path the final settle writes may be no-ops (already at the
     // bottom) that fire no scroll event, leaving the atBottom mirror stuck at a
@@ -868,8 +948,10 @@ export function MessageLog({
     let frames = 0;
     const step = () => {
       // Check the intent BEFORE writing: a stale in-flight frame must never
-      // clobber a scroll the user has since made away from the bottom (#266).
-      if (!stickBottomRef.current) {
+      // clobber a scroll the user has since made away from the bottom (#266) —
+      // nor one they start mid-settle, which the release hysteresis would not
+      // register for another hundred pixels (#514).
+      if (!stickBottomRef.current || userClimbing()) {
         return;
       }
       const el = scrollRef.current;
@@ -959,6 +1041,10 @@ export function MessageLog({
     // frame (the #266 pill-flicker hang).
     atBottomRef.current = true;
     stickBottomRef.current = true;
+    // An explicit command to go to the newest ends the climb it interrupts —
+    // otherwise the #514 gate below would read the scroll that led up to the
+    // click as a reason to ignore the click.
+    climbIntentAtRef.current = 0;
     anchorRef.current = undefined;
     cancelAnimationFrame(rePinRafRef.current);
     setAtBottom(true);
@@ -1206,8 +1292,36 @@ export function MessageLog({
         // The "a human is scrolling" evidence the stick release gates on
         // (userDrivingScroll). These only ever record that an input happened —
         // none of them touch the scroll position.
-        onWheel={noteScrollIntent}
-        onTouchMove={noteScrollIntent}
+        onWheel={(event) => {
+          noteScrollIntent();
+          // Which way the tick points, for the #514 climb gate. Zero deltas
+          // (a horizontal wheel, a momentum tail that has run out) say nothing
+          // and leave the standing answer alone.
+          noteScrollDirection(
+            event.deltaY > 0 ? true : event.deltaY < 0 ? false : undefined,
+          );
+        }}
+        onTouchStart={(event) => {
+          touchYRef.current = event.touches[0]?.clientY ?? 0;
+        }}
+        onTouchMove={(event) => {
+          noteScrollIntent();
+          const y = event.touches[0]?.clientY;
+          if (y === undefined) {
+            return;
+          }
+          // A finger travelling DOWN the screen pulls older messages in, so it
+          // is a climb; travelling up chases the newest. A pixel of slop keeps
+          // a stationary finger from flipping the answer every frame.
+          noteScrollDirection(
+            y < touchYRef.current - 1
+              ? true
+              : y > touchYRef.current + 1
+                ? false
+                : undefined,
+          );
+          touchYRef.current = y;
+        }}
         onPointerDown={() => {
           pointerHeldRef.current = true;
         }}
