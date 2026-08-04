@@ -675,6 +675,20 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Slate Harrow"],
     },
+    // Reserved for the #513 phone log-flow E2E (same isolation rules). Ribbon
+    // Quaile reads a room of long roleplay on a phone with aligned columns
+    // turned on, and pulls the timestamps in from the gutter; Gutter Vane is
+    // the raw-SimClient partner who writes that roleplay and nothing else, so
+    // no other character may speak into that room — the spec measures row
+    // geometry and a stray line changes it.
+    "ribbon@example.test": {
+      password: "hunter2",
+      characters: ["Ribbon Quaile"],
+    },
+    "guttervane@example.test": {
+      password: "hunter2",
+      characters: ["Gutter Vane"],
+    },
   },
   channels: [
     {
@@ -1157,6 +1171,19 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Frozen, thawed, still here.",
       oplist: ["Thaw Caldwell"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #513 phone log-flow E2E: Gutter Vane writes the long
+    // roleplay posts whose wrapping the spec measures, and nothing else.
+    // Hidden and NPC-free — every assertion here is a bounding box, and one
+    // extra line from anyone would move the row being measured.
+    {
+      name: "ADH-513phonelogflow55dd66ee",
+      title: "Ribbon Room",
+      mode: "chat",
+      description: "Long posts, small screens.",
+      oplist: ["Ribbon Quaile"],
       npcs: [],
       listed: false,
     },

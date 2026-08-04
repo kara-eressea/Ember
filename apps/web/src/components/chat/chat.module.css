@@ -701,6 +701,98 @@
   visibility: hidden;
 }
 
+/* ── Phone: full-width flow + pull-to-reveal timestamps (#513) ─────────────
+   Reported from a screenshot: a long roleplay post on a 393px phone rendered
+   as a one-word-wide ribbon beside half a screen of dead gutter — a timestamp
+   column and a 12em right-aligned name column, both sized for a desktop grid.
+   Three rules answer it, and all three are keyed on the tier attribute rather
+   than a width query, for the interface-zoom reason in COMPONENTS.md.
+
+   1. The row is a real inline flow, not a flex row. `.messageLine` above is
+      `display: flex`, which gives the body a hanging indent: every wrapped
+      line starts under the body column, so a 150px name still costs 150px on
+      every one of a dozen lines. As a block with inline children the name
+      simply leads the paragraph and the second line starts at the margin —
+      which is also the grammar a `/me` emote was written in, the sender name
+      being the sentence's subject.
+   2. The timestamp leaves the line entirely, whatever `timestampFormat` says
+      above phone (`off` is still obeyed: a reader who asked for no timestamps
+      gets none, here as anywhere). It keeps its element and its position in
+      the DOM — it is moved out of flow into the gutter, not deleted, because
+      the gutter is where the pull uncovers it.
+   3. The pull itself: `.logInner` (and the outbox echo under it) ride a
+      translate driven by --eb-log-reveal, written imperatively by
+      pull-reveal.ts. Rows move, stamps move with them, nothing re-renders.
+
+   The aligned-columns pref itself is untouched and keeps applying above phone;
+   MessageLog decides which shape is on screen and publishes it as
+   `data-log-flow`. */
+
+:root[data-layout="phone"] .log {
+  /* The gesture contract. `pan-y` is what lets a horizontal drag reach JS at
+     all while leaving the vertical scroll on the compositor — where every
+     momentum finding in MP2 §4 was measured, and where it stays. `pinch-zoom`
+     is kept deliberately: this is prose, and `pan-y` alone would have taken
+     page zoom away from the one surface that most wants it. Declared twice as
+     a fallback pair: an engine that does not know the `pinch-zoom` keyword
+     drops the whole declaration, and losing the axis lock would be far worse
+     than losing pinch. */
+  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
+  /* `overflow-y: auto` alone computes the OTHER axis to `auto` too, which
+     would make the translated rows (and the stamps parked at a negative inline
+     offset) horizontally scrollable content. `clip` hides both without
+     creating a scroll container — the log stays a single-axis scroller, so
+     nothing about the bottom-stick, the prepend re-pin or `overscroll-behavior`
+     changes. */
+  overflow-x: clip;
+}
+
+:root[data-layout="phone"] :is(.logInner, .pendingBlock) {
+  transform: translateX(var(--eb-log-reveal, 0px));
+}
+
+/* The full-width flow. Only chat lines: system, presence and roll lines are
+   short single-sentence rows that never wrapped badly, and an ad is a bordered
+   card whose head is a chip row, not prose. */
+:root[data-layout="phone"] .messageLine {
+  display: block;
+}
+
+/* The flex `gap` the row no longer has. The emote possessive pull-back below
+   is stated against the same 9px, so the two stay in step. */
+:root[data-layout="phone"] .messageLine .nick {
+  margin-right: 9px;
+}
+
+/* The stamp column, parked outside the clip edge until the pull brings it in.
+   Positioned against the line rather than against the row wrapper so it lands
+   on the line's FIRST text line: the containing block of an absolutely
+   positioned child is its ancestor's padding box, so `top: 0` plus the line's
+   own `padding-top` (whatever the density, the mention treatment or a future
+   row type makes it) is exactly the top of the prose. `right: calc(100% + 8px)`
+   puts the stamp's right edge 8px left of the log's leading edge — the same
+   column for every row type, since all of these span the full width.
+
+   Ads keep their inline timestamp: the ad head is a row of chips, the stamp
+   costs it no wrap width, and there is no prose there to push around. */
+:root[data-layout="phone"]
+  :is(.messageLine, .systemLine, .presenceLine, .rollLine) {
+  position: relative;
+}
+
+:root[data-layout="phone"]
+  :is(.messageLine, .systemLine, .presenceLine, .rollLine)
+  > .time {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 8px);
+  padding-top: inherit;
+  /* One prose line box tall, so an 11.5px mono stamp centres against a 14px
+     body line instead of hanging off its top. */
+  line-height: calc(var(--eb-msg-font, 14px) * 1.5);
+}
+
 .systemLine {
   display: flex;
   gap: 9px;
