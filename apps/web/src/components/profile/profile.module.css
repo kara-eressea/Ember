@@ -1385,7 +1385,11 @@
   font-size: 16px;
   font-weight: 700;
   line-height: 1.3;
-  color: var(--gender-accent, var(--eb-accent));
+
+  /* Gender colour, or the plain text token when the gender is None/unknown —
+     the fallback the member list and the log use (#493). The header wash above
+     keeps the app accent as ITS fallback: a tint, not a name. */
+  color: var(--gender-accent, var(--eb-text));
   text-overflow: ellipsis;
   white-space: nowrap;
 }

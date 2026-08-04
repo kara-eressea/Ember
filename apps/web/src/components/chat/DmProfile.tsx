@@ -17,7 +17,7 @@ import { clockTitle, localClock } from "../../lib/local-time.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useMinuteClock } from "../../lib/clock.js";
-import { nickColor } from "../../theme/tokens.js";
+import { useNameColor } from "../../lib/name-color.js";
 import {
   loadOwnProfile,
   loadProfile,
@@ -90,7 +90,9 @@ export function DmProfile({
     social?.bookmarks.some((row) => row.name.toLowerCase() === lower) ?? false;
 
   const dot = presenceDot(dm.online, dm.status);
-  const accent = nickColor(partner);
+  // The partner's name wears the chat's gender colour (#493), so the sidebar
+  // head and their nick in the log beside it always agree.
+  const accent = useNameColor(identityId, partner, response?.profile);
   const status = dm.online ? dm.statusmsg : "";
   // Their wall clock, from the zone the user set for them or F-List's offset
   // (see lib/local-time.ts). Ticks off the one shared minute timer.
@@ -110,7 +112,11 @@ export function DmProfile({
     <aside
       className={`${styles.dmProfile} ${overlay ? (styles.overlay ?? "") : ""}`}
       aria-label={`Profile: ${partner}`}
-      style={{ "--gender-accent": accent } as React.CSSProperties}
+      style={
+        accent === undefined
+          ? undefined
+          : ({ "--gender-accent": accent } as React.CSSProperties)
+      }
     >
       {/* Docked, the conversation toolbar spans this column and carries the
           panel toggle — a "Profile »" head under it would just repeat both.

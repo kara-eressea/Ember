@@ -122,7 +122,12 @@ export const STATUS_COLORS = {
  * palettes, same hue order — the dark one is the original pastel set, the
  * light one the same hues pulled down for contrast on paper. themeVariables
  * writes the active one as --eb-nick-N; nickColor hands out the var so
- * every consumer re-tints on theme switch for free. */
+ * every consumer re-tints on theme switch for free.
+ *
+ * Identicon tint only — the fallback avatar's fill. A character's NAME is
+ * never coloured from here (#493): these hues overlap the gender palette
+ * below closely enough that a hashed name reads as a gender claim, and it
+ * was wrong as often as chance allows. See lib/name-color.ts. */
 export const NICK_PALETTE = [
   "#a892c6",
   "#c294b0",

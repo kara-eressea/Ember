@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { match } from "@emberchat/matcher";
 import { bbcodeToText } from "@emberchat/markdown-bbcode";
 import type { ProfileDto } from "@emberchat/protocol";
-import { nickColor } from "../../theme/tokens.js";
+import { useNameColor } from "../../lib/name-color.js";
 import { loadSocial } from "../../lib/social.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useFocusTrap } from "../../lib/useFocusTrap.js";
@@ -523,7 +523,10 @@ export function Header({
   const [optimisticBookmark, setOptimisticBookmark] = useState<boolean>();
   const [bookmarkPending, setBookmarkPending] = useState(false);
   const bookmarked = optimisticBookmark ?? isBookmarked;
-  const accent = nickColor(profile.name);
+  // The name takes the chat's gender colour, never a hash of the name (#493):
+  // the roster's gender where a channel knows this character, this profile's
+  // own Gender infotag otherwise, and no colour at all for None/unknown.
+  const accent = useNameColor(identityId, profile.name, profile);
 
   function toggleBookmark() {
     const next = !bookmarked;
@@ -550,7 +553,11 @@ export function Header({
   return (
     <header
       className={styles.header}
-      style={{ "--gender-accent": accent } as React.CSSProperties}
+      style={
+        accent === undefined
+          ? undefined
+          : ({ "--gender-accent": accent } as React.CSSProperties)
+      }
     >
       <Avatar name={profile.name} size={56} square />
       <div className={styles.headerInfo}>

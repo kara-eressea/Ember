@@ -2363,44 +2363,69 @@
   border-radius: var(--eb-radius);
 }
 
-/* "New messages" bar (#363): rides the top of the log when unread messages
-   sit above the fold. A full-width accent strip — click to jump to the first
-   unread, Esc to mark read. */
+/* "New messages" bar (#363, reworked in #495): rides the top of the log when
+   unread messages sit above the fold. A full-width accent strip made of two
+   side-by-side buttons — the jump fills everything left of "Mark as read".
+   The strip itself carries no padding and no gap, so every pixel of it belongs
+   to one of the two buttons and no press lands on dead ground. */
 .newMessagesBar {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 3;
   display: flex;
-  gap: 12px;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: stretch;
   width: 100%;
-  padding: 6px 16px;
   font-size: var(--eb-font-ui-small);
-  font-weight: 500;
   /* On-accent foreground: the page bg reads against the accent fill, the same
      pairing primary buttons use. --eb-accent-text is accent-TINTED text for
      normal surfaces and would vanish on the accent fill (#363 follow-up). */
   color: var(--eb-bg);
-  text-align: left;
-  cursor: pointer;
   background: var(--eb-accent);
-  border: none;
   border-bottom: 1px solid var(--eb-accent-med);
   box-shadow: 0 8px 24px -14px rgb(0 0 0 / 55%);
 }
 
-.newMessagesBar:hover {
-  background: var(--eb-accent-hi, var(--eb-accent));
+.newMessagesJump,
+.newMessagesMarkRead {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
 }
 
-.newMessagesBarHint {
+.newMessagesJump {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The one non-jump region, hairlined off so the split is visible before it is
+   hovered. Each half lights on its own hover — that is what tells a mouse
+   which of the two it is about to press. */
+.newMessagesMarkRead {
   flex: none;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: var(--eb-font-ui-tiny);
-  font-weight: 400;
-  opacity: 0.85;
+  font-weight: 600;
+  white-space: nowrap;
+  border-left: 1px solid var(--eb-accent-med);
+}
+
+/* A wash toward the page ground, over whichever half the pointer is on. The
+   old bar's hover reached for --eb-accent-hi, a token that does not exist, so
+   the strip never actually responded — and now that it holds two targets, the
+   response is what says which one is about to be pressed. */
+.newMessagesJump:hover,
+.newMessagesMarkRead:hover {
+  background: color-mix(in srgb, var(--eb-bg) 12%, transparent);
 }
 
 @keyframes jump-flash {
@@ -3107,6 +3132,15 @@
 :root[data-layout="phone"] .mdToggle {
   display: inline-flex;
   align-items: center;
+  min-height: var(--eb-touch-target);
+}
+
+/* The "new messages" bar's two halves GROW (#495). They are side by side with
+   a shared edge, so an overlay on either would reach straight into the other —
+   and the strip is the topmost thing in the log with nothing above it to
+   crowd, so the height it takes costs a phone nothing but the strip itself.
+   Growing the buttons grows the bar: it has no height of its own. */
+:root[data-layout="phone"] :is(.newMessagesJump, .newMessagesMarkRead) {
   min-height: var(--eb-touch-target);
 }
 

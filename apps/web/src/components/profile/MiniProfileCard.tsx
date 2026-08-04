@@ -21,8 +21,8 @@ import { gateway } from "../../gateway/socket.js";
 import type { SocialDto } from "../../lib/api.js";
 import { dmPath } from "../../lib/routes.js";
 import { loadSocial } from "../../lib/social.js";
+import { useNameColor } from "../../lib/name-color.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
-import { nickColor } from "../../theme/tokens.js";
 import {
   liveAnchor,
   loadOwnProfile,
@@ -298,6 +298,7 @@ export function MiniProfileCard({
     >
       <CardContent
         name={name}
+        identityId={identityId}
         loaded={loaded}
         social={social}
         statusMessage={statusMessage}
@@ -319,6 +320,7 @@ export function MiniProfileCard({
 
 function CardContent({
   name,
+  identityId,
   loaded,
   social,
   statusMessage,
@@ -330,6 +332,7 @@ function CardContent({
   onMessage,
 }: {
   name: string;
+  identityId: string;
   loaded: LoadedProfile | undefined;
   social: SocialDto | undefined;
   statusMessage: string | undefined;
@@ -348,6 +351,10 @@ function CardContent({
       ownProfile && response ? match(ownProfile, response.profile) : undefined,
     [ownProfile, response],
   );
+  // The card's name wears the chat's gender colour, not a hash of the name
+  // (#493) — undefined for None/unknown, which leaves the name on the default
+  // text token and the header wash on the app accent.
+  const accent = useNameColor(identityId, name, response?.profile);
 
   if (!response && loaded && loaded.state !== "loading") {
     const budget = loaded.state === "budget";
@@ -381,7 +388,6 @@ function CardContent({
     social?.friends.some((row) => row.name.toLowerCase() === lower) ?? false;
   const isBookmarked =
     social?.bookmarks.some((row) => row.name.toLowerCase() === lower) ?? false;
-  const accent = nickColor(name);
 
   const chips = response
     ? CHIP_INFOTAG_IDS.flatMap((id) => {
@@ -396,7 +402,11 @@ function CardContent({
     <>
       <div
         className={styles.cardHeader}
-        style={{ "--gender-accent": accent } as React.CSSProperties}
+        style={
+          accent === undefined
+            ? undefined
+            : ({ "--gender-accent": accent } as React.CSSProperties)
+        }
       >
         <Avatar name={name} size={64} square />
         <div className={styles.cardHeaderInfo}>
