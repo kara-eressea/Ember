@@ -1792,9 +1792,13 @@
   background: rgb(10 9 8 / 88%);
 }
 
+/* Viewport units divided by the UI-scale zoom, exactly as the modal above
+   (#388): the lightbox itself is `inset: 0` and so fills the screen whatever
+   the zoom, but a `vw`/`vh` bound inside it does not — at 125% a 72vw image
+   paints 90% of the screen and a 100vw one overruns it. */
 .lightboxImg {
-  max-width: 72vw;
-  max-height: 62vh;
+  max-width: calc(72vw / var(--eb-ui-zoom, 1));
+  max-height: calc(62vh / var(--eb-ui-zoom, 1));
   object-fit: contain;
   cursor: zoom-in;
   border: 1px solid var(--eb-border);
@@ -1807,8 +1811,8 @@
    down to fit and pans via the container's overflow. Click again to
    return to fit size. */
 .lightboxImgZoomed {
-  max-width: 100vw;
-  max-height: calc(100vh - 56px);
+  max-width: calc(100vw / var(--eb-ui-zoom, 1));
+  max-height: calc(100vh / var(--eb-ui-zoom, 1) - 56px);
   cursor: zoom-out;
 }
 
