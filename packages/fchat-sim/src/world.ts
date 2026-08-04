@@ -689,6 +689,35 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Gutter Vane"],
     },
+    // Reserved for the #514 history-climb E2Es — one roster per project slice,
+    // because the desktop spec and the phone one run concurrently and a
+    // character holds exactly one sim connection. Each pair reads a room of
+    // nothing but long roleplay while its raw-SimClient partner writes it; the
+    // specs sample the reading position frame by frame, so no other character
+    // may speak into either room.
+    "brackenisle@example.test": {
+      password: "hunter2",
+      characters: ["Bracken Isle"],
+    },
+    "sedgewarbler@example.test": {
+      password: "hunter2",
+      characters: ["Sedge Warbler"],
+    },
+    "marram@example.test": {
+      password: "hunter2",
+      characters: ["Marram Dune"],
+    },
+    "shingleharrow@example.test": {
+      password: "hunter2",
+      characters: ["Shingle Harrow"],
+    },
+    // Reserved for the #516 link-wrap E2E, which needs no partner: the browser
+    // character writes the two links itself and the spec measures where the
+    // caption wrapped.
+    "vellum@example.test": {
+      password: "hunter2",
+      characters: ["Vellum Prine"],
+    },
   },
   channels: [
     {
@@ -1184,6 +1213,40 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Long posts, small screens.",
       oplist: ["Ribbon Quaile"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #514 history-climb E2Es (history-climb.spec and
+    // mobile-history-climb.spec): a deep spool of long roleplay whose rows all
+    // measure many times the virtualizer's flat estimate, climbed with the
+    // wheel while the reading position is sampled every frame. One room per
+    // project slice — the two specs run concurrently.
+    {
+      name: "ADH-514historyclimb11aa22bb",
+      title: "Bracken Climb",
+      mode: "chat",
+      description: "A deep spool of very tall posts.",
+      oplist: ["Bracken Isle"],
+      npcs: [],
+      listed: false,
+    },
+    {
+      name: "ADH-514phoneclimb33cc44dd",
+      title: "Marram Climb",
+      mode: "chat",
+      description: "A deep spool of very tall posts, on a phone.",
+      oplist: ["Marram Dune"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #516 link-wrap E2E (link-wrap.spec): an empty room whose
+    // only two messages are the links under measurement.
+    {
+      name: "ADH-516linkwrap55ee66ff",
+      title: "Vellum Reading Room",
+      mode: "chat",
+      description: "Two links and nothing else.",
+      oplist: ["Vellum Prine"],
       npcs: [],
       listed: false,
     },

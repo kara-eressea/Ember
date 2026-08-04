@@ -2115,17 +2115,31 @@
 
 /* ── LinkChip + LinkPreview (M8, COMPONENTS-link-preview-eicon.md §1–§2) ── */
 
+/* Plain `inline`, not `inline-flex` (#516). A flex box is an atomic inline: it
+   is laid out as one unbreakable unit, so a `[url=…]long caption[/url]` had
+   nowhere to wrap and the caption was ellipsised to keep the glyph and the host
+   on its row — a sentence of body text truncated so a piece of decoration could
+   stay put. Inline flow wraps the caption like the prose around it and lets the
+   ↗ and the [host] fall after its last line.
+
+   They stay ON that last line rather than dropping to a row of their own,
+   because there is no whitespace between the three spans in the markup and
+   therefore no break opportunity between them — the glyph is glued to the
+   caption's final word the way a full stop is. `overflow-wrap: anywhere` is the
+   valve for when that glued cluster (or a bare unbroken URL, which is the usual
+   caption) is itself wider than the line. */
 .linkChip {
-  display: inline-flex;
-  gap: 6px;
-  align-items: baseline;
-  max-width: 100%;
+  display: inline;
   padding: 1px 7px 1px 6px;
+  overflow-wrap: anywhere;
   color: var(--eb-accent-text);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--eb-accent) 50%, var(--eb-bg));
   text-underline-offset: 2px;
   border-radius: 6px;
+  /* Each line fragment gets its own padded, rounded box — otherwise a wrapped
+     chip's active background is one long ribbon open at both wrap points. */
+  box-decoration-break: clone;
 }
 
 .linkChipActive {
@@ -2134,21 +2148,20 @@
   box-shadow: inset 0 0 0 1px var(--eb-accent-med);
 }
 
+/* The 6px that used to be the flex `gap`. Margins, because inline boxes have
+   no gap — and margin rather than a space character, which would be a break
+   opportunity and is exactly what must not exist here. */
 .linkChipGlyph {
-  flex: none;
+  margin-left: 6px;
   font-size: 11px;
 }
 
 .linkChipLabel {
-  min-width: 0;
-  overflow: hidden;
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .linkChipHost {
-  flex: none;
+  margin-left: 6px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11px;
   color: var(--eb-meta);
@@ -3236,7 +3249,18 @@
   padding-left: 8px;
 }
 
-:root[data-layout="phone"] :is(.iconBtn, .jumpToRecent) {
+/* The chips need a positioned box for the overlay below to hang off. NOT the
+   jump pill: it is `position: absolute` already, which is positioned, so it
+   needs no help here — and relative would take it OUT of the layer it floats
+   in and put it back into `.logWrap`'s flex column, where its own appearance
+   shortens the log by its own height. That is a feedback loop, not a cosmetic
+   difference: the pill appears exactly when the reader leaves the tail, the
+   log then shrinks 30px under them, the #284 re-stick observer reads the
+   shrink as "the log moved, glue it back", and the reader is thrown at the
+   newest message — which hides the pill, restores the 30px, and arms the whole
+   thing again. Instrumented, that ran 160 times in 12 seconds of a phone climb
+   and never let the reading position leave the newest post (#514). */
+:root[data-layout="phone"] .iconBtn {
   position: relative;
 }
 
