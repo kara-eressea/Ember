@@ -188,3 +188,61 @@
   font-size: calc(12.5px * var(--eb-font-ui-scale));
   color: var(--eb-meta);
 }
+
+/* ── Phone: the same stopgap the Preferences shell got (MP2 §3, #487) ─────
+   This window borrows the prefs rail and pane wholesale, and #376 already
+   taught those to turn on their side below `phone` — but the box around them
+   is this module's, and it stayed a 176px rail beside whatever the shared
+   max-width left (185px at 393). The result was the rail's own row layout
+   squeezed into a column: the channel title set one letter per line, and the
+   two section buttons were slivers. Same fix, same reason as prefs §4 — the
+   window goes full-screen and the columns become rows, so the rail's phone
+   rules land in a strip that has the width they assume.
+
+   Only the box. Everything inside is already the prefs chrome. */
+:root[data-layout="phone"] .roomWindow {
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* …and the strip hides its scrollbar. On a touchscreen the scrollbar is an
+   overlay that fades, but the phone tier is a *width*, so a narrow desktop
+   window lands here too — and there a classic scrollbar sits across the
+   bottom 11px of a 44px row, taking the presses meant for the row.
+   (Measured on WebKit/macOS, which is where the sweep sees it: #502 is the
+   same pixels in the Preferences rail this window borrows, and the fix there
+   belongs to that issue. This class is the piece of it inside a window this
+   module owns.) */
+:root[data-layout="phone"] .roomRail {
+  scrollbar-width: none;
+}
+
+/* The channel name rides along the strip as its second label. */
+:root[data-layout="phone"] .railSub {
+  flex: none;
+  padding: 0 8px 0 0;
+  overflow: hidden;
+  max-width: 40vw;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #487) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target. Every control this module owns is the
+   only thing on its line — an invite field with its button, a Refresh, a row
+   of banned names with one action each — so all of them simply grow, and
+   nothing here needs an overlay or a wider gap. */
+:root[data-layout="phone"] .input {
+  height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] :is(.primaryBtn, .secondaryBtn) {
+  min-height: var(--eb-touch-target);
+}

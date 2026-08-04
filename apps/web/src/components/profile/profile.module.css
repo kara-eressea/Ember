@@ -1921,3 +1921,141 @@
 .gbSign:hover {
   text-decoration: underline;
 }
+
+/* ── Phone (MP2 §3, #487) ─────────────────────────────────────────────────
+   The one of the five secondary windows that survives 393px on its own: the
+   history rail already collapses to a 52px strip (#279) and everything else
+   is one column. So this is not the Preferences §4 stopgap — it is the window
+   taking the whole screen instead of stopping 16px short of it, plus the
+   three things the narrow measure did break.
+
+   Fullscreen (#213) is what the window already is here, so the toggle stops
+   being a size change; it stays, because it is also the way back. */
+:root[data-layout="phone"] :is(.window, .windowFull) {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* 1. The tab strip did not scroll, and seven tabs do not fit 393px: Images,
+      Guestbook and Insights sat off the right edge of a window that clips its
+      overflow — unreachable by any pointer, which is the §4 situation in
+      miniature. The gap is the target rule rather than the layout one: two
+      hit areas that share an edge each claim the pixel on it, and a hairline
+      between them is all it takes for the strip to stop reporting one tab as
+      contesting the next. `scrollbar-width: none` for a related reason: the
+      phone tier is a width, so a narrow desktop window lands here too, and
+      there a classic scrollbar lies across the bottom 17px of a 44px tab and
+      takes the presses meant for it (measured on WebKit/macOS — the same
+      pixels #502 reports in the Preferences rail). */
+:root[data-layout="phone"] .tabs {
+  gap: 4px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+/* 2. The name row runs under the window controls, which are absolutely
+      positioned over the header. At a desktop width the name ends long
+      before them; at 393 it ran straight through the ⚑ bookmark, which the
+      hit test then reported as nobody's target. The header starts below the
+      cluster instead of beside it — the alternative, reserving the width on
+      the right, left a 900px-wide window's name field at "Pr…". The badges
+      in that row are 22px squares 8px apart, the same arithmetic as the
+      controls below, and the one control in it takes the size for real:
+      an overlay on a 22px badge sitting that close to the top reaches back
+      into the cluster's own targets, and the ⚑ is a button, so it is allowed
+      to look like one. */
+:root[data-layout="phone"] .header {
+  padding-top: 52px;
+}
+
+:root[data-layout="phone"] .bookmarkBtn {
+  min-width: var(--eb-touch-target);
+  min-height: var(--eb-touch-target);
+}
+
+/* 3. Targets. The tab strip and the rail's rows grow — both are places where
+      a hit area taller than the control would reach its neighbour — and the
+      small square controls keep their boxes and take an overlay. */
+/* `height`, not `min-height`: the strip is a flex row, and a min-height on a
+   flex item in a row is the one thing WebKit on macOS has been seen to
+   measure short (#502). A tab is one line of text either way. */
+:root[data-layout="phone"] :is(.tab, .flistLink) {
+  flex: none;
+  height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] :is(.tzInput, .noteAdd, .notePeek, .noteBody) {
+  min-height: var(--eb-touch-target);
+}
+
+/* A history row grows like any stacked row — but the collapsed rail is sized
+   to a 28px avatar and its gutters (#279), which leaves the row 16px short in
+   the one direction it cannot grow in. The strip widens by those pixels
+   rather than the avatar growing: a history rail whose avatars are bigger
+   than the member list's avatars is a different rail. */
+:root[data-layout="phone"] .railCollapsed {
+  width: 60px;
+}
+
+:root[data-layout="phone"] .histOpen {
+  min-width: var(--eb-touch-target);
+  min-height: var(--eb-touch-target);
+}
+
+/* The window controls are 26×22 squares 2px apart in a cluster that hangs
+   over the header. Overlays alone would have the three of them fighting over
+   the same pixels, so the cluster opens up first — and it moves a couple of
+   pixels off the corner, because the window clips its overflow and a 44px
+   overlay on a 22px control needs 11px of room above it. */
+:root[data-layout="phone"] .windowControls {
+  top: 12px;
+  right: 12px;
+  gap: 22px;
+}
+
+:root[data-layout="phone"] .fetchedControl {
+  gap: 22px;
+  margin-right: 22px;
+}
+
+/* …and the "fetched X ago" stamp beside them goes: it is a label, not a
+   control, and the three targets it sits in front of need its width. What it
+   is telling you is how stale the copy is; the button it labels is still
+   right there, and pressing it settles the question either way. */
+:root[data-layout="phone"] .fetchedLabel {
+  display: none;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .windowControl,
+    .railCollapseBtn,
+    .histRemove,
+    .fullCompare,
+    .noteImport
+  ) {
+  position: relative;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .windowControl,
+    .railCollapseBtn,
+    .histRemove,
+    .fullCompare,
+    .noteImport
+  )::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}

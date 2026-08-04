@@ -325,3 +325,40 @@
 .footerError {
   color: var(--eb-danger);
 }
+
+/* ── Phone: 44px touch targets (MP2 §3, #487) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target. This window is the one of the five that
+   already fits a phone — a single column of rows, capped by the shared
+   max-width — so nothing here is a layout change; every rule is a hit area.
+
+   Fields and the tab strip GROW: each is the only thing on its line, and the
+   line below is a border, not another target. */
+:root[data-layout="phone"] :is(.search, .footerInput) {
+  height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .tab {
+  min-height: var(--eb-touch-target);
+}
+
+/* The window ✕, the notice's retry link and the row/footer action buttons
+   keep their boxes and take an overlay. The action column is 86×30 and has to
+   stay 86×30: it is the fixed width every row's right edge aligns on (§11),
+   and three of its four states (Joined, Pinned) are not even pressable, so a
+   row where only the pressable one is taller would step. The 45px row pitch
+   leaves exactly the pixel between one overlay and the next — a finger cannot
+   land in it, and the row above keeps its own 44. */
+:root[data-layout="phone"] :is(.close, .retryButton, .joinButton) {
+  position: relative;
+}
+
+:root[data-layout="phone"] :is(.close, .retryButton, .joinButton)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}

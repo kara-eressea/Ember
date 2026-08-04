@@ -183,6 +183,43 @@ export async function measureTargets(
       const layerOf = (el: HTMLElement): Element | null =>
         el.closest('[role="dialog"], [role="menu"], [aria-modal="true"]');
 
+      /** Is any part of this box scrolled (or clipped) out of an ancestor?
+       *
+       * The bottom row of a scrolling list is cut by the list's own edge, and
+       * a hit test measures the half that is left — a 30px "target" that is a
+       * 44px target the moment the finger scrolls, on every list the app has.
+       * That is the container's edge, not the control's size, so it is not
+       * the floor's business.
+       *
+       * Only the element's OWN box is tested, deliberately: a control that is
+       * entirely on screen while its `::after` overlay is clipped by a box
+       * with hidden overflow is exactly the bug this file exists to catch, and
+       * it stays caught. */
+      const clippedOut = (el: HTMLElement, rect: DOMRect): boolean => {
+        for (
+          let node = el.parentElement;
+          node !== null;
+          node = node.parentElement
+        ) {
+          const style = getComputedStyle(node);
+          if (style.overflowX === "visible" && style.overflowY === "visible") {
+            continue;
+          }
+          const box = node.getBoundingClientRect();
+          // A pixel of tolerance: fractional layout at a shared edge is not a
+          // control hanging out of its container.
+          if (
+            rect.top < box.top - 1 ||
+            rect.bottom > box.bottom + 1 ||
+            rect.left < box.left - 1 ||
+            rect.right > box.right + 1
+          ) {
+            return true;
+          }
+        }
+        return false;
+      };
+
       const targets: TargetMeasurement[] = [];
       const claims: {
         el: HTMLElement;
@@ -202,6 +239,10 @@ export async function measureTargets(
         // open sheet). Not a target on this surface — it will be measured on
         // the surface where it is the thing in front.
         if (!ownsPoint(el, cx, cy)) {
+          continue;
+        }
+        // Half-scrolled out of a list: measured where it is whole, not here.
+        if (clippedOut(el, rect)) {
           continue;
         }
 

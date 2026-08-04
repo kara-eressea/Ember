@@ -607,10 +607,12 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Driftwood Ash"],
     },
-    // Reserved for the MP2 §3 touch-target E2E (#376), same isolation rules.
+    // Reserved for the MP2 §3 touch-target E2E (#376) and the secondary-window
+    // sweep that followed it (#487) — one spec file, so one pair of characters.
     // Reach Palmer walks every surface of the shell measuring what a thumb can
     // land on; Pressley Vane is the raw-SimClient partner who supplies the
-    // room's backlog and the DM row, so no other character may speak there.
+    // room's backlog, the DM row and the member row the profile viewer opens
+    // from, so no other character may speak in either of their rooms.
     "reachpalmer@example.test": {
       password: "hunter2",
       characters: ["Reach Palmer"],
@@ -1099,6 +1101,23 @@ export const DEFAULT_WORLD: SimWorld = {
       title: "Reach Room",
       mode: "chat",
       description: "Everything a thumb can land on.",
+      oplist: ["Reach Palmer"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #487 secondary-window sweep, which measures the windows
+    // the shell *opens* rather than the shell itself. `both` mode because the
+    // Ad Center's Post-ads and campaign dialogs list only channels that accept
+    // ads, and an empty list is an edge state with none of the rows the sweep
+    // is there for. Reach Palmer ops it, so the room-settings window has its
+    // invite/visibility groups and its banlist; Pressley Vane is the member
+    // row the mini card and the profile viewer are opened from. Hidden and
+    // NPC-free, for the isolation the Reach Room keeps.
+    {
+      name: "ADH-487windowsweep8c1d0e2f",
+      title: "Sweep Parlour",
+      mode: "both",
+      description: "Every window the shell can open.",
       oplist: ["Reach Palmer"],
       npcs: [],
       listed: false,

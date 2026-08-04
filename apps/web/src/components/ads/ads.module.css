@@ -310,6 +310,13 @@
   color: var(--eb-meta);
 }
 
+/* Named only so the touch sweep can point at it: it is one of the app's two
+   native checkboxes, and the phone rules below explain what stands in for its
+   own hit area. Styling stays the platform's. */
+.disabledCheck {
+  flex: none;
+}
+
 .editorBody {
   display: flex;
   flex: 1;
@@ -776,4 +783,96 @@
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--eb-meta);
+}
+
+/* ── Phone: the library stacks over the editor (MP2 §3, #487) ─────────────
+   The desktop window is 880px of two columns, and the shared max-width caps
+   it at 361 on a phone: a 278px library beside an 83px editor pane, which is
+   narrow enough that the ad text renders one letter per line and the footer's
+   Save/Cancel sit half off the window. That is not something a hit area can
+   fix, so the same stopgap Preferences got in #376 lands here — full-screen,
+   and the columns become rows. A proper mobile ad flow is still unbuilt.
+
+   The library keeps a share of the height rather than its content's: it is a
+   list that grows with the account, and an editor that shrinks as ads are
+   written is the wrong way round. */
+:root[data-layout="phone"] .window {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+}
+
+:root[data-layout="phone"] .library {
+  border-right: none;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #487) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target.
+
+   Full-width buttons and fields GROW: each is the only thing on its line. */
+:root[data-layout="phone"] :is(.newAd, .postAds, .button, .buttonPrimary) {
+  height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .fieldInput {
+  min-height: var(--eb-touch-target);
+}
+
+/* A tag chip is a label with a ✕ on the end, and the chips wrap — so the chip
+   takes the height and the field takes the gap, exactly as the highlight-rule
+   chips did, or one row's ✕ reaches the ✕ above it.
+
+   The two pixels over the floor are not superstition: this row's top edge
+   lands on a half pixel, because the library/editor split above it is a
+   fraction of the viewport height, and a box of exactly 44 measured across a
+   half-pixel edge comes back 43. Package C met the same arithmetic at the
+   colour swatches and answered it the same way — the number is set from the
+   measurement, not from the sum. The ✕ takes that height for real and only
+   its width from the overlay below: the tag row sits at the foot of a
+   scrolling pane, and a real box is the half of the target the sweep can see
+   is whole. */
+:root[data-layout="phone"] :is(.tagChip, .tagRemove, .tagInput) {
+  min-height: calc(var(--eb-touch-target) + 2px);
+}
+
+:root[data-layout="phone"] .tagField {
+  gap: 16px;
+}
+
+/* The two per-row icons are 24px squares 2px apart: both take an overlay, and
+   the pair opens up first, because two 44px targets 26px apart are one
+   target as far as a thumb is concerned. */
+:root[data-layout="phone"] .adRowActions {
+  gap: 22px;
+}
+
+/* The pane head's "Disabled" checkbox — one of the app's two native ones, and
+   the one control here that an overlay cannot reach: an `input` generates no
+   pseudo-element boxes, so there is nothing to hang a hit area on. Its label
+   wraps the whole "Disabled / kept, skipped when posting" text and toggles it,
+   so the band is the target — grown here, excluded and asserted by name in
+   mobile-targets.spec.ts, the way the composer's textarea is. */
+:root[data-layout="phone"] .disabledToggle {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] :is(.adAction, .tagRemove, .lossinessMore) {
+  position: relative;
+}
+
+:root[data-layout="phone"] :is(.adAction, .tagRemove, .lossinessMore)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
 }

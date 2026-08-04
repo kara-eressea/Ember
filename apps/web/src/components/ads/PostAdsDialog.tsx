@@ -398,6 +398,7 @@ export function PostAdsDialog({
           <label className={styles.selectAllLabel}>
             <input
               type="checkbox"
+              className={styles.selectAllCheck}
               checked={
                 openChannels.length > 0 &&
                 openChannels.every((c) => picked.has(c.key))

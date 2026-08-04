@@ -711,3 +711,136 @@
   opacity: 0.55;
   cursor: default;
 }
+
+/* ── Phone: the saved rail turns on its side (MP2 §3, #487) ───────────────
+   748px of two columns capped at 361 leaves a 196px rail beside a 165px pane,
+   and at 165px the filter pane is unusable: the kink primer sets one word per
+   line, and the footer's Search button lands on top of the status text beside
+   it. No hit area fixes that, so this window takes the same stopgap
+   Preferences got in #376 — full-screen, and the rail becomes the scrolling
+   strip of saved searches above the pane, the way the section rail does
+   there. A proper mobile search flow is still unbuilt.
+
+   Phone only; the desktop dialog is untouched. */
+:root[data-layout="phone"] .window {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* `scrollbar-width: none` because the phone tier is a *width*: a narrow
+   desktop window lands here too, and there a classic scrollbar sits across
+   the bottom of the strip, where it takes the presses meant for the 44px
+   rows above it (measured on WebKit/macOS — the same pixels as #502). */
+:root[data-layout="phone"] .rail {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: none;
+  border-bottom: 1px solid var(--eb-border);
+  scrollbar-width: none;
+}
+
+:root[data-layout="phone"] :is(.railTitle, .railList, .railEmpty, .railFoot) {
+  flex: none;
+  padding: 0;
+  white-space: nowrap;
+}
+
+:root[data-layout="phone"] .railList {
+  display: flex;
+  gap: 8px;
+  overflow: visible;
+}
+
+:root[data-layout="phone"] .savedRow {
+  flex: none;
+  align-items: center;
+  margin: 0;
+}
+
+:root[data-layout="phone"] .railFoot {
+  border-top: none;
+}
+
+/* The strip's own last item rather than a full-width footer button. */
+:root[data-layout="phone"] .saveCurrent {
+  width: auto;
+  padding: 0 14px;
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #487) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target.
+
+   Everything on a line of its own GROWS — fields, the footer buttons, the
+   saved-search strip's chips, and the two lists of rows (the kink picker and
+   the results), where a hit area taller than the row would reach the row
+   above it. */
+:root[data-layout="phone"]
+  :is(.pickerInput, .nameFilter, .saveNameInput, .saveCurrent) {
+  height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] :is(.button, .buttonPrimary) {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"]
+  :is(.pickerRow, .resultRow, .savedBody, .addKinks, .filterChip, .kinkChip) {
+  min-height: var(--eb-touch-target);
+}
+
+/* A filter chip's label can be shorter than its target ("Gay", "Any"), and a
+   chip is the one control here that is free to be square. */
+:root[data-layout="phone"] .filterChip {
+  min-width: var(--eb-touch-target);
+}
+
+/* Two controls whose overlays had nowhere to go — the picker's Done sits in a
+   33px footer inside a box with hidden overflow, and the saved-search ✕ rides
+   in a strip that clips its own vertical overflow, so both overlays came back
+   measured at 39. They take the size for real instead, which also settles the
+   ✕: an overlay 44px wide on a ✕ at the end of a 78px chip reached back over
+   the chip's own button, and two controls contesting one region is the rule
+   that outranks the floor. */
+:root[data-layout="phone"] :is(.pickerDone, .savedRemove) {
+  min-width: var(--eb-touch-target);
+  min-height: var(--eb-touch-target);
+}
+
+/* …and the ✕ stops hanging off the top of its row while it does it. */
+:root[data-layout="phone"] .savedRemove {
+  padding: 0 4px;
+}
+
+/* The kink chips wrap, and each carries a ✕ at its right end: the chip takes
+   the height and the field takes the gap, or one line's ✕ reaches the ✕ on
+   the line above and removes the wrong kink. */
+:root[data-layout="phone"] .kinkChips {
+  gap: 16px;
+}
+
+/* The window ✕ and the kink chips' ✕: small controls with room around them,
+   so they keep their boxes and take an overlay. */
+:root[data-layout="phone"] :is(.close, .kinkRemove) {
+  position: relative;
+}
+
+:root[data-layout="phone"] :is(.close, .kinkRemove)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
