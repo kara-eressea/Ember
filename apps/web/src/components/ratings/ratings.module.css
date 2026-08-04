@@ -110,11 +110,16 @@
   border-radius: 3px;
 }
 
+/* The gender colour rides in as an inline style when the poster's gender is
+   known (#493); named here for when it is not, because this row is a <button>
+   and an uncoloured name inside one falls back to the UA's `buttontext` —
+   black, on a dark ground. */
 .collapsedNick {
   flex-shrink: 0;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 12px;
   font-weight: 600;
+  color: var(--eb-text);
 }
 
 .collapsedNote {

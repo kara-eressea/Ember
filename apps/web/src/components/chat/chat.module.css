@@ -632,8 +632,14 @@
   text-decoration: underline;
 }
 
+/* The prose face is the one thing here a reader may choose (`messageFont`,
+   var written on the log root beside the size ramp). It lands on the message
+   text and on ad bodies — the two places a person's own words render — and
+   deliberately nowhere else: names inherit the ROW (#438, see .nick) and
+   timestamps are mono by spec, so a serif log still reads as this app's log. */
 .body {
   min-width: 0;
+  font-family: var(--eb-msg-family, inherit);
   font-size: var(--eb-msg-font, 13px);
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -746,6 +752,7 @@
 }
 
 .adBlockBody {
+  font-family: var(--eb-msg-family, inherit);
   font-size: var(--eb-msg-font, 13px);
   line-height: 1.5;
 }
@@ -2363,44 +2370,69 @@
   border-radius: var(--eb-radius);
 }
 
-/* "New messages" bar (#363): rides the top of the log when unread messages
-   sit above the fold. A full-width accent strip — click to jump to the first
-   unread, Esc to mark read. */
+/* "New messages" bar (#363, reworked in #495): rides the top of the log when
+   unread messages sit above the fold. A full-width accent strip made of two
+   side-by-side buttons — the jump fills everything left of "Mark as read".
+   The strip itself carries no padding and no gap, so every pixel of it belongs
+   to one of the two buttons and no press lands on dead ground. */
 .newMessagesBar {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 3;
   display: flex;
-  gap: 12px;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: stretch;
   width: 100%;
-  padding: 6px 16px;
   font-size: var(--eb-font-ui-small);
-  font-weight: 500;
   /* On-accent foreground: the page bg reads against the accent fill, the same
      pairing primary buttons use. --eb-accent-text is accent-TINTED text for
      normal surfaces and would vanish on the accent fill (#363 follow-up). */
   color: var(--eb-bg);
-  text-align: left;
-  cursor: pointer;
   background: var(--eb-accent);
-  border: none;
   border-bottom: 1px solid var(--eb-accent-med);
   box-shadow: 0 8px 24px -14px rgb(0 0 0 / 55%);
 }
 
-.newMessagesBar:hover {
-  background: var(--eb-accent-hi, var(--eb-accent));
+.newMessagesJump,
+.newMessagesMarkRead {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
 }
 
-.newMessagesBarHint {
+.newMessagesJump {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The one non-jump region, hairlined off so the split is visible before it is
+   hovered. Each half lights on its own hover — that is what tells a mouse
+   which of the two it is about to press. */
+.newMessagesMarkRead {
   flex: none;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: var(--eb-font-ui-tiny);
-  font-weight: 400;
-  opacity: 0.85;
+  font-weight: 600;
+  white-space: nowrap;
+  border-left: 1px solid var(--eb-accent-med);
+}
+
+/* A wash toward the page ground, over whichever half the pointer is on. The
+   old bar's hover reached for --eb-accent-hi, a token that does not exist, so
+   the strip never actually responded — and now that it holds two targets, the
+   response is what says which one is about to be pressed. */
+.newMessagesJump:hover,
+.newMessagesMarkRead:hover {
+  background: color-mix(in srgb, var(--eb-bg) 12%, transparent);
 }
 
 @keyframes jump-flash {
@@ -2926,11 +2958,30 @@
   color: var(--eb-meta);
 }
 
+/* The row is a container now, not the button: it carries the entry's own
+   controls (#505/#506), and a button inside a button is not a thing. The
+   hover wash moved with it, so pointing anywhere on the row — including at
+   the trashcan — still lights the whole row. */
 .inboxRow {
   display: flex;
+  gap: 2px;
+  align-items: center;
+  width: 100%;
+  border-radius: var(--eb-radius);
+}
+
+.inboxRow:hover,
+.inboxRow:focus-within {
+  background: var(--eb-hover);
+}
+
+/* Everything that reads as the entry itself, and the click that acts on it. */
+.inboxRowMain {
+  display: flex;
+  flex: 1;
   gap: 8px;
   align-items: baseline;
-  width: 100%;
+  min-width: 0;
   padding: 6px 8px;
   text-align: left;
   cursor: pointer;
@@ -2939,9 +2990,74 @@
   border-radius: var(--eb-radius);
 }
 
-.inboxRow:hover,
-.inboxRow:focus-visible {
-  background: var(--eb-hover);
+/* The trailing cluster, in a fixed order on every row: the request's answer
+   (or its verdict), then the trashcan. Right-aligned by the main column
+   taking the spare width, so a row with no request actions still puts its
+   trashcan where the one above it is. */
+.inboxRowTrail {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  padding-right: 5px;
+}
+
+.inboxAction {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  line-height: 0;
+  color: var(--eb-faint);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--eb-radius);
+}
+
+.inboxAction:hover,
+.inboxAction:focus-visible {
+  background: var(--eb-hover-main);
+  color: var(--eb-text);
+}
+
+/* The two answers, tinted only on approach: a row of permanently green and
+   red glyphs would out-shout the entry they belong to. */
+.inboxActionAccept:hover,
+.inboxActionAccept:focus-visible {
+  color: var(--eb-ok);
+}
+
+.inboxActionReject:hover,
+.inboxActionReject:focus-visible,
+.inboxActionRemove:hover,
+.inboxActionRemove:focus-visible {
+  color: var(--eb-danger);
+}
+
+/* Hidden until the row is hovered or the button itself is focused (#506).
+   Kept in the DOM — opacity, not display — so it stays tab-reachable, and
+   the row reserves its width either way. `data-eb-hover-reveal` draws it
+   permanently where nothing can hover (base.css §5-F). */
+.inboxActionRemove {
+  opacity: 0;
+}
+
+.inboxRow:hover .inboxActionRemove,
+.inboxActionRemove:focus-visible {
+  opacity: 1;
+}
+
+/* "Accepted" / "Declined": the quiet end state of an entry that had buttons
+   (#505). Deliberately text and not a glyph — a resolved request is a fact
+   to read, not a control to find. */
+.inboxRowVerdict {
+  flex: none;
+  padding: 0 4px;
+  font-size: var(--eb-font-ui-tiny);
+  color: var(--eb-faint);
+  white-space: nowrap;
 }
 
 /* Unseen until the open marks them: an accent edge, not a fill, so a screen
@@ -3089,6 +3205,28 @@
   min-height: var(--eb-touch-target);
 }
 
+/* The inbox row and the two-or-three controls trailing it (#505/#506) grow
+   rather than wear overlays, and for the reason the token's rule gives: they
+   sit side by side with no space between them, so a hit area wider than the
+   box would reach into the neighbour — and the neighbour here is the
+   difference between accepting a friend request and deleting the line that
+   mentions it. Three 44px squares plus the row's own text still leave the
+   main column ~190px on the narrowest phone the panel renders on. */
+:root[data-layout="phone"] .inboxRowMain {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .inboxAction {
+  width: var(--eb-touch-target);
+  height: var(--eb-touch-target);
+}
+
+/* The cluster's own padding would otherwise sit between the last target and
+   the panel edge as dead pixels a thumb aiming at the trashcan can land in. */
+:root[data-layout="phone"] .inboxRowTrail {
+  padding-right: 0;
+}
+
 :root[data-layout="phone"] .joinButton {
   height: var(--eb-touch-target);
 }
@@ -3107,6 +3245,15 @@
 :root[data-layout="phone"] .mdToggle {
   display: inline-flex;
   align-items: center;
+  min-height: var(--eb-touch-target);
+}
+
+/* The "new messages" bar's two halves GROW (#495). They are side by side with
+   a shared edge, so an overlay on either would reach straight into the other —
+   and the strip is the topmost thing in the log with nothing above it to
+   crowd, so the height it takes costs a phone nothing but the strip itself.
+   Growing the buttons grows the bar: it has no height of its own. */
+:root[data-layout="phone"] :is(.newMessagesJump, .newMessagesMarkRead) {
   min-height: var(--eb-touch-target);
 }
 

@@ -11,12 +11,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
+import { useNameColors } from "../../lib/name-color.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useFocusTrap } from "../../lib/useFocusTrap.js";
 import { openCardFrom } from "../../stores/profile.js";
 import { useSearchStore } from "../../stores/search.js";
 import type { IdentitySession } from "../../stores/sessions.js";
-import { nickColor } from "../../theme/tokens.js";
 import { Avatar } from "../common/Avatar.js";
 import { CachedMatchChip } from "../profile/CachedMatchChip.js";
 import { patchPrefs } from "../prefs/patch.js";
@@ -290,6 +290,12 @@ export function CharacterSearch({
     () => filterNames(results ?? [], nameFilter),
     [results, nameFilter],
   );
+  // A result row is a character's name, so it takes the chat's gender colour
+  // (#493). FKS returns names only — a result nobody's channel roster has seen
+  // reads in the plain text token rather than a hash colour that could paint a
+  // woman in the hue the log uses for men, which is exactly what a search on
+  // gender must not do.
+  const nameColor = useNameColors(identityId);
 
   const refusal = state?.refusal;
   const searching = state?.searching === true;
@@ -362,8 +368,8 @@ export function CharacterSearch({
           <input
             className={styles.nameFilter}
             value={nameFilter}
-            placeholder="Filter these names…"
-            aria-label="Filter result names"
+            placeholder="Find in these names…"
+            aria-label="Find in the result names"
             onChange={(event) => {
               setNameFilter(event.target.value);
             }}
@@ -387,7 +393,7 @@ export function CharacterSearch({
               <Avatar name={name} size={30} />
               <span
                 className={styles.resultName}
-                style={{ color: nickColor(name) }}
+                style={{ color: nameColor(name) }}
               >
                 {name}
               </span>

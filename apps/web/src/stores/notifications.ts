@@ -19,6 +19,9 @@ export const INBOX_PAGE_SIZE = 50;
 /** Display ceiling for the bell badge (rendered "99+" past it). */
 export const UNSEEN_DISPLAY_CAP = 99;
 
+/** What became of a friend request this client acted on (#505). */
+export type FriendRequestVerdict = "accepted" | "declined";
+
 export interface InboxState {
   /** Newest first. */
   items: NotificationDto[];
@@ -31,6 +34,16 @@ export interface InboxState {
   /** The first page has landed (so "nothing here yet" is truthful). */
   loaded: boolean;
   loading: boolean;
+  /**
+   * Friend-request verdicts this client just handed down, by notification id
+   * (#505). NOT the source of truth — the live request list is (see
+   * NotificationInbox's friendRequestState) — only what covers the seconds
+   * between the click and the refreshed lists landing, during which the
+   * request is out of `incoming` and not yet in `friends`, i.e. exactly the
+   * window where derivation alone would flash the wrong verdict. Session
+   * memory: cleared on reset like everything else here.
+   */
+  actioned: Record<number, FriendRequestVerdict>;
 }
 
 export const EMPTY_INBOX: InboxState = {
@@ -40,6 +53,7 @@ export const EMPTY_INBOX: InboxState = {
   hasMore: false,
   loaded: false,
   loading: false,
+  actioned: {},
 };
 
 interface NotificationsState {
@@ -50,6 +64,19 @@ interface NotificationsState {
   applyLive(identityId: string, notification: NotificationDto): void;
   /** A `notification.seen` event — another device opened the inbox. */
   applySeen(identityId: string, lastSeenId: number, unseen: number): void;
+  /** A `notification.removed` event, or this tab's own delete (#506): drop
+   * the row and take the server's recounted badge. */
+  applyRemoved(identityId: string, id: number, unseen: number): void;
+  /** Delete one entry from the log (#506). */
+  remove(identityId: string, id: number): Promise<void>;
+  /** Remember what this client did with a friend request (#505). */
+  markActioned(
+    identityId: string,
+    id: number,
+    verdict: FriendRequestVerdict,
+  ): void;
+  /** Undo a remembered verdict — the accept/deny call failed. */
+  clearActioned(identityId: string, id: number): void;
   /** First (or refreshed) page. */
   load(identityId: string): Promise<void>;
   /** One older page, appended below the current tail. */
@@ -73,6 +100,19 @@ export function mergeNewestFirst(
     byId.set(entry.id, entry);
   }
   return [...byId.values()].sort((a, b) => b.id - a.id).slice(0, window);
+}
+
+/** The verdict map minus one entry, identity-stable when there was none. */
+function withoutVerdict(
+  actioned: Record<number, FriendRequestVerdict>,
+  id: number,
+): Record<number, FriendRequestVerdict> {
+  if (!(id in actioned)) {
+    return actioned;
+  }
+  const next = { ...actioned };
+  delete next[id];
+  return next;
 }
 
 export const useNotificationsStore = create<NotificationsState>()((
@@ -125,6 +165,41 @@ export const useNotificationsStore = create<NotificationsState>()((
         ...inbox,
         lastSeenId: Math.max(inbox.lastSeenId, lastSeenId),
         unseen,
+      }));
+    },
+
+    applyRemoved(identityId, id, unseen) {
+      patch(identityId, (inbox) => ({
+        ...inbox,
+        items: inbox.items.filter((entry) => entry.id !== id),
+        unseen,
+        // The verdict memory is keyed by notification id, and the row it
+        // annotated is gone — keeping it would leak one entry per delete for
+        // the life of the tab.
+        actioned: withoutVerdict(inbox.actioned, id),
+      }));
+    },
+
+    async remove(identityId, id) {
+      // No optimistic removal: the row is the user's own log line and the
+      // recounted badge comes back with the response, so a failed delete
+      // should leave the panel exactly as it was rather than restore a row
+      // that briefly vanished.
+      const result = await api.deleteNotification(identityId, id);
+      get().applyRemoved(identityId, id, result.unseen);
+    },
+
+    markActioned(identityId, id, verdict) {
+      patch(identityId, (inbox) => ({
+        ...inbox,
+        actioned: { ...inbox.actioned, [id]: verdict },
+      }));
+    },
+
+    clearActioned(identityId, id) {
+      patch(identityId, (inbox) => ({
+        ...inbox,
+        actioned: withoutVerdict(inbox.actioned, id),
       }));
     },
 

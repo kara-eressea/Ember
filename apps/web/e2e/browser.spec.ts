@@ -46,7 +46,7 @@ test("channel browser: browse, filter, join, hidden-by-name", async ({
   await dialog.getByRole("tab", { name: /Official/ }).click();
 
   // Filter narrows by name.
-  await dialog.getByLabel("Filter channels").fill("orch");
+  await dialog.getByLabel("Find channels").fill("orch");
   await expect(dialog.getByText("Orchard")).toBeVisible();
   await expect(dialog.getByText("Frontpage")).not.toBeVisible();
 

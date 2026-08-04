@@ -156,4 +156,63 @@ export async function notificationsRoutes(
       return reply.send({ lastSeenId, unseen });
     },
   );
+
+  /**
+   * Drop one entry from the log (#506). Deliberately idempotent — 200 with
+   * `removed: false` rather than 404 when the row is already gone: two tabs
+   * with the same panel open are exactly the case this exists for, and the
+   * second one's delete is a no-op the user should never see an error about.
+   * 404 stays reserved for the identity guard, where it means something.
+   *
+   * A friend-request entry is a LOG LINE here and nothing more: deleting it
+   * neither accepts nor declines the request, which keeps living on its own
+   * surfaces (#505).
+   */
+  app.delete(
+    "/:identityId/notifications/:notificationId",
+    {
+      config: {
+        rateLimit: {
+          max: NOTIFICATIONS_RATE_LIMIT_MAX,
+          timeWindow: "1 minute",
+        },
+      },
+      schema: {
+        params: z.object({
+          identityId: z.uuid(),
+          notificationId: z.coerce.number().int().positive(),
+        }),
+        response: {
+          200: z.object({ removed: z.boolean(), unseen: z.number() }),
+          404: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await findOwnedIdentity(
+        request.params.identityId,
+        request.user.sub,
+      );
+      if (!identity) {
+        return reply.code(404).send({ error: "Identity not found" });
+      }
+      const removed = await notifications.remove(
+        identity.id,
+        request.params.notificationId,
+      );
+      // Recount rather than decrement. The badge is a capped count of rows
+      // past the watermark that are allowed to alert, so whether this delete
+      // moved it depends on facts (the row's id, its `muted`, the current
+      // watermark, the 99 cap) that only the count knows — and a client that
+      // guessed would drift a little further with every guess.
+      const unseen = await notifications.unseenCount(identity.id);
+      if (removed) {
+        hub.broadcast(identity.id, {
+          kind: "notification.removed",
+          d: { id: request.params.notificationId, unseen },
+        });
+      }
+      return reply.send({ removed, unseen });
+    },
+  );
 }

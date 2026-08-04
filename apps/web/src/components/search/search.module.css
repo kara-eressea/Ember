@@ -597,12 +597,17 @@
   background: var(--eb-hover);
 }
 
+/* The gender colour rides in as an inline style when the roster knows this
+   character (#493); named here for when it does not, because the row is a
+   <button> and an uncoloured name inside one falls back to the UA's
+   `buttontext` — black, on a dark ground. */
 .resultName {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   font-size: calc(13.5px * var(--eb-font-ui-scale));
   font-weight: 600;
+  color: var(--eb-text);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;

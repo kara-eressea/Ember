@@ -376,6 +376,15 @@ export const api = {
       { method: "PUT", body: { lastSeenId }, auth: true },
     );
   },
+  /** Drop one entry from the log (#506). Idempotent, and answers with the
+   * server's recounted unseen total so the badge settles on the response
+   * rather than on arithmetic. */
+  deleteNotification(identityId: string, notificationId: number) {
+    return apiRequest<{ removed: boolean; unseen: number }>(
+      `/identities/${identityId}/notifications/${String(notificationId)}`,
+      { method: "DELETE", auth: true },
+    );
+  },
 
   /** Whole-conversation log export (M5 Away & logs pane). */
   exportLog(

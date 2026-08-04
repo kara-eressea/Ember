@@ -33,7 +33,7 @@ import { RateEditor } from "../ratings/RateEditor.js";
 import { StarRow } from "../ratings/StarRating.js";
 import ratingsStyles from "../ratings/ratings.module.css";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
-import { ACCENTS, BASE_THEMES, mix, nickColor } from "../../theme/tokens.js";
+import { ACCENTS, BASE_THEMES, mix } from "../../theme/tokens.js";
 import { adViewFor } from "./ads.js";
 import { isEditable } from "./composer-typeanywhere.js";
 import { buildRows } from "./log-rows.js";
@@ -41,6 +41,7 @@ import {
   NewMessagesBar,
   dividerCursorAfter,
   newMessagesBarHidden,
+  unreadSinceLabel,
 } from "./NewMessagesBar.js";
 import { parseEmote } from "./rich-text.js";
 import { PlainNamesProvider, RichText } from "./RichText.js";
@@ -61,6 +62,20 @@ const FONT_RAMP_PX = {
   m: { body: 14, meta: 12 },
   l: { body: 15, meta: 13 },
 } as const;
+
+/** Message-body face (`messageFont` pref), published as `--eb-msg-family` on
+ * the log root beside the size vars — the same plumbing, so one pane controls
+ * one log and nothing outside it. Sans is `inherit`, i.e. literally today's
+ * rendering: the app body face reaches the row unchanged rather than being
+ * restated here, where it could drift from base.css. Mono is the face the app
+ * already loads; the serif is a system stack, since shipping a fourth webfont
+ * for a preference most readers will never turn on is a lot of bytes for a
+ * taste. */
+const MESSAGE_FONT_STACKS: Record<UserPrefs["messageFont"], string> = {
+  sans: "inherit",
+  serif: 'Georgia, "Times New Roman", Times, serif',
+  mono: '"IBM Plex Mono", ui-monospace, monospace',
+};
 
 const EMPTY: MessageDto[] = [];
 const EMPTY_IGNORES: string[] = [];
@@ -174,6 +189,21 @@ export function MessageLog({
       0,
     );
   }, [rows, newSinceId]);
+  // When the backlog starts: the oldest unread's timestamp, which the bar
+  // names ("N new messages since 14:32", #495). Read off the same filtered rows
+  // the count comes from, so the two always describe the same set of messages.
+  const firstUnreadAt = useMemo(() => {
+    if (newSinceId === null) {
+      return undefined;
+    }
+    const first = rows.find(
+      (row) =>
+        row.type === "message" &&
+        !row.message.sentByUs &&
+        row.message.id > newSinceId,
+    );
+    return first?.type === "message" ? first.message.createdAt : undefined;
+  }, [rows, newSinceId]);
   // The first unread is scrolled off the top of the viewport (so the bar has
   // somewhere to jump to). Recomputed on scroll and after the tail settles.
   const [firstUnreadOffscreen, setFirstUnreadOffscreen] = useState(false);
@@ -247,6 +277,9 @@ export function MessageLog({
    * reflows every row, so the remembered heights are dropped wholesale. */
   const layoutSignature = [
     prefs.fontSize,
+    // The body face changes where every line wraps, so it invalidates the
+    // remembered heights exactly like the size ramp does.
+    prefs.messageFont,
     prefs.density,
     prefs.alignedColumns,
     prefs.groupConsecutive,
@@ -929,9 +962,12 @@ export function MessageLog({
     virtualizer.scrollToIndex(newRowIndex, { align: "start" });
   }
 
-  // Esc "mark caught up" at the live tail: mark the conversation read (the
+  // "Mark caught up" at the live tail: mark the conversation read (the
   // #257/#326 read-cursor path), hide the bar, and drop the in-log "new since
   // you left" divider. We stay put — open-at-bottom already put us there.
+  // Reached from Escape and, since #495, from the bar's own "Mark as read"
+  // button: one function, so the visible control and the unadvertised key can
+  // never mean two different things.
   function markCaughtUp() {
     acknowledgeTail();
     // Fully caught up: drop the in-log divider too, not just the bar.
@@ -1093,6 +1129,7 @@ export function MessageLog({
   const styleVars: Record<string, string> = {
     "--eb-msg-font": `${String(ramp.body)}px`,
     "--eb-msg-meta-font": `${String(ramp.meta)}px`,
+    "--eb-msg-family": MESSAGE_FONT_STACKS[prefs.messageFont],
   };
   if (prefs.highlightTint !== "accent") {
     styleVars["--eb-hl"] = ACCENTS[prefs.highlightTint].hex;
@@ -1121,6 +1158,11 @@ export function MessageLog({
       )}
       <NewMessagesBar
         count={newCount}
+        since={
+          firstUnreadAt === undefined
+            ? undefined
+            : unreadSinceLabel(firstUnreadAt, timeFormat(prefs))
+        }
         hidden={newMessagesBarHidden({
           count: newCount,
           atBottom,
@@ -1129,6 +1171,7 @@ export function MessageLog({
           detachedTail,
         })}
         onJump={jumpToFirstUnread}
+        onMarkRead={markCaughtUp}
       />
       <div
         className={logClass}
@@ -1207,7 +1250,11 @@ export function MessageLog({
                     identityId={identityId}
                   />
                 ) : row.message.kind === "lrp" ? (
-                  <AdLine message={row.message} prefs={prefs} />
+                  <AdLine
+                    message={row.message}
+                    prefs={prefs}
+                    identityId={identityId}
+                  />
                 ) : (
                   <MessageLine
                     message={row.message}
@@ -1337,10 +1384,22 @@ function PendingLine({ item }: { item: OutboxItemDto }) {
  * cache — no fetch-on-render, so most rows carry no chip and its absence
  * is the normal look (it sits in the flex spacer, not a reserved column).
  */
-function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
+function AdLine({
+  message,
+  prefs,
+  identityId,
+}: {
+  message: MessageDto;
+  prefs: UserPrefs;
+  identityId: string;
+}) {
   const time = formatTime(message.createdAt, timeFormat(prefs));
   const sender = message.senderCharacter;
   const rating = useRatingsStore((s) => ratingFor(s.byName, sender));
+  // The poster's name is a sender name like any other: the member list's
+  // gender colour, not a hash of the name (#493). An ad row sits among chat
+  // rows, so a divergence here read as two characters of different genders.
+  const nameColor = useGenderColorVar(identityId, sender);
   const [expanded, setExpanded] = useState(false);
   const [editorAnchor, setEditorAnchor] = useState<DOMRect>();
 
@@ -1413,7 +1472,7 @@ function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
           </span>
           <span
             className={ratingsStyles.collapsedNick}
-            style={{ color: nickColor(sender) }}
+            style={nameColor ? { color: nameColor } : undefined}
           >
             {sender}
           </span>
@@ -1441,7 +1500,7 @@ function AdLine({ message, prefs }: { message: MessageDto; prefs: UserPrefs }) {
         <button
           type="button"
           className={`${styles.nick} ${styles.nameButton ?? ""}`}
-          style={{ color: nickColor(message.senderCharacter) }}
+          style={nameColor ? { color: nameColor } : undefined}
           onClick={(event) => {
             openCardFrom(event.currentTarget, message.senderCharacter);
           }}

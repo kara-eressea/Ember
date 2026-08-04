@@ -23,6 +23,11 @@ export type BaseThemeId = (typeof BASE_THEME_IDS)[number];
 
 export const DENSITIES = ["cozy", "compact"] as const;
 export const FONT_SIZES = ["s", "m", "l"] as const;
+/** Message-body face: the app's own sans (default), a serif, or the mono the
+ * app already ships. The stacks live in the web client (MessageLog), the way
+ * FONT_SIZES' px ramp does — this is the vocabulary the two ends agree on. */
+export const MESSAGE_FONTS = ["sans", "serif", "mono"] as const;
+export type MessageFont = (typeof MESSAGE_FONTS)[number];
 /** Interface (chrome) type ramp — sidebar, headers, menus, prefs — S/M/L,
  * independent of the message-body FONT_SIZES above. Mirrored by the web
  * theme's UI_FONT_PX. */
@@ -122,6 +127,12 @@ const prefsShape = {
   density: z.enum(DENSITIES),
   /** Message body font size. */
   fontSize: z.enum(FONT_SIZES),
+  /** Message body face (parked 2026-08-01, built #492's round). Deliberately
+   * the *prose* face only: sender names inherit the row and timestamps stay
+   * mono, both settled by #438 after three rounds of nick-font churn — this
+   * pref exists so the body treatment is the reader's taste, not another
+   * amendment to the spec. */
+  messageFont: z.enum(MESSAGE_FONTS),
   /** Interface (chrome) type size — scales sidebar/header/menu/prefs text,
    * independent of the message-body `fontSize` above (issue #319). */
   uiFontSize: z.enum(UI_FONT_SIZES),
@@ -328,6 +339,7 @@ export const PREFS_DEFAULTS: UserPrefs = {
   baseTheme: "slate",
   density: "cozy",
   fontSize: "m",
+  messageFont: "sans",
   uiFontSize: "m",
   uiScale: 100,
   colorblindMode: false,

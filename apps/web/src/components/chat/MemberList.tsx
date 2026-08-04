@@ -181,7 +181,7 @@ export function MemberList({
       <input
         className={styles.memberFilter}
         type="search"
-        aria-label="Filter members"
+        aria-label="Find members"
         // The placeholder is where the fields it searches are advertised
         // (#497) — a gender filter nobody knows about is no filter.
         placeholder="Name, gender, status"

@@ -128,6 +128,28 @@ export function InboxGlyph({ size }: GlyphProps): ReactNode {
   );
 }
 
+/** Tick — accept a friend request from the notification inbox (#505). Paired
+ * with CloseGlyph as its refusal, so the two read as one control's two
+ * answers rather than as an action and an unrelated dismissal. */
+export function CheckGlyph({ size }: GlyphProps): ReactNode {
+  return svg(<path d="M5.2 12.6l4.4 4.4 9.2-10" />, size);
+}
+
+/** Waste bin — remove one entry from the notification log (#506). Lid, body
+ * and two staves: at 15px the staves are what stop the body reading as a
+ * plain box, and the lid overhang is what stops it reading as a cup. */
+export function TrashGlyph({ size }: GlyphProps): ReactNode {
+  return svg(
+    <>
+      <path d="M4.2 6.6h15.6" />
+      <path d="M9.4 6.6V4.4h5.2v2.2" />
+      <path d="M6.4 6.6l.9 12a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5l.9-12" />
+      <path d="M10.4 10.2v6.2M13.6 10.2v6.2" />
+    </>,
+    size,
+  );
+}
+
 /** Circle-slash — the ignore toggle (a danger action, tinted by CSS). */
 export function BanGlyph({ size }: GlyphProps): ReactNode {
   return svg(

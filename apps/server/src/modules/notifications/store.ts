@@ -308,6 +308,27 @@ export class NotificationStore {
   }
 
   /**
+   * Deletes one row the user asked to drop (#506) — scoped to the identity,
+   * so an id that belongs to somebody else's inbox simply matches nothing.
+   * Returns whether a row went, which is what decides if the removal is
+   * worth fanning out.
+   *
+   * The inbox stays a log for everything the user does NOT delete: this is
+   * the one row-level mutation, and it is a delete rather than a flag, so
+   * "seen" (a watermark over ids) keeps working exactly as it did — ids are
+   * only ever consumed, never reused.
+   */
+  async remove(identityId: string, id: number): Promise<boolean> {
+    const deleted = await this.#db
+      .delete(notifications)
+      .where(
+        and(eq(notifications.identityId, identityId), eq(notifications.id, id)),
+      )
+      .returning({ id: notifications.id });
+    return deleted.length > 0;
+  }
+
+  /**
    * Keeps the newest `maxPerIdentity` rows. Opportunistic: one keyset probe
    * for the cut id, then a bounded delete. The retention sweep needs no
    * companion pass — mention rows cascade from messages/conversations.

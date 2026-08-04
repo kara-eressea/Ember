@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { GuestbookPage, ProfileDto } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
-import { nickColor } from "../../theme/tokens.js";
+import { useNameColors } from "../../lib/name-color.js";
 import { Avatar } from "../common/Avatar.js";
 import { ProfileBBCode } from "./ProfileBBCode.js";
 import { dateLabel } from "./time.js";
@@ -32,6 +32,12 @@ export function GuestbookTab({
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const name = profile.name;
+  // Signers are names like any other: gender colour where a channel knows the
+  // character, and the plain text token otherwise (#493). The guestbook payload
+  // carries no gender of its own, so most old posts read plain — which is the
+  // honest answer, where a hash colour was a guess that could contradict the
+  // same person's nick in the log.
+  const nameColor = useNameColors(identityId);
 
   const fetchPage = useCallback(
     (page: number, previous?: Loaded) => {
@@ -129,7 +135,7 @@ export function GuestbookTab({
             <div className={styles.gbHead}>
               <span
                 className={styles.gbAuthor}
-                style={{ color: nickColor(post.character) }}
+                style={{ color: nameColor(post.character) }}
               >
                 {post.character}
               </span>

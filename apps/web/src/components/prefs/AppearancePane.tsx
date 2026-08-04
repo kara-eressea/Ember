@@ -174,6 +174,23 @@ export function AppearancePane({ identityId }: { identityId: string }) {
         />
       </FieldRow>
       <FieldRow
+        label="Message font"
+        help="The face message text is set in — names and timestamps keep their own"
+      >
+        <Segmented
+          label="Message font"
+          options={[
+            { value: "sans", label: "Sans" },
+            { value: "serif", label: "Serif" },
+            { value: "mono", label: "Mono" },
+          ]}
+          value={prefs.messageFont}
+          onChange={(messageFont) => {
+            set({ messageFont });
+          }}
+        />
+      </FieldRow>
+      <FieldRow
         label="Group consecutive messages"
         help="Hide the sender on back-to-back messages from the same person"
       >
