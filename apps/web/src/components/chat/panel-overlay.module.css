@@ -77,6 +77,7 @@
 }
 
 .close {
+  position: relative; /* the hit-area overlay below hangs off this */
   display: grid;
   flex: none;
   place-items: center;
@@ -94,6 +95,21 @@
 .close:hover {
   color: var(--eb-dim);
   background: var(--eb-hover);
+}
+
+/* 44px hit area on a 26px glyph (MP2 §3, #376) — the overlay mechanism
+   base.css describes beside --eb-touch-target. No tier gate: this component
+   only ever mounts on the phone tier, which is the whole reason it exists.
+   The 9px it gains on each side lands in the head's own padding on three
+   sides and in the title on the fourth, and the title is text. */
+.close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
 }
 
 /* The slot the panel drops into, unchanged from its docked form: a full-height
