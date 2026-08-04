@@ -387,10 +387,16 @@ test("new-messages bar shows and jumps when the unreads are off screen (#363/#37
       .toBeLessThanOrEqual(AT_BOTTOM_SLACK_PX);
     const bar = page.getByTestId("new-messages-bar");
     await expect(bar).toBeVisible();
-    await expect(bar).toContainText("new messages since you left");
+    // The count, and the clock time the backlog starts at (#495) — a real
+    // timestamp off the oldest unread, not a stock phrase.
+    await expect(bar).toContainText(/\d+ new messages since \d{1,2}:\d{2}/);
+    // The bar's one non-jump region rides in it.
+    await expect(
+      bar.getByRole("button", { name: "Mark these messages as read" }),
+    ).toBeVisible();
 
-    // Clicking it jumps up to the first unread: the divider comes on screen and
-    // the back-to-present pill appears.
+    // Pressing the bar itself jumps up to the first unread: the divider comes
+    // on screen and the back-to-present pill appears.
     await bar.click();
     await expect(page.getByTestId("new-divider")).toBeVisible();
     await expect(page.getByTestId("jump-to-recent")).toBeVisible();

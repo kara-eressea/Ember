@@ -32,7 +32,10 @@ function seedSession(name: string, statusmsg: string) {
   useSessionsStore.setState({ sessions: { id1: session } });
 }
 
-const profile = { name: "Ada Lovelace" } as never;
+// Infotags come along for the ride: the header reads the Gender one to colour
+// the name (#493), so the stub needs the field even though this suite is about
+// the status line.
+const profile = { name: "Ada Lovelace", infotagGroups: [] } as never;
 
 describe("full profile header status line (#365)", () => {
   it("renders the status message under the name when one is set", () => {

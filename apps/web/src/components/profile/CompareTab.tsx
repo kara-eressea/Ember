@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import { INFOTAG_IDS, match, type MatchReport } from "@emberchat/matcher";
 import type { ProfileDto } from "@emberchat/protocol";
-import { nickColor } from "../../theme/tokens.js";
+import { useNameColors } from "../../lib/name-color.js";
 import { loadOwnProfile, useProfileStore } from "../../stores/profile.js";
 import { choiceOf } from "./choices.js";
 import { compareSummary } from "./match-utils.js";
@@ -87,6 +87,7 @@ export function CompareTab({
       </div>
       <DimensionTable
         report={report}
+        identityId={identityId}
         you={ownProfile}
         yourName={ownCharacter}
         them={profile}
@@ -100,21 +101,27 @@ export function CompareTab({
 
 function DimensionTable({
   report,
+  identityId,
   you,
   yourName,
   them,
 }: {
   report: MatchReport;
+  identityId: string;
   you: ProfileDto;
   yourName: string;
   them: ProfileDto;
 }) {
+  // Both column heads are character names, so they take the chat's gender
+  // colour like every other name (#493) — and this table's first row is the
+  // Gender row, which a hashed colour could plainly contradict.
+  const nameColor = useNameColors(identityId);
   return (
     <div className={styles.dimTable} role="table" aria-label="Dimensions">
       <div className={`${styles.dimRow} ${styles.dimHeadRow}`} role="row">
         <span className={styles.dimCellLabel}>Dimension</span>
-        <span style={{ color: nickColor(yourName) }}>{yourName}</span>
-        <span style={{ color: nickColor(them.name) }}>{them.name}</span>
+        <span style={{ color: nameColor(yourName, you) }}>{yourName}</span>
+        <span style={{ color: nameColor(them.name, them) }}>{them.name}</span>
         <span className={styles.dimCellMatch}>Match</span>
       </div>
       {report.dimensions.map((dimension) => (
