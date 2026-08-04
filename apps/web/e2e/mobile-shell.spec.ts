@@ -238,3 +238,54 @@ test("phone device: two chips inline, everything else through ⋯, and the compo
     partner.close();
   }
 });
+
+// The install surface (MP3 §1, #377). Cheap and login-free: the manifest is
+// public and the question is only whether the wiring holds end to end — the
+// document points at it, the dev server's proxy reaches the Fastify route the
+// way production's single server does, and the icons it names are actually
+// served. The name-from-config assertion that matters lives in the server's
+// own test (plugins/web-manifest.test.ts), which can configure a name; here
+// the check is that the manifest and the client agree on whatever it is,
+// which is what would break if either side stopped reading APP_NAME.
+test("installable: the document links a manifest whose icons resolve (#377)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    "href",
+    "/manifest.webmanifest",
+  );
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+    "href",
+    "/icons/apple-touch-icon.png",
+  );
+
+  const response = await page.request.get("/manifest.webmanifest");
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain(
+    "application/manifest+json",
+  );
+  const manifest = (await response.json()) as {
+    name: string;
+    display: string;
+    icons: { src: string }[];
+    shortcuts: { url: string; icons: { src: string }[] }[];
+  };
+  expect(manifest.display).toBe("standalone");
+  // main.tsx titles the document from the same configured product name, once
+  // the runtime config has loaded — hence the retrying assertion.
+  await expect(page).toHaveTitle(manifest.name);
+  expect(manifest.shortcuts.length).toBeGreaterThan(0);
+
+  for (const src of [
+    ...manifest.icons.map((icon) => icon.src),
+    ...manifest.shortcuts.flatMap((shortcut) =>
+      shortcut.icons.map((icon) => icon.src),
+    ),
+    "/icons/apple-touch-icon.png",
+  ]) {
+    const icon = await page.request.get(src);
+    expect(icon.status(), src).toBe(200);
+    expect(icon.headers()["content-type"], src).toContain("image/png");
+  }
+});

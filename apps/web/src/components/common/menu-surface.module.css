@@ -124,8 +124,13 @@
      (MP2 §4 makes the same call for the log). */
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* The home indicator on a notched phone sits over the last row otherwise. */
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  /* The home indicator on a notched phone sits over the last row otherwise.
+     Through the base.css token rather than a bare `env()` (MP3 §3, #377): the
+     inset is only real inside an installed window, and the gate that decides
+     that lives in one place. Uncorrected for the keyboard on purpose — the
+     sheet is fixed to the layout viewport, which the keyboard does not
+     shrink, so the two insets never stack here. */
+  padding: 6px 8px calc(6px + var(--eb-safe-bottom));
 }
 
 /* ── The items, restyled without being rewritten ──────────────────────────

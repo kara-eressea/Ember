@@ -15,8 +15,18 @@
          the layout viewport itself reports layout height == visual height and
          gets an inset of 0 — so Firefox Android already lands on the
          `resizes-content` behaviour without a directive, and Chromium would too
-         if this were ever added. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+         if this were ever added.
+
+         `viewport-fit=cover` (MP3 §3, #377) lets the document paint under the
+         status bar and the home indicator, which is the only way an installed
+         app looks installed — and, more to the point, the only way
+         `env(safe-area-inset-*)` reports anything but 0. base.css turns those
+         insets back into padding, gated on display-mode so a browser tab is
+         unaffected either way. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <!-- Never hand a third-party host the URL of the instance a reader is on
          (audit backlog). Individual <img> tags already carry
          referrerPolicy="no-referrer", but <video> has no such attribute, so
@@ -25,6 +35,30 @@
          imagePreviewHosts — none of them hotlink-gate on Referer. -->
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Install surface (MP3 §1–§2, #377). The manifest is served by Fastify,
+         not shipped from public/, because it carries the configured product
+         name (plugins/web-manifest.ts).
+
+         What iOS actually honours, checked rather than cargo-culted: since
+         15.4 Safari reads `display: standalone` out of the manifest, and the
+         old `apple-mobile-web-app-capable` / `-status-bar-style` pair is
+         documented as deprecated — it is now only a FALLBACK for when the
+         manifest cannot be loaded, and that fallback ignores `start_url` and
+         `scope`, so shipping it can make the installed app worse rather than
+         better. Neither is here. `apple-touch-icon` is not in that group: it
+         is still the icon iOS prefers for the home screen, so it stays, at the
+         180px Apple documents. Splash screens remain proprietary
+         (`apple-touch-startup-image`, one image per device size) and are out
+         of MP3's scope. None of this is verifiable without a device —
+         design/mp3-pwa.md §8 carries the install pass. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!-- The installed title bar / Android status bar colour. This literal is
+         the DEFAULT theme's `head` token, duplicated here because the document
+         has to be coloured before any script runs; theme/theme.ts rewrites it
+         from the active theme at boot and on every switch, and
+         theme-color.test.ts fails if the two ever disagree. -->
+    <meta name="theme-color" content="#201e1c" />
     <!-- Title is placeholder markup only; real branding is runtime config
          injected by the serving Fastify (decisions.md §5). -->
     <title>Chat</title>

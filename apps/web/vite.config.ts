@@ -8,6 +8,11 @@ const apiTarget = process.env["EMBERCHAT_API_PROXY"] ?? "http://127.0.0.1:3000";
 const proxy = {
   "/api": apiTarget,
   "/gateway": { target: apiTarget, ws: true },
+  // The install manifest is generated from server config (MP3 §1, #377), so it
+  // is a route rather than a file in public/ — which means dev and `vite
+  // preview` have to reach through to the API server for it, exactly as
+  // production's single Fastify serves both.
+  "/manifest.webmanifest": apiTarget,
 };
 
 export default defineConfig({

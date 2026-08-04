@@ -156,6 +156,33 @@ export function themeVariables(
   };
 }
 
+/**
+ * Point `<meta name="theme-color">` at the active theme's top-bar token
+ * (MP3 §4, #377). Outside an installed window nothing reads it; inside one it
+ * is the colour of the OS chrome around the app — the Android status bar, the
+ * title bar of an installed desktop window — and a shell in Parchment behind a
+ * Slate-coloured status bar is the seam this closes.
+ *
+ * `head` rather than `bg` because that chrome sits directly above the app's own
+ * top bar and the two reading as one strip is the whole point; and rather than
+ * the accent, because the accent is a highlight colour, not a surface.
+ * index.html carries the default theme's value so the very first paint is
+ * already right — see the guard test that keeps the two in step.
+ */
+function syncThemeColor(color: string): void {
+  const existing = document.querySelector<HTMLMetaElement>(
+    'meta[name="theme-color"]',
+  );
+  if (existing) {
+    existing.content = color;
+    return;
+  }
+  const meta = document.createElement("meta");
+  meta.name = "theme-color";
+  meta.content = color;
+  document.head.appendChild(meta);
+}
+
 export function applyTheme(
   accent: AccentId,
   baseTheme: BaseThemeId = DEFAULT_BASE_THEME,
@@ -170,6 +197,7 @@ export function applyTheme(
   // Shape-coded presence dots hang off this class (base.css) — CSS-only,
   // so components never re-render for a vision-profile switch.
   root.classList.toggle("eb-colorblind", colorblind);
+  syncThemeColor(BASE_THEMES[baseTheme].head);
 }
 
 export function savedAccent(): AccentId {

@@ -32,6 +32,15 @@
   display: flex;
   flex-direction: column;
   width: min(320px, calc(88vw / var(--eb-ui-zoom, 1)));
+  /* Installed safe areas (MP3 §3, #377). This one spans the full screen
+     height and hugs the right edge, so three of the four insets reach it: the
+     status bar above the head, the home indicator under the last member row,
+     and — in landscape, which is the only orientation where it happens — the
+     notch beside it. Padding rather than inset offsets, so the panel's own
+     ground and border still cover the strips and only the content moves.
+     No keyboard correction, for the reason base.css gives: fixed surfaces are
+     laid out against a viewport the keyboard never shrinks. */
+  padding: var(--eb-safe-top) var(--eb-safe-right) var(--eb-safe-bottom) 0;
   background: var(--eb-side2);
   border-left: 1px solid var(--eb-border);
   box-shadow: -18px 0 50px -18px rgb(0 0 0 / 55%);
