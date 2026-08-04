@@ -16,7 +16,7 @@ documents**, one per implementation milestone:
 | MP2 | [mp2-touch.md](mp2-touch.md) | Long-press action sheets, the keyboard inset, 44px targets, the momentum finding |
 | MP3 | [mp3-pwa.md](mp3-pwa.md) | Manifest and icons from config, safe areas, theme-color, the frozen-tab lifecycle fixes |
 
-MP4 has no spec of its own — it was an audit, and its findings are written into
+MP4 (#500) has no spec of its own — it was an audit, and its findings are written into
 the three above, into `design/ui/COMPONENTS.md`, and into the checklist. Its
 one durable artefact is the `mobile-webkit` Playwright project: the phone specs
 on a second engine, which is as close to iOS Safari as anything automatable
