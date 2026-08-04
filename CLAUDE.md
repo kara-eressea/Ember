@@ -25,6 +25,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/mobile-client.md` | MP track plan: responsive web client + PWA, why not an app store, MP1–MP4 scope |
 | `design/mp1-responsive-shell.md` | **MP1 implementation spec** — the three zoom-corrected layout tiers, `data-layout`, package A–G cut and invariants |
 | `design/mp2-touch.md` | **MP2 implementation spec + as-built** — long-press action sheets, the keyboard inset, 44px targets, momentum; the real-device checklist no emulator can replace |
+| `design/mp3-pwa.md` | **MP3 implementation spec** — manifest/icons from config, safe areas, theme-color, frozen-tab lifecycle; no service worker (decision + rationale) |
 | `design/testing-strategy.md` | fchat-sim, unit/integration/E2E strategy, responsible live testing |
 | `design/risks-and-open-questions.md` | ToS exposure, protocol gaps, scaling ceiling |
 | `design/chat-protocol.md` | F-Chat wire protocol (copied from F-List wiki) |
@@ -41,7 +42,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 - **Postgres + Drizzle ORM**, Docker deployment on a VPS (docker-compose).
 - **Public open-source repo (MIT)** — strict secrets hygiene: env files gitignored, `.env.example` only, no real credentials in fixtures.
 - **"EmberChat" is a working title** — keep product name and domains as config/tokens (including the IDN `cname`), never scattered string literals.
-- **Workflow:** `main` always shippable; short-lived `feat/`/`fix/`/`chore/`/`docs/` branches; Conventional Commits; everything via squash-merged PRs gated by CI; no develop/integration branches (see `design/decisions.md` §7).
+- **Workflow:** `main` always shippable; short-lived `feat/`/`fix/`/`chore/`/`docs/` branches; Conventional Commits; everything via squash-merged PRs gated by CI; no develop/integration branches (see `design/decisions.md` §7). **Merge groups are enabled** — queue PRs with `gh pr merge --auto --squash` and let the queue test against latest main (`ci.yml` has the `merge_group:` trigger); don't hand-run `gh pr update-branch` freshness cycles.
 - **Code style: idiomatic, current-generation stack.** Write idiomatic TypeScript/React/SQL — follow each tool's own conventions rather than inventing house patterns. Adopt recent stable versions at scaffold time (e.g. TypeScript 7, Postgres 18, current Node LTS) and pin majors; prefer upgrading dependencies over pinning old ones.
 - **Releases:** `gh release create vX.Y.Z` on the main HEAD (lightweight tag; `release.yml` builds the ghcr image with the version baked into `/healthz`, `/api/meta` and the IDN `cversion`). Minor bump when the round includes a feature, patch for fixes-only; package.json versions stay `0.0.0`. Notes are hand-written in the `## New` / `## Fixed` / `## Notes` house style — user-facing phrasing, one line per change, `(#issue, #PR)` refs. Issues and PRs share one number sequence: verify any `#N` with `gh issue view` / `gh pr view` before citing it in notes or code comments. Test-only or docs-only changes don't warrant a release; app changes ship with the next one.
 - UI follows `design/ui/COMPONENTS.md` exactly — style against CSS custom-property tokens, never hard-coded hex; accents are user-swappable.
