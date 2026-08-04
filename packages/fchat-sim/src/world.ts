@@ -590,6 +590,18 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Driftwood Ash"],
     },
+    // Reserved for the MP2 §3 touch-target E2E (#376), same isolation rules.
+    // Reach Palmer walks every surface of the shell measuring what a thumb can
+    // land on; Pressley Vane is the raw-SimClient partner who supplies the
+    // room's backlog and the DM row, so no other character may speak there.
+    "reachpalmer@example.test": {
+      password: "hunter2",
+      characters: ["Reach Palmer"],
+    },
+    "pressley@example.test": {
+      password: "hunter2",
+      characters: ["Pressley Vane"],
+    },
   },
   channels: [
     {
@@ -1003,6 +1015,20 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Thumbs, keyboards and the space between them.",
       oplist: ["Mitten Vale"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #376 touch-target E2E: Pressley Vane seeds the backlog
+    // whose rows, names and eicons are measured. Reach Palmer is an op, so
+    // the toolbar carries the op-only room-settings chip and the sweep sees
+    // the busiest version of that row. Hidden and NPC-free — an NPC joining
+    // would move the rows out from under the measurement.
+    {
+      name: "ADH-376touchtargets1f2e3d4c",
+      title: "Reach Room",
+      mode: "chat",
+      description: "Everything a thumb can land on.",
+      oplist: ["Reach Palmer"],
       npcs: [],
       listed: false,
     },

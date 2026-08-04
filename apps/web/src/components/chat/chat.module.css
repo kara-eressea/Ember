@@ -2893,3 +2893,103 @@
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
+
+/* ── Phone: 44px touch targets (MP2 §3, #376) ─────────────────────────────
+   The two mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target. What follows is which one each control
+   in this file got, and — where a row had to open up — what it was competing
+   with. `compact` and `wide` are untouched by this section: a mouse hits a
+   30px chip, and the rows below trade pixels for reach that only a thumb
+   needs. */
+
+/* The chips keep their 30px box and gain the overlay. Both rows they live in
+   space out to match: a 30px chip in a 4px gap is 34px of pitch and two
+   overlays would take 5px of each other, which is a press that lands on the
+   chip beside the one under the finger. 16px of gap makes the pitch 46 and
+   leaves 2px between neighbouring targets. The composer toolbar's own width
+   model knows about this (composer-toolbar.ts TOUCH metrics) — it is what
+   decides how many chips the row can hold before the rest fold into ⋯, and a
+   gap it did not know about would overflow a row that never wraps. */
+:root[data-layout="phone"] :is(.header, .headerCluster, .toolbarRow) {
+  gap: 16px;
+}
+
+:root[data-layout="phone"] .toolbarCluster {
+  gap: 16px;
+}
+
+/* The back chip leads the row, and its overlay reaches 7px to the left of it
+   — past the screen edge at the 4px padding the chip was given, which is 3px
+   of target that cannot be pressed because it is not on the phone. */
+:root[data-layout="phone"] .header:has(.headerBack) {
+  padding-left: 8px;
+}
+
+:root[data-layout="phone"] :is(.iconBtn, .jumpToRecent) {
+  position: relative;
+}
+
+/* The parked search pill is a chip like the others. Only while parked: once
+   it takes focus it is a text field, and an overlay across it would swallow
+   the tap that puts the caret somewhere other than the end. */
+:root[data-layout="phone"] .searchField:not(:focus-within) {
+  position: relative;
+}
+
+:root[data-layout="phone"]
+  :is(.iconBtn, .jumpToRecent, .searchField:not(:focus-within))::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
+
+/* Rows grow instead. The ⋯ menu's rows are .iconBtn too, so the overlay above
+   applies to them — but a menu row is 190px wide and stacked one pixel from
+   the next, so it is the height that has to be real. Once it is 44, the
+   overlay is exactly the box and expands nothing. */
+:root[data-layout="phone"] .hdrMenu .hdrMenuItem {
+  height: auto;
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] :is(.memberRow, .offlineHeader, .memberMenuItem) {
+  min-height: var(--eb-touch-target);
+}
+
+/* Fields grow rather than wear an overlay, for the caret's sake (above). */
+:root[data-layout="phone"] .memberFilter {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .joinButton {
+  height: var(--eb-touch-target);
+}
+
+/* The composer's footer toggles are 16px of text under the message box. The
+   only room to grow into is upward, where the message box's own text area
+   begins ~12px up — so the band takes the height instead and the toggles fill
+   it. That is ~22px of chrome on a phone, and the alternative is two controls
+   whose targets reach into the composer someone is typing in. */
+:root[data-layout="phone"] .composerFooter {
+  align-items: center;
+  min-height: var(--eb-touch-target);
+  padding-top: 0;
+}
+
+:root[data-layout="phone"] .mdToggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--eb-touch-target);
+}
+
+/* Nothing here for the message log's inline elements — a sender name, an
+   eicon, a link in someone's prose. They sit in a 21px line box whose
+   neighbours above and below are the same kind of target, so a 44px hit area
+   would hand the press to the wrong line as often as to the right one. They
+   keep the reach their line gives them; the profile card and the eicon menu
+   are both reachable from surfaces that do meet the floor (the member list,
+   the action sheet). */

@@ -77,11 +77,22 @@ const DIVIDER = 13; // 1 + 2×6
 const PADDING = 16;
 const RIGHT_SLOT = 38; // 30px button + minimum spacer breathing room
 
+// …and the same row on the phone tier (MP2 §3, #376). The glyphs are still
+// 30px — what changed is the gap, which chat.module.css opens to 16 so that
+// two neighbouring 44px hit areas stop taking pixels from each other. A row
+// that never wraps and never scrolls has to be told: left at 32 the model
+// would keep fitting chips the row no longer has the width for, and they
+// would run off the side of the phone.
+const TOUCH_BTN = 46; // 30 + the phone gap
+const TOUCH_RIGHT_SLOT = 54; // the ⋯ chip's own hit area + the spacer
+
 function requiredWidth(
   collapsed: ReadonlySet<ToolbarActionId>,
   timerExtraPx: number,
+  touch: boolean,
 ): number {
-  let width = PADDING + RIGHT_SLOT;
+  const btn = touch ? TOUCH_BTN : BTN;
+  let width = PADDING + (touch ? TOUCH_RIGHT_SLOT : RIGHT_SLOT);
   let nonEmptyClusters = 0;
   for (const cluster of TOOLBAR_CLUSTERS) {
     const visible = cluster.filter((id) => !collapsed.has(id));
@@ -89,7 +100,7 @@ function requiredWidth(
       continue; // a fully-collapsed cluster drops its divider too (spec §6)
     }
     nonEmptyClusters += 1;
-    width += visible.length * BTN;
+    width += visible.length * btn;
     if (visible.includes("timer")) {
       width += timerExtraPx;
     }
@@ -102,15 +113,18 @@ function requiredWidth(
  * Which actions fold into the `⋯` overflow at the given row width. Never
  * wraps, never scrolls: steps collapse in priority order until the row
  * fits; Bold/Italic/Eicon/Timer always survive. `timerExtraPx` is the
- * armed timer's widened mono label.
+ * armed timer's widened mono label, and `touch` says the row is laid out at
+ * the phone tier's spacing (one or two more actions fold in, which is what
+ * buys the ones that stay a thumb-sized target).
  */
 export function collapsedActions(
   width: number,
   timerExtraPx = 0,
+  touch = false,
 ): ToolbarActionId[] {
   const collapsed = new Set<ToolbarActionId>();
   for (const step of COLLAPSE_STEPS) {
-    if (requiredWidth(collapsed, timerExtraPx) <= width) {
+    if (requiredWidth(collapsed, timerExtraPx, touch) <= width) {
       break;
     }
     for (const id of step) {

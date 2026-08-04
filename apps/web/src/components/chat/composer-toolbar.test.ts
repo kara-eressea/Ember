@@ -58,6 +58,37 @@ describe("collapsedActions — narrow-width priority collapse (spec §8)", () =>
       );
     }
   });
+
+  // MP2 §3 (#376): on the phone tier the row is laid out at 16px gaps so each
+  // chip can carry a 44px hit area, which costs 14px of row per chip. The
+  // model has to charge for it — a row that never wraps and never scrolls has
+  // no way to absorb chips it wrongly believed would fit.
+  it("the phone tier's spacing collapses more, never less", () => {
+    for (let width = 100; width <= 900; width += 50) {
+      expect(collapsedActions(width, 0, true).length).toBeGreaterThanOrEqual(
+        collapsedActions(width, 0).length,
+      );
+    }
+  });
+
+  it("still keeps Bold, Italic, Eicon and Timer at phone spacing", () => {
+    const collapsed = collapsedActions(0, 0, true);
+    for (const id of ALWAYS_KEPT) {
+      expect(collapsed).not.toContain(id);
+    }
+  });
+
+  it("fits the survivors plus ⋯ on a 393px phone's row", () => {
+    // The row inside a 393px viewport: 40px of composer padding, the message
+    // box's 2px of border, and the toolbar row's own 16px — 335px of content
+    // box, which is what the ResizeObserver hands the model.
+    const collapsed = new Set(collapsedActions(335, 0, true));
+    for (const id of ALWAYS_KEPT) {
+      expect(collapsed.has(id)).toBe(false);
+    }
+    // …and it does not have to strip the row to the four survivors to do it.
+    expect(collapsed.has("color")).toBe(false);
+  });
 });
 
 describe("caretFormats — toggle reflection (spec §3)", () => {

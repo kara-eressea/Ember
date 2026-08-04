@@ -13,6 +13,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { useLayoutMode } from "../../lib/layout-mode.js";
 import { useRowWidth } from "../../lib/useRowWidth.js";
 import { anchorOf, ToolbarPopover } from "./ToolbarPopover.js";
 import type { ComposerInputHandle } from "./composer-input.js";
@@ -71,6 +72,7 @@ export function ComposerToolbar(props: ComposerToolbarProps) {
   // folds the lower-priority actions into the ⋯ overflow. The conversation
   // toolbar runs on the same measurement (#375).
   const rowWidth = useRowWidth(rowRef);
+  const layout = useLayoutMode();
   const [popover, setPopover] = useState<{
     kind: PopoverKind;
     anchor: CardAnchor;
@@ -101,7 +103,14 @@ export function ComposerToolbar(props: ComposerToolbarProps) {
   const collapsed = new Set(
     rowWidth === undefined
       ? []
-      : collapsedActions(rowWidth, armed ? armedLabel.length * 8 + 6 : 0),
+      : collapsedActions(
+          rowWidth,
+          armed ? armedLabel.length * 8 + 6 : 0,
+          // The phone tier spaces this row out so its chips can carry a 44px
+          // hit area (MP2 §3); the width model has to be told, or it fits
+          // chips the row no longer has room for.
+          layout === "phone",
+        ),
   );
 
   function toggle(kind: PopoverKind, element: HTMLElement) {

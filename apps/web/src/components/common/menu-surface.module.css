@@ -80,6 +80,7 @@
 }
 
 .close {
+  position: relative; /* the hit-area overlay below hangs off this */
   display: grid;
   flex: none;
   place-items: center;
@@ -99,6 +100,21 @@
   color: var(--eb-dim);
   background: var(--eb-hover);
   outline: none;
+}
+
+/* …and 44 for the thumb (MP2 §3, #376), the overlay mechanism base.css
+   describes beside --eb-touch-target. The rows below this header were 44 from
+   the day the sheet was written; the ✕ that closes it was four pixels short,
+   which is exactly the sort of thing measuring finds and eyes do not. Like
+   the sheet itself, this needs no tier gate — it is only ever on a phone. */
+.close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
 }
 
 .items {

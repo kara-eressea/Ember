@@ -29,6 +29,35 @@
      shrunk. popover.test.ts reads this file and asserts the two agree. */
   --eb-popover-margin: 8px;
 
+  /* Smallest a control may be for a thumb (MP2 §3, #376). 44 is where Apple's
+     HIG and WCAG 2.5.5 AAA agree, and it is a floor on the *hit area*, never
+     on the glyph: a 30px IconBtn wearing an invisible 44px target is the goal,
+     a row of 44px buttons that used to be 30px is a redesign nobody asked for.
+     Two mechanisms carry it, and which one a control gets is decided by what
+     sits next to it:
+
+       • a stacked row (sidebar rows, member rows, menu items) GROWS — a hit
+         area taller than the row would reach into the row above and below,
+         where the neighbour is another target and the finger cannot tell them
+         apart. Rows are the one place the floor is allowed to cost pixels.
+       • an isolated or side-by-side control keeps its box and gains an
+         `::after` overlay, sized `max(100%, var(--eb-touch-target))` and
+         centred, so it expands only in the dimension it is short in and never
+         shrinks anything. Where that would make two neighbours' targets
+         overlap, the ROW opens up on phone (a wider `gap`) rather than
+         shipping two controls fighting over the same pixels.
+
+     Both are gated on `data-layout="phone"` in the module that owns the
+     control — the tier, not a media query, for §2's reason (the interface
+     zoom), and the tier rather than `hover: none` because the rules that come
+     with it are about a row's width, which is a layout question. Every module
+     that expands a target says which of the two it used and why.
+
+     e2e/touch-targets.ts mirrors this number as TARGET_MIN_PX and measures the
+     result by hit-testing, since no rect API can see an ::after; base.test.ts
+     asserts the two agree. */
+  --eb-touch-target: 44px;
+
   /* Widest a floating surface may be: it has to fit a 360px phone with the
      margin on both sides. `vw` is a *visual* length and is blind to the
      `zoom` the interface-scale pref puts on :root (#388) — inside that zoom a

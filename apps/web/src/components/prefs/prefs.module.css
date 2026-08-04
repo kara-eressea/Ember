@@ -469,3 +469,150 @@
   flex: 1;
   min-width: 180px;
 }
+
+/* ── Phone: the MP1 §4 stopgap ────────────────────────────────────────────
+   "Below `phone`, stack the section rail above the pane and let the whole
+   dialog go full-screen." MP1 wrote that down and shipped without it, which
+   left the desktop two-column dialog squeezed into 361px: a 204px rail beside
+   a 157px pane, and a pane that narrow cannot hold its own controls — the
+   highlight-rule form's segmented switch is simply clipped off the right edge
+   of the window, unreachable by any pointer. That is not something a hit area
+   can fix, so the stopgap lands here (MP2 §3, #376) as the thing the floor
+   below is measured against. A proper mobile prefs flow is still unbuilt.
+
+   Phone only, and nothing about the desktop dialog is touched. */
+:root[data-layout="phone"] .window {
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* The rail turns on its side, the way the identity rail does on this tier
+   (shell.module.css): a scrolling strip of sections above the pane, keeping
+   its title as the leading label — the window has no chrome left to say what
+   dialog this is, and the pane head names the section rather than the
+   dialog. */
+:root[data-layout="phone"] .rail {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: none;
+  border-bottom: 1px solid var(--eb-border);
+}
+
+:root[data-layout="phone"] :is(.railTitle, .railItem, .railFoot) {
+  flex: none;
+  white-space: nowrap;
+}
+
+:root[data-layout="phone"] .railTitle {
+  padding: 0 6px 0 0;
+}
+
+:root[data-layout="phone"] .railFoot {
+  padding: 0 4px;
+  margin-top: 0;
+}
+
+/* The active section is marked along the strip's own axis, not its old left
+   edge — the same turn the identity rail's marker makes on this tier. */
+:root[data-layout="phone"] .railItemActive,
+:root[data-layout="phone"] .railItemActive:hover {
+  box-shadow: inset 0 -3px 0 var(--eb-accent);
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #376) ─────────────────────────────
+   The mechanisms and the rule that picks between them are stated once in
+   base.css beside --eb-touch-target.
+
+   Nothing in a field row competes vertically: a row is 11px of padding either
+   side of a two-line label, so a control that grows to 44 stays inside its own
+   row. What does compete is side by side — a segmented control's segments, a
+   stepper's − and +, a swatch row — and each of those is either already wider
+   than 44 or given the width here. */
+:root[data-layout="phone"] .railItem {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] :is(.textInput, .ruleAdd) {
+  height: var(--eb-touch-target);
+}
+
+/* A field row's own padding is what keeps one row's overlay out of the next
+   row's control. At 11px a 22px toggle sits 42px from the toggle below it and
+   two 44px targets cannot both fit in that; 14 makes the pitch 50. */
+:root[data-layout="phone"] .fieldRow {
+  padding: 14px 0;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .close,
+    .railFootLink,
+    .toggle,
+    .stepperButton,
+    .swatch,
+    .ruleRemove,
+    .linkButton
+  ) {
+  position: relative;
+}
+
+:root[data-layout="phone"]
+  :is(
+    .close,
+    .railFootLink,
+    .toggle,
+    .stepperButton,
+    .swatch,
+    .ruleRemove,
+    .linkButton
+  )::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
+
+/* The swatches are 26px circles 10px apart, which is 36 of the 44 a target
+   needs; the row opens up rather than the circles growing, because a colour
+   swatch that is not the size of a colour swatch stops reading as one. 22
+   rather than the 18 that makes the arithmetic exact: two targets that share
+   a boundary each lose the pixel on it, and the measurement reported 42. */
+:root[data-layout="phone"] .swatchRow {
+  flex-wrap: wrap;
+  gap: 22px;
+}
+
+/* A segmented control's segments are joined by design — 2px apart inside one
+   bordered box — so widening the gap is not available and an overlay has
+   nowhere to go: they take the size for real, which is also what stops the
+   control below the row from being reached by the one above it. The narrow
+   ones (a font-size switch reading S / M / L) are what the width is for. */
+:root[data-layout="phone"] .segment {
+  min-width: var(--eb-touch-target);
+  min-height: var(--eb-touch-target);
+}
+
+/* Highlight-rule chips wrap into rows ~32px apart, and each carries a ✕ at
+   its right end. At that pitch the ✕'s target would reach the ✕ of the chip
+   on the line above, and deleting the wrong rule is not a recoverable press:
+   the chip takes the height and the list takes the gap. */
+:root[data-layout="phone"] .ruleChip {
+  min-height: var(--eb-touch-target);
+}
+
+:root[data-layout="phone"] .ruleList {
+  gap: 16px;
+}
