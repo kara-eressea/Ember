@@ -11,6 +11,33 @@ browser is closed, catch-up on missed history, Markdown composing, delayed
 send, multi-device login, and granular highlights — reachable from anywhere
 you can open a browser.
 
+## Do you need a server at all?
+
+There are two ways to run EmberChat, and a server is only one of them.
+The [desktop app](desktop.md) packages the whole thing — client, server
+and database — into one install on your own Mac or PC: no Docker, no
+domain, no maintenance. Your characters stay online while that app runs,
+including with its window closed.
+
+Pick by what has to be true while your computer is off:
+
+- **Nothing** — the desktop app. It is less to run and less to keep
+  secure, and it is the right answer for most single-user setups.
+- **Your characters stay online, catch-up keeps accumulating, and you
+  want to reach it from a phone, a work laptop or anywhere else** — a
+  server. That is what the rest of this document sets up. A machine
+  that is always on is the only thing that can offer this, and it is
+  the whole reason this project exists.
+
+They are not exclusive, and the bridge is the desktop app's second mode:
+run the server for the always-online half, then point the desktop app at
+it ("Connect to my server") and use it as a native window onto your own
+instance — alongside browsers and phones, which keep working exactly as
+before. One thing to know if you plan on that: the desktop app requires
+a certificate your operating system already trusts and refuses a
+self-signed one with no way to override it, so the reverse proxy below
+is a prerequisite rather than a nicety.
+
 ## Prerequisites
 
 - A Linux host (a small VPS is plenty — 1 vCPU / 1 GB RAM runs it comfortably)
@@ -348,6 +375,11 @@ Replace `image:` with `build: { context: ., target: runtime }` in
   start step 4).
 - **No "Add to Home screen" offered** — the instance is not on HTTPS, or the
   browser is not Chrome/Safari (see Install to your home screen).
+- **The desktop app refuses your address** — it needs `https://` with a
+  certificate your operating system already trusts (a self-signed one is
+  refused by name, with no override), and it checks `/healthz` before it
+  loads anything, so "wrong address" and "server down" are different
+  messages. See [desktop.md](desktop.md).
 - **Everything logged out after a restart** — expected with the default
   memory-only credential model; re-enter your F-List password. If you want
   restarts to reconnect on their own, set `CREDENTIALS_KEY` and opt in to

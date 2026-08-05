@@ -12,10 +12,16 @@ EmberChat is **self-hostable software, not a hosted service** — each instance 
 
 Docker + compose, one `.env` with two secrets, `docker compose up -d`, create your account with the bundled admin CLI. The full walkthrough — reverse proxy/TLS, upgrades (with a boot-time gate so a `docker pull` can never ruin your database), backups and the restore drill — is in [`docs/self-hosting.md`](docs/self-hosting.md).
 
+## Desktop app
+
+The same EmberChat as a single download for macOS and Windows — client, server and database in one install, with your characters staying online while the window is closed. It also runs as a thin client against a server you already host. Install, data locations and the unsigned-build first-launch dance are in [`docs/desktop.md`](docs/desktop.md).
+
 ## Repository layout
 
 - `apps/server` — Fastify + ws bouncer server
 - `apps/web` — Vite + React client
+- `apps/desktop` — Electron shell (embedded server on loopback, or thin client)
+- `packages/session-engine` — the held F-Chat sessions, host-agnostic
 - `packages/fchat-protocol` — F-Chat wire types + codec
 - `packages/protocol` — EmberChat client↔server protocol
 - `packages/markdown-bbcode` — Markdown → BBCode translation + BBCode AST
