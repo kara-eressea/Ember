@@ -22,6 +22,14 @@ export function serverRuntimeEntry(desktopRoot: string): string {
   return join(serverRuntimeDir(desktopRoot), "dist", "main.js");
 }
 
+/**
+ * The admin CLI inside that same tree — how the app account is provisioned on
+ * first run (#301). Same rooting rule as the server entry above.
+ */
+export function adminCliEntry(desktopRoot: string): string {
+  return join(serverRuntimeDir(desktopRoot), "dist", "cli", "admin.js");
+}
+
 /** The built web app: `apps/web/dist`, one directory over from here. */
 export function webDistDir(desktopRoot: string): string {
   return resolve(desktopRoot, "..", "web", "dist");
@@ -37,10 +45,12 @@ export class MissingArtifactError extends Error {
 /** Both artifacts, or an error naming the command that produces the missing one. */
 export function resolveArtifacts(desktopRoot: string): {
   entry: string;
+  adminCli: string;
   webDist: string;
 } {
   const entry = serverRuntimeEntry(desktopRoot);
-  if (!existsSync(entry)) {
+  const adminCli = adminCliEntry(desktopRoot);
+  if (!existsSync(entry) || !existsSync(adminCli)) {
     throw new MissingArtifactError(
       [
         `The embedded server has not been built yet (${entry} is missing).`,
@@ -59,5 +69,5 @@ export function resolveArtifacts(desktopRoot: string): {
       ].join("\n"),
     );
   }
-  return { entry, webDist };
+  return { entry, adminCli, webDist };
 }

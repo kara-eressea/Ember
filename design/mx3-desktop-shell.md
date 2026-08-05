@@ -137,6 +137,50 @@ signed in — the user never sees the app's login screen, exactly as the
 design promised; the F-List password prompt (memory-only vault, unchanged)
 remains the only credential interaction.
 
+### As built (#301)
+
+1. **The admin CLI child is not a `utilityProcess`.** A utility process has no
+   writable stdin — Electron's own docs: "Configuring `stdin` to any property
+   other than `ignore` is not supported and will result in an error", and
+   `UtilityProcess` exposes only `stdout`/`stderr`. `--password-stdin` is not
+   negotiable (argv is readable by every process on the host, as the CLI's own
+   header says), so the child is `child_process.spawn(process.execPath, …)`
+   with `ELECTRON_RUN_AS_NODE=1`: the same Electron runtime a utility process
+   gets — same `NODE_MODULE_VERSION`, so `server-runtime`'s Electron-ABI
+   `argon2` loads — but an ordinary Node child, with a stdin. Everything else
+   holds: same complete env (`buildAdminCliEnv`, no ambient inheritance),
+   sequential with the server, exit code asserted, stderr into the dialog.
+2. **The seed travels over `ipcRenderer.sendSync`.** Only synchronous work can
+   hold the window between the preload and the page's scripts. The alternative,
+   `additionalArguments`, would put a live refresh token on the renderer
+   process's command line, where `ps` can read it. A sandboxed (`sandbox:
+   true`) preload can do this: `ipcRenderer` is available there, and the
+   isolated world shares the page's `localStorage`. The `sandbox: false` +
+   `.mjs` fallback the scaffold flagged was not needed.
+3. **One seed per boot, and it always wins.** The main process hands the seed
+   to whoever asks first and returns `null` after that. Once, because the store
+   rotates the seeded token as it boots — a reload re-writing the spent one
+   would log the user out. Always, because the localStorage a previous boot
+   left behind may hold an expired or evicted session, while this boot's login
+   is known good.
+4. **First run boots the server twice.** The admin CLI does not migrate ("the
+   server migrates on boot", per its own header), and a first run's database is
+   empty, so `create-user` fails on a table that does not exist. The server
+   therefore gets one short boot to create the schema and is stopped —
+   `stop()` now reports whether the child is confirmed gone, and provisioning
+   refuses to continue if it is not — before the CLI opens the same directory.
+   Second and later boots start the server exactly once.
+5. **A half-finished first run heals itself; a corrupt secrets file does not.**
+   If the CLI created the account but the secrets file never landed, the next
+   boot's `create-user` fails with "already taken" and provisioning falls back
+   to `reset-password` for the same account — nothing is destroyed, the
+   password is machine-generated and never shown. A secrets file that exists
+   but will not decode stays a hard error with the file's path in it: deleting
+   it is the user's call, not the app's.
+6. Login is a plain `fetch` from the main process; a fresh auth-session row per
+   boot is absorbed by the M7 per-user session cap (25, evicted by
+   `lastSeenAt`). No session reuse, no second secret to store.
+
 ## 4. First-run mode chooser (#300)
 
 A small dedicated window (the one piece of shell-owned UI; plain HTML/CSS in

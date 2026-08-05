@@ -16,8 +16,17 @@ export interface StartEmbeddedServerOptions {
 export interface EmbeddedServer {
   readonly origin: string;
   readonly port: number;
-  /** Resolves once the child is gone (SIGTERM first, SIGKILL as a backstop). */
-  stop(): Promise<void>;
+  /**
+   * SIGTERMs the child and resolves `true` once it is confirmed gone, or
+   * `false` if it was still alive after the grace period (Electron's
+   * `utilityProcess.kill()` has no stronger signal to follow up with).
+   *
+   * The boolean is not decoration: first-run provisioning runs the admin CLI
+   * the moment this returns, and pglite has no lock — a second writer on the
+   * same data directory is corruption, so that caller must refuse to continue
+   * on `false`.
+   */
+  stop(): Promise<boolean>;
   /** Called if the child dies on its own after a successful boot. */
   onUnexpectedExit(listener: (code: number) => void): void;
 }
@@ -99,15 +108,19 @@ export async function startEmbeddedServer(
     port,
     async stop() {
       if (exitCode !== undefined) {
-        return;
+        return true;
       }
       // SIGTERM: main.ts's signal handler closes Fastify and the database
       // cleanly, which matters more here than anywhere — pglite is a file on
       // the user's disk, not a server someone else runs.
       child.kill();
-      await Promise.race([
-        exited,
-        new Promise((resolve) => setTimeout(resolve, STOP_GRACE_MS)),
+      return Promise.race([
+        exited.then(() => true),
+        new Promise<false>((resolve) =>
+          setTimeout(() => {
+            resolve(false);
+          }, STOP_GRACE_MS),
+        ),
       ]);
     },
     onUnexpectedExit(listener) {

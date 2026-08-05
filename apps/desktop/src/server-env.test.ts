@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildServerEnv } from "./server-env.js";
+import { buildAdminCliEnv, buildServerEnv } from "./server-env.js";
 
 const options = {
   port: 49_231,
@@ -50,5 +50,30 @@ describe("buildServerEnv", () => {
       "WEB_DIST",
     ]);
     expect(env).not.toHaveProperty("DATABASE_URL");
+  });
+});
+
+describe("buildAdminCliEnv", () => {
+  const admin = buildAdminCliEnv({
+    dataDir: options.dataDir,
+    authSecret: options.authSecret,
+  });
+
+  it("points the CLI at the same database the server will open", () => {
+    const server = buildServerEnv(options);
+    expect(admin.DB_DRIVER).toBe(server.DB_DRIVER);
+    expect(admin.PGLITE_DATA_DIR).toBe(server.PGLITE_DATA_DIR);
+    expect(admin.AUTH_SECRET).toBe(server.AUTH_SECRET);
+  });
+
+  it("is complete too — a stray DATABASE_URL would silently redirect it", () => {
+    // The CLI reads the environment directly (not through loadConfig), so an
+    // inherited DATABASE_URL would win over DB_DRIVER=pglite entirely.
+    expect(Object.keys(admin).toSorted()).toEqual([
+      "AUTH_SECRET",
+      "DB_DRIVER",
+      "NODE_ENV",
+      "PGLITE_DATA_DIR",
+    ]);
   });
 });
