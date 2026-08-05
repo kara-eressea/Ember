@@ -1,0 +1,59 @@
+<!doctype html>
+<!--
+  The remote session's failure surface (design/mx3-desktop-shell.md §5).
+
+  The second and last piece of HTML this package owns, and it exists for the
+  same reason the chooser does: it has to be readable when there is no server
+  to serve it. Same rules — no framework, no bundler, no build step; three
+  static files loaded from disk, and a preload that exposes exactly two calls.
+
+  Everything variable (product name, address, headline, detail, code) arrives
+  as a query parameter from `error-window.ts`, which is also why nothing here
+  is a literal the product name could contradict.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      Identical policy to the chooser's: its own script and stylesheet, and
+      nothing else at all. No remote anything, no inline script, no form
+      submission, no <base>. A page about a server that could not be reached
+      should be incapable of reaching one.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
+    />
+    <title>Can't reach your server</title>
+    <link rel="stylesheet" href="error.css" />
+  </head>
+  <body>
+    <main class="sheet">
+      <h1 class="title" data-headline>Your server couldn't be loaded</h1>
+      <p class="detail" data-detail></p>
+
+      <dl class="facts">
+        <dt>Server</dt>
+        <dd class="address" data-address></dd>
+        <dt class="code-label" data-code-label hidden>Error</dt>
+        <dd class="code" data-code hidden></dd>
+      </dl>
+
+      <p class="note">
+        Nothing has been changed. <span data-product>This app</span> keeps the
+        address you chose — your server holds your sessions and your history,
+        and they are waiting there whenever it answers again.
+      </p>
+
+      <div class="actions">
+        <button id="retry" class="btn btn-primary" type="button">
+          Try again
+        </button>
+        <button id="switch" class="btn btn-outline" type="button">
+          Switch mode…
+        </button>
+      </div>
+    </main>
+    <script src="error.js"></script>
+  </body>
+</html>

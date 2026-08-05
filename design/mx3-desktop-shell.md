@@ -251,6 +251,90 @@ provisioning, no localStorage seeding. Validation on entry: fetch
 (profile links etc.) open in the system browser in both modes
 (`setWindowOpenHandler`); navigation away from the app origin is refused.
 
+### As built (#302)
+
+The sketch above is one paragraph because in local mode the window's content
+comes from a server this process started. Thin-client mode changes exactly one
+thing and it changes everything downstream of it: **the renderer is a machine
+this process does not control**. Five consequences, each with its own file:
+
+1. **Every IPC channel checks its caller** (`ipc-sender.ts`, wired in
+   `main.ts`). `ipcMain` is process-wide — a handler registered for the chooser
+   is reachable from any renderer, including a main window at somebody else's
+   origin. Each of the five channels names one legitimate caller: the chooser's
+   two answer its `file://` page, the error page's two answer its own, and the
+   auth seed answers the origin this process chose to show. The predicate is
+   pure and table-tested; the wiring adds a `webContents` identity check beside
+   it, because the two refuse different things — identity refuses *another
+   window*, the URL refuses *this window showing another document*, and a
+   subframe is refused by both. Nothing in the page's world can reach these
+   channels today (`contextIsolation` + a preload that exposes nothing), so
+   this is the second lock; it is worth having because the first is one
+   Chromium bug from being off and the cost is a boolean. Verified in a real
+   frame, not just in unit tests: the shipped preload calling from the real
+   page is allowed, the same preload on a remote origin is refused, and so is
+   the same page in a window the main process was not expecting.
+2. **The shell owns the failure surface** (`error/` + `error-window.ts` +
+   `error-page.ts`). A `did-fail-load` on the main frame, or a dead renderer,
+   replaces the window with a static `file://` page built exactly like the
+   chooser — `default-src 'none'`, tokens copied by value, variable strings as
+   query parameters, a bridge of exactly two calls (Retry, Switch mode…). It is
+   a *second window* rather than a document in the app window, because the app
+   window is allowed to be at the app origin and nowhere else (#299's
+   navigation policy) and because that window's preload deliberately has no
+   bridge. Retry re-runs the whole launch — probe included — and a second
+   failure that differs from the first re-states headline, sentence and code in
+   place rather than lying about which failure is on screen.
+3. **The probe runs on every launch, on Electron's network stack.** The stored
+   URL was already re-validated as text on every read (#300 as-built 1); this
+   is the other half. `net.fetch` rather than Node's `fetch` is the load-bearing
+   detail: it uses the same Chromium stack, system trust store and proxy config
+   the window is about to use, so the probe accepts a server if and only if the
+   window would have — Node's own CA bundle would refuse a certificate the OS
+   trusts. Cost: one `GET /healthz` before a connection Chromium was about to
+   make anyway. Benefit: the error page appears in about a second instead of
+   after a TCP timeout, and it can say *which* thing went wrong.
+4. **Certificate errors are fatal and say so by name.** No `certificate-error`
+   listener, no `setCertificateVerifyProc`, no "proceed anyway" — a test greps
+   the shell's sources for all three, and the copy is checked for the words a
+   bypass would need. Electron's default refusal arrives as `ERR_CERT_*`, and
+   both halves name it: the probe extracts the code from either stack's
+   error shape (undici's `cause.code`, Chromium's `net::ERR_CERT_…`) and the
+   page shows it on a row of its own. Against a local https server with a
+   self-signed certificate the app refuses at the probe, logs
+   `ERR_CERT_AUTHORITY_INVALID`, and the stand-in server records no request at
+   all — nothing was sent to it.
+5. **The seed is provably inert, not merely unused** (`createSeedHolder`).
+   #300 observed that the shared preload's dispenser answers `null` in this
+   mode. That was true by omission — a variable that never got assigned along
+   one code path. It is now a property of the startup plan: the holder is built
+   from `plan.kind`, and arming one in any mode but `local` throws. The preload
+   is untouched and stays shared (`preload.cts` has no mode to branch on and
+   should not learn one).
+
+Two smaller findings, both from running it:
+
+- **The default session already persists**, and that is what makes "keep me
+  signed in" work in this mode: with no `partition` set, cookies and
+  localStorage live in the user-data directory (`Cookies`, `Local Storage/`)
+  and survive a full restart. Verified rather than assumed — a stand-in server
+  reported `visits=1, cookieBefore=false` on the first launch and `visits=2,
+  cookieBefore=true` on the second.
+- **"Switch mode…" from the error page needed one change in #300's code.**
+  `applyChoice` treats re-picking the running configuration as a no-op that
+  closes the chooser; reached from the error page there is no window to be a
+  no-op *of*, and re-entering the same address means "try that again". It now
+  requires an app window to be open before taking that shortcut — without it,
+  closing the chooser would leave no windows and quit the app.
+
+What is deliberately **not** here: the issue's original sketch also mentioned
+per-server credentials in `safeStorage`, a reconnect banner and a version-skew
+warning. All three belong to the web app the remote server serves — it already
+has its own login, its own gateway reconnect surface and M7's `/api/meta`
+release check — and putting a second one in the shell would mean the desktop
+build disagreeing with the browser about the same server. The shell's job here
+is the window, the failure surface and the trust boundary.
+
 ## 6. Tray + lifecycle (#304)
 
 - **Local mode:** window close hides to tray; the bouncer keeps running —

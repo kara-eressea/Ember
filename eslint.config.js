@@ -39,11 +39,12 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
-    // The desktop shell's first-run chooser page (mx3-desktop-shell.md §4):
-    // the one piece of UI apps/desktop owns. It ships verbatim as a file://
-    // document with no bundler over it, so it is plain browser JS rather than
-    // a node script — `document` and `window` are its globals.
-    files: ["apps/desktop/chooser/*.js"],
+    // The desktop shell's two own pages: the first-run chooser
+    // (mx3-desktop-shell.md §4) and the remote session's error page (§5). They
+    // ship verbatim as file:// documents with no bundler over them, so they are
+    // plain browser JS rather than node scripts — `document` and `window` are
+    // their globals.
+    files: ["apps/desktop/chooser/*.js", "apps/desktop/error/*.js"],
     languageOptions: { globals: globals.browser },
   },
   {
