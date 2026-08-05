@@ -23,7 +23,6 @@ import {
 } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { api } from "../../lib/api.js";
-import { appConfig } from "../../lib/config.js";
 import { presenceDot, type DotKind } from "../../lib/presence.js";
 import { useLongPress, type PressEvent } from "../../lib/useLongPress.js";
 import { clampBadge, DOT_CLASS } from "./badges.js";
@@ -56,6 +55,7 @@ import { useUiStore } from "../../stores/ui.js";
 import { useRailStore } from "../../stores/rail.js";
 import { railHidden } from "../../lib/rail-visibility.js";
 import { Avatar } from "../common/Avatar.js";
+import { Wordmark } from "../common/Wordmark.js";
 import { ChannelContextMenu } from "../chat/ChannelContextMenu.js";
 import { isPrivateRoom } from "../chat/invite-targets.js";
 import { MemberContextMenu } from "../chat/MemberContextMenu.js";
@@ -739,7 +739,7 @@ function SidebarHead() {
 
   return (
     <div className={styles.serverHead}>
-      <span className={styles.serverName}>{appConfig().appName}</span>
+      <Wordmark />
       {gatewayStatus !== "online" && (
         <button
           type="button"

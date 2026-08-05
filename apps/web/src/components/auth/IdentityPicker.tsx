@@ -10,6 +10,7 @@ import {
   type FlistAccountDto,
   type IdentityDto,
 } from "../../lib/api.js";
+import { useLayoutMode } from "../../lib/layout-mode.js";
 import { identityPath } from "../../lib/routes.js";
 import { useAuthStore } from "../../stores/auth.js";
 import { useSessionsStore } from "../../stores/sessions.js";
@@ -110,44 +111,49 @@ export function IdentityPicker() {
                     {identity.sessionStatus.replace("_", " ")}
                   </span>
                 </span>
-                {live && (
+                {/* Order is the safety mechanism, not decoration (#536): the
+                    way in leads, and the two ways to lose something — drop the
+                    session, delete the identity — are grouped together at the
+                    trailing edge, away from it. It is also the tab order and
+                    the reading order, so no tier has to reorder with CSS. */}
+                <span className={styles.rowActions}>
                   <button
-                    className={styles.signOut}
+                    className={styles.connectButton}
                     onClick={() => {
-                      void api
-                        .disconnectIdentity(identity.id)
-                        .then(reload)
-                        .catch(() => reload());
+                      const open = () =>
+                        navigate(identityPath(identity.characterName));
+                      if (live) {
+                        void open();
+                        return;
+                      }
+                      // Connect explicitly (the shell's connect-on-visit
+                      // ignores logged-off identities by design), then open —
+                      // failures surface as session status in the shell.
+                      void api.connectIdentity(identity.id).then(open, open);
                     }}
                   >
-                    Disconnect
+                    {live ? "Open" : "Connect"}
                   </button>
-                )}
-                <button
-                  className={styles.connectButton}
-                  onClick={() => {
-                    const open = () =>
-                      navigate(identityPath(identity.characterName));
-                    if (live) {
-                      void open();
-                      return;
-                    }
-                    // Connect explicitly (the shell's connect-on-visit ignores
-                    // logged-off identities by design), then open — failures
-                    // surface as session status in the shell.
-                    void api.connectIdentity(identity.id).then(open, open);
-                  }}
-                >
-                  {live ? "Open" : "Connect"}
-                </button>
-                <RemoveButton
-                  what={`identity ${identity.characterName} and its history`}
-                  onConfirm={async () => {
-                    await api.deleteIdentity(identity.id);
-                    useSessionsStore.getState().removeIdentity(identity.id);
-                    await reload();
-                  }}
-                />
+                  {live && (
+                    <DisconnectButton
+                      character={identity.characterName}
+                      onConfirm={() => {
+                        void api
+                          .disconnectIdentity(identity.id)
+                          .then(reload)
+                          .catch(() => reload());
+                      }}
+                    />
+                  )}
+                  <RemoveButton
+                    what={`identity ${identity.characterName} and its history`}
+                    onConfirm={async () => {
+                      await api.deleteIdentity(identity.id);
+                      useSessionsStore.getState().removeIdentity(identity.id);
+                      await reload();
+                    }}
+                  />
+                </span>
               </div>
             );
           })}
@@ -178,6 +184,64 @@ export function IdentityPicker() {
         </>
       )}
     </AuthCard>
+  );
+}
+
+/**
+ * Drop the server-held F-Chat session (#536).
+ *
+ * Two things stand between it and the "Open" beside it. The first is styling:
+ * Open is the accent-filled primary and this is a quiet danger-tinted outline,
+ * so the row reads as one way in and one way out rather than two buttons.
+ *
+ * The second is a confirm step, **on the phone tier only**, and it is there
+ * because the two mistakes cost wildly different things. Tapping Open when you
+ * meant Disconnect costs a Back press. Tapping Disconnect when you meant Open
+ * drops the held session — the one feature that distinguishes this client from
+ * the official one — and getting it back costs a reconnect and a fresh ticket,
+ * with everything the identity was present in going offline in between. That
+ * asymmetry is what buys the extra tap; spacing alone still leaves a thumb
+ * landing where it did not aim.
+ *
+ * Keyed on the tier alone, like MenuSurface's sheet (COMPONENTS.md §Touch
+ * conventions): a 390px desktop window is somewhere a mis-click is cheap to
+ * make too, and the pointer type is not what the row's geometry depends on.
+ * The arm-then-confirm shape is RemoveButton's, unchanged — the same row
+ * already teaches it.
+ */
+function DisconnectButton({
+  character,
+  onConfirm,
+}: {
+  character: string;
+  onConfirm: () => void;
+}) {
+  const confirms = useLayoutMode() === "phone";
+  const [armed, setArmed] = useState(false);
+  return (
+    <button
+      type="button"
+      className={`${styles.disconnectButton} ${armed ? (styles.disconnectArmed ?? "") : ""}`}
+      title={
+        armed
+          ? `Tap again to end ${character}'s F-Chat session`
+          : `End ${character}'s F-Chat session`
+      }
+      aria-label={armed ? `Confirm ending ${character}'s session` : undefined}
+      onClick={() => {
+        if (confirms && !armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
+        onConfirm();
+      }}
+      onBlur={() => {
+        setArmed(false);
+      }}
+    >
+      {armed ? "Disconnect?" : "Disconnect"}
+    </button>
   );
 }
 
@@ -302,58 +366,60 @@ function AddIdentityFlow({
               {account.remembered && " · remembered on this server"}
             </span>
           </span>
-          {account.remembered ? (
-            // Forget renders even on a key-less server: a credential
-            // stored under a since-removed key is still the user's to
-            // delete (M9 audit).
+          <span className={styles.rowActions}>
             <button
-              type="button"
-              className={styles.linkButton}
-              title="Delete the stored credential — the next server restart will ask for the password again"
+              className={styles.connectButton}
               onClick={() => {
-                void api
-                  .setFlistAccountRemember(account.id, false)
-                  .then(onAccountsChanged);
+                setMode(
+                  account.unlocked
+                    ? { kind: "pick", account }
+                    : { kind: "unlock", account },
+                );
               }}
             >
-              Forget
+              {account.unlocked ? "Pick character" : "Unlock…"}
             </button>
-          ) : (
-            canRemember &&
-            account.unlocked && (
+            {account.remembered ? (
+              // Forget renders even on a key-less server: a credential
+              // stored under a since-removed key is still the user's to
+              // delete (M9 audit).
               <button
                 type="button"
                 className={styles.linkButton}
-                title="Store the password encrypted on this server so restarts reconnect automatically"
+                title="Delete the stored credential — the next server restart will ask for the password again"
                 onClick={() => {
                   void api
-                    .setFlistAccountRemember(account.id, true)
+                    .setFlistAccountRemember(account.id, false)
                     .then(onAccountsChanged);
                 }}
               >
-                Remember
+                Forget
               </button>
-            )
-          )}
-          <button
-            className={styles.connectButton}
-            onClick={() => {
-              setMode(
-                account.unlocked
-                  ? { kind: "pick", account }
-                  : { kind: "unlock", account },
-              );
-            }}
-          >
-            {account.unlocked ? "Pick character" : "Unlock…"}
-          </button>
-          <RemoveButton
-            what={`account ${account.accountName}, its identities and their history`}
-            onConfirm={async () => {
-              await api.deleteFlistAccount(account.id);
-              onAccountsChanged();
-            }}
-          />
+            ) : (
+              canRemember &&
+              account.unlocked && (
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  title="Store the password encrypted on this server so restarts reconnect automatically"
+                  onClick={() => {
+                    void api
+                      .setFlistAccountRemember(account.id, true)
+                      .then(onAccountsChanged);
+                  }}
+                >
+                  Remember
+                </button>
+              )
+            )}
+            <RemoveButton
+              what={`account ${account.accountName}, its identities and their history`}
+              onConfirm={async () => {
+                await api.deleteFlistAccount(account.id);
+                onAccountsChanged();
+              }}
+            />
+          </span>
         </div>
       ))}
       <button
@@ -445,17 +511,20 @@ function AccountForm({
         />
       </label>
       {canRemember && (
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(event) => {
-                setRemember(event.target.checked);
-              }}
-            />{" "}
-            Remember on this server
-          </span>
+        // The login screen's checkbox row, not a field-label wrapping an
+        // unstyled box: a native checkbox generates no pseudo-elements, so the
+        // label band around it is the only thing a thumb can be given
+        // (COMPONENTS.md §Touch conventions), and that band is this class.
+        <label className={styles.checkboxRow}>
+          <input
+            className={styles.checkbox}
+            type="checkbox"
+            checked={remember}
+            onChange={(event) => {
+              setRemember(event.target.checked);
+            }}
+          />
+          Remember on this server
         </label>
       )}
       <button className={styles.primaryButton} type="submit" disabled={busy}>

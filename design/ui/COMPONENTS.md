@@ -429,19 +429,25 @@ Right-click popover on a member. `side` fill, `border`, `radius+2`, popover shad
 
 ### 13. Auth — AppAccount (create / login)
 Centered 400px card on a darkened (`mix(bg,#000,.35)`) backdrop. Card: `side`, `border`, 14px radius.
-- Brand lockup (logo chip + "emberchat" mono), title (22px/800), sub.
+- **Wordmark** (`components/common/Wordmark.tsx`), title (22px/800), sub. The mark is the ServerHead's — the config'd product name at 14px/700 — and there is exactly one of it in the app (#537). The purple initial chip beside a lowercased mono "emberchat" was the prototype's placeholder: two derivations of a name a self-hoster is free to change, and a second wordmark for a product that has one. The running version does **not** come along; it is read from the authenticated `/api/meta`, which a login screen has no session to ask with.
 - **Fields** (44px, `bg`, `border`, focus = `accent` border + `0 0 0 3px accentSoft` ring): 
   - **Create:** Username (with "available ✓" in `ok`), Email, Password (dot mask + blinking accent caret + "show", plus a 4-segment strength meter), terms checkbox, **Create account** (full-width accent). *No display name, no home server — this is only the app login.*
   - **Login:** Username or email, Password (+ "Forgot?" link `accent`), "Keep me signed in" checkbox, **Log in**, then a note "Next: choose which server identity to connect with."
 - **Checkbox:** 18px `accent` square with `bg` `✓`. **Inline links:** `accent`, 600. **Primary button:** 44px, `accent` fill, `bg` text, 700.
 
+**On `phone` the card is the screen (#535).** These two screens sat outside AppShell and predate the tiers, so the MP rounds swept the shell around them and left a 400px card floating on a darkened page at 390px wide. On the tier the backdrop stops darkening anything and stretches, and the panel goes full width and full height with no border and no radius, keeping the card's own `side` fill — every control inside it is designed as a `bg` control on a `side` surface, and flattening the two would cost each one its edge. It is also what the shell already does here: its list pane is the sidebar, edge to edge, in this colour, with base.css's safe-area strips showing `bg` through. Padding is `24px 16px`, and the bottom one carries `--eb-keyboard-inset`: this panel is a form the *document* scrolls, not a shell anchored to the viewport's bottom edge, so what a soft keyboard costs it is somewhere for the last control to scroll to, not height.
+
 ### 14. Auth — IdentityPicker (connect a server identity — the second login)
 Same card style, 440px. This is where you pick which server identity to connect as (F-List "character select").
 - **Account bar** (top, bottom border): app-account avatar + username + "…@… · app account" + "Sign out".
 - Title "Choose an identity" + sub: identities live on the server, managed on the **website ↗** (inline link).
-- **IdentityRow** (per identity): 38px avatar (per-identity color), name (14.5px/700) + optional `default` tag (`accent` on `accentSoft`), mono meta line (`server · role · presence`), trailing action.
+- **IdentityRow** (per identity): 38px avatar (per-identity color), name (14.5px/700) + optional `default` tag (`accent` on `accentSoft`), mono meta line (`server · role · presence`), then the action group.
   - **Connected:** "● Connected" (`ok` outline, nowrap). **Available:** "Connect" (accent fill). Connected row also gets `accentSoft` bg + `accentMed` border.
 - **Add row:** dashed, `+` chip + "Add a server identity".
+
+**The action group is ordered by consequence (#536).** The way in leads — **Open** / **Connect**, the accent-filled primary — and the two ways to lose something follow it at the trailing edge: **Disconnect**, then the remove ✕. Disconnect keeps the quiet outline (it is not the row's headline action) but wears `danger`, so the row reads as one way in and one way out rather than two buttons of equal weight. That order is the DOM order at every tier, so it is also the tab order and no tier reorders with CSS.
+
+**On `phone` the group takes its own line**, with the primary spending all the slack and a 16px gap between every pair (§Touch conventions' adjacency rule) — three controls, an avatar and a name do not cross 390px without the name being squeezed to nothing and the buttons ending up shoulder to shoulder, which is the mis-tap being designed out. **Disconnect also arms rather than acts on this tier**, in RemoveButton's two-step shape ("Disconnect?"), because the two mistakes cost wildly different things: tapping Open when you meant Disconnect costs a Back press, while tapping Disconnect when you meant Open drops the held session — the feature this client exists for — and getting it back costs a reconnect and a fresh ticket. Tier-keyed like MenuSurface's sheet, not pointer-keyed: a 390px desktop window is somewhere a mis-click is cheap to make too.
 
 ### 15. Landing page
 1120px browser-framed marketing page on `bg`.
