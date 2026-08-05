@@ -5,7 +5,7 @@
 // instance. Failures are logged and retried next tick; the check never
 // affects anything but the hint.
 
-import type { SessionLogger } from "../session-engine/fchat-session.js";
+import type { SessionLogger } from "@emberchat/session-engine";
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 

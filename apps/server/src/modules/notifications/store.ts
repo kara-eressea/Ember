@@ -27,8 +27,7 @@ import {
   notificationSeen,
   userPreferences,
 } from "../../db/schema.js";
-import { TypedEventBus } from "../session-engine/event-bus.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
+import { type SessionLogger, TypedEventBus } from "@emberchat/session-engine";
 
 export type NotificationRow = typeof notifications.$inferSelect;
 

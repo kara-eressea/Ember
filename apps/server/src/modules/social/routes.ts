@@ -12,8 +12,11 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
-import type { FlistApiClient, SocialAuth } from "../flist-api/api-client.js";
-import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
+import type {
+  FlistApiClient,
+  SocialAuth,
+  TicketManagerRegistry,
+} from "@emberchat/session-engine";
 import {
   upstreamStatus,
   withTicket as withTicketFor,

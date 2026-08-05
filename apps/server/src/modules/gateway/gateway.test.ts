@@ -54,8 +54,7 @@ import {
   INTEGRATION_MS,
   INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));

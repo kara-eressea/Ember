@@ -29,9 +29,8 @@ import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 import { RetentionJob } from "../history/retention.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
 import { excerptOf, NotificationStore } from "./store.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));

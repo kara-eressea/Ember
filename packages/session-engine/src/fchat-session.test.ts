@@ -18,13 +18,13 @@ import {
   rawDataToString,
   type FchatSimOptions,
 } from "@emberchat/fchat-sim";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import { FlistAuthError, TicketManager } from "../flist-api/ticket-manager.js";
+import { FlistApiClient } from "./api-client.js";
+import { FlistAuthError, TicketManager } from "./ticket-manager.js";
 import {
   FRAME_WAIT_MS,
   INTEGRATION_MS,
   INTEGRATION_SLOW_MS,
-} from "../../test-support/budgets.js";
+} from "./test-support/budgets.js";
 import {
   backoffDelayMs,
   FchatSession,

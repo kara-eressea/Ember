@@ -12,11 +12,13 @@ import { eq } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
-import type { FlistApiClient } from "../flist-api/api-client.js";
-import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
+import type {
+  FlistApiClient,
+  SessionRegistry,
+  TicketManagerRegistry,
+} from "@emberchat/session-engine";
 import { withTicket, type TicketedIdentity } from "../flist-api/with-ticket.js";
 import type { GatewayHub } from "../gateway/gateway.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 import { enrichSocial, type SocialCache, type SocialLists } from "./cache.js";
 
 export interface SocialIdentity extends TicketedIdentity {

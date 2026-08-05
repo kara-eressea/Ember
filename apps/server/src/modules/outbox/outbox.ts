@@ -10,8 +10,7 @@ import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { OutboxItemDto } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { conversations, outboxMessages } from "../../db/schema.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
+import type { SessionLogger, SessionRegistry } from "@emberchat/session-engine";
 
 /** The slice of GatewayHub the outbox needs (structural, avoids a cycle). */
 export interface OutboxBroadcaster {

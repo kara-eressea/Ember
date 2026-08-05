@@ -22,16 +22,18 @@ import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import {
+  type FchatSession,
+  FlistApiClient,
+  SessionEventBus,
+} from "@emberchat/session-engine";
 import {
   buildSnapshot,
   CATCHUP_REPLAY_BUDGET,
   catchupPlan,
 } from "../gateway/snapshot.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
 import { RetentionJob } from "./retention.js";
 import { exportChunks, type ExportRow } from "./routes.js";
-import { SessionEventBus } from "../session-engine/event-bus.js";
 import {
   ConversationLimitError,
   HistorySink,

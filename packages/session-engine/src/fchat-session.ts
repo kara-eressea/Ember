@@ -30,7 +30,7 @@ import {
   AccountLockedError,
   FlistAuthError,
   type TicketManager,
-} from "../flist-api/ticket-manager.js";
+} from "./ticket-manager.js";
 import { SessionEventBus } from "./event-bus.js";
 import { RateGate } from "./rate-gate.js";
 import { SessionState, type SessionStatus } from "./session-state.js";

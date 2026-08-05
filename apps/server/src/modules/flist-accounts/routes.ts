@@ -7,14 +7,14 @@ import { isUniqueViolation } from "../../db/errors.js";
 import { flistAccounts, identities } from "../../db/schema.js";
 import {
   AccountLockedError,
+  type CredentialVault,
   FlistAuthError,
+  type SessionRegistry,
   type TicketManagerRegistry,
-} from "../flist-api/ticket-manager.js";
+} from "@emberchat/session-engine";
 import type { GatewayHub } from "../gateway/gateway.js";
 import type { HistorySink } from "../history/sink.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 import type { CredentialStore } from "./credential-store.js";
-import type { CredentialVault } from "./vault.js";
 
 const accountResponse = z.object({
   id: z.string(),

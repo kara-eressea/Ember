@@ -8,7 +8,7 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { channelDirectory } from "../../db/schema.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import type { FchatSession } from "@emberchat/session-engine";
 
 /** Cache age below which a refresh request serves the cache without touching
  * the wire. The listings move slowly; the cooldown keeps a busy browser-open

@@ -24,9 +24,11 @@ import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { channelDirectory, identities } from "../../db/schema.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import { SessionEventBus } from "../session-engine/event-bus.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import {
+  type FchatSession,
+  FlistApiClient,
+  SessionEventBus,
+} from "@emberchat/session-engine";
 import { ChannelDirectory, type DirectorySession } from "./directory.js";
 import {
   CONTAINER_BOOT_MS,

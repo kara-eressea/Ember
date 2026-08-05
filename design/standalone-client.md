@@ -41,10 +41,14 @@ loopback — out of scope for the first release).
 
 ## The shared session library
 
-The M7 kickoff coupling analysis found the engine already almost a library.
-Extraction plan:
+**Done at MX1 (#295, #296)** — the table below is the as-built move, not a
+plan; every file landed where it says, with no logic change and no test
+assertion touched.
 
-**New package `packages/session-engine`** (`@emberchat/session-engine`):
+The M7 kickoff coupling analysis found the engine already almost a library.
+
+**Package `packages/session-engine`** (`@emberchat/session-engine`), flat
+`src/` with an `index.ts` barrel:
 
 | Moves in | From |
 |---|---|
@@ -53,18 +57,26 @@ Extraction plan:
 | `vault.ts` (CredentialVault) | `apps/server/src/modules/flist-accounts/` (misfiled there — it has zero dependency on that module) |
 
 Dependencies after the move: `ws`, node stdlib, `@emberchat/fchat-protocol`,
-zod. No Fastify, no pino (logging is already a structural `SessionLogger`),
-no Drizzle, no config module — all I/O is injected or event-bus-inverted.
+zod (plus vitest and `@emberchat/fchat-sim` for the suites that came along).
+No Fastify, no pino (logging is already a structural `SessionLogger`), no
+Drizzle, no config module — all I/O is injected or event-bus-inverted. The
+prediction held: nothing needed a new injection seam to make the move.
 
 **Stays behind in `apps/server`:** `connect-identity.ts` — the only file in
 the boundary that touches Postgres (identities.autoConnect) and the history
 sink. It is app-level orchestration (decisions.md §9 scenario logic) and
 already consumes the engine purely through `SessionRegistry` +
-`session.events.on`.
+`session.events.on`. `flist-api/` keeps `with-ticket.ts` (route-level HTTP
+status mapping) and `character-data-budget.ts`; `flist-accounts/` keeps the
+account rows, routes and boot-resume.
 
-**Standing rule until the extraction happens (M8+):** any change that adds
-a Drizzle, Fastify, gateway, or history import inside the boundary above is
-flagged in review — the boundary is now documented, not just lucky.
+**The rule is now enforced, not reviewed for (#296):**
+`packages/session-engine/src/boundary.test.ts` walks every file in the
+package and fails, naming the offender, on any import outside the fixed
+dependency set (an allow-list, so a new dependency must be argued for in the
+guard as well as in `package.json`) or on any relative path climbing out of
+`src/` — which is also how a reverse import back into `apps/server` would
+arrive. It runs with the package's suite in normal CI.
 
 ## Storage: pglite (decided by this pass)
 
@@ -129,9 +141,9 @@ runnable without Node-native deps.
 
 ## Phasing (post-v1.0)
 
-1. **Extract `packages/session-engine`** — mechanical per the table above;
-   server behavior unchanged; CI proves it (this can land any time after
-   v1.0, independent of the desktop work).
+1. ~~**Extract `packages/session-engine`**~~ — **done (MX1, #295/#296)**:
+   mechanical per the table above, server behavior unchanged, the full suite
+   green with no assertion edited.
 2. **Db driver seam + pglite spike** — `createDb(driver)`, boot the full
    server on pglite, run the integration suite against it.
 3. **Electron shell** — child-process server on loopback, first-run

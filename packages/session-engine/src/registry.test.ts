@@ -4,10 +4,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
-import { CredentialVault } from "../flist-accounts/vault.js";
-import { FRAME_WAIT_MS, INTEGRATION_MS } from "../../test-support/budgets.js";
+import { FlistApiClient } from "./api-client.js";
+import { TicketManagerRegistry } from "./ticket-manager.js";
+import { CredentialVault } from "./vault.js";
+import { FRAME_WAIT_MS, INTEGRATION_MS } from "./test-support/budgets.js";
 import type { FchatSession } from "./fchat-session.js";
 import { SessionRegistry } from "./registry.js";
 import type { SessionStatus } from "./session-state.js";

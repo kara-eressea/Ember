@@ -10,7 +10,7 @@
 // the chat roster do not always agree on casing.
 
 import type { SocialCharacterDto, SocialDto } from "@emberchat/protocol";
-import type { CharacterPresence } from "../session-engine/session-state.js";
+import type { CharacterPresence } from "@emberchat/session-engine";
 
 /** Raw identity-scoped lists, as filtered from the account-wide upstream. */
 export interface SocialLists {

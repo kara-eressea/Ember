@@ -13,9 +13,11 @@ import type { Db } from "../../db/index.js";
 import { identities } from "../../db/schema.js";
 import type { DetachedAway } from "../away/detached-away.js";
 import type { HistorySink } from "../history/sink.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
+import type {
+  CredentialVault,
+  SessionRegistry,
+} from "@emberchat/session-engine";
 import type { CredentialStore } from "./credential-store.js";
-import type { CredentialVault } from "./vault.js";
 
 export interface BootResumeDeps {
   db: Db;

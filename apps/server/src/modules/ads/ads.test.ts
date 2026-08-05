@@ -17,7 +17,7 @@ import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { identities } from "../../db/schema.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { FlistApiClient } from "@emberchat/session-engine";
 import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,

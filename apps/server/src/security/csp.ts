@@ -23,7 +23,7 @@ import {
   DEFAULT_IMAGE_PREVIEW_HOSTS,
   IMAGE_PREVIEW_HOST,
 } from "@emberchat/protocol";
-import type { SessionLogger } from "../modules/session-engine/fchat-session.js";
+import type { SessionLogger } from "@emberchat/session-engine";
 
 /** A helmet CSP directive entry: a literal source, or a function evaluated per
  * response (helmet 8 supports this) so we can widen a directive from live

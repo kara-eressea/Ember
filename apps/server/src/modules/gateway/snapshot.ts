@@ -14,8 +14,7 @@ import type { Db } from "../../db/index.js";
 import { conversations, messages } from "../../db/schema.js";
 import type { MessageRow } from "../history/sink.js";
 import { seenByChannel } from "../seen-members/store.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
-import type { SessionState } from "../session-engine/session-state.js";
+import type { FchatSession, SessionState } from "@emberchat/session-engine";
 
 /** Unread counts are capped server-side; the client renders 99 as "99+". */
 export const UNREAD_CAP = 99;

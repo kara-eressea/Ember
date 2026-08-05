@@ -3,7 +3,7 @@
 // cache's TTL/patch semantics and the case-insensitive presence join.
 
 import { describe, expect, it } from "vitest";
-import type { CharacterPresence } from "../session-engine/session-state.js";
+import type { CharacterPresence } from "@emberchat/session-engine";
 import { enrichSocial, SocialCache, type SocialLists } from "./cache.js";
 
 const LISTS: SocialLists = {

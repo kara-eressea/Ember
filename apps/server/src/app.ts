@@ -31,9 +31,14 @@ import {
 import { enrichSocial, SocialCache } from "./modules/social/cache.js";
 import { socialRoutes } from "./modules/social/routes.js";
 import { SocialService } from "./modules/social/service.js";
-import { FlistApiClient } from "./modules/flist-api/api-client.js";
+import {
+  CredentialVault,
+  FlistApiClient,
+  SessionRegistry,
+  type SessionTuning,
+  TicketManagerRegistry,
+} from "@emberchat/session-engine";
 import { CharacterDataBudget } from "./modules/flist-api/character-data-budget.js";
-import { TicketManagerRegistry } from "./modules/flist-api/ticket-manager.js";
 import { EiconIndexService } from "./modules/eicons/index-service.js";
 import { eiconsRoutes } from "./modules/eicons/routes.js";
 import { ProfileService } from "./modules/profiles/service.js";
@@ -41,7 +46,6 @@ import { profilesRoutes } from "./modules/profiles/routes.js";
 import { resumeStoredSessions } from "./modules/flist-accounts/boot-resume.js";
 import { CredentialStore } from "./modules/flist-accounts/credential-store.js";
 import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
-import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import type { GatewayTuning } from "./modules/gateway/connection.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { UserPrefsCache } from "./modules/gateway/user-prefs.js";
@@ -58,10 +62,6 @@ import { Outbox } from "./modules/outbox/outbox.js";
 import { PushSender } from "./modules/push/sender.js";
 import { pushRoutes } from "./modules/push/routes.js";
 import { SeenMembersStore } from "./modules/seen-members/store.js";
-import {
-  SessionRegistry,
-  type SessionTuning,
-} from "./modules/session-engine/registry.js";
 import { authPlugin } from "./plugins/auth.js";
 import { webManifestRoute } from "./plugins/web-manifest.js";
 import { runtimeConfigScript, webStatic } from "./plugins/web-static.js";

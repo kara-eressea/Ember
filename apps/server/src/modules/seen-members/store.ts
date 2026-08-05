@@ -18,9 +18,11 @@ import type { ServerCommand } from "@emberchat/fchat-protocol";
 import type { SeenMemberDto } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { seenMembers } from "../../db/schema.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
-import type { SessionEventBus } from "../session-engine/event-bus.js";
-import type { SessionState } from "../session-engine/session-state.js";
+import type {
+  SessionEventBus,
+  SessionLogger,
+  SessionState,
+} from "@emberchat/session-engine";
 
 /** F-Chat resolves character names case-insensitively; own-character filters
  * must fold case or a frame whose casing diverges from ownCharacter slips the
