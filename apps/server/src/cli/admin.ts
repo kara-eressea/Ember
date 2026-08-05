@@ -1,7 +1,8 @@
 // EmberChat admin CLI — how accounts are born on an admin-only instance
 // (decisions.md §2: registration is disabled by default; there is no email,
-// so password resets happen here too). Talks to Postgres directly via
-// DATABASE_URL; the server does not need to be running, but the database
+// so password resets happen here too). Talks to the database directly via
+// DATABASE_URL — or, on a desktop-style install, DB_DRIVER=pglite plus
+// PGLITE_DATA_DIR; the server does not need to be running, but the database
 // must be migrated (the server migrates on boot).
 //
 //   node dist/cli/admin.js create-user --email a@example.com --username kara --password-stdin
@@ -15,7 +16,7 @@ import { parseArgs } from "node:util";
 import argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import type { ZodType } from "zod";
-import { createDb } from "../db/index.js";
+import { createDb, type DbDriver } from "../db/index.js";
 import { isUniqueViolation } from "../db/errors.js";
 import { appUsers } from "../db/schema.js";
 import {
@@ -28,7 +29,7 @@ const USAGE = `Usage:
   admin.js create-user   --email <email> --username <name> (--password <pw> | --password-stdin)
   admin.js reset-password --email <email>                  (--password <pw> | --password-stdin)
 
-DATABASE_URL must be set in the environment.`;
+DATABASE_URL must be set in the environment (or DB_DRIVER=pglite with PGLITE_DATA_DIR).`;
 
 function fail(message: string): never {
   console.error(message);
@@ -84,10 +85,23 @@ if (!command || command === "--help" || command === "help") {
   process.exit(command ? 0 : 1);
 }
 
-const databaseUrl = process.env["DATABASE_URL"];
-if (!databaseUrl) {
-  fail("DATABASE_URL is not set");
-}
+// The CLI reads the environment itself rather than through loadConfig — it
+// has no use for AUTH_SECRET and friends, and demanding them here would make
+// creating the first account harder than it is.
+const driver: DbDriver = ((): DbDriver => {
+  if (process.env["DB_DRIVER"] === "pglite") {
+    const dataDir = process.env["PGLITE_DATA_DIR"];
+    if (!dataDir) {
+      fail("PGLITE_DATA_DIR is not set (DB_DRIVER=pglite)");
+    }
+    return { kind: "pglite", dataDir };
+  }
+  const connectionString = process.env["DATABASE_URL"];
+  if (!connectionString) {
+    fail("DATABASE_URL is not set");
+  }
+  return { kind: "node-postgres", connectionString };
+})();
 
 const { values } = parseArgs({
   args: rest,
@@ -99,7 +113,7 @@ const { values } = parseArgs({
   },
 });
 
-const { db, pool } = createDb(databaseUrl);
+const { db, close } = await createDb(driver);
 
 try {
   switch (command) {
@@ -141,5 +155,5 @@ try {
       fail(`Unknown command "${command}"\n\n${USAGE}`);
   }
 } finally {
-  await pool.end();
+  await close();
 }

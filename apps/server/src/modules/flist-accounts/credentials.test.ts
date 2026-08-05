@@ -4,19 +4,14 @@
 // reconnects autoConnect identities on boot, the detached-disconnect
 // ceiling gates the resume, and a key-less server hides the feature.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { flistCredentials, identities } from "../../db/schema.js";
 import { FlistApiClient } from "@emberchat/session-engine";
 import {
@@ -25,7 +20,6 @@ import {
   LOADED_RUNNER_MS,
 } from "../../test-support/budgets.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "willow@example.test";
 const CHARACTER = "Willow Reed";
 const CHARACTER_B = "Fern Ashwood";
@@ -37,9 +31,8 @@ const KEY = Buffer.alloc(32, 7).toString("base64url");
 // loaded-runner tier rather than the plain integration one.
 vi.setConfig({ testTimeout: LOADED_RUNNER_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 let token: string;
@@ -47,7 +40,7 @@ let accountId: string;
 
 function appConfig(overrides: Record<string, string> = {}) {
   const env: Record<string, string> = {
-    DATABASE_URL: container.getConnectionUri(),
+    ...testDb.env,
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
     RATE_LIMIT_MAX: "10000",
@@ -79,9 +72,8 @@ function makeApp(overrides: Record<string, string> = {}) {
 beforeAll(async () => {
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await makeApp();
 
   const registered = await app.inject({
@@ -99,8 +91,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

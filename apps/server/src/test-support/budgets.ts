@@ -33,7 +33,12 @@ export {
   INTEGRATION_SLOW_MS,
 } from "@emberchat/session-engine/test-support";
 
-/** `beforeAll` that boots a testcontainers Postgres — image pull included. */
+/**
+ * `beforeAll` that boots the test database via `makeTestDb()` — sized for the
+ * testcontainers path, image pull included. Under `TEST_DB_DRIVER=pglite`
+ * there is no container and the budget is simply generous; one budget for
+ * both drivers beats a per-driver number no one would keep honest.
+ */
 export const CONTAINER_BOOT_MS = 180_000;
 
 /**

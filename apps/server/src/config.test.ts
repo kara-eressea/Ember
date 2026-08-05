@@ -24,6 +24,22 @@ describe("loadConfig", () => {
     expect(config.FCHAT_URL).toBe("wss://chat.f-list.net/chat2");
     expect(config.PORT).toBe(3000);
     expect(config.TRUST_PROXY).toBeUndefined();
+    // An env that never heard of DB_DRIVER is a node-postgres env (#298).
+    expect(config.DB_DRIVER).toBe("node-postgres");
+  });
+
+  it("requires the setting its storage driver actually needs (#298)", () => {
+    const noUrl = { AUTH_SECRET: BASE_ENV.AUTH_SECRET };
+    expect(() => loadConfig(noUrl)).toThrow(/DATABASE_URL must be set/);
+    expect(() => loadConfig({ ...noUrl, DB_DRIVER: "pglite" })).toThrow(
+      /PGLITE_DATA_DIR must be set/,
+    );
+    // pglite with a data dir needs no DATABASE_URL at all.
+    expect(
+      loadConfig({ ...noUrl, DB_DRIVER: "pglite", PGLITE_DATA_DIR: "/tmp/db" })
+        .DATABASE_URL,
+    ).toBeUndefined();
+    expect(() => loadConfig({ ...BASE_ENV, DB_DRIVER: "sqlite" })).toThrow();
   });
 
   it("refuses the .env.example placeholder AUTH_SECRET", () => {

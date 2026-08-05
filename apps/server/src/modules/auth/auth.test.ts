@@ -2,12 +2,7 @@
 // one app instance for the suite; the rate-limit test builds its own app so
 // its counters stay isolated.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -18,7 +13,8 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { appUsers, authSessions, userPreferences } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
@@ -29,23 +25,17 @@ import { MAX_SESSIONS_PER_USER, ROTATION_GRACE_MS } from "./routes.js";
 import { SessionJanitor } from "./session-janitor.js";
 import { hashRefreshToken, REFRESH_TOKEN_TTL_MS } from "./tokens.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
-
 // Container-backed, and argon2 hashing runs on every register/login. The CLI
 // tests below need more still — see LOADED_RUNNER_MS.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let app: FastifyInstance;
 
-function testConfig(
-  databaseUrl: string,
-  overrides: Record<string, string> = {},
-) {
+function testConfig(overrides: Record<string, string> = {}) {
   return loadConfig({
-    DATABASE_URL: databaseUrl,
+    ...testDb.env,
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
     REGISTRATION_ENABLED: "true",
@@ -54,11 +44,10 @@ function testConfig(
 }
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
-    config: testConfig(container.getConnectionUri()),
+    config: testConfig(),
     db,
     logger: false,
   });
@@ -66,8 +55,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
 });
 
 interface TokenPair {
@@ -465,7 +453,7 @@ describe("security headers", () => {
       "<!doctype html><html><head><title>x</title></head><body></body></html>",
     );
     const spa = await buildApp({
-      config: testConfig(container.getConnectionUri(), { WEB_DIST: dist }),
+      config: testConfig({ WEB_DIST: dist }),
       db,
       logger: false,
     });
@@ -509,7 +497,7 @@ describe("security headers", () => {
       "<!doctype html><html><head><title>x</title></head><body></body></html>",
     );
     const spa = await buildApp({
-      config: testConfig(container.getConnectionUri(), { WEB_DIST: dist }),
+      config: testConfig({ WEB_DIST: dist }),
       db,
       logger: false,
     });
@@ -564,7 +552,7 @@ describe("security headers", () => {
 describe("registration gate", () => {
   it("404s when REGISTRATION_ENABLED is off (the default)", async () => {
     const gated = await buildApp({
-      config: testConfig(container.getConnectionUri(), {
+      config: testConfig({
         REGISTRATION_ENABLED: "false",
       }),
       db,
@@ -614,7 +602,7 @@ describe("admin CLI", () => {
           process.execPath,
           [CLI, ...args],
           {
-            env: { ...process.env, DATABASE_URL: container.getConnectionUri() },
+            env: { ...process.env, ...testDb.env },
           },
           (error, stdout, stderr) => {
             resolve({
@@ -719,7 +707,7 @@ describe("admin CLI", () => {
 describe("rate limiting", () => {
   it("returns 429 after the per-route auth limit", async () => {
     const limited = await buildApp({
-      config: testConfig(container.getConnectionUri(), {
+      config: testConfig({
         AUTH_RATE_LIMIT_MAX: "3",
       }),
       db,

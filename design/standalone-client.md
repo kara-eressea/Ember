@@ -120,6 +120,18 @@ lose the last seconds; that belongs in the desktop docs. (4) pglite takes **no
 lock on its data directory** — a second instance opens it happily — so the
 single-instance lock in phase 3 below is correctness, not polish.
 
+**Seam built (#298) — as-built.** `createDb` now takes a driver tag
+(`{ kind: "node-postgres", connectionString }` or `{ kind: "pglite", dataDir }`)
+and returns a handle owning `db`, `raw` (the upgrade gate's query shape),
+`migrate()` and `close()`, so no caller knows which driver it is on; `DB_DRIVER`
+defaults to `node-postgres`, leaving every existing deployment untouched. The
+desktop bundle — not the server image — owns the `@electric-sql/pglite`
+dependency: it is a devDependency here, loaded through a dynamic `import()` in
+the pglite arm and stripped from the production image (drizzle-orm declares it
+an optional peer, so the Dockerfile removes it explicitly), and asking a server
+image for `DB_DRIVER=pglite` fails with an error that says exactly that. MX3
+therefore consumes a seam that already exists rather than building one.
+
 ## In-process gateway: loopback, not IPC (decided by this pass)
 
 The renderer needs the gateway. Two options:

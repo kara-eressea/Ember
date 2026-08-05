@@ -2,19 +2,14 @@
 // getApiTicket.php as the F-List stand-in. The app logs into a capture
 // stream so we can assert F-List passwords never appear in logs.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { conversations, identities } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
@@ -22,21 +17,18 @@ import {
 } from "../../test-support/budgets.js";
 import { FlistApiClient } from "@emberchat/session-engine";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
-
 // Container- and sim-backed: real Postgres plus loopback WebSocket round trips.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 const logLines: string[] = [];
 
 async function makeApp(): Promise<FastifyInstance> {
   const config = loadConfig({
-    DATABASE_URL: container.getConnectionUri(),
+    ...testDb.env,
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
     REGISTRATION_ENABLED: "true",
@@ -66,16 +58,14 @@ async function makeApp(): Promise<FastifyInstance> {
 beforeAll(async () => {
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await makeApp();
 }, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

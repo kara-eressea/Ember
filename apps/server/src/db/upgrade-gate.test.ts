@@ -2,15 +2,11 @@
 // a database newer than the binary refuses (downgrade); a pending breaking
 // migration refuses without CONFIRM_BREAKING_UPGRADE and proceeds with it.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CONTAINER_BOOT_MS, INTEGRATION_MS } from "../test-support/budgets.js";
-import { createDb } from "./index.js";
+import { makeTestDb, type TestDb } from "../test-support/db.js";
+import type { RawQuery } from "./index.js";
 import {
   assertUpgradeSafe,
   loadUpgradeManifest,
@@ -23,21 +19,18 @@ const MIGRATIONS = fileURLToPath(new URL("../../drizzle", import.meta.url));
 // Container-backed: every test runs migrations against real Postgres.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
-let pool: ReturnType<typeof createDb>["pool"];
+let testDb: TestDb;
+let pool: RawQuery;
 let manifest: UpgradeManifest;
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  const created = createDb(container.getConnectionUri());
-  pool = created.pool;
+  testDb = await makeTestDb();
+  pool = testDb.handle.raw;
   manifest = await loadUpgradeManifest(MIGRATIONS);
-  await migrate(created.db, { migrationsFolder: MIGRATIONS });
 }, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
 });
 
 const RELEASES = "https://github.com/kara-eressea/Ember/releases";
