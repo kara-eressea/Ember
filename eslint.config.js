@@ -39,6 +39,14 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // The desktop shell's first-run chooser page (mx3-desktop-shell.md §4):
+    // the one piece of UI apps/desktop owns. It ships verbatim as a file://
+    // document with no bundler over it, so it is plain browser JS rather than
+    // a node script — `document` and `window` are its globals.
+    files: ["apps/desktop/chooser/*.js"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
     // The push service worker (design/web-push.md §4) is the one .js file that
     // is neither a script nor a bundle: it ships verbatim out of public/ and
     // runs in a ServiceWorkerGlobalScope, so `self`, `clients` and friends are

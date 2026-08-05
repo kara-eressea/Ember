@@ -30,6 +30,16 @@ export function adminCliEntry(desktopRoot: string): string {
   return join(serverRuntimeDir(desktopRoot), "dist", "cli", "admin.js");
 }
 
+/**
+ * The first-run chooser's page (#300). It is not built by anything — three
+ * static files that ship as they are — which is why it sits beside `src`
+ * rather than in `dist`: `tsc` would neither compile nor copy it, and giving
+ * this package a bundler for one HTML file would be the wrong trade.
+ */
+export function chooserPage(desktopRoot: string): string {
+  return join(desktopRoot, "chooser", "index.html");
+}
+
 /** The built web app: `apps/web/dist`, one directory over from here. */
 export function webDistDir(desktopRoot: string): string {
   return resolve(desktopRoot, "..", "web", "dist");

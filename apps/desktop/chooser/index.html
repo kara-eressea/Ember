@@ -1,0 +1,79 @@
+<!doctype html>
+<!--
+  The first-run mode chooser (design/mx3-desktop-shell.md §4).
+
+  This is the only HTML this package owns — the app's real renderer is the web
+  app, unmodified, served over loopback or by the user's own server. So: no
+  framework, no bundler, no build step. Three static files loaded from disk by
+  `chooser-window.ts`, and a preload that exposes exactly two calls.
+
+  The product name is filled in from the `product` query parameter, which the
+  window passes from `app.getName()` — never a literal in the markup
+  (CLAUDE.md: the product name is config).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      A file:// page with a preload bridge gets the strictest policy that still
+      lets it run: its own script and stylesheet, and nothing else at all. No
+      remote anything, no inline script, no form submission, no <base>.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
+    />
+    <title>Choose how to run</title>
+    <link rel="stylesheet" href="chooser.css" />
+  </head>
+  <body>
+    <main class="sheet">
+      <h1 class="title">How should <span data-product>this app</span> run?</h1>
+      <p class="sub">
+        Two ways to use it. You can change this later — <b>Switch mode…</b> in
+        the menu.
+      </p>
+
+      <section class="option">
+        <h2 class="option-title">Use locally</h2>
+        <p class="option-body">
+          This computer runs the bouncer. Your characters stay connected to
+          F-Chat for as long as <span data-product>the app</span> is running,
+          and your conversation history is stored here, on this machine.
+        </p>
+        <button id="local" class="btn btn-primary" type="button">
+          Use locally
+        </button>
+      </section>
+
+      <section class="option">
+        <h2 class="option-title">Connect to my server</h2>
+        <p class="option-body">
+          For a server you already run somewhere else. This window becomes a
+          view onto it: that server holds your sessions and your history, so
+          they stay online when this computer sleeps. You'll sign in with your
+          account on that server.
+        </p>
+        <form id="connect-form" class="connect">
+          <label class="field-label" for="server-url">Server address</label>
+          <input
+            id="server-url"
+            class="field"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="https://chat.example.com"
+          />
+          <button id="connect" class="btn btn-outline" type="submit">
+            Connect
+          </button>
+        </form>
+      </section>
+
+      <p id="message" class="message" role="alert" hidden></p>
+    </main>
+    <script src="chooser.js"></script>
+  </body>
+</html>
