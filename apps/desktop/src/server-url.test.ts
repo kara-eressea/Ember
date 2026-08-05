@@ -134,6 +134,81 @@ describe("probeServerUrl", () => {
     expect(message).toContain("does not look like");
   });
 
+  it.each([
+    // What Node's own fetch reports (undici buries the real error in `cause`)…
+    [
+      "a self-signed certificate",
+      Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("self-signed certificate"), {
+          code: "DEPTH_ZERO_SELF_SIGNED_CERT",
+        }),
+      }),
+      "DEPTH_ZERO_SELF_SIGNED_CERT",
+    ],
+    [
+      "a certificate from an unknown authority",
+      Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("unable to verify"), {
+          code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+        }),
+      }),
+      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    ],
+    [
+      "a certificate for another name",
+      Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("altname"), {
+          code: "ERR_TLS_CERT_ALTNAME_INVALID",
+        }),
+      }),
+      "ERR_TLS_CERT_ALTNAME_INVALID",
+    ],
+    // …and what Electron's `net.fetch` reports, which is what the shell uses.
+    [
+      "Chromium's own refusal",
+      new Error("net::ERR_CERT_AUTHORITY_INVALID"),
+      "ERR_CERT_AUTHORITY_INVALID",
+    ],
+    [
+      "an expired certificate",
+      new Error("net::ERR_CERT_DATE_INVALID"),
+      "ERR_CERT_DATE_INVALID",
+    ],
+  ])(
+    "names %s rather than calling it unreachable",
+    async (_label, rejection, code) => {
+      const result = await probeServerUrl(URL_UNDER_TEST, {
+        fetch: () => Promise.reject(rejection),
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        return;
+      }
+      // A certificate is a specific thing to fix, on the server. "Could not reach
+      // it" would send the user looking at the wrong end — and the refusal must
+      // stay a refusal: there is no way past it anywhere in the app (spec §5).
+      expect(result.kind).toBe("certificate");
+      expect(result.message).toContain(code);
+      expect(result.message).toContain("will not connect");
+      expect(result.message.toLowerCase()).not.toContain("anyway");
+    },
+  );
+
+  it("does not mistake an ordinary connection failure for a certificate one", async () => {
+    const result = await probeServerUrl(URL_UNDER_TEST, {
+      fetch: () =>
+        Promise.reject(
+          Object.assign(new TypeError("fetch failed"), {
+            cause: Object.assign(new Error("connect ECONNREFUSED"), {
+              code: "ECONNREFUSED",
+            }),
+          }),
+        ),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok || result.kind).toBe("unreachable");
+  });
+
   it("gives up rather than hanging on a server that never answers", async () => {
     refusal(
       await probeServerUrl(URL_UNDER_TEST, {

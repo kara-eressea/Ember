@@ -40,6 +40,17 @@ export function chooserPage(desktopRoot: string): string {
   return join(desktopRoot, "chooser", "index.html");
 }
 
+/**
+ * The remote session's error page (#302), on the same terms as the chooser:
+ * static files that ship as they are, beside `src` rather than in `dist`.
+ * These two paths are also the shell's IPC identities — `main.ts` answers the
+ * chooser's channels only for the first and the error page's only for the
+ * second (see ipc-sender.ts).
+ */
+export function errorPage(desktopRoot: string): string {
+  return join(desktopRoot, "error", "index.html");
+}
+
 /** The built web app: `apps/web/dist`, one directory over from here. */
 export function webDistDir(desktopRoot: string): string {
   return resolve(desktopRoot, "..", "web", "dist");

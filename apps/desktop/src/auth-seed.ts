@@ -108,3 +108,48 @@ export function createSeedDispenser(message: AuthSeedMessage): SeedDispenser {
     },
   };
 }
+
+/** Which of `startup.ts`'s plans this boot is running (kept as a plain string
+ * so this module does not import the startup planner it is used by). */
+export type BootMode = "choose" | "local" | "thin-client";
+
+export interface SeedHolder {
+  /**
+   * Arm this boot's seed. Only a local boot has one to arm; anything else is a
+   * programming error, and throws rather than quietly holding a session token
+   * for a page that is not ours.
+   */
+  arm(message: AuthSeedMessage): void;
+  /** The seed, once — `null` when unarmed, spent, or not a local boot. */
+  take(): AuthSeedMessage | null;
+}
+
+/**
+ * The seed, with the mode it belongs to attached (mx3-desktop-shell.md §5).
+ *
+ * In local mode this is the dispenser above with a lock around the door. In
+ * thin-client mode it is *provably* inert: the window shows a server this
+ * process never logged into, its localStorage belongs to that origin, and the
+ * shared preload's question (`preload.cts`) has exactly one honest answer,
+ * `null`. Making that a property of an object created from the startup plan —
+ * rather than of a variable that simply never gets assigned along one code
+ * path — is what lets `thin-client.test.ts` assert it without an Electron
+ * window, and what makes a future edit that arms a seed in the wrong mode fail
+ * loudly instead of leaking one.
+ */
+export function createSeedHolder(mode: BootMode): SeedHolder {
+  let dispenser: SeedDispenser | undefined;
+  return {
+    arm(message) {
+      if (mode !== "local") {
+        throw new Error(
+          `refusing to arm the auth seed in ${mode} mode: only the embedded server's own login has a session to hand to the renderer`,
+        );
+      }
+      dispenser = createSeedDispenser(message);
+    },
+    take() {
+      return dispenser?.take() ?? null;
+    },
+  };
+}
