@@ -11,6 +11,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "eslint . && prettier --check .",
+    "desktop:dev": "turbo run build && pnpm --filter @emberchat/desktop dev",
     "format": "prettier --write .",
     "smoke": "./scripts/smoke.sh"
   },

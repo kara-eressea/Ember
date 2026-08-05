@@ -50,6 +50,40 @@ Electron-ABI — and the spike proved a rebuilt tree can no longer serve
 - The web dist rides along: `WEB_DIST` points at `apps/web/dist` in dev and
   at a copied `resources/web` in the packaged app (MX4's concern).
 
+### As built (#299)
+
+Four things the sketch above did not know, all found by building it:
+
+1. **The deploy needs `--legacy`** (pnpm ≥ 10 otherwise refuses a workspace
+   that isn't `inject-workspace-packages`), and it roots the *package* at the
+   target — so the entry is `server-runtime/dist/main.js`, not a repo-shaped
+   `apps/server/dist/main.js`. It also records `dev: false` in the workspace's
+   install state, which makes the *next* pnpm command in the repo want to purge
+   `node_modules`; the script snapshots that one file and puts it back.
+2. **`pnpm add` inside the deployed tree cannot work.** The deployed manifest
+   keeps its `workspace:*` specs, so any install run in that directory tries to
+   re-resolve them and dies (`ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`). pglite is
+   installed in a one-dependency scratch project (hoisted, so it materializes
+   as a plain directory) and copied in.
+3. **Invariant 1 has a specific mechanism, and it fired on the first run.** A
+   deployed pnpm tree contains exactly one symlink out of itself —
+   `node_modules/.pnpm/node_modules/@emberchat/server` → `apps/server`, pnpm's
+   hoist alias for the project it just deployed. `@electron/rebuild` resolves
+   symlinks to real paths as it walks, went through that door into the
+   workspace, and rebuilt the workspace's `argon2` and `re2` for Electron
+   (`NODE_MODULE_VERSION 148`; `pnpm test` then couldn't load them). The script
+   now severs every escaping symlink before rebuilding and asserts none remain,
+   deploys with `--config.package-import-method=copy` so nothing is hardlinked
+   back to the pnpm store, and fingerprints the workspace's `.node` files
+   around the rebuild — the check that caught this.
+4. **Electron ≥ 43 has no install script at all**; the ~100 MB binary is
+   fetched lazily on the first `electron .`. So CI needs no opt-out beyond the
+   `electron: false` entry in `pnpm-workspace.yaml`'s `allowBuilds`.
+
+Cost on this machine: ~80 s cold (~70 s of it the rebuild), a no-op when the
+stamp matches. The stamp is server dist/drizzle/manifest mtime + Electron
+version + pglite spec.
+
 ## 2. Loopback boot (#299)
 
 - The shell picks a free port itself (bind `127.0.0.1:0`, read, close —
@@ -67,6 +101,15 @@ Electron-ABI — and the spike proved a rebuilt tree can no longer serve
   anything touches the data dir; the second instance focuses the first and
   exits. This is correctness, not politeness — pglite will happily corrupt a
   shared data dir (MX2).
+
+As built, the child's environment is *complete* rather than a patch over
+`process.env`: a developer's shell has `DATABASE_URL` and `AUTH_SECRET` in it,
+and neither may reach the embedded bouncer. The full set is `NODE_ENV`,
+`DB_DRIVER`, `PGLITE_DATA_DIR`, `HOST`, `PORT`, `APP_BASE_URL`, `WEB_DIST`,
+`AUTH_SECRET`, `RETENTION_POLICY`, `CLIENT_VERSION` — everything else stays at
+its schema default. `productName: "EmberChat"` in the package manifest is what
+puts the data dir at `<userData>/db` under a human name instead of under the
+package's npm name.
 
 ## 3. First-run provisioning + secrets (#301)
 

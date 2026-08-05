@@ -1,4 +1,8 @@
 pnpm-lock.yaml
+# The desktop shell's server-runtime build artifact (MX3) — a deployed server
+# and its dependency tree, none of it ours to format.
+apps/desktop/server-runtime/
+apps/desktop/server-runtime.stamp.json
 prototype/
 design/
 *.md

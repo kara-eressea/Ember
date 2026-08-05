@@ -13,6 +13,9 @@ export default tseslint.config(
       // Spike harnesses kept as evidence, not as code we ship (#297): they
       // import dependencies that are deliberately absent from the workspace.
       "design/spikes/**",
+      // The desktop shell's build artifact (MX3): a deployed copy of the
+      // server plus its whole prod dependency tree. Not our source.
+      "apps/desktop/server-runtime/**",
     ],
   },
   {
