@@ -7,7 +7,7 @@
 
 import type { FlistApiClient, GetApiTicketParams } from "./api-client.js";
 import type { ApiTicketResponse } from "@emberchat/fchat-protocol";
-import type { CredentialVault } from "../flist-accounts/vault.js";
+import type { CredentialVault } from "./vault.js";
 
 /** The slice of FlistApiClient the manager needs (stubbed in unit tests). */
 export interface TicketApi {

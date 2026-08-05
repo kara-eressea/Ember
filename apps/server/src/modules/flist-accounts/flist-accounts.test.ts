@@ -20,7 +20,7 @@ import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { FlistApiClient } from "@emberchat/session-engine";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 

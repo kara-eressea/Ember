@@ -29,7 +29,7 @@ import {
   messages,
   profileViews,
 } from "../../db/schema.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { FlistApiClient } from "@emberchat/session-engine";
 import { CharacterDataBudget } from "./../flist-api/character-data-budget.js";
 import {
   CONTAINER_BOOT_MS,

@@ -3,7 +3,7 @@
 // `session.connect` (or unlock auto-connect) and stop only on explicit
 // `session.disconnect`, identity deletion, or server shutdown.
 
-import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
+import type { TicketManagerRegistry } from "./ticket-manager.js";
 import {
   FchatSession,
   type FchatSessionOptions,

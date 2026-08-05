@@ -44,6 +44,9 @@ importers:
       '@emberchat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@emberchat/session-engine':
+        specifier: workspace:*
+        version: link:../../packages/session-engine
       '@fastify/cors':
         specifier: ^11.3.0
         version: 11.3.0
@@ -281,6 +284,34 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.1.1)(@vitest/coverage-v8@4.1.10)(jsdom@27.4.0)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(tsx@4.23.0)(yaml@2.9.0))
+
+  packages/session-engine:
+    dependencies:
+      '@emberchat/fchat-protocol':
+        specifier: workspace:*
+        version: link:../fchat-protocol
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@emberchat/fchat-sim':
+        specifier: workspace:*
+        version: link:../fchat-sim
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

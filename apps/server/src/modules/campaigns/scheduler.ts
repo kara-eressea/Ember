@@ -35,11 +35,11 @@ import { ads, campaigns, flistAccounts, identities } from "../../db/schema.js";
 import type { HistorySink } from "../history/sink.js";
 import {
   AdCooldownError,
-  SessionNotOnlineError,
   type FchatSession,
   type SessionLogger,
-} from "../session-engine/fchat-session.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
+  SessionNotOnlineError,
+  type SessionRegistry,
+} from "@emberchat/session-engine";
 
 export const CAMPAIGN_TICK_MS = 5_000;
 /** The per-channel schedule floor — well above the 10-min flood window. */

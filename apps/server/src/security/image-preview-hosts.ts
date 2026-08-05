@@ -13,7 +13,7 @@
 import { isNotNull } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { userPreferences } from "../db/schema.js";
-import type { SessionLogger } from "../modules/session-engine/fchat-session.js";
+import type { SessionLogger } from "@emberchat/session-engine";
 import { extraMediaSourceString, unionPreviewHosts } from "./csp.js";
 
 /** Yields each stored prefs document — injected so the union logic is testable

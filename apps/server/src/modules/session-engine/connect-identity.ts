@@ -6,8 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { identities } from "../../db/schema.js";
 import type { HistorySink } from "../history/sink.js";
-import type { FchatSession } from "./fchat-session.js";
-import type { SessionRegistry } from "./registry.js";
+import type { FchatSession, SessionRegistry } from "@emberchat/session-engine";
 
 export interface ConnectIdentityDeps {
   readonly db: Db;

@@ -31,6 +31,7 @@ COPY packages/protocol/package.json packages/protocol/
 COPY packages/fchat-protocol/package.json packages/fchat-protocol/
 COPY packages/fchat-sim/package.json packages/fchat-sim/
 COPY packages/markdown-bbcode/package.json packages/markdown-bbcode/
+COPY packages/session-engine/package.json packages/session-engine/
 RUN pnpm install --prod --frozen-lockfile --filter @emberchat/server...
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ COPY --from=proddeps /repo/packages ./packages
 COPY --from=build /repo/packages/protocol/dist ./packages/protocol/dist
 COPY --from=build /repo/packages/fchat-protocol/dist ./packages/fchat-protocol/dist
 COPY --from=build /repo/packages/markdown-bbcode/dist ./packages/markdown-bbcode/dist
+COPY --from=build /repo/packages/session-engine/dist ./packages/session-engine/dist
 COPY --from=build /repo/apps/server/package.json ./apps/server/package.json
 COPY --from=build /repo/apps/server/drizzle ./apps/server/drizzle
 COPY --from=build /repo/apps/server/dist ./apps/server/dist

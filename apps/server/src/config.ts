@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RECONNECT_FLOOR_MS } from "./modules/session-engine/fchat-session.js";
+import { RECONNECT_FLOOR_MS } from "@emberchat/session-engine";
 
 // The .env.example placeholder. Refusing it at startup means a copied-but-
 // unedited env file cannot silently ship a world-readable signing secret.

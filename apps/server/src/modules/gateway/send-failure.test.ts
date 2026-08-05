@@ -44,8 +44,7 @@ import {
   FRAME_WAIT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";

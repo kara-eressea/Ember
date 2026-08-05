@@ -18,11 +18,10 @@ import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import { createDb, type Db } from "../../db/index.js";
 import { flistAccounts, identities, userPreferences } from "../../db/schema.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 import { GatewayHub } from "../gateway/gateway.js";
 import type { GatewayConnection } from "../gateway/connection.js";
 import type { HistorySink } from "../history/sink.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
 import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,

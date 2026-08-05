@@ -33,9 +33,11 @@ import {
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
 import { buildSnapshot } from "../gateway/snapshot.js";
-import { SessionEventBus } from "../session-engine/event-bus.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
-import { SessionState } from "../session-engine/session-state.js";
+import {
+  type FchatSession,
+  SessionEventBus,
+  SessionState,
+} from "@emberchat/session-engine";
 import { SeenMembersStore, seenByChannel } from "./store.js";
 
 const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));

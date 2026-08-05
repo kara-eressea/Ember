@@ -5,10 +5,12 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "../../db/index.js";
-import type { FlistApiClient } from "../flist-api/api-client.js";
-import type { TicketManagerRegistry } from "../flist-api/ticket-manager.js";
+import type {
+  FlistApiClient,
+  SessionRegistry,
+  TicketManagerRegistry,
+} from "@emberchat/session-engine";
 import type { GatewayHub } from "../gateway/gateway.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 import { SocialCache } from "./cache.js";
 import { SocialService } from "./service.js";
 

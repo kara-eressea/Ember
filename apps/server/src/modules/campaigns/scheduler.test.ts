@@ -20,10 +20,7 @@ import {
   flistAccounts,
   identities,
 } from "../../db/schema.js";
-import {
-  AdCooldownError,
-  type FchatSession,
-} from "../session-engine/fchat-session.js";
+import { AdCooldownError, type FchatSession } from "@emberchat/session-engine";
 import { CampaignError, CampaignScheduler } from "./scheduler.js";
 import {
   CONTAINER_BOOT_MS,

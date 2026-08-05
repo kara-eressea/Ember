@@ -10,7 +10,7 @@ import {
   serializeServerCommand,
 } from "@emberchat/fchat-protocol";
 import { FchatSim } from "@emberchat/fchat-sim";
-import { FRAME_WAIT_MS, INTEGRATION_MS } from "../../test-support/budgets.js";
+import { FRAME_WAIT_MS, INTEGRATION_MS } from "./test-support/budgets.js";
 import type { SendFailure } from "./event-bus.js";
 import {
   FchatSession,

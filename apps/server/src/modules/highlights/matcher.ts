@@ -19,7 +19,7 @@ import {
   identities,
   userPreferences,
 } from "../../db/schema.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
+import type { SessionLogger } from "@emberchat/session-engine";
 
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

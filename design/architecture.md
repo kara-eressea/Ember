@@ -19,6 +19,7 @@ emberchat/
 │   ├── fchat-protocol/          # F-Chat wire types + codec
 │   ├── protocol/                # EmberChat client↔server types (WS + REST DTOs)
 │   ├── markdown-bbcode/         # MD→BBCode + BBCode AST/sanitizer
+│   ├── session-engine/          # the held F-Chat sessions, host-agnostic (MX1)
 │   └── fchat-sim/               # local F-Chat mock server for dev/test
 └── design/, prototype/          # docs (unchanged)
 ```
@@ -32,6 +33,19 @@ Zero-dependency (except zod), isomorphic.
 - `src/vars.ts` — typed `ServerVars` (chat_max, priv_max, lfrp_max, lfrp_flood, msg_flood, permissions, icon_blacklist) with defaults; runtime VAR values are always authoritative.
 - `src/error-codes.ts` — from `chat-error-codes.md`.
 - `src/flist-api.ts` — types for `getApiTicket.php` and the JSON endpoints (character-list, friend-list, bookmark-*, ignore-list, …).
+
+### packages/session-engine
+
+The bouncer's heart, extracted from `apps/server` at MX1 so the desktop shell
+can embed it: `fchat-session.ts` (the state machine), `session-state.ts`,
+`event-bus.ts`, `rate-gate.ts`, `registry.ts`, the `flist-api` pair
+(`api-client.ts`, `ticket-manager.ts`) and the credential vault — all described
+under "Server" below, which is where they ran until the extraction. Dependencies
+are fixed at `ws`, the node stdlib, `@emberchat/fchat-protocol` and zod: no
+Fastify, no pino (logging is the structural `SessionLogger`), no Drizzle, no
+config module. Every other I/O concern is injected or inverted through the event
+bus. `src/boundary.test.ts` walks the package's own imports and fails the build
+on anything else (design/standalone-client.md).
 
 ### packages/protocol
 
@@ -58,15 +72,12 @@ apps/server/src/
 │   ├── auth/                    # register/login/refresh, argon2id, refresh-token rotation; M7: email verify/reset
 │   ├── flist-accounts/          # account rows (name only, no secrets) + in-memory credential vault (decisions.md §3)
 │   ├── identities/              # identity CRUD, character-list fetch via flist-api
-│   ├── flist-api/
-│   │   ├── ticket-manager.ts    # per-account ticket manager (below)
-│   │   └── api-client.ts        # JSON endpoints; global ≤1 req/s limiter; character-data <200/h budget
+│   ├── flist-api/               # (the client + ticket manager live in the engine package since MX1)
+│   │   ├── with-ticket.ts       # ticketed call: retry once on refusal; upstream error → HTTP status
+│   │   └── character-data-budget.ts  # sliding 170/h window under F-List's 200/h character-data cap
 │   ├── session-engine/
-│   │   ├── registry.ts          # Map<identityId, FchatSession>; start/stop; survives browser detach (M2)
-│   │   ├── fchat-session.ts     # state machine per identity (below)
-│   │   ├── session-state.ts     # in-memory roster: channels, members, presence, vars, self status
-│   │   ├── event-bus.ts         # per-session emitter → gateway fan-out + history sink
-│   │   └── rate-gate.ts         # outbound throttle honoring msg_flood / lfrp_flood VARs + length caps
+│   │   └── connect-identity.ts  # app-level orchestration: autoConnect + wiring the history sink
+│   │                            #   (the engine itself is @emberchat/session-engine — MX1)
 │   ├── gateway/
 │   │   ├── gateway.ts           # browser WS endpoint /gateway
 │   │   ├── connection.ts        # per-browser-socket: auth, subscriptions, bounded send buffer

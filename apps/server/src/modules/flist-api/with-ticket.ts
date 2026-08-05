@@ -2,11 +2,12 @@
 // (social M6, profiles M8): ticket acquisition with one retry on refusal,
 // and the mapping from upstream failures to HTTP statuses.
 
-import { FlistApiBusyError, type SocialAuth } from "./api-client.js";
 import {
   AccountLockedError,
+  FlistApiBusyError,
+  type SocialAuth,
   type TicketManagerRegistry,
-} from "./ticket-manager.js";
+} from "@emberchat/session-engine";
 
 export interface TicketedIdentity {
   accountId: string;
