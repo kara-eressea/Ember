@@ -18,23 +18,43 @@
  * rebuilt (spec invariant 1) — a rebuilt tree cannot run the Node test suite,
  * and that is a one-way trip (design/mx2-pglite-spike.md §Q3).
  *
- * Not here yet: provisioning and auto-login (#301 — until then the window
- * lands on the app's login screen with an account that does not exist), the
- * mode chooser (#300), thin-client mode (#302), the tray (#304), packaging
- * (MX4). Local mode is hardcoded.
+ * #301 added the rest of what makes local mode usable: first-run provisioning
+ * (an app account created through the runtime's admin CLI), both secrets under
+ * `safeStorage`, and a main-process login whose session is seeded into the
+ * renderer's localStorage by the preload — so the window opens signed in.
+ *
+ * Not here yet: the mode chooser (#300), thin-client mode (#302), the tray
+ * (#304), packaging (MX4). Local mode is hardcoded.
  */
 
-import { randomBytes } from "node:crypto";
+import { hostname } from "node:os";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
+import { AdminCliError, provisionAppAccount } from "./admin-cli.js";
+import { appAccount, deviceLabel } from "./app-account.js";
+import {
+  authSeedMessage,
+  createSeedDispenser,
+  AUTH_SEED_CHANNEL,
+  type SeedDispenser,
+} from "./auth-seed.js";
+import { DesktopLoginError, loginAppAccount } from "./desktop-login.js";
 import {
   EmbeddedServerStartError,
   startEmbeddedServer,
   type EmbeddedServer,
 } from "./embedded-server.js";
 import { MissingArtifactError, resolveArtifacts } from "./paths.js";
+import { planBoot, secretsPath } from "./provisioning.js";
+import {
+  EncryptionUnavailableError,
+  readSecrets,
+  SecretsCorruptError,
+  writeSecrets,
+} from "./secrets.js";
+import { buildAdminCliEnv } from "./server-env.js";
 import { createMainWindow } from "./window.js";
 
 /** `apps/desktop` — this file lives in its `dist/`. */
@@ -43,6 +63,14 @@ const DESKTOP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 let server: EmbeddedServer | undefined;
 let mainWindow: BrowserWindow | undefined;
 let stopping = false;
+/** This boot's session, for the preload to pick up (see `preload.cts`). */
+let authSeed: SeedDispenser | undefined;
+
+// Answered synchronously, from a value computed before the window exists — the
+// preload blocks on this, so it must never do work here.
+ipcMain.on(AUTH_SEED_CHANNEL, (event) => {
+  event.returnValue = authSeed?.take() ?? null;
+});
 
 // FIRST, before anything reads or writes the user data directory: pglite
 // takes no lock of its own, so two instances on one data directory is
@@ -65,19 +93,62 @@ if (!app.requestSingleInstanceLock()) {
 async function boot(): Promise<void> {
   await app.whenReady();
   try {
-    const { entry, webDist } = resolveArtifacts(DESKTOP_ROOT);
-    const dataDir = join(app.getPath("userData"), "db");
+    const { entry, adminCli, webDist } = resolveArtifacts(DESKTOP_ROOT);
+    const userData = app.getPath("userData");
+    const dataDir = join(userData, "db");
     mkdirSync(dataDir, { recursive: true });
 
-    server = await startEmbeddedServer({
+    const serverOptions = {
       entry,
       dataDir,
       webDist,
-      // Throwaway: every boot invalidates the previous boot's sessions, which
-      // is harmless while there is no account to log into. #301 generates a
-      // real one and keeps it under safeStorage.
-      authSecret: randomBytes(32).toString("base64url"),
       clientVersion: app.getVersion(),
+    };
+    const account = appAccount(app.getName());
+    const plan = planBoot({
+      stored: readSecrets(secretsPath(userData), safeStorage),
+      encryptionAvailable: safeStorage.isEncryptionAvailable(),
+    });
+    if (plan.kind === "provision") {
+      // Three steps that must not overlap, because pglite is
+      // single-connection with no lock of its own (spec §3 step 2, MX2):
+      //
+      //  1. one short server boot, purely to create the schema. The admin CLI
+      //     does not migrate — "the server migrates on boot", as its own
+      //     header says — and on a first run the database is empty, so
+      //     `create-user` would fail on a table that does not exist yet.
+      //  2. the CLI, once the server has actually exited (`stop()` waits).
+      //  3. the real boot, below.
+      const migrator = await startEmbeddedServer({
+        ...serverOptions,
+        authSecret: plan.secrets.authSecret,
+      });
+      if (!(await migrator.stop())) {
+        throw new Error(
+          "The embedded server did not shut down after preparing the database, so the account could not be created safely. Try starting EmberChat again.",
+        );
+      }
+      await provisionAppAccount({
+        // Electron's own binary, run as Node — see admin-cli.ts.
+        execPath: process.execPath,
+        cliEntry: adminCli,
+        env: buildAdminCliEnv({
+          dataDir,
+          authSecret: plan.secrets.authSecret,
+        }),
+        account,
+        password: plan.secrets.appAccountPassword,
+      });
+      // Only once the account exists: a secrets file written before a failed
+      // creation would make the next boot think it had already provisioned.
+      writeSecrets(secretsPath(userData), plan.secrets, safeStorage);
+    }
+
+    server = await startEmbeddedServer({
+      ...serverOptions,
+      // Stable across boots (that is what makes a seeded session survive a
+      // restart), and it exists only inside the OS keychain.
+      authSecret: plan.secrets.authSecret,
     });
     server.onUnexpectedExit((code) => {
       if (stopping) {
@@ -89,12 +160,25 @@ async function boot(): Promise<void> {
       );
     });
 
+    // Sign in before the window exists, so the seed is waiting when the
+    // preload asks for it.
+    authSeed = createSeedDispenser(
+      authSeedMessage(
+        await loginAppAccount({
+          origin: server.origin,
+          email: account.email,
+          password: plan.secrets.appAccountPassword,
+          deviceLabel: deviceLabel(hostname()),
+        }),
+      ),
+    );
+
     mainWindow = createMainWindow(server.origin);
     mainWindow.on("closed", () => {
       mainWindow = undefined;
     });
   } catch (error) {
-    fail("EmberChat could not start", describeStartupError(error));
+    fail(app.getName() + " could not start", describeStartupError(error));
   }
 }
 
@@ -145,6 +229,33 @@ function describeStartupError(error: unknown): string {
     return error.childStderr === ""
       ? error.message
       : `${error.message}\n\n${error.childStderr}`;
+  }
+  if (error instanceof EncryptionUnavailableError) {
+    return error.message;
+  }
+  if (error instanceof SecretsCorruptError) {
+    // Deliberately offers nothing clever: deleting the file forfeits the
+    // stored password for the account already in the database, and that is a
+    // decision for the person whose computer this is, not for the app. (The
+    // next boot's provisioning does know how to adopt an existing account —
+    // see admin-cli.ts — but the choice to get there stays the user's.)
+    return [
+      `The app's stored secrets could not be read (${error.message}).`,
+      "",
+      `They live in:  ${secretsPath(app.getPath("userData"))}`,
+      "",
+      "This usually means the file was edited, restored from another machine,",
+      "or that the operating system's keychain entry for it is gone. Nothing",
+      "has been changed automatically.",
+    ].join("\n");
+  }
+  if (error instanceof AdminCliError) {
+    return error.stderr === ""
+      ? error.message
+      : `${error.message}\n\n${error.stderr}`;
+  }
+  if (error instanceof DesktopLoginError) {
+    return error.message;
   }
   return error instanceof Error
     ? (error.stack ?? error.message)

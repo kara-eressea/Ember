@@ -7,7 +7,7 @@ export interface EmbeddedServerEnvOptions {
   readonly dataDir: string;
   /** Absolute path to the built web app the server serves as the renderer. */
   readonly webDist: string;
-  /** JWT signing secret. Throwaway per boot until #301 persists one. */
+  /** JWT signing secret, stable across boots (#301, under safeStorage). */
   readonly authSecret: string;
   /** The shell's version, which becomes the F-Chat IDN `cversion`. */
   readonly clientVersion: string;
@@ -43,5 +43,27 @@ export function buildServerEnv(
     // unless they ask (there is no UI for it yet).
     RETENTION_POLICY: "forever",
     CLIENT_VERSION: options.clientVersion,
+  };
+}
+
+/**
+ * The environment for the one-shot admin CLI child that provisions the app
+ * account (#301). Same completeness rule as above, and the same database
+ * coordinates — the CLI reads `DB_DRIVER`/`PGLITE_DATA_DIR` straight from the
+ * environment rather than through `loadConfig`, so a stray `DATABASE_URL` in a
+ * developer's shell would otherwise send it to the wrong database entirely.
+ *
+ * `AUTH_SECRET` is along for the ride: the CLI has no use for it today, but it
+ * is part of "the same env the server gets", and the pair travels together.
+ */
+export function buildAdminCliEnv(options: {
+  readonly dataDir: string;
+  readonly authSecret: string;
+}): Record<string, string> {
+  return {
+    NODE_ENV: "production",
+    DB_DRIVER: "pglite",
+    PGLITE_DATA_DIR: options.dataDir,
+    AUTH_SECRET: options.authSecret,
   };
 }
