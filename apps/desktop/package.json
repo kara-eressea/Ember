@@ -5,18 +5,26 @@
   "type": "module",
   "productName": "EmberChat",
   "main": "dist/main.js",
+  "// packaging metadata": "electron-builder reads these into the bundle: the description becomes the macOS bundle's and the installer's, the author the copyright holder. Kept here rather than in electron-builder.yml because they are facts about the package, and because productName already lives here (MX4, #305).",
+  "description": "A desktop client for F-Chat with its own built-in bouncer.",
+  "author": "The EmberChat contributors",
+  "license": "MIT",
+  "repository": "https://github.com/kara-eressea/Ember",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "server-runtime": "node scripts/build-server-runtime.mjs",
     "dev": "pnpm run build && pnpm run server-runtime && electron .",
-    "tray-icons": "node scripts/generate-tray-icons.mjs"
+    "icons": "node scripts/generate-tray-icons.mjs",
+    "package": "electron-builder",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "zod": "^4.4.3"

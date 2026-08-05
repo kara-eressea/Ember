@@ -438,7 +438,11 @@ that — and that the mode switch's `tray.destroy()` leaves no ghost icon.
 
 ## 7. What MX3 explicitly does not do
 
-- No packaging/installers/signing (MX4).
+- No packaging/installers/signing (MX4 — now built; see
+  [mx4-packaging.md](mx4-packaging.md), which also records the two things it
+  changed here: the server runtime is deployed **hoisted** so the tree carries
+  no links a packager has to reproduce, and `paths.ts` grew a packaged branch
+  beside every dev one).
 - No auto-updater: the web app's existing update surface (M7's release
   check via `/api/meta`) already renders inside the embedded shell and
   serves as the download hint — nothing new needed in v1.

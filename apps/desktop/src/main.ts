@@ -42,7 +42,13 @@
  * path that stops the server child (invariant 6). Thin-client mode is unchanged
  * and deliberately trayless: there is no local bouncer to keep alive there.
  *
- * Not here yet: packaging (MX4).
+ * #305 packaged it (MX4). Nothing about how the app *runs* changed: what
+ * changed is where its pieces are, and that is one pure function away in
+ * paths.ts — `app.isPackaged` picks between the checkout layout and the flat
+ * `resources/` layer electron-builder produces. The version this file hands the
+ * server child as `CLIENT_VERSION` now comes from the release tag in a packaged
+ * build (`extraMetadata.version`) and stays `0.0.0` in a checkout, per house
+ * policy on package.json versions.
  */
 
 import { hostname } from "node:os";
@@ -103,11 +109,9 @@ import { createErrorWindow, showErrorPage } from "./error-window.js";
 import { senderAllowed, type IpcCaller } from "./ipc-sender.js";
 import { installAppMenu } from "./menu.js";
 import {
-  chooserPage,
-  errorPage,
+  assertArtifactsPresent,
   MissingArtifactError,
-  resolveArtifacts,
-  trayIconPath,
+  resolveArtifactPaths,
 } from "./paths.js";
 import { planBoot, secretsPath } from "./provisioning.js";
 import {
@@ -135,8 +139,22 @@ import {
 } from "./tray-model.js";
 import { createMainWindow } from "./window.js";
 
-/** `apps/desktop` — this file lives in its `dist/`. */
+/**
+ * `apps/desktop` in a checkout — this file lives in its `dist/`. In a packaged
+ * app the same expression names the root of `app.asar`, which is where the
+ * main-process JS lives and nothing else does: the static directories, the web
+ * dist and the server runtime are all copied out to `resources/` instead (see
+ * paths.ts and electron-builder.yml).
+ */
 const DESKTOP_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+/** Where this launch's artifacts are — checkout layout or packaged layout. */
+const ARTIFACTS = resolveArtifactPaths({
+  packaged: app.isPackaged,
+  desktopRoot: DESKTOP_ROOT,
+  resourcesPath: process.resourcesPath,
+  platform: process.platform,
+});
 
 let server: EmbeddedServer | undefined;
 let mainWindow: BrowserWindow | undefined;
@@ -306,13 +324,13 @@ function senderIs(
 function chooserCaller(): IpcCaller | undefined {
   return chooserWindow === undefined
     ? undefined
-    : { kind: "page", page: chooserPage(DESKTOP_ROOT) };
+    : { kind: "page", page: ARTIFACTS.chooserPage };
 }
 
 function errorCaller(): IpcCaller | undefined {
   return errorWindow === undefined
     ? undefined
-    : { kind: "page", page: errorPage(DESKTOP_ROOT) };
+    : { kind: "page", page: ARTIFACTS.errorPage };
 }
 
 function appOriginCaller(): IpcCaller | undefined {
@@ -401,7 +419,16 @@ async function startup(plan: StartupPlan): Promise<void> {
   // took. The mode is not a secret; the server's address is not printed with
   // it, since that is the one part of this config somebody might not want in
   // a pasted log.
-  console.log(`${app.getName()} startup: ${plan.kind}`);
+  //
+  // The version rides along because it is the same string the embedded server
+  // is handed as `CLIENT_VERSION` and therefore the same one F-Chat sees as
+  // `cversion`. In a checkout it is package.json's permanent `0.0.0`; in a
+  // release build it is the tag, injected at package time
+  // (`extraMetadata.version`, see electron-builder.yml) — which makes this line
+  // the packaged smoke test's proof that the injection worked.
+  console.log(
+    `${app.getName()} ${app.getVersion()} startup: ${plan.kind} (${app.isPackaged ? "packaged" : "checkout"})`,
+  );
   // Created here rather than where a session appears, so that "this boot has no
   // seed to give away" is a property of the plan and not of a code path that
   // happens not to have run (see `createSeedHolder`).
@@ -484,7 +511,7 @@ function openErrorWindow(serverUrl: string, failure: RemoteFailure): void {
     `${app.getName()} remote session unavailable: ${failure.code ?? "-"} (${failure.headline})`,
   );
   const options = {
-    page: errorPage(DESKTOP_ROOT),
+    page: ARTIFACTS.errorPage,
     productName: app.getName(),
     serverUrl,
     failure,
@@ -510,7 +537,7 @@ function closeErrorWindow(): void {
 
 /** Everything §2 and §3 describe: provision if needed, boot, log in, show. */
 async function startLocalMode(): Promise<void> {
-  const { entry, adminCli, webDist } = resolveArtifacts(DESKTOP_ROOT);
+  assertArtifactsPresent(ARTIFACTS);
   const userData = app.getPath("userData");
   const dataDir = join(userData, "db");
   mkdirSync(dataDir, { recursive: true });
@@ -523,9 +550,9 @@ async function startLocalMode(): Promise<void> {
   installTray();
 
   const serverOptions = {
-    entry,
+    entry: ARTIFACTS.serverEntry,
     dataDir,
-    webDist,
+    webDist: ARTIFACTS.webDist,
     clientVersion: app.getVersion(),
   };
   const account = appAccount(app.getName());
@@ -555,7 +582,7 @@ async function startLocalMode(): Promise<void> {
     await provisionAppAccount({
       // Electron's own binary, run as Node — see admin-cli.ts.
       execPath: process.execPath,
-      cliEntry: adminCli,
+      cliEntry: ARTIFACTS.adminCli,
       env: buildAdminCliEnv({
         dataDir,
         authSecret: plan.secrets.authSecret,
@@ -655,7 +682,7 @@ function installTray(): void {
     return;
   }
   tray = createAppTray({
-    iconPath: trayIconPath(DESKTOP_ROOT, process.platform),
+    iconPath: ARTIFACTS.trayIcon,
     productName: app.getName(),
     onOpen: showApp,
     onQuit: quitFromTray,
@@ -774,7 +801,7 @@ function openChooser(reason: "first-run" | "switch"): void {
   }
   const current = readConfig(configPath(app.getPath("userData")));
   chooserWindow = createChooserWindow({
-    page: chooserPage(DESKTOP_ROOT),
+    page: ARTIFACTS.chooserPage,
     productName: app.getName(),
     serverUrl: current?.mode === "thin-client" ? current.serverUrl : undefined,
   });

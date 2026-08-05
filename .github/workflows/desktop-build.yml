@@ -1,0 +1,156 @@
+# Packages the desktop app (MX4, #305) — an unsigned macOS DMG and an unsigned
+# Windows NSIS installer — and attaches them to the release the `v*` tag made.
+#
+# Why this is its own workflow rather than two more jobs in release.yml: that
+# file publishes the server image and does it on ubuntu with Docker, from a
+# single job whose whole content is buildx. These legs are macOS and Windows,
+# take ten times as long, and compile native modules. Keeping them apart means
+# a broken runner image on one platform cannot delay or muddy the image push
+# that self-hosters actually pull, the two can be re-run independently, and this
+# one can carry a `workflow_dispatch` for proving the pipeline from a branch —
+# which release.yml must never have, since a manual run of *that* would publish
+# an image. Both react to the same `v*.*.*` tag, so the release train stays one
+# train: `gh release create vX.Y.Z` starts both, and both upload to that release.
+name: Desktop build
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  # Proving the pipeline from a branch. In this mode nothing is published: the
+  # installers land as workflow artifacts and the version is a dev one.
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: package-${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      # Tag runs upload to the GitHub release; dispatch runs never touch it.
+      contents: write
+    strategy:
+      # One platform's failure should not cancel the other's evidence.
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon. The runner's own architecture is load-bearing: the
+          # server runtime's argon2 and re2 are compiled here, so this leg can
+          # only produce the arch it runs on. An x64/universal DMG means adding
+          # an x64 macOS runner to this list, not a flag.
+          - os: macos
+            runner: macos-latest
+            builder-args: --mac dmg
+            extension: dmg
+          - os: windows
+            runner: windows-latest
+            builder-args: --win nsis
+            extension: exe
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # The version the packaged app reports — `app.getVersion()`, and through
+      # it the embedded server's CLIENT_VERSION and F-Chat's `cversion`. The tag
+      # without its leading v, exactly as release.yml derives the image's; a
+      # dispatch run gets a dev version that is obviously not a release. It is
+      # injected at package time because package.json versions stay 0.0.0
+      # across the workspace (house policy) — nothing in the tree is rewritten.
+      - id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0-dev.${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # The whole build graph, unfiltered — the packaging step needs the web
+      # dist, the server dist and the shell's own `dist`, which between them is
+      # nearly all of it. Nothing in apps/web or apps/server is modified here;
+      # this is the same `pnpm build` ci.yml runs.
+      - run: pnpm build
+
+      # The embedded server as a deployed, Electron-ABI tree — built HERE, on
+      # this runner, because argon2 and re2 are native and an artifact built on
+      # one OS is not a binary that runs on the other. (pglite is WASM and would
+      # have travelled; the other two are the reason this is a matrix.)
+      - run: pnpm --filter @emberchat/desktop server-runtime
+
+      # Invariant 1, asserted from outside the script that maintains it: the
+      # Electron rebuild above must not have reached the workspace's own native
+      # modules, and the proof is that they still load under plain Node. The
+      # build script fingerprints them internally; this is the cheap second
+      # witness, and it is the one that would catch a Windows link kind the
+      # seal walk does not recognise as a way out of the tree.
+      - name: Workspace natives still load under Node (invariant 1)
+        shell: bash
+        run: >-
+          pnpm --filter @emberchat/server exec node --input-type=commonjs
+          -e "require('argon2'); require('re2'); console.log('workspace argon2 + re2 are still Node-ABI')"
+
+      # The shell's unit tests on this OS — paths.ts resolves both layouts with
+      # `path.join`, and Windows is the only place a separator assumption could
+      # hide.
+      - run: pnpm --filter @emberchat/desktop test
+
+      - name: Package
+        shell: bash
+        run: >-
+          pnpm --filter @emberchat/desktop exec electron-builder
+          ${{ matrix.builder-args }}
+          --publish never
+          -c.extraMetadata.version=${{ steps.version.outputs.value }}
+        env:
+          # Unsigned by decision (electron-builder.yml `mac.identity: null`).
+          # This stops the runner's keychain from being searched at all, so a
+          # future signed leg is an explicit change rather than a surprise.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # The one test only a packaged build can fail: the real installer, taken
+      # apart the way a user takes it apart, launched against an isolated
+      # user-data directory with the sanctioned lifecycle probe (MX3 §6). It
+      # boots the bouncer out of `resources/server-runtime`, provisions an
+      # account, serves `resources/web`, closes to the tray and quits — and the
+      # asserted version is the proof that the injection above arrived.
+      - name: Packaged smoke test
+        run: >-
+          pnpm --filter @emberchat/desktop exec node scripts/smoke-packaged.mjs
+          --version ${{ steps.version.outputs.value }}
+
+      - name: Upload installer as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}-${{ steps.version.outputs.value }}
+          path: apps/desktop/release/*.${{ matrix.extension }}
+          retention-days: 14
+          if-no-files-found: error
+
+      # Release mode only. `--clobber` so a re-run after a fixed runner replaces
+      # its own artifact instead of failing; the release itself is created by
+      # hand (`gh release create vX.Y.Z`, house process) and is never made here.
+      - name: Attach to the release
+        if: ${{ github.ref_type == 'tag' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The tag push and the release creation are the same `gh` command, so
+          # the release is normally already there; a short wait covers the
+          # ordering rather than assuming it.
+          for i in $(seq 1 10); do
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              gh release upload "$GITHUB_REF_NAME" \
+                apps/desktop/release/*.${{ matrix.extension }} --clobber
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::no GitHub release for $GITHUB_REF_NAME to attach the installer to"
+          exit 1

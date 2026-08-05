@@ -38,8 +38,10 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmdirSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -150,6 +152,19 @@ function deployServer() {
       "deploy",
       "--legacy",
       "--config.package-import-method=copy",
+      // --config.node-linker=hoisted: a flat `node_modules` of real
+      // directories, with no symlinks anywhere in it (MX4, #305).
+      //
+      // pnpm's default store layout links every package from `.pnpm`, and
+      // those links do not survive being packaged. electron-builder recreates
+      // them with `fs.symlink`, which on Windows needs a privilege an ordinary
+      // user does not have; pnpm writes junctions rather than symlinks there in
+      // the first place, so the two ends do not even agree on what kind of link
+      // it is; and an NSIS installer has no way to represent either. Hoisting
+      // makes the whole question disappear on both targets, and it is what
+      // MX3's "sealed and relocatable" property was really reaching for: a tree
+      // that can be copied anywhere, by anything, and still resolve.
+      "--config.node-linker=hoisted",
       runtimeDir,
     ],
     repoRoot,
@@ -234,7 +249,7 @@ function sealRuntimeTree() {
       `server-runtime: severing link out of the tree — ${relative(runtimeDir, link)}`,
     );
     assertInsideDesktop(link);
-    rmSync(link, { recursive: true, force: true });
+    severLink(link);
   }
   const remaining = escapingSymlinks(runtimeDir);
   if (remaining.length > 0) {
@@ -247,7 +262,39 @@ function sealRuntimeTree() {
   }
 }
 
-/** Every symlink under `root` whose target resolves outside `root`. */
+/**
+ * Remove one link without following it — the *link*, never what it points at.
+ *
+ * `unlink` is the whole answer on macOS and Linux, where a symlink to a
+ * directory is still just a link. On Windows a directory link (pnpm makes
+ * junctions there, and `mklink /D` symlinks elsewhere) is a directory-shaped
+ * reparse point: `unlink` refuses it with EPERM/EISDIR and `rmdir` is what
+ * removes it — without touching the tree on the far side, which is the property
+ * that matters here. `rmSync({ recursive: true })` would be the obvious
+ * one-liner and is exactly what must not be used: on a link it is one Node
+ * version away from deleting the workspace's own `node_modules`.
+ */
+function severLink(path) {
+  try {
+    unlinkSync(path);
+  } catch (error) {
+    if (error.code !== "EPERM" && error.code !== "EISDIR") {
+      throw error;
+    }
+    rmdirSync(path);
+  }
+}
+
+/**
+ * Every link under `root` whose target resolves outside `root`.
+ *
+ * "Link" rather than "symlink" on purpose: on Windows pnpm materialises
+ * `node_modules` entries as **junctions**, not symbolic links. Both are reparse
+ * points, libuv reports both as `UV_DIRENT_LINK`, and so `isSymbolicLink()` is
+ * true for a junction too — which is what makes this walk mean the same thing
+ * on both packaging targets. `isDirectory()` is correspondingly false for them,
+ * so the recursion below never goes *through* a link either.
+ */
 function escapingSymlinks(root) {
   const escaping = [];
   const walk = (dir) => {
@@ -399,7 +446,16 @@ function assertInsideDesktop(path) {
 
 function removeInsideDesktop(path) {
   assertInsideDesktop(path);
-  rmSync(path, { recursive: true, force: true });
+  // The retries are for Windows: a `node_modules` tree this size is routinely
+  // still held by an indexer or a virus scanner a few milliseconds after the
+  // process that wrote it exited, and the failure is a transient EBUSY/EPERM
+  // rather than a real one. A no-op everywhere else.
+  rmSync(path, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
 }
 
 function writeInsideDesktop(path, contents) {
@@ -422,8 +478,25 @@ function pnpmBin() {
   return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 }
 
+/**
+ * Run a command, with the one thing Windows insists on.
+ *
+ * corepack's `pnpm` on Windows is `pnpm.cmd`, a batch file — and since the
+ * BatBadBut fix (Node 18.20.2/20.12.2/21.7.3, CVE-2024-27980) `spawn` refuses a
+ * `.cmd`/`.bat` target outright with EINVAL unless `shell: true` is set. That
+ * flag then hands the whole line to `cmd.exe`, which does its own word
+ * splitting, so the arguments have to be quoted here: `runtimeDir` is an
+ * absolute path and a checkout under "My Documents" would otherwise arrive as
+ * two arguments. Nothing changes on macOS or Linux, where `pnpm` is an ordinary
+ * executable and the argv array is passed through untouched.
+ */
 function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
+  const windowsShell = process.platform === "win32" && command.endsWith(".cmd");
+  const result = spawnSync(
+    command,
+    windowsShell ? args.map(quoteForCmd) : args,
+    { cwd, stdio: "inherit", shell: windowsShell },
+  );
   if (result.error) {
     fail(`${command} could not be run: ${result.error.message}`);
   }
@@ -432,6 +505,11 @@ function run(command, args, cwd) {
       `${command} ${args.join(" ")} failed with exit code ${String(result.status)}`,
     );
   }
+}
+
+/** Quote anything cmd.exe would split or interpret; leave plain words alone. */
+function quoteForCmd(arg) {
+  return /^[A-Za-z0-9_\-.:\\/=@]+$/.test(arg) ? arg : `"${arg}"`;
 }
 
 function fail(message) {

@@ -16,6 +16,9 @@ export default tseslint.config(
       // The desktop shell's build artifact (MX3): a deployed copy of the
       // server plus its whole prod dependency tree. Not our source.
       "apps/desktop/server-runtime/**",
+      // electron-builder's output (MX4): an Electron runtime, an unpacked app
+      // and the installers built from them. Derived, and none of it ours.
+      "apps/desktop/release/**",
     ],
   },
   {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { trayIconPath } from "./paths.js";
 import {
   decideLastWindowClosed,
   decideWindowClose,
@@ -136,13 +135,5 @@ describe("the one-time notice", () => {
     expect(notice.body.toLowerCase()).toContain("online");
     // The half that makes it an honest deal rather than an advertisement.
     expect(notice.body.toLowerCase()).toContain("quit");
-  });
-});
-
-describe("the tray icon", () => {
-  it("is a template image on macOS and the app's own artwork elsewhere", () => {
-    expect(trayIconPath("/app", "darwin")).toBe("/app/assets/trayTemplate.png");
-    expect(trayIconPath("/app", "win32")).toBe("/app/assets/tray.png");
-    expect(trayIconPath("/app", "linux")).toBe("/app/assets/tray.png");
   });
 });
