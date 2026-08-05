@@ -23,6 +23,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/milestone-*.md` | One file per milestone (1–10), dependency-ordered |
 | `design/standalone-client.md` | Desktop-client design (M7 step 8, in build as MX): embedded bouncer, session-library boundary (extracted at MX1), pglite, Electron |
 | `design/mx2-pglite-spike.md` | **MX2 spike findings** (#297) — pglite confirmed (PG 18.3, uuidv7 native, buildApp boots); the `Db` widening, fsync/no-lock caveats, `dumpDataDir()` backups, the #298 work map. Harnesses in `design/spikes/mx2-pglite/` |
+| `design/mx3-desktop-shell.md` | **MX3 implementation spec** — thin Electron main (renderer = the web app on loopback), the server-runtime artifact pipeline (the one-way-ABI answer), provisioning/safeStorage/auth seeding, chooser, thin-client, tray; issue cut #299→#304 |
 | `design/mobile-client.md` | **MP track — closed** (MP1–MP4 shipped): the plan, and the rationale record for why not an app store. Points at the three as-built specs below |
 | `design/mp1-responsive-shell.md` | **MP1 implementation spec** — the three zoom-corrected layout tiers, `data-layout`, package A–G cut and invariants |
 | `design/mp2-touch.md` | **MP2 implementation spec + as-built** — long-press action sheets, the keyboard inset, 44px targets, the momentum finding |
