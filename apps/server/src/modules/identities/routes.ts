@@ -12,12 +12,12 @@ import { flistAccounts, identities } from "../../db/schema.js";
 import {
   AccountLockedError,
   FlistAuthError,
+  type SessionRegistry,
   type TicketManagerRegistry,
-} from "../flist-api/ticket-manager.js";
+} from "@emberchat/session-engine";
 import type { GatewayHub } from "../gateway/gateway.js";
 import type { HistorySink } from "../history/sink.js";
 import { connectIdentity } from "../session-engine/connect-identity.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 
 const identityResponse = z.object({
   id: z.string(),

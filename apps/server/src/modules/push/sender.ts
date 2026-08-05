@@ -27,7 +27,7 @@ import {
 } from "../../db/schema.js";
 import type { UserPrefsCache } from "../gateway/user-prefs.js";
 import { excerptOf, type NotificationStore } from "../notifications/store.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
+import type { SessionLogger } from "@emberchat/session-engine";
 
 type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
 

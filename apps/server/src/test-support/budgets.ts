@@ -20,23 +20,26 @@
  * `it(name, fn, 30_000)` per-test form. Prettier only recognizes it as a test
  * call while the timeout is a numeric literal — swap in an identifier and it
  * re-indents the whole test body. Those sites keep their literals.
+ *
+ * The three tiers the engine's own suites use are owned by
+ * `@emberchat/session-engine` and re-exported here: those sim-backed suites
+ * live in that package now, and both sides of the boundary must agree on the
+ * numbers or the drift above comes straight back.
  */
 
-/** `beforeAll` that boots a testcontainers Postgres — image pull included. */
+export {
+  FRAME_WAIT_MS,
+  INTEGRATION_MS,
+  INTEGRATION_SLOW_MS,
+} from "@emberchat/session-engine/test-support";
+
+/**
+ * `beforeAll` that boots the test database via `makeTestDb()` — sized for the
+ * testcontainers path, image pull included. Under `TEST_DB_DRIVER=pglite`
+ * there is no container and the budget is simply generous; one budget for
+ * both drivers beats a per-driver number no one would keep honest.
+ */
 export const CONTAINER_BOOT_MS = 180_000;
-
-/**
- * Per-test budget for a container- or sim-backed file: several DB round trips
- * and some loopback WebSocket traffic per test.
- */
-export const INTEGRATION_MS = 15_000;
-
-/**
- * Files (or single tests) that chain noticeably more work — multi-step API +
- * sim sequences, cache warm-ups, paged fetches, a reconnect inside the test.
- * Deliberately above `INTEGRATION_MS`; not a default to reach for.
- */
-export const INTEGRATION_SLOW_MS = 20_000;
 
 /**
  * Work that competes with the rest of the suite for a loaded runner: argon2
@@ -44,10 +47,3 @@ export const INTEGRATION_SLOW_MS = 20_000;
  * these fail on CI at any smaller budget and are fast locally either way.
  */
 export const LOADED_RUNNER_MS = 30_000;
-
-/**
- * One wire frame, or one status transition, over loopback. Matches
- * `INTEGRATION_MS` by design: a helper deadline shorter than the enclosing
- * test budget is the defect this module exists to prevent.
- */
-export const FRAME_WAIT_MS = 15_000;

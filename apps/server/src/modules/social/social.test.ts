@@ -3,26 +3,20 @@
 // throttle-shared FlistApiClient to the sim's JSON endpoints, with presence
 // enrichment from the live session roster.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { identities } from "../../db/schema.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { FlistApiClient } from "@emberchat/session-engine";
 import {
   CONTAINER_BOOT_MS,
   INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "fern@example.test";
 const CHARACTER = "Fern Glade";
 
@@ -30,9 +24,8 @@ const CHARACTER = "Fern Glade";
 // throttled FlistApiClient on top of the container round trips.
 vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 let token: string;
@@ -42,12 +35,11 @@ let apiClient: FlistApiClient;
 beforeAll(async () => {
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       REGISTRATION_ENABLED: "true",
@@ -90,8 +82,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

@@ -2,13 +2,7 @@
 // and a listening HTTP server — app.inject cannot carry a WebSocket upgrade,
 // so the suite talks to /gateway over real sockets like a browser would.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { and, eq } from "drizzle-orm";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
 import {
@@ -39,7 +33,8 @@ import {
 } from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import {
   authSessions,
   conversations,
@@ -54,11 +49,9 @@ import {
   INTEGRATION_MS,
   INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 /** Injected handshake window (production: HELLO_TIMEOUT_MS). */
@@ -69,9 +62,8 @@ const MAX_BUFFERED_TEST_BYTES = 16 * 1024;
 // Sim-backed round trips (connect → IDN → join → relay) outgrow the 5s default.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 let gatewayUrl: string;
@@ -85,12 +77,11 @@ beforeAll(async () => {
   // exercise a real gate without sitting out five seconds.
   sim = new FchatSim({ serverVars: { lfrp_flood: 0 }, staFloodSeconds: 1 });
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       REGISTRATION_ENABLED: "true",
@@ -127,8 +118,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close(); // onClose stops all sessions
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

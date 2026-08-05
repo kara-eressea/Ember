@@ -49,9 +49,9 @@ import { connectIdentity } from "../session-engine/connect-identity.js";
 import type {
   FchatSession,
   SessionLogger,
-} from "../session-engine/fchat-session.js";
+  SessionRegistry,
+} from "@emberchat/session-engine";
 import type { Outbox } from "../outbox/outbox.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 import { enrichSocial, type SocialCache } from "../social/cache.js";
 import type { GatewayHub } from "./gateway.js";
 import {

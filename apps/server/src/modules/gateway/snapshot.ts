@@ -14,8 +14,7 @@ import type { Db } from "../../db/index.js";
 import { conversations, messages } from "../../db/schema.js";
 import type { MessageRow } from "../history/sink.js";
 import { seenByChannel } from "../seen-members/store.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
-import type { SessionState } from "../session-engine/session-state.js";
+import type { FchatSession, SessionState } from "@emberchat/session-engine";
 
 /** Unread counts are capped server-side; the client renders 99 as "99+". */
 export const UNREAD_CAP = 99;
@@ -43,7 +42,10 @@ async function conversationCounts(
   db: Db,
   identityId: string,
 ): Promise<Map<string, { unread: number; mentions: number }>> {
-  const result = await db.execute(sql`
+  // The row type is declared here rather than inferred: `Db` is driver-
+  // agnostic (db/index.ts), so its query-result HKT is generic and
+  // `db.execute()` hands back `unknown`. Both drivers return `{ rows }`.
+  const result = (await db.execute(sql`
     select c.id as conv_id,
            u.unread::int as unread,
            u.mentions::int as mentions
@@ -69,12 +71,10 @@ async function conversationCounts(
       ) t
     ) u
     where c.identity_id = ${identityId}
-  `);
-  const rows = result.rows as {
-    conv_id: string;
-    unread: number;
-    mentions: number;
-  }[];
+  `)) as {
+    rows: { conv_id: string; unread: number; mentions: number }[];
+  };
+  const rows = result.rows;
   return new Map(
     rows.map((row) => [
       row.conv_id,

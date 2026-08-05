@@ -15,13 +15,11 @@ import type { Db } from "../../db/index.js";
 import { isUniqueViolation } from "../../db/errors.js";
 import { conversations, ignores, messages } from "../../db/schema.js";
 import {
-  TypedEventBus,
+  type FchatSession,
   type OutboundMessage,
-} from "../session-engine/event-bus.js";
-import type {
-  FchatSession,
-  SessionLogger,
-} from "../session-engine/fchat-session.js";
+  type SessionLogger,
+  TypedEventBus,
+} from "@emberchat/session-engine";
 import type { HighlightMatcher } from "../highlights/matcher.js";
 import type { NotificationStore } from "../notifications/store.js";
 import type { PushSender } from "../push/sender.js";

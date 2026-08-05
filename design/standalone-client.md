@@ -41,10 +41,14 @@ loopback — out of scope for the first release).
 
 ## The shared session library
 
-The M7 kickoff coupling analysis found the engine already almost a library.
-Extraction plan:
+**Done at MX1 (#295, #296)** — the table below is the as-built move, not a
+plan; every file landed where it says, with no logic change and no test
+assertion touched.
 
-**New package `packages/session-engine`** (`@emberchat/session-engine`):
+The M7 kickoff coupling analysis found the engine already almost a library.
+
+**Package `packages/session-engine`** (`@emberchat/session-engine`), flat
+`src/` with an `index.ts` barrel:
 
 | Moves in | From |
 |---|---|
@@ -53,18 +57,26 @@ Extraction plan:
 | `vault.ts` (CredentialVault) | `apps/server/src/modules/flist-accounts/` (misfiled there — it has zero dependency on that module) |
 
 Dependencies after the move: `ws`, node stdlib, `@emberchat/fchat-protocol`,
-zod. No Fastify, no pino (logging is already a structural `SessionLogger`),
-no Drizzle, no config module — all I/O is injected or event-bus-inverted.
+zod (plus vitest and `@emberchat/fchat-sim` for the suites that came along).
+No Fastify, no pino (logging is already a structural `SessionLogger`), no
+Drizzle, no config module — all I/O is injected or event-bus-inverted. The
+prediction held: nothing needed a new injection seam to make the move.
 
 **Stays behind in `apps/server`:** `connect-identity.ts` — the only file in
 the boundary that touches Postgres (identities.autoConnect) and the history
 sink. It is app-level orchestration (decisions.md §9 scenario logic) and
 already consumes the engine purely through `SessionRegistry` +
-`session.events.on`.
+`session.events.on`. `flist-api/` keeps `with-ticket.ts` (route-level HTTP
+status mapping) and `character-data-budget.ts`; `flist-accounts/` keeps the
+account rows, routes and boot-resume.
 
-**Standing rule until the extraction happens (M8+):** any change that adds
-a Drizzle, Fastify, gateway, or history import inside the boundary above is
-flagged in review — the boundary is now documented, not just lucky.
+**The rule is now enforced, not reviewed for (#296):**
+`packages/session-engine/src/boundary.test.ts` walks every file in the
+package and fails, naming the offender, on any import outside the fixed
+dependency set (an allow-list, so a new dependency must be argued for in the
+guard as well as in `package.json`) or on any relative path climbing out of
+`src/` — which is also how a reverse import back into `apps/server` would
+arrive. It runs with the package's suite in normal CI.
 
 ## Storage: pglite (decided by this pass)
 
@@ -87,6 +99,38 @@ serializes per identity, and it's one user. Items to verify at build time
 (M8+ spike): `uuidv7()` availability in pglite's Postgres version, RE2
 (native dep) under Electron, backup story (pglite file copy replaces
 pg_dump; the drill in docs/self-hosting.md gets a desktop sibling).
+
+**Spike done (#297) — the choice holds; see `design/mx2-pglite-spike.md`.**
+All three deferred items came back green, with executed evidence: pglite
+0.5.4 bundles PostgreSQL **18.3**, so `uuidv7()` is native and the schema
+needs no shim at all; all 22 drizzle migrations apply unchanged in ~70 ms and
+the real `buildApp` boots on pglite (`gateway.test.ts` passes 56/56 against
+it); `re2` and `argon2` both load and run under Electron 43 after a mandatory
+`@electron/rebuild` step (~73 s, one-way — a tree rebuilt for Electron can no
+longer run the Node test suite). Four things the spike changes here. (1) The
+`Db` alias must widen to `PgDatabase<PgQueryResultHKT, …>` — `PgliteDatabase`
+is *not* assignable to `NodePgDatabase` — which, plus one `db.execute()` read
+in `gateway/snapshot.ts`, is the entire type cost. (2) The backup primitive is
+`dumpDataDir()` (551 ms, 39 MB → 4.85 MB tarball, restores via `loadDataDir`),
+taken while running; a plain file copy is documented as **quit first**, since
+`cp -R` of a live cluster has no validity guarantee even though it happened to
+work every time it was tried. (3) `fsync` is **off** and cannot be enabled
+(pglite pins it on the command line) — process crashes are safe, power loss can
+lose the last seconds; that belongs in the desktop docs. (4) pglite takes **no
+lock on its data directory** — a second instance opens it happily — so the
+single-instance lock in phase 3 below is correctness, not polish.
+
+**Seam built (#298) — as-built.** `createDb` now takes a driver tag
+(`{ kind: "node-postgres", connectionString }` or `{ kind: "pglite", dataDir }`)
+and returns a handle owning `db`, `raw` (the upgrade gate's query shape),
+`migrate()` and `close()`, so no caller knows which driver it is on; `DB_DRIVER`
+defaults to `node-postgres`, leaving every existing deployment untouched. The
+desktop bundle — not the server image — owns the `@electric-sql/pglite`
+dependency: it is a devDependency here, loaded through a dynamic `import()` in
+the pglite arm and stripped from the production image (drizzle-orm declares it
+an optional peer, so the Dockerfile removes it explicitly), and asking a server
+image for `DB_DRIVER=pglite` fails with an error that says exactly that. MX3
+therefore consumes a seam that already exists rather than building one.
 
 ## In-process gateway: loopback, not IPC (decided by this pass)
 
@@ -129,9 +173,9 @@ runnable without Node-native deps.
 
 ## Phasing (post-v1.0)
 
-1. **Extract `packages/session-engine`** — mechanical per the table above;
-   server behavior unchanged; CI proves it (this can land any time after
-   v1.0, independent of the desktop work).
+1. ~~**Extract `packages/session-engine`**~~ — **done (MX1, #295/#296)**:
+   mechanical per the table above, server behavior unchanged, the full suite
+   green with no assertion edited.
 2. **Db driver seam + pglite spike** — `createDb(driver)`, boot the full
    server on pglite, run the integration suite against it.
 3. **Electron shell** — child-process server on loopback, first-run

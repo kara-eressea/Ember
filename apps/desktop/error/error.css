@@ -1,0 +1,187 @@
+/*
+  The remote-session error page's styling (design/mx3-desktop-shell.md §5).
+
+  ── WHERE THESE VALUES COME FROM ────────────────────────────────────────────
+  The same tokens, from the same place and for the same reason as
+  ../chooser/chooser.css: copied BY VALUE from apps/web/src/theme/tokens.ts
+  (the Slate base, the default Dusk Purple accent) and theme.ts (the derived
+  ones). This page cannot import the web app's stylesheet — there is no server
+  to serve it, which is the entire situation this page exists to describe — and
+  reaching into apps/web at build time would give this package a build-time
+  dependency on the renderer it is deliberately independent of (spec
+  invariant 2).
+
+  Copied a second time rather than shared with the chooser's file: a `file://`
+  document's CSP `'self'` is only reliably its own directory, and one page
+  reaching across to the other's stylesheet is not a dependency worth adding to
+  the only two surfaces that must render when nothing else works. If a third
+  page ever appears, that is the moment to reconsider — not before.
+
+  Like the chooser, this is the default dark theme always: it can run before
+  there is a user, an account or a stored preference to read one from.
+*/
+
+:root {
+  --bg: #1b1917; /* NEUTRALS.bg */
+  --side: #232120; /* NEUTRALS.side */
+  --text: #ece7e0; /* NEUTRALS.text */
+  --dim: #a89e92; /* NEUTRALS.dim */
+  --meta: #988e83; /* NEUTRALS.meta */
+  --border: #332f2b; /* NEUTRALS.border */
+  --accent: #a892c6; /* ACCENTS.dusk (the default accent) */
+  --accent-soft: #322c33; /* mix(accent, bg, 0.84) */
+  --danger: #e08a6a; /* tokens.ts DANGER */
+  --hover: #312f2d; /* mix(text, side, 0.93) */
+  --radius: 9px; /* COMPONENTS.md §Radius */
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 22px 24px 24px;
+  background: var(--bg);
+  color: var(--text);
+  /* The app's body face with the platform's UI font behind it — this page has
+     no server to load a webfont from (chooser.css says the same). */
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  /* The window is fixed-size and sized for the worst case (error-window.ts);
+     this is the guarantee behind that arithmetic. */
+  overflow-y: auto;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  /* The headline is the failure, so it carries the failure's colour — one
+     accent of alarm on the page, not a red wall. */
+  color: var(--danger);
+}
+
+.detail {
+  margin: -8px 0 0;
+  color: var(--dim);
+  /* Selectable, unlike the rest: this is the sentence somebody pastes into a
+     bug report. */
+  user-select: text;
+}
+
+/* The facts card — COMPONENTS.md's window/card recipe, same as the chooser's
+   options: `side` fill, hairline border, radius. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 5px);
+  background: var(--side);
+}
+
+.facts dt {
+  color: var(--meta);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  /* Its value's baseline, not the row's top. */
+  align-self: center;
+}
+
+.facts dd {
+  margin: 0;
+  /* Both facts are things a person copies out. */
+  user-select: text;
+  /* A long address wraps rather than widening a fixed window. */
+  overflow-wrap: anywhere;
+}
+
+.address {
+  font-weight: 600;
+}
+
+.code {
+  color: var(--meta);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.facts [hidden] {
+  display: none;
+}
+
+.note {
+  margin: 0;
+  color: var(--meta);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  height: 44px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Primary: accent fill, `bg` text (COMPONENTS.md §13). Retry is the primary
+   because it is the one that usually works — a server comes back. */
+.btn-primary {
+  flex: 1;
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+/* Busy: the main process is probing the server again. The page has nothing to
+   animate; it just stops accepting a second press. */
+.busy .btn {
+  cursor: progress;
+}

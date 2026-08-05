@@ -16,6 +16,11 @@ import { forgetPushOnLogout } from "../lib/push.js";
 
 const STORAGE_KEY = "eb.auth";
 
+// Read by one thing outside this file: the desktop shell's preload writes a
+// session here before the page's scripts run, so the Electron app opens
+// already signed in (apps/desktop/src/auth-seed.ts, MX3 #301). Changing this
+// key or the shape below breaks that seed — apps/desktop's `auth-seed.test.ts`
+// fixture is pinned to it and is where the break shows up.
 interface PersistedAuth {
   user: UserDto;
   refreshToken: string;

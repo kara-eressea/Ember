@@ -1,0 +1,11 @@
+# The embedded server's Electron-ABI tree, built by
+# scripts/build-server-runtime.mjs. Never committed: it is a build artifact,
+# it carries native modules rebuilt for one Electron version, and it is big.
+server-runtime/
+server-runtime.stamp.json
+server-runtime.pglite-stage/
+
+# electron-builder's output (MX4): the DMG/installer plus the staging trees it
+# builds them from. Bundles an Electron runtime, so it is both enormous and
+# entirely derived.
+release/

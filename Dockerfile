@@ -31,7 +31,16 @@ COPY packages/protocol/package.json packages/protocol/
 COPY packages/fchat-protocol/package.json packages/fchat-protocol/
 COPY packages/fchat-sim/package.json packages/fchat-sim/
 COPY packages/markdown-bbcode/package.json packages/markdown-bbcode/
+COPY packages/session-engine/package.json packages/session-engine/
 RUN pnpm install --prod --frozen-lockfile --filter @emberchat/server...
+# @electric-sql/pglite is only a devDependency — it backs the desktop client's
+# embedded database (MX2) and the pglite CI leg — but drizzle-orm declares it
+# as an OPTIONAL PEER, so pnpm resolves it into the virtual store even here,
+# and the server image would carry ~25 MB of WASM it can never execute. The
+# pglite arm of createDb is a dynamic import() that only runs under
+# DB_DRIVER=pglite; on this image that arm now fails with an error saying so
+# (apps/server/src/db/index.ts). Removing it is the point, not an accident.
+RUN rm -rf node_modules/.pnpm/@electric-sql+pglite@*
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:24-slim AS runtime
@@ -47,6 +56,7 @@ COPY --from=proddeps /repo/packages ./packages
 COPY --from=build /repo/packages/protocol/dist ./packages/protocol/dist
 COPY --from=build /repo/packages/fchat-protocol/dist ./packages/fchat-protocol/dist
 COPY --from=build /repo/packages/markdown-bbcode/dist ./packages/markdown-bbcode/dist
+COPY --from=build /repo/packages/session-engine/dist ./packages/session-engine/dist
 COPY --from=build /repo/apps/server/package.json ./apps/server/package.json
 COPY --from=build /repo/apps/server/drizzle ./apps/server/drizzle
 COPY --from=build /repo/apps/server/dist ./apps/server/dist

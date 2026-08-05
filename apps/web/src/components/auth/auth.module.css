@@ -23,27 +23,13 @@
   width: 440px;
 }
 
+/* Just a slot for the mark now (#537). The mark itself is
+   components/common/Wordmark.tsx — the same one the sidebar head wears, since
+   there is only one product. */
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
   margin-bottom: 18px;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: var(--eb-font-ui);
-  color: var(--eb-dim);
-}
-
-.brandChip {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--eb-accent);
-  color: var(--eb-bg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: var(--eb-font-ui-small);
 }
 
 .title {
@@ -244,6 +230,16 @@
   min-width: 0;
 }
 
+/* The trailing controls of an identity row / account row, as one group. Above
+   the phone tier it lays out exactly as the loose buttons did — the same 12px
+   the row itself spaces its children by — and it exists so the phone tier has
+   something to move as a unit (#536). */
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .connectButton {
   border: none;
   border-radius: var(--eb-radius);
@@ -253,6 +249,24 @@
   font-weight: 700;
   padding: 8px 14px;
   white-space: nowrap;
+}
+
+/* Disconnect drops the held F-Chat session, and it used to look exactly like
+   "Sign out" sitting a few pixels from the accent-filled way in (#536). It
+   keeps the quiet outline — it is not the row's headline action and should not
+   compete for the eye — but wears the danger colour, so the row reads as one
+   way in and one way out. */
+.disconnectButton {
+  composes: signOut;
+  border-color: color-mix(in srgb, var(--eb-danger) 45%, var(--eb-border));
+  color: var(--eb-danger);
+}
+
+/* Armed on the phone tier: the same shape RemoveButton's "Remove?" takes. */
+.disconnectArmed {
+  border-color: var(--eb-danger);
+  background: color-mix(in srgb, var(--eb-danger) 14%, transparent);
+  font-weight: 600;
 }
 
 .addRow {
@@ -342,4 +356,122 @@
   font-size: var(--eb-font-ui-small);
   padding: 8px 0 0;
   text-decoration: underline;
+}
+
+/* ── Phone: the auth screens are the screen (MP1, #535) ───────────────────
+   These two screens predate the layout tiers and sat outside AppShell, so the
+   MP rounds never swept them: on a 390px phone the login and the identity
+   picker still rendered as a 400px card floating on a darkened page, which is
+   desktop furniture on a screen that has no page to float above.
+
+   `data-layout` is on :root from boot (lib/layout-mode.ts stamps it before
+   React's first paint, precisely so the screens outside AppShell can use it),
+   and the tier rather than a media query for MP1 §2's reason — the
+   interface-scale pref puts `zoom` on :root and every media query is blind to
+   it. Positive selectors only: the desktop card is the base and this is the
+   tier that departs from it, not the other way round.
+
+   The panel keeps the card's own --eb-side fill rather than dropping to
+   --eb-bg. Everything inside it — the fields, the character buttons — is
+   designed as a --eb-bg control on a --eb-side surface, and flattening the two
+   would cost every one of them its edge. It is also what the shell already
+   does on this tier: its list pane is the sidebar, edge to edge, in exactly
+   this colour, with base.css's safe-area strips showing --eb-bg through. */
+:root[data-layout="phone"] .backdrop {
+  /* stretch, so the panel takes the full height as well as the full width;
+     the backdrop's own min-height: 100% is what makes that a screenful. */
+  align-items: stretch;
+  padding: 0;
+  background: var(--eb-side);
+}
+
+/* .cardWide composes .card, so it carries this class too and needs no line of
+   its own — the 440px it adds loses to this rule's specificity either way. */
+:root[data-layout="phone"] .card {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  /* The soft keyboard (MP2 §2). The shell answers it by shrinking itself,
+     because its composer is anchored to its bottom edge; this panel is a form
+     in the document flow that the document scrolls, so what it needs is not to
+     be shorter but to have somewhere left to scroll TO. iOS Safari does not
+     shrink the layout viewport when the keyboard opens, so without this the
+     "Log in" button below the password field sits behind the keyboard with no
+     room underneath it to bring it out. --eb-keyboard-inset is published on
+     :root by lib/visual-viewport.ts, armed at boot for this screen's sake
+     among others; absent, the fallback makes this the plain 24px. */
+  padding: 24px 16px calc(24px + var(--eb-keyboard-inset, 0px));
+}
+
+/* ── Phone: 44px touch targets (MP2 §3, #376) ─────────────────────────────
+   The two mechanisms, and the rule that decides which one a control gets, are
+   stated once in base.css beside --eb-touch-target. Both are in use here.
+
+   OVERLAY — the controls with a painted box that must keep its size: Sign out,
+   Disconnect, the row's primary (Open / Connect / Pick character) and the ✕.
+   Growing those for real would turn a row of chips into a row of slabs.
+
+   GROW — .linkButton, whose box is invisible (no fill, no border, just
+   underlined text), so taking the height for real costs nothing anyone can
+   see; and the checkbox label band, which is the only target a native
+   <input type="checkbox"> can be given at all — it generates no
+   pseudo-elements, so neither overlay nor growth reaches the box itself. */
+:root[data-layout="phone"] :is(.signOut, .connectButton, .removeButton) {
+  position: relative;
+}
+
+:root[data-layout="phone"] :is(.signOut, .connectButton, .removeButton)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--eb-touch-target));
+  height: max(100%, var(--eb-touch-target));
+  transform: translate(-50%, -50%);
+}
+
+:root[data-layout="phone"] .linkButton {
+  display: flex;
+  align-items: center;
+  min-height: var(--eb-touch-target);
+  /* The 8px was padding, which put this box's top edge flush against the
+     bottom edge of the button above it — two claims sharing a boundary each
+     take the pixel on it, and the census reads that as two controls contesting
+     the same row of pixels. As margin it is a real gap. */
+  margin-top: 8px;
+  padding: 0;
+}
+
+:root[data-layout="phone"] .checkboxRow {
+  min-height: var(--eb-touch-target);
+}
+
+/* The action group takes its own line (#536). Three controls, an avatar and a
+   name do not fit across 390px without the name being squeezed to nothing and
+   the buttons ending up shoulder to shoulder — which is the mis-tap the whole
+   row is being rebuilt to prevent. On its own line there is width to spend:
+   the primary takes all of the slack, so "Open" is a slab and "Disconnect" is
+   a chip, and 16px of gap sits between every pair (MP2's adjacency rule — the
+   row opens up rather than two overlays contesting the space between them). */
+:root[data-layout="phone"] .identityRow {
+  flex-wrap: wrap;
+}
+
+:root[data-layout="phone"] .rowActions {
+  flex: 1 0 100%;
+  gap: 16px;
+}
+
+:root[data-layout="phone"] .rowActions .connectButton {
+  flex: 1;
+}
+
+/* In the row the link is a chip beside other chips, not a line of its own:
+   no top margin to push it off the group's centre line, and a floor under its
+   width, since "Forget" is 42px of text and the floor is on both dimensions. */
+:root[data-layout="phone"] .rowActions .linkButton {
+  justify-content: center;
+  min-width: var(--eb-touch-target);
+  margin-top: 0;
+  padding: 0 8px;
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RECONNECT_FLOOR_MS } from "./modules/session-engine/fchat-session.js";
+import { RECONNECT_FLOOR_MS } from "@emberchat/session-engine";
 
 // The .env.example placeholder. Refusing it at startup means a copied-but-
 // unedited env file cannot silently ship a world-readable signing secret.
@@ -8,7 +8,17 @@ const PLACEHOLDER_AUTH_SECRET = "dev-only-secret-change-me-0000000000";
 // All deployment-specific values — including branding and the IDN
 // cname/cversion — come from the environment (decisions.md §5).
 const configSchema = z.object({
-  DATABASE_URL: z.string().min(1),
+  /**
+   * Which storage driver createDb builds (MX2, #298). `node-postgres` is the
+   * default and the only one a server should use — a self-hoster never sets
+   * this. `pglite` is the desktop client's embedded Postgres, and the package
+   * that backs it ships with the desktop bundle, not the server image.
+   */
+  DB_DRIVER: z.enum(["node-postgres", "pglite"]).default("node-postgres"),
+  /** Required under DB_DRIVER=node-postgres (the guard is in loadConfig). */
+  DATABASE_URL: z.string().min(1).optional(),
+  /** Data directory for the embedded database. Required under DB_DRIVER=pglite. */
+  PGLITE_DATA_DIR: z.string().min(1).optional(),
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters")
@@ -241,6 +251,23 @@ export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): AppConfig {
   const config = configSchema.parse(env);
+  // The storage driver's setting is required, but which setting depends on
+  // the driver — so the requirement is a cross-field guard rather than a
+  // schema `.min(1)`. Unset DB_DRIVER still means "DATABASE_URL or refuse to
+  // boot", exactly as before.
+  if (
+    config.DB_DRIVER === "node-postgres" &&
+    config.DATABASE_URL === undefined
+  ) {
+    throw new Error(
+      "DATABASE_URL must be set — it is where the server's Postgres lives (DB_DRIVER defaults to node-postgres). See apps/server/.env.example",
+    );
+  }
+  if (config.DB_DRIVER === "pglite" && config.PGLITE_DATA_DIR === undefined) {
+    throw new Error(
+      "PGLITE_DATA_DIR must be set when DB_DRIVER=pglite — the embedded database needs a directory to live in (it is created if missing)",
+    );
+  }
   // Guardrail, not just documentation: the sub-budget interval exists for
   // local fchat-sim stacks only. Refusing to boot beats silently violating
   // the F-List developer policy in production (M6 audit).

@@ -10,16 +10,10 @@
 // INSIDE the ciphertext is asserted in payload.test.ts, which is why that
 // seam exists.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { asc, eq } from "drizzle-orm";
 import { createECDH, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import {
   afterAll,
@@ -36,7 +30,8 @@ import { serializeServerCommand } from "@emberchat/fchat-protocol";
 import type { UserPrefs } from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import {
   authSessions,
   identities,
@@ -47,11 +42,9 @@ import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 import { MAX_SUBSCRIPTIONS_PER_USER } from "./routes.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 
@@ -64,9 +57,8 @@ interface CapturedPush {
   bodyLength: number;
 }
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 /** A second instance with no VAPID config — invariant 6's control group. */
@@ -115,11 +107,10 @@ beforeAll(async () => {
 
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   const baseEnv = {
-    DATABASE_URL: container.getConnectionUri(),
+    ...testDb.env,
     AUTH_SECRET: "integration-test-secret-0123456789abcdef",
     AUTH_RATE_LIMIT_MAX: "1000",
     RATE_LIMIT_MAX: "1000",
@@ -155,8 +146,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await unconfigured.close();
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
   await new Promise<void>((resolve) => {
     pushService.close(() => {

@@ -21,7 +21,12 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 | `design/architecture.md` | Monorepo layout, server/bouncer design, DB schema, client architecture, gateway protocol |
 | `design/milestones.md` | **Status tracker** — open/closed milestones, M1 step checklist, standing to-dos. Keep this updated as work progresses |
 | `design/milestone-*.md` | One file per milestone (1–10), dependency-ordered |
-| `design/standalone-client.md` | Desktop-client design (M7 step 8): embedded bouncer, session-library boundary, pglite, Electron — built post-v1.0 |
+| `design/standalone-client.md` | Desktop-client design (M7 step 8, in build as MX): embedded bouncer, session-library boundary (extracted at MX1), pglite, Electron |
+| `design/mx2-pglite-spike.md` | **MX2 spike findings** (#297) — pglite confirmed (PG 18.3, uuidv7 native, buildApp boots); the `Db` widening, fsync/no-lock caveats, `dumpDataDir()` backups, the #298 work map. Harnesses in `design/spikes/mx2-pglite/` |
+| `design/mx3-desktop-shell.md` | **MX3 implementation spec** — thin Electron main (renderer = the web app on loopback), the server-runtime artifact pipeline (the one-way-ABI answer), provisioning/safeStorage/auth seeding, chooser, thin-client, tray; issue cut #299→#304 |
+| `design/mx4-packaging.md` | **MX4 implementation spec + as-built** — the two unsigned installers, the `extraResources`/`paths.ts` layout, version-by-`extraMetadata`, the packaged smoke test, the separate desktop-build workflow, and the Windows `utilityProcess`-cannot-listen finding |
+| `design/desktop-checklist.md` | The MX track's real-machine pass — macOS, then Windows, then both. What no CI runner answered: Gatekeeper, SmartScreen, keychain prompts, tray icons on real menu bars, the orphaned-bouncer risk |
+| `docs/desktop.md` | **User doc for the desktop app** — install per platform (with the unsigned first-launch dance), the two modes, where data lives / backup / uninstall, updating, FAQ. Sibling of `docs/self-hosting.md` |
 | `design/mobile-client.md` | **MP track — closed** (MP1–MP4 shipped): the plan, and the rationale record for why not an app store. Points at the three as-built specs below |
 | `design/mp1-responsive-shell.md` | **MP1 implementation spec** — the three zoom-corrected layout tiers, `data-layout`, package A–G cut and invariants |
 | `design/mp2-touch.md` | **MP2 implementation spec + as-built** — long-press action sheets, the keyboard inset, 44px targets, the momentum finding |
@@ -37,7 +42,7 @@ A third-party web client + server ("bouncer") for **F-Chat**, the WebSocket chat
 
 ## Key decisions (do not relitigate without the user)
 
-- **TypeScript monorepo** (pnpm workspaces + Turborepo): `apps/server` (Fastify + ws), `apps/web` (Vite + React + Zustand), `packages/fchat-protocol`, `packages/protocol`, `packages/markdown-bbcode`, `packages/fchat-sim`.
+- **TypeScript monorepo** (pnpm workspaces + Turborepo): `apps/server` (Fastify + ws), `apps/web` (Vite + React + Zustand), `packages/fchat-protocol`, `packages/protocol`, `packages/markdown-bbcode`, `packages/fchat-sim`, `packages/session-engine` (the held F-Chat sessions, host-agnostic — its boundary is test-enforced, see `design/standalone-client.md`).
 - **Self-hostable software, admin-only instances (revised 2026-07-16)** — not a managed service: F-List's IP/household-based abuse management is incompatible with a multi-tenant bouncer. Registration disabled (admin CLI bootstrap); no email flows in v1.0. Exposure hardening + self-host docs are v1.0 scope (Milestone 7); an eventual standalone desktop client (Tauri/Electron, shared session library) is designed in M7 and built post-v1.0 (see `design/decisions.md` §2).
 - **F-List credentials are session-only, in memory ("bouncer-lite")** — never persisted. The in-memory vault lets sessions re-ticket and auto-reconnect while the server process lives; a server restart logs everyone out of F-Chat until passwords are re-entered. At-rest storage is a possible future opt-in (see `design/decisions.md` §3).
 - **Postgres + Drizzle ORM**, Docker deployment on a VPS (docker-compose).

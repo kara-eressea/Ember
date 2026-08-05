@@ -3,18 +3,13 @@
 // grep, delta refresh, and the persisted-index restart path (a fresh
 // service with an unreachable upstream must serve from the DB row).
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { userPreferences } from "../../db/schema.js";
 import { EiconIndexService } from "./index-service.js";
 import {
@@ -22,16 +17,14 @@ import {
   INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Above INTEGRATION_MS: each test chains sim JSON fetches through the shared
 // throttled FlistApiClient on top of the container round trips.
 vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 let token: string;
@@ -44,12 +37,11 @@ beforeAll(async () => {
     ["campfire", "Ember Logo", "teacup", "tea.time", "lanternlight"],
     1_752_000_000,
   );
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       RATE_LIMIT_MAX: "10000",
@@ -82,8 +74,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

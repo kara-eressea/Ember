@@ -20,14 +20,14 @@ import type { HistorySink } from "../history/sink.js";
 import type {
   FchatSession,
   SessionLogger,
-} from "../session-engine/fchat-session.js";
+  SessionRegistry,
+} from "@emberchat/session-engine";
 import {
   notificationDto,
   type NotificationStore,
 } from "../notifications/store.js";
 import type { Outbox } from "../outbox/outbox.js";
 import type { SocialCache } from "../social/cache.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 import {
   GatewayConnection,
   conversationDto,

@@ -6,13 +6,7 @@
 // Real Postgres (testcontainers) + fchat-sim + a listening HTTP server, like
 // gateway.test.ts — nothing here is simulated on our side of the wire.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
 import {
@@ -37,17 +31,16 @@ import {
 } from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { identities, messages } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
   FRAME_WAIT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
+import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 /** The DM partner: a real socket on its own account, so it can go offline
@@ -57,9 +50,8 @@ const PARTNER = "Birch Rowan";
 
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 let gatewayUrl: string;
@@ -67,12 +59,11 @@ let gatewayUrl: string;
 beforeAll(async () => {
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       REGISTRATION_ENABLED: "true",
@@ -92,8 +83,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

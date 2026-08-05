@@ -5,7 +5,21 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/.turbo/**", "**/coverage/**", "prototype/**"],
+    ignores: [
+      "**/dist/**",
+      "**/.turbo/**",
+      "**/coverage/**",
+      "prototype/**",
+      // Spike harnesses kept as evidence, not as code we ship (#297): they
+      // import dependencies that are deliberately absent from the workspace.
+      "design/spikes/**",
+      // The desktop shell's build artifact (MX3): a deployed copy of the
+      // server plus its whole prod dependency tree. Not our source.
+      "apps/desktop/server-runtime/**",
+      // electron-builder's output (MX4): an Electron runtime, an unpacked app
+      // and the installers built from them. Derived, and none of it ours.
+      "apps/desktop/release/**",
+    ],
   },
   {
     files: ["**/*.{ts,tsx}"],
@@ -26,6 +40,15 @@ export default tseslint.config(
     extends: [js.configs.recommended],
     // Plain-node scripts (scripts/*.mjs, config files).
     languageOptions: { globals: globals.node },
+  },
+  {
+    // The desktop shell's two own pages: the first-run chooser
+    // (mx3-desktop-shell.md §4) and the remote session's error page (§5). They
+    // ship verbatim as file:// documents with no bundler over them, so they are
+    // plain browser JS rather than node scripts — `document` and `window` are
+    // their globals.
+    files: ["apps/desktop/chooser/*.js", "apps/desktop/error/*.js"],
+    languageOptions: { globals: globals.browser },
   },
   {
     // The push service worker (design/web-push.md §4) is the one .js file that

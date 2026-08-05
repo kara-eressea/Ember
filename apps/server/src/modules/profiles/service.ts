@@ -28,16 +28,14 @@ import {
   profileViews,
 } from "../../db/schema.js";
 import {
+  AccountLockedError,
   FlistApiBusyError,
   type FlistApiClient,
-} from "../flist-api/api-client.js";
-import type { CharacterDataBudget } from "../flist-api/character-data-budget.js";
-import {
-  AccountLockedError,
+  type SessionRegistry,
   type TicketManagerRegistry,
-} from "../flist-api/ticket-manager.js";
+} from "@emberchat/session-engine";
+import type { CharacterDataBudget } from "../flist-api/character-data-budget.js";
 import { withTicket, type TicketedIdentity } from "../flist-api/with-ticket.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
 import { isValidTimeZone } from "./timezone.js";
 
 export interface ProfileServiceOptions {

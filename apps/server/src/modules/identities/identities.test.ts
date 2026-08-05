@@ -1,46 +1,38 @@
 // Identities CRUD integration tests against real Postgres + fchat-sim.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { identities } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import { FlistApiClient } from "@emberchat/session-engine";
 import { MAX_IDENTITIES_PER_USER } from "./routes.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 
 // Container- and sim-backed: real Postgres plus loopback WebSocket round trips.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 
 beforeAll(async () => {
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       REGISTRATION_ENABLED: "true",
@@ -58,8 +50,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 

@@ -3,13 +3,7 @@
 // filter), and the snapshot serve path. The session is a stub carrying a
 // real SessionState + bus, applied-then-emitted exactly like FchatSession.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
-import { fileURLToPath } from "node:url";
 import {
   afterAll,
   beforeAll,
@@ -20,7 +14,8 @@ import {
   vi,
 } from "vitest";
 import type { ServerCommand } from "@emberchat/fchat-protocol";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import {
   appUsers,
   conversations,
@@ -33,21 +28,21 @@ import {
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
 import { buildSnapshot } from "../gateway/snapshot.js";
-import { SessionEventBus } from "../session-engine/event-bus.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
-import { SessionState } from "../session-engine/session-state.js";
+import {
+  type FchatSession,
+  SessionEventBus,
+  SessionState,
+} from "@emberchat/session-engine";
 import { SeenMembersStore, seenByChannel } from "./store.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const KEY = "Frontpage";
 const DAY_MS = 86_400_000;
 
 // Container-backed: every test round-trips the store through real Postgres.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let identityId: string;
 
 /** FchatSession's shape as the store sees it: state folded before emit. */
@@ -121,9 +116,8 @@ async function seenRows() {
 }
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   const [user] = await db
     .insert(appUsers)
     .values({
@@ -144,8 +138,7 @@ beforeAll(async () => {
 }, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
 });
 
 beforeEach(async () => {

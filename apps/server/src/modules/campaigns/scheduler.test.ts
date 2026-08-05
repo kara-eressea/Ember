@@ -3,16 +3,11 @@
 // rotation is NEVER exercised against live F-Chat (policy). The injected
 // `now`/`random` make every jittered timeline exact.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CampaignDto } from "@emberchat/protocol";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import {
   ads,
   appUsers,
@@ -20,33 +15,25 @@ import {
   flistAccounts,
   identities,
 } from "../../db/schema.js";
-import {
-  AdCooldownError,
-  type FchatSession,
-} from "../session-engine/fchat-session.js";
+import { AdCooldownError, type FchatSession } from "@emberchat/session-engine";
 import { CampaignError, CampaignScheduler } from "./scheduler.js";
 import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
-
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
 }, CONTAINER_BOOT_MS);
 
 afterAll(async () => {
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
 });
 
 let counter = 0;

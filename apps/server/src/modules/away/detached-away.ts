@@ -18,8 +18,7 @@ import type { ClientSettableStatus, UserPrefs } from "@emberchat/protocol";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities, userPreferences } from "../../db/schema.js";
 import type { GatewayHub } from "../gateway/gateway.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
+import type { SessionLogger, SessionRegistry } from "@emberchat/session-engine";
 
 const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
 

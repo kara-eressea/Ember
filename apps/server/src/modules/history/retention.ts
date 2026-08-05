@@ -6,7 +6,7 @@
 import { inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { messages } from "../../db/schema.js";
-import type { SessionLogger } from "../session-engine/fchat-session.js";
+import type { SessionLogger } from "@emberchat/session-engine";
 
 export type RetentionPolicy = "forever" | "30d" | "90d" | "1y";
 

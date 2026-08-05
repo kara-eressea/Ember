@@ -3,63 +3,73 @@
 // path: register → add F-List account (vaults the password) → start the
 // session via app.sessions, so the sink attaches exactly as in production.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { and, eq, gt, sql } from "drizzle-orm";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
 import { serializeServerCommand } from "@emberchat/fchat-protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import {
+  makeTestDb,
+  TEST_DB_DRIVER,
+  type TestDb,
+} from "../../test-support/db.js";
 import { conversations, identities, messages } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
-import { FlistApiClient } from "../flist-api/api-client.js";
+import {
+  type FchatSession,
+  FlistApiClient,
+  SessionEventBus,
+} from "@emberchat/session-engine";
 import {
   buildSnapshot,
   CATCHUP_REPLAY_BUDGET,
   catchupPlan,
 } from "../gateway/snapshot.js";
-import type { FchatSession } from "../session-engine/fchat-session.js";
 import { RetentionJob } from "./retention.js";
 import { exportChunks, type ExportRow } from "./routes.js";
-import { SessionEventBus } from "../session-engine/event-bus.js";
 import {
   ConversationLimitError,
   HistorySink,
   type ConversationRow,
 } from "./sink.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
 
-// Container- and sim-backed: real Postgres plus loopback WebSocket round trips.
+// Database- and sim-backed: a real Postgres plus loopback WebSocket round trips.
 vi.setConfig({ testTimeout: INTEGRATION_MS });
 
-let container: StartedPostgreSqlContainer;
+/**
+ * The suite's one driver-conditional test, and it cannot be otherwise: it
+ * proves per-identity sharding by holding a `FOR UPDATE` transaction open on
+ * one connection while asserting a *different* identity's insert still lands
+ * on another. pglite is a single connection, so the open transaction blocks
+ * everything, forever (design/mx2-pglite-spike.md §Q2 — "cannot pass by
+ * construction"). Weakening the assertion would cost the node-postgres run
+ * the property that actually matters on a multi-identity server, so the
+ * pglite run skips it instead.
+ */
+const itNeedsTwoConnections = it.skipIf(TEST_DB_DRIVER === "pglite");
+
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 
 beforeAll(async () => {
   sim = new FchatSim();
   await sim.start();
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       REGISTRATION_ENABLED: "true",
@@ -77,8 +87,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close(); // onClose stops all sessions
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 
@@ -612,90 +621,96 @@ describe("history sink", () => {
     off();
   });
 
-  it("shards the write queue per identity — one identity's stalled write never blocks another's", async () => {
-    // Two identities on the same F-List account; sink events come from fake
-    // session buses so each identity's traffic can be driven independently
-    // (the sink only reads `events`, `character`, and `state.channels`).
-    const { identityId: identityA } = await startIdentity();
-    const [accountRow] = await db
-      .select({ flistAccountId: identities.flistAccountId })
-      .from(identities)
-      .where(eq(identities.id, identityA));
-    const [identityRowB] = await db
-      .insert(identities)
-      .values({
-        flistAccountId: accountRow!.flistAccountId,
-        characterName: "Bee Wildfire",
-      })
-      .returning({ id: identities.id });
-    const identityB = identityRowB!.id;
+  itNeedsTwoConnections(
+    "shards the write queue per identity — one identity's stalled write never blocks another's",
+    async () => {
+      // Two identities on the same F-List account; sink events come from fake
+      // session buses so each identity's traffic can be driven independently
+      // (the sink only reads `events`, `character`, and `state.channels`).
+      const { identityId: identityA } = await startIdentity();
+      const [accountRow] = await db
+        .select({ flistAccountId: identities.flistAccountId })
+        .from(identities)
+        .where(eq(identities.id, identityA));
+      const [identityRowB] = await db
+        .insert(identities)
+        .values({
+          flistAccountId: accountRow!.flistAccountId,
+          characterName: "Bee Wildfire",
+        })
+        .returning({ id: identities.id });
+      const identityB = identityRowB!.id;
 
-    const fakeSession = (character: string) =>
-      ({
-        character,
-        events: new SessionEventBus(),
-        state: { channels: new Map() },
-      }) as unknown as FchatSession;
-    const sessionA = fakeSession(CHARACTER);
-    const sessionB = fakeSession("Bee Wildfire");
-    const sink = new HistorySink(db);
-    sink.attach(identityA, sessionA);
-    sink.attach(identityB, sessionB);
+      const fakeSession = (character: string) =>
+        ({
+          character,
+          events: new SessionEventBus(),
+          state: { channels: new Map() },
+        }) as unknown as FchatSession;
+      const sessionA = fakeSession(CHARACTER);
+      const sessionB = fakeSession("Bee Wildfire");
+      const sink = new HistorySink(db);
+      sink.attach(identityA, sessionA);
+      sink.attach(identityB, sessionB);
 
-    const messagesFor = (identityId: string) =>
-      db
-        .select({ bbcode: messages.bbcode })
-        .from(messages)
-        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-        .where(eq(conversations.identityId, identityId))
-        .orderBy(messages.id);
+      const messagesFor = (identityId: string) =>
+        db
+          .select({ bbcode: messages.bbcode })
+          .from(messages)
+          .innerJoin(
+            conversations,
+            eq(messages.conversationId, conversations.id),
+          )
+          .where(eq(conversations.identityId, identityId))
+          .orderBy(messages.id);
 
-    // Stall identity A's next message insert: an open FOR UPDATE on its
-    // conversation row blocks the insert's FK KEY SHARE lock on that row.
-    const convA = await sink.ensurePmConversation(identityA, "Nyx Firemane");
-    let releaseLock!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseLock = resolve;
-    });
-    let lockAcquired!: () => void;
-    const locked = new Promise<void>((resolve) => {
-      lockAcquired = resolve;
-    });
-    const lockHolder = db.transaction(async (tx) => {
-      await tx.execute(
-        sql`select id from ${conversations} where id = ${convA.id} for update`,
-      );
-      lockAcquired();
-      await gate;
-    });
-    await locked;
-
-    try {
-      sessionA.events.emit("command", {
-        cmd: "PRI",
-        payload: { character: "Nyx Firemane", message: "stalled write" },
+      // Stall identity A's next message insert: an open FOR UPDATE on its
+      // conversation row blocks the insert's FK KEY SHARE lock on that row.
+      const convA = await sink.ensurePmConversation(identityA, "Nyx Firemane");
+      let releaseLock!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releaseLock = resolve;
       });
-      sessionB.events.emit("command", {
-        cmd: "PRI",
-        payload: { character: "Nyx Firemane", message: "independent write" },
+      let lockAcquired!: () => void;
+      const locked = new Promise<void>((resolve) => {
+        lockAcquired = resolve;
       });
-
-      // B's write lands while A's chain is still stuck behind the row lock.
-      await vi.waitFor(async () => {
-        const rows = await messagesFor(identityB);
-        expect(rows.map((r) => r.bbcode)).toEqual(["independent write"]);
+      const lockHolder = db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select id from ${conversations} where id = ${convA.id} for update`,
+        );
+        lockAcquired();
+        await gate;
       });
-      expect(await messagesFor(identityA)).toHaveLength(0);
-    } finally {
-      releaseLock();
-    }
+      await locked;
 
-    await lockHolder;
-    await sink.flush();
-    expect((await messagesFor(identityA)).map((r) => r.bbcode)).toEqual([
-      "stalled write",
-    ]);
-  });
+      try {
+        sessionA.events.emit("command", {
+          cmd: "PRI",
+          payload: { character: "Nyx Firemane", message: "stalled write" },
+        });
+        sessionB.events.emit("command", {
+          cmd: "PRI",
+          payload: { character: "Nyx Firemane", message: "independent write" },
+        });
+
+        // B's write lands while A's chain is still stuck behind the row lock.
+        await vi.waitFor(async () => {
+          const rows = await messagesFor(identityB);
+          expect(rows.map((r) => r.bbcode)).toEqual(["independent write"]);
+        });
+        expect(await messagesFor(identityA)).toHaveLength(0);
+      } finally {
+        releaseLock();
+      }
+
+      await lockHolder;
+      await sink.flush();
+      expect((await messagesFor(identityA)).map((r) => r.bbcode)).toEqual([
+        "stalled write",
+      ]);
+    },
+  );
 
   it("tracks the joined flag across join and leave", async () => {
     const { identityId, session } = await startIdentity();

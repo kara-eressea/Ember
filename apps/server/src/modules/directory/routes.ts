@@ -9,7 +9,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Db } from "../../db/index.js";
 import { flistAccounts, identities } from "../../db/schema.js";
-import type { SessionRegistry } from "../session-engine/registry.js";
+import type { SessionRegistry } from "@emberchat/session-engine";
 import type { ChannelDirectory } from "./directory.js";
 
 const directoryResponse = z.object({

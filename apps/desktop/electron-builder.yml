@@ -1,0 +1,152 @@
+# EmberChat desktop — packaging (MX4, #305; design/mx4-packaging.md).
+#
+# Two artifacts, both unsigned: a macOS DMG and a Windows NSIS installer. They
+# ride the same vX.Y.Z release train as the server image — .github/workflows/
+# desktop-build.yml attaches them to the release `gh release create` made.
+#
+# The product name is NOT restated here: electron-builder reads `productName`
+# from package.json, which is the one place the shell's name lives (it is also
+# what `app.getName()` returns and therefore what names the user-data
+# directory). `appId` below is the only other brand-shaped string, and it is
+# here rather than scattered because a rename has to change exactly two lines.
+#
+# The version is not here either, deliberately. package.json versions stay
+# `0.0.0` for the whole workspace (house policy), and a release build gets the
+# real number injected at package time:
+#
+#   electron-builder --mac dmg -c.extraMetadata.version=0.26.0
+#
+# which is what `app.getVersion()` — and therefore the embedded server's
+# `CLIENT_VERSION`, and therefore F-Chat's `cversion` — reports. A local
+# `pnpm package` with no injection builds a `0.0.0` app, which is the honest
+# label for something that is not a release.
+
+appId: chat.ember.desktop
+
+# No publish provider, and this is the auto-updater decision expressed in
+# config: there is no update feed, so nothing generates `latest-mac.yml` /
+# `latest.yml` and nothing in the app looks for one (#541 records the
+# electron-updater future, gated on signing). The release upload is a `gh
+# release upload` step in desktop-build.yml — deliberately outside
+# electron-builder, so what lands on the release is exactly the file the
+# packaged smoke test just ran.
+publish: null
+
+directories:
+  output: release
+  # electron-builder's default for this is `build`, which this repo's .gitignore
+  # reserves for build *output* — and these are inputs (the app icon, and an
+  # entitlements file the day macOS signing happens). `packaging` says which it
+  # is and keeps the committed icon committed.
+  buildResources: packaging
+
+# The asar holds the main process and nothing else. Everything the shell reads
+# at runtime is an `extraResources` entry below, for three separate reasons:
+# native modules cannot be dlopen'd out of an archive (server-runtime), a child
+# process serves the web dist from a real directory, and the static pages are
+# `file://` documents with their own CSP. `paths.ts` is the single resolver for
+# both layouts and its unit tests pin these names.
+files:
+  - dist/**/*
+  - package.json
+
+extraResources:
+  # The bouncer, deployed and rebuilt for Electron's ABI by
+  # scripts/build-server-runtime.mjs — built on the *target OS* in CI, because
+  # argon2 and re2 are native (pglite is WASM and would travel anywhere). The
+  # tree is sealed against outward symlinks (MX3 §1 as-built 3), which is what
+  # makes copying it into a bundle safe.
+  - from: server-runtime
+    to: server-runtime
+  # …and its `node_modules` as a copy of its own, which looks redundant and is
+  # not. electron-builder's file filter drops the *root* `node_modules` of any
+  # copy unconditionally — `if (relative === "node_modules") return false` in
+  # app-builder-lib's filter.js, ahead of any user pattern, so no `filter:` can
+  # put it back. A deployed pnpm tree is almost entirely `node_modules`, so the
+  # first copy alone produces a bundle that builds cleanly and then dies on its
+  # first boot with ERR_MODULE_NOT_FOUND. Naming the directory as its own
+  # source moves it out of that special case: nothing inside it is *called*
+  # `node_modules` at the root. (Found by the packaged smoke test, which is
+  # precisely the class of bug it exists for.)
+  - from: server-runtime/node_modules
+    to: server-runtime/node_modules
+  # The renderer: apps/web's own `vite build` output, renamed on the way in so
+  # the resources layer reads as a list of things rather than a list of dists.
+  - from: ../web/dist
+    to: web
+  # The three static directories, shipped verbatim (MX3 §4, §5, §6).
+  - from: chooser
+    to: chooser
+  - from: error
+    to: error
+  - from: assets
+    to: assets
+
+# Nothing to rebuild: this package declares no runtime dependencies at all (the
+# shell is main-process TypeScript and Electron), and the one native tree in the
+# build was already rebuilt, for exactly this Electron version, by
+# build-server-runtime.mjs. Letting electron-builder loose on node_modules here
+# would at best waste minutes and at worst walk into the workspace — which is
+# the failure invariant 1 exists to prevent.
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+
+mac:
+  category: public.app-category.social-networking
+  target:
+    - target: dmg
+      arch:
+        # arm64 only, and this is a native-modules decision rather than a
+        # popularity one: the server runtime's argon2 and re2 are compiled on
+        # the runner that packages them, so an x64 or universal build needs an
+        # x64 macOS runner to compile x64 natives on. Adding that leg is a
+        # matrix entry in desktop-build.yml the day it is wanted — there is
+        # nothing arm-specific in this config.
+        - arm64
+  # UNSIGNED, on purpose (planning 2026-08-05: no Apple Developer identity, no
+  # notarization spend for the first release). `identity: null` is what says so
+  # out loud rather than letting a signing identity that happens to be in a
+  # developer's keychain leak into a build.
+  #
+  # THE SIGNING SEAM: when an identity is bought (#541 tracks the updater that
+  # waits on it), this becomes config only — drop `identity`, set
+  # `hardenedRuntime: true` and `notarize: true`, add an entitlements file under
+  # `directories.buildResources`, and give CI the certificate secrets. No code
+  # in apps/desktop changes.
+  identity: null
+  notarize: false
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  # `${os}` is `mac`/`win`; `${ext}` is `dmg`/`exe`. Derived from productName
+  # and the injected version rather than written out, so the release train's
+  # upload step never has to know the app's name.
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # No `certificateFile`/`signtoolOptions`: unsigned, same decision as macOS.
+  # SmartScreen will warn on first run until a certificate exists; #306
+  # documents the click-through. The signing seam here is symmetrical — an
+  # `azureSignOptions` (Trusted Signing) or `certificateSubjectName` block and
+  # CI secrets, no code change.
+
+nsis:
+  # Per-user install: no UAC prompt, no admin rights, and the app's data stays
+  # in the profile that installed it. An unsigned installer asking for
+  # elevation is exactly the shape of thing people should refuse.
+  perMachine: false
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createStartMenuShortcut: true
+  createDesktopShortcut: true
+  # Uninstaller + Add/Remove entry come with NSIS; deleting the user-data
+  # directory is deliberately NOT offered — parting with history is the user's
+  # act, the same call the mode switch makes (MX3 §4).
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}

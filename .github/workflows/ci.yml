@@ -50,6 +50,38 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The storage seam's second driver (MX2, #298). The desktop client will run
+  # the server's own code on pglite, so the seam needs a leg that fails when it
+  # rots — but a full second server suite would double CI's wall time for a
+  # driver no deployment uses. This runs the db-heaviest files only, and needs
+  # no Docker at all (pglite is in-process WASM), so it is cheap and parallel.
+  #
+  # One test is skipped here on purpose: history's write-queue sharding needs
+  # two connections and cannot pass on a single-connection database
+  # (design/mx2-pglite-spike.md §Q2). It still runs, unweakened, in the job
+  # above — which is the run that protects the property on a server.
+  pglite:
+    name: server-suite-pglite
+    runs-on: ubuntu-latest
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+      TEST_DB_DRIVER: pglite
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=@emberchat/server...
+      - run: >-
+          pnpm --filter @emberchat/server exec vitest run
+          src/db/upgrade-gate.test.ts
+          src/modules/gateway
+          src/modules/history
+          src/modules/notifications
+
   # Boots the production image against a real Postgres and asserts /healthz.
   # Catches whole-image failures the workspace test suite can't see — missing
   # dist copies in the runtime stage, broken migrations-on-boot, bad CMD.

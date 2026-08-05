@@ -583,6 +583,14 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Slate Burn"],
     },
+    // Reserved for the #533/#534 iOS-shell E2E (same isolation rules). Chalk
+    // Mere walks the phone tier reading computed style off it: the ground the
+    // document canvas is painted with, and every text-entry control's font
+    // size against the 16px floor iOS zooms below.
+    "chalkmere@example.test": {
+      password: "hunter2",
+      characters: ["Chalk Mere"],
+    },
     // Reserved for the #375 touch-affordance E2E (same isolation rules).
     // Thumb Reeve taps what a mouse would hover — the sidebar row's ✕ and the
     // name-only eicon chip; Chip Warren is the raw-SimClient partner who
@@ -724,6 +732,15 @@ export const DEFAULT_WORLD: SimWorld = {
     "pushwort@example.test": {
       password: "hunter2",
       characters: ["Pushwort Kell"],
+    },
+    // Reserved for the #535/#536/#537 phone auth-screen E2E, which needs no
+    // partner: the spec never joins a channel. Latch Ward is connected once so
+    // the identity picker has a live row — the one that carries both "Open"
+    // and "Disconnect" — and the second character is what makes it a picker
+    // with something to pick rather than a one-row list.
+    "latchward@example.test": {
+      password: "hunter2",
+      characters: ["Latch Ward", "Latch Fen"],
     },
   },
   channels: [
@@ -1137,6 +1154,20 @@ export const DEFAULT_WORLD: SimWorld = {
       mode: "chat",
       description: "Everything in one thumb's reach.",
       oplist: ["Pocket Chase"],
+      npcs: [],
+      listed: false,
+    },
+    // Reserved for the #533/#534 iOS-shell E2E: somewhere for Chalk Mere to
+    // open a composer, which is the app's most-used text box and the one the
+    // 16px floor has to reach through `font: inherit`. Nothing is said or read
+    // in here — the spec only measures computed style — so it is hidden and
+    // NPC-free like its neighbours.
+    {
+      name: "ADH-533iosshell5c3d4e5f",
+      title: "Chalk Room",
+      mode: "chat",
+      description: "Nobody says anything; it is measured instead.",
+      oplist: ["Chalk Mere"],
       npcs: [],
       listed: false,
     },
