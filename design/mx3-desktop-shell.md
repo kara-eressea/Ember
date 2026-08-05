@@ -192,6 +192,55 @@ server"** (thin client, §5, takes a URL). The choice and the URL persist in
 delete the local data dir** (parting with history is a deliberate act; a
 "delete local data" affordance can come with MX4's polish if wanted).
 
+### As built (#300)
+
+1. **Unreadable config means absent, and that is the whole recovery story.**
+   `config.json` is plain JSON beside `secrets.json` and deliberately unlike
+   it: a truncated file, an unknown `version`, a `serverUrl` that no longer
+   validates all read as `undefined`, which brings the chooser back. Nothing is
+   deleted, and re-picking "Use locally" lands on the install that was already
+   there — where a corrupt *secrets* file has to be a hard error, because
+   guessing would strand an account nobody has the password for. The stored URL
+   is re-validated on every read, not just on the way in: it becomes a
+   `loadURL`, and the file is one a person can open in an editor.
+2. **The page is `file://` with a strict CSP and its own preload.**
+   `default-src 'none'` plus `'self'` for its one script and one stylesheet —
+   which does work for a `loadFile` document, verified rather than assumed. The
+   bridge exposes exactly `chooseLocal()` and `chooseThinClient(url)`; the two
+   values the page needs while building itself (product name, prefilled URL)
+   ride in as `loadFile` query parameters instead of a third call. The
+   `/healthz` probe therefore runs in the main process, which is where it
+   belongs anyway: from the page it would be answering a CORS question.
+3. **The tokens are copied by value, with a comment naming the source.** The
+   chooser cannot read the web app's stylesheet (there is no server yet) and
+   must not reach into `apps/web` at build time (invariant 2), so `chooser.css`
+   restates the handful of Slate/Dusk values it uses. It is also the one
+   surface with no theme preference to honour — it runs before there is a user.
+4. **URL rules, one of them found by running it.** https required; `http://`
+   only for the literal loopback spellings (never a name that merely resolves
+   there). A scheme-less address gets `https://` — *except* on loopback, where
+   it gets `http://`: typing `localhost:3000` and being told https is
+   unreachable is a refusal on principle against the developer's own server.
+   And a 200 is not proof: a parked domain, a router's login page and a static
+   host that serves `index.html` for every path all answer one, so the body has
+   to be the `/healthz` contract. That is what makes "wrong address"
+   distinguishable from "your server is down".
+5. **Switching relaunches; a first run applies in place.** Nothing has started
+   on a first run, so the app simply continues into the chosen mode. A later
+   change stops the server child cleanly (SIGTERM — pglite is a file on this
+   user's disk) and then `app.relaunch()` + `exit`, rather than growing a
+   second, subtler boot path whose only user is a switch nobody makes twice.
+   Re-picking the mode already running writes nothing and just closes the
+   window. The local data directory is untouched in every case.
+6. **The thin-client window here is the naive one** — `loadURL` plus the
+   scaffold's navigation policy, which is most of §5's behaviour and none of
+   its hardening (#302). The auth-seed preload is shared by both windows and is
+   inert in this mode: no login happened, so the dispenser answers `null`.
+7. The window is fixed at 560×656 *content* pixels: the page measures 568 at
+   rest and 643 with the longest refusal wrapped to two lines, and a fixed
+   window that clipped the sentence explaining its own refusal would be the one
+   thing this window must not do.
+
 ## 5. Thin-client mode (#302)
 
 The window loads the remote instance's URL directly — the whole web app

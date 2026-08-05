@@ -1,0 +1,205 @@
+/*
+  Chooser styling (design/mx3-desktop-shell.md §4).
+
+  ── WHERE THESE VALUES COME FROM ────────────────────────────────────────────
+  The custom properties below are the design system's own tokens, copied by
+  VALUE from apps/web/src/theme/tokens.ts (the Slate base and the default Dusk
+  Purple accent) and apps/web/src/theme/theme.ts (the derived ones, with the
+  mix() that produces each noted beside it). The names match the app's
+  --eb-* tokens with the prefix dropped.
+
+  Copied rather than imported, and that is the point: this page is a file://
+  document loaded before any server exists, so it cannot read the web app's
+  stylesheet — and reaching into apps/web at build time would give this
+  package a build-time dependency on the renderer it is deliberately
+  independent of (spec invariant 2). Two values in two repositories of truth
+  is the cost; the comment naming the source is what keeps them findable.
+
+  The chooser is also the one surface with no theme and no accent preference:
+  it runs before there is a user, an account or a stored preference to read
+  one from. It is the default dark theme, always.
+*/
+
+:root {
+  --bg: #1b1917; /* NEUTRALS.bg */
+  --side: #232120; /* NEUTRALS.side */
+  --text: #ece7e0; /* NEUTRALS.text */
+  --dim: #a89e92; /* NEUTRALS.dim */
+  --meta: #988e83; /* NEUTRALS.meta */
+  --border: #332f2b; /* NEUTRALS.border */
+  --accent: #a892c6; /* ACCENTS.dusk (the default accent) */
+  --accent-soft: #322c33; /* mix(accent, bg, 0.84) */
+  --danger: #e08a6a; /* tokens.ts DANGER */
+  --hover: #312f2d; /* mix(text, side, 0.93) */
+  --radius: 9px; /* COMPONENTS.md §Radius */
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 22px 24px 24px;
+  background: var(--bg);
+  color: var(--text);
+  /* The app's body face, with the platform's UI font behind it: IBM Plex Sans
+     ships with the web app as a webfont, and this page has no server to load
+     one from. If the user happens to have it installed it matches exactly;
+     otherwise system-ui is the right neighbour to fall back to. */
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  /* The window is fixed-size and sized for the worst case (chooser-window.ts);
+     this is the guarantee behind that arithmetic — an unusually long refusal
+     message can always be scrolled to rather than clipped. */
+  overflow-y: auto;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  margin: -8px 0 0;
+  color: var(--meta);
+}
+
+.sub b {
+  color: var(--dim);
+  font-weight: 600;
+}
+
+/* Each option reads as its own card — COMPONENTS.md's window/card recipe:
+   `side` fill, hairline border, radius. */
+.option {
+  padding: 16px 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 5px);
+  background: var(--side);
+}
+
+.option-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.option-body {
+  margin: 0 0 14px;
+  color: var(--dim);
+}
+
+.connect {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  color: var(--meta);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* COMPONENTS.md §13: 44px field, `bg` fill, hairline border, focus = accent
+   border + a 3px accentSoft ring. */
+.field {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  user-select: text;
+}
+
+.field::placeholder {
+  color: var(--meta);
+}
+
+.field:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.btn {
+  height: 44px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Primary: accent fill, `bg` text (COMPONENTS.md §13). */
+.btn-primary {
+  width: 100%;
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+/* The second option's action is an outline button rather than a second accent
+   fill: two identically weighted buttons would make the page look like it has
+   a recommended answer twice over. Neither mode is the recommended one — they
+   answer different questions — but only one of them can be the fill. */
+.btn-outline {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.message {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
+  user-select: text;
+}
+
+.message[hidden] {
+  display: none;
+}
+
+/* Busy: while the main process is probing a server or booting a bouncer, the
+   page has nothing to animate — it just stops accepting a second answer. */
+.busy .btn {
+  cursor: progress;
+}

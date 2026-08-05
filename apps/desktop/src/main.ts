@@ -1,11 +1,11 @@
 /**
- * EmberChat desktop — Electron main process (MX3 #299, design/mx3-desktop-shell.md).
+ * EmberChat desktop — Electron main process (MX3, design/mx3-desktop-shell.md).
  *
- * What this process is: a window, a lifecycle, and a bouncer running beside
- * it. The embedded server (the same `apps/server` code a self-hoster deploys)
- * runs as a `utilityProcess` on 127.0.0.1 with pglite as its database, and the
- * window simply loads that origin. There is no renderer bundle here and never
- * will be — the renderer *is* the web app, byte for byte.
+ * What this process is: a window, a lifecycle, and — in local mode — a bouncer
+ * running beside it. The embedded server (the same `apps/server` code a
+ * self-hoster deploys) runs as a `utilityProcess` on 127.0.0.1 with pglite as
+ * its database, and the window simply loads that origin. There is no renderer
+ * bundle here and never will be — the renderer *is* the web app, byte for byte.
  *
  * Running it from a checkout:
  *
@@ -23,8 +23,14 @@
  * `safeStorage`, and a main-process login whose session is seeded into the
  * renderer's localStorage by the preload — so the window opens signed in.
  *
- * Not here yet: the mode chooser (#300), thin-client mode (#302), the tray
- * (#304), packaging (MX4). Local mode is hardcoded.
+ * #300 put the fork in front of all of that: `<userData>/config.json` says
+ * which mode this install runs in, and when it says nothing the chooser window
+ * asks (§4). Thin-client mode (§5) is #302's to finish — what is here is the
+ * naive shape the chooser's choice already implies: the window loads the
+ * remote URL under the same navigation policy, with no server and no
+ * provisioning behind it.
+ *
+ * Not here yet: the tray and close-to-tray lifecycle (#304), packaging (MX4).
  */
 
 import { hostname } from "node:os";
@@ -40,13 +46,31 @@ import {
   AUTH_SEED_CHANNEL,
   type SeedDispenser,
 } from "./auth-seed.js";
+import {
+  CHOOSE_LOCAL_CHANNEL,
+  CHOOSE_THIN_CLIENT_CHANNEL,
+  type ChoiceResult,
+} from "./chooser-ipc.js";
+import { createChooserWindow } from "./chooser-window.js";
+import {
+  configPath,
+  readConfig,
+  sameConfig,
+  writeConfig,
+  type DesktopConfig,
+} from "./desktop-config.js";
 import { DesktopLoginError, loginAppAccount } from "./desktop-login.js";
 import {
   EmbeddedServerStartError,
   startEmbeddedServer,
   type EmbeddedServer,
 } from "./embedded-server.js";
-import { MissingArtifactError, resolveArtifacts } from "./paths.js";
+import { installAppMenu } from "./menu.js";
+import {
+  chooserPage,
+  MissingArtifactError,
+  resolveArtifacts,
+} from "./paths.js";
 import { planBoot, secretsPath } from "./provisioning.js";
 import {
   EncryptionUnavailableError,
@@ -55,6 +79,8 @@ import {
   writeSecrets,
 } from "./secrets.js";
 import { buildAdminCliEnv } from "./server-env.js";
+import { normalizeServerUrl, probeServerUrl } from "./server-url.js";
+import { planStartup, type StartupPlan } from "./startup.js";
 import { createMainWindow } from "./window.js";
 
 /** `apps/desktop` — this file lives in its `dist/`. */
@@ -62,14 +88,39 @@ const DESKTOP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 let server: EmbeddedServer | undefined;
 let mainWindow: BrowserWindow | undefined;
+let chooserWindow: BrowserWindow | undefined;
+/** Whether the open chooser is the first-run question or a later change. */
+let chooserReason: "first-run" | "switch" = "first-run";
+/** What the app window shows, in whichever mode — for `activate` on macOS. */
+let appOrigin: string | undefined;
 let stopping = false;
 /** This boot's session, for the preload to pick up (see `preload.cts`). */
 let authSeed: SeedDispenser | undefined;
 
 // Answered synchronously, from a value computed before the window exists — the
-// preload blocks on this, so it must never do work here.
+// preload blocks on this, so it must never do work here. In thin-client mode
+// there is nothing to hand over (the remote server does its own login), and
+// the same preload asks the same question and is told `null`.
 ipcMain.on(AUTH_SEED_CHANNEL, (event) => {
   event.returnValue = authSeed?.take() ?? null;
+});
+
+// The chooser's two calls (chooser-ipc.ts). Both answer with a sentence rather
+// than throwing: a refusal is something the user reads and acts on.
+ipcMain.handle(CHOOSE_LOCAL_CHANNEL, () => applyChoice({ mode: "local" }));
+ipcMain.handle(CHOOSE_THIN_CLIENT_CHANNEL, async (_event, raw: unknown) => {
+  const normalized = normalizeServerUrl(typeof raw === "string" ? raw : "");
+  if (!normalized.ok) {
+    return { ok: false, message: normalized.message } satisfies ChoiceResult;
+  }
+  // From the MAIN process, never the page: the chooser is a file:// document
+  // whose CSP allows no network at all, and a renderer fetch would be answering
+  // a CORS question instead of a reachability one.
+  const reachable = await probeServerUrl(normalized.url);
+  if (!reachable.ok) {
+    return { ok: false, message: reachable.message } satisfies ChoiceResult;
+  }
+  return applyChoice({ mode: "thin-client", serverUrl: normalized.url });
 });
 
 // FIRST, before anything reads or writes the user data directory: pglite
@@ -79,13 +130,14 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow === undefined) {
+    const window = mainWindow ?? chooserWindow;
+    if (window === undefined) {
       return;
     }
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
+    if (window.isMinimized()) {
+      window.restore();
     }
-    mainWindow.focus();
+    window.focus();
   });
   void boot();
 }
@@ -93,93 +145,218 @@ if (!app.requestSingleInstanceLock()) {
 async function boot(): Promise<void> {
   await app.whenReady();
   try {
-    const { entry, adminCli, webDist } = resolveArtifacts(DESKTOP_ROOT);
-    const userData = app.getPath("userData");
-    const dataDir = join(userData, "db");
-    mkdirSync(dataDir, { recursive: true });
-
-    const serverOptions = {
-      entry,
-      dataDir,
-      webDist,
-      clientVersion: app.getVersion(),
-    };
-    const account = appAccount(app.getName());
-    const plan = planBoot({
-      stored: readSecrets(secretsPath(userData), safeStorage),
-      encryptionAvailable: safeStorage.isEncryptionAvailable(),
+    installAppMenu(() => {
+      openChooser("switch");
     });
-    if (plan.kind === "provision") {
-      // Three steps that must not overlap, because pglite is
-      // single-connection with no lock of its own (spec §3 step 2, MX2):
-      //
-      //  1. one short server boot, purely to create the schema. The admin CLI
-      //     does not migrate — "the server migrates on boot", as its own
-      //     header says — and on a first run the database is empty, so
-      //     `create-user` would fail on a table that does not exist yet.
-      //  2. the CLI, once the server has actually exited (`stop()` waits).
-      //  3. the real boot, below.
-      const migrator = await startEmbeddedServer({
-        ...serverOptions,
-        authSecret: plan.secrets.authSecret,
-      });
-      if (!(await migrator.stop())) {
-        throw new Error(
-          "The embedded server did not shut down after preparing the database, so the account could not be created safely. Try starting EmberChat again.",
-        );
-      }
-      await provisionAppAccount({
-        // Electron's own binary, run as Node — see admin-cli.ts.
-        execPath: process.execPath,
-        cliEntry: adminCli,
-        env: buildAdminCliEnv({
-          dataDir,
-          authSecret: plan.secrets.authSecret,
-        }),
-        account,
-        password: plan.secrets.appAccountPassword,
-      });
-      // Only once the account exists: a secrets file written before a failed
-      // creation would make the next boot think it had already provisioned.
-      writeSecrets(secretsPath(userData), plan.secrets, safeStorage);
-    }
-
-    server = await startEmbeddedServer({
-      ...serverOptions,
-      // Stable across boots (that is what makes a seeded session survive a
-      // restart), and it exists only inside the OS keychain.
-      authSecret: plan.secrets.authSecret,
-    });
-    server.onUnexpectedExit((code) => {
-      if (stopping) {
-        return;
-      }
-      fail(
-        "The bouncer stopped",
-        `The embedded server exited unexpectedly (code ${String(code)}).`,
-      );
-    });
-
-    // Sign in before the window exists, so the seed is waiting when the
-    // preload asks for it.
-    authSeed = createSeedDispenser(
-      authSeedMessage(
-        await loginAppAccount({
-          origin: server.origin,
-          email: account.email,
-          password: plan.secrets.appAccountPassword,
-          deviceLabel: deviceLabel(hostname()),
-        }),
-      ),
-    );
-
-    mainWindow = createMainWindow(server.origin);
-    mainWindow.on("closed", () => {
-      mainWindow = undefined;
-    });
+    await startup(planStartup(readConfig(configPath(app.getPath("userData")))));
   } catch (error) {
     fail(app.getName() + " could not start", describeStartupError(error));
   }
+}
+
+/**
+ * The three answers `planStartup` can give (spec §4).
+ *
+ * Resolves once the launch has a window (or the chooser does), which is what
+ * lets `applyChoice` hold the chooser open until then — see there.
+ */
+async function startup(plan: StartupPlan): Promise<void> {
+  // One line on the console so a dev run — and a bug report from somebody
+  // whose app opened the wrong thing — says which of the three paths a launch
+  // took. The mode is not a secret; the server's address is not printed with
+  // it, since that is the one part of this config somebody might not want in
+  // a pasted log.
+  console.log(`${app.getName()} startup: ${plan.kind}`);
+  switch (plan.kind) {
+    case "choose":
+      openChooser("first-run");
+      return;
+    case "thin-client":
+      // #302's job is the rest of this: error surfaces when the remote goes
+      // away, and whatever hardening a window pointed at someone else's origin
+      // turns out to need. What the chooser's choice already implies is one
+      // line — the same window, the same navigation policy, a different origin.
+      openAppWindow(plan.serverUrl);
+      return;
+    case "local":
+      await startLocalMode();
+      return;
+  }
+}
+
+/** Everything §2 and §3 describe: provision if needed, boot, log in, show. */
+async function startLocalMode(): Promise<void> {
+  const { entry, adminCli, webDist } = resolveArtifacts(DESKTOP_ROOT);
+  const userData = app.getPath("userData");
+  const dataDir = join(userData, "db");
+  mkdirSync(dataDir, { recursive: true });
+
+  const serverOptions = {
+    entry,
+    dataDir,
+    webDist,
+    clientVersion: app.getVersion(),
+  };
+  const account = appAccount(app.getName());
+  const plan = planBoot({
+    stored: readSecrets(secretsPath(userData), safeStorage),
+    encryptionAvailable: safeStorage.isEncryptionAvailable(),
+  });
+  if (plan.kind === "provision") {
+    // Three steps that must not overlap, because pglite is
+    // single-connection with no lock of its own (spec §3 step 2, MX2):
+    //
+    //  1. one short server boot, purely to create the schema. The admin CLI
+    //     does not migrate — "the server migrates on boot", as its own
+    //     header says — and on a first run the database is empty, so
+    //     `create-user` would fail on a table that does not exist yet.
+    //  2. the CLI, once the server has actually exited (`stop()` waits).
+    //  3. the real boot, below.
+    const migrator = await startEmbeddedServer({
+      ...serverOptions,
+      authSecret: plan.secrets.authSecret,
+    });
+    if (!(await migrator.stop())) {
+      throw new Error(
+        "The embedded server did not shut down after preparing the database, so the account could not be created safely. Try starting EmberChat again.",
+      );
+    }
+    await provisionAppAccount({
+      // Electron's own binary, run as Node — see admin-cli.ts.
+      execPath: process.execPath,
+      cliEntry: adminCli,
+      env: buildAdminCliEnv({
+        dataDir,
+        authSecret: plan.secrets.authSecret,
+      }),
+      account,
+      password: plan.secrets.appAccountPassword,
+    });
+    // Only once the account exists: a secrets file written before a failed
+    // creation would make the next boot think it had already provisioned.
+    writeSecrets(secretsPath(userData), plan.secrets, safeStorage);
+  }
+
+  server = await startEmbeddedServer({
+    ...serverOptions,
+    // Stable across boots (that is what makes a seeded session survive a
+    // restart), and it exists only inside the OS keychain.
+    authSecret: plan.secrets.authSecret,
+  });
+  server.onUnexpectedExit((code) => {
+    if (stopping) {
+      return;
+    }
+    fail(
+      "The bouncer stopped",
+      `The embedded server exited unexpectedly (code ${String(code)}).`,
+    );
+  });
+
+  // Sign in before the window exists, so the seed is waiting when the
+  // preload asks for it.
+  authSeed = createSeedDispenser(
+    authSeedMessage(
+      await loginAppAccount({
+        origin: server.origin,
+        email: account.email,
+        password: plan.secrets.appAccountPassword,
+        deviceLabel: deviceLabel(hostname()),
+      }),
+    ),
+  );
+
+  openAppWindow(server.origin);
+}
+
+function openAppWindow(origin: string): void {
+  appOrigin = origin;
+  mainWindow = createMainWindow(origin);
+  mainWindow.on("closed", () => {
+    mainWindow = undefined;
+  });
+}
+
+function openChooser(reason: "first-run" | "switch"): void {
+  chooserReason = reason;
+  if (chooserWindow !== undefined) {
+    chooserWindow.focus();
+    return;
+  }
+  const current = readConfig(configPath(app.getPath("userData")));
+  chooserWindow = createChooserWindow({
+    page: chooserPage(DESKTOP_ROOT),
+    productName: app.getName(),
+    serverUrl: current?.mode === "thin-client" ? current.serverUrl : undefined,
+  });
+  chooserWindow.on("closed", () => {
+    chooserWindow = undefined;
+  });
+}
+
+/**
+ * Persist the chooser's answer and act on it.
+ *
+ * On a first run the app carries straight on into the chosen mode — nothing
+ * has started yet, so there is nothing to unwind. The chooser stays on screen
+ * until that mode has a window of its own, for two reasons: `window-all-closed`
+ * quits the app, and a first local boot spends a good few seconds provisioning
+ * with nothing else open — closing the chooser first would quit the app in the
+ * middle of it. It also means the page keeps its busy state until there is
+ * something to look at instead.
+ *
+ * A later change relaunches instead. `app.relaunch()` + `exit` is the simplest
+ * honest implementation and it is chosen deliberately: local mode leaves a
+ * server child, a provisioned account and a seeded session behind it, and
+ * tearing all of that down in place would mean maintaining a second, subtler
+ * boot path whose only user is a switch nobody makes twice a day. A relaunch
+ * gives the new mode exactly the clean start a fresh launch gets. The local
+ * data directory is left alone either way (spec §4): parting with history is a
+ * deliberate act, and this is not it.
+ */
+async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
+  const path = configPath(app.getPath("userData"));
+  const switching = chooserReason === "switch";
+  if (switching && sameConfig(readConfig(path), config)) {
+    // Re-picking what is already running: close the window and change nothing.
+    chooserWindow?.close();
+    return { ok: true };
+  }
+
+  try {
+    writeConfig(path, config);
+  } catch (error) {
+    return {
+      ok: false,
+      message: `That choice could not be saved to ${path} (${error instanceof Error ? error.message : String(error)}).`,
+    };
+  }
+
+  if (switching) {
+    stopping = true;
+    // Armed *first*: anything that quits the app between here and `exit` —
+    // a stray `window-all-closed`, the `will-quit` path — would otherwise end
+    // the process for good instead of restarting it into the new mode.
+    app.relaunch();
+    // A clean SIGTERM before the process goes: pglite is a file on this user's
+    // disk, not a server somebody else runs. The windows go with `exit`; there
+    // is nothing to close by hand.
+    await (server?.stop() ?? Promise.resolve());
+    server = undefined;
+    app.exit(0);
+    return { ok: true };
+  }
+
+  try {
+    await startup(planStartup(config));
+  } catch (error) {
+    // The chooser is still up behind the dialog; `fail` ends the process, so
+    // what this answers with only decides what a still-alive page would show.
+    fail(app.getName() + " could not start", describeStartupError(error));
+    return { ok: false, message: describeStartupError(error) };
+  }
+  chooserWindow?.close();
+  return { ok: true };
 }
 
 // The bouncer is this app's whole point, so its child must not outlive it —
@@ -198,17 +375,21 @@ app.on("will-quit", (event) => {
 
 // #304 turns this into close-to-tray: in local mode the bouncer keeps running
 // after the last window closes — that is the product. Until the tray exists,
-// closing the window with no way to get it back has to mean quitting.
+// closing the window with no way to get it back has to mean quitting. It is
+// also how the chooser is declined: closing it without answering quits, and
+// nothing has been written.
 app.on("window-all-closed", () => {
   app.quit();
 });
 
 app.on("activate", () => {
-  if (mainWindow === undefined && server !== undefined && !stopping) {
-    mainWindow = createMainWindow(server.origin);
-    mainWindow.on("closed", () => {
-      mainWindow = undefined;
-    });
+  if (
+    mainWindow === undefined &&
+    chooserWindow === undefined &&
+    appOrigin !== undefined &&
+    !stopping
+  ) {
+    openAppWindow(appOrigin);
   }
 });
 
