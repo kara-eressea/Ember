@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { appConfig } from "../../lib/config.js";
+import { Wordmark } from "../common/Wordmark.js";
 import styles from "./auth.module.css";
 
 export interface AuthCardProps {
@@ -9,22 +9,27 @@ export interface AuthCardProps {
   children: ReactNode;
 }
 
-/** Centered auth card with the brand lockup (COMPONENTS.md §13). */
+/**
+ * The auth panel (COMPONENTS.md §13/§14): a centred card above the phone tier,
+ * the whole screen on it (#535).
+ *
+ * `auth-panel` is the testid the phone E2E measures the box of — the tier
+ * question is "does this fill the screen", and a class name cannot answer it.
+ */
 export function AuthCard({
   title,
   sub,
   wide = false,
   children,
 }: AuthCardProps) {
-  const { appName } = appConfig();
   return (
     <div className={styles.backdrop}>
-      <div className={wide ? styles.cardWide : styles.card}>
+      <div
+        className={wide ? styles.cardWide : styles.card}
+        data-testid="auth-panel"
+      >
         <div className={styles.brand}>
-          <span className={styles.brandChip}>
-            {appName.charAt(0).toUpperCase()}
-          </span>
-          {appName.toLowerCase()}
+          <Wordmark />
         </div>
         <h1 className={styles.title}>{title}</h1>
         <p className={styles.sub}>{sub}</p>
