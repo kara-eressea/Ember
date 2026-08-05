@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { utilityProcess } from "electron";
 import { findFreePort, loopbackOrigin } from "./loopback.js";
 import { buildServerEnv } from "./server-env.js";
@@ -95,11 +96,7 @@ async function startOnce(
     clientVersion: options.clientVersion,
   });
 
-  const child = utilityProcess.fork(options.entry, [], {
-    serviceName: "emberchat-server",
-    env,
-    stdio: "pipe",
-  });
+  const child = forkServerChild(options.entry, env);
 
   let stderr = "";
   const capture = (chunk: Buffer | string, stream: NodeJS.WriteStream) => {
@@ -117,9 +114,12 @@ async function startOnce(
 
   let exitCode: number | undefined;
   const exited = new Promise<number>((resolve) => {
-    child.once("exit", (code: number) => {
-      exitCode = code;
-      resolve(code);
+    child.once("exit", (code) => {
+      // A spawned child reports `null` when a signal ended it (Node's own
+      // convention) where a utility process always has a number. Everything
+      // downstream only asks "has it exited", so one stands in for the other.
+      exitCode = code ?? -1;
+      resolve(exitCode);
     });
   });
 
@@ -165,6 +165,83 @@ async function startOnce(
       void exited.then(listener);
     },
   };
+}
+
+/** The little of a child process this module uses, from either mechanism. */
+interface ServerChild {
+  readonly stdout: NodeJS.ReadableStream | null;
+  readonly stderr: NodeJS.ReadableStream | null;
+  once(event: "exit", listener: (code: number | null) => void): unknown;
+  kill(): unknown;
+}
+
+/**
+ * Start the bouncer as a child of this process — by one of two mechanisms,
+ * and the split is a Windows finding from MX4 (#305).
+ *
+ * **macOS: `utilityProcess.fork`**, as MX3 built it. Electron's own supported
+ * Node child: it dies with the main process automatically, which is worth
+ * having for a child that holds a pglite data directory no second writer may
+ * touch.
+ *
+ * **Windows: `child_process.spawn` of Electron's own binary with
+ * `ELECTRON_RUN_AS_NODE=1`** — the same trick `admin-cli.ts` already uses for
+ * the same reason it gives there: it is the identical runtime (same V8, same
+ * `NODE_MODULE_VERSION`, so `server-runtime`'s Electron-ABI argon2 and re2
+ * load) as an ordinary OS process.
+ *
+ * Why the split exists, measured rather than assumed. A utility process on
+ * Windows cannot open a listening socket: the bouncer died on
+ * `listen UNKNOWN 127.0.0.1:<port>` on three different ports in a row, with
+ * `getaddrinfo EAI_FAIL` and `WSALookupServiceBegin failed with: 10108`
+ * alongside it — the signature of a process that has no usable Winsock. On the
+ * *same machine, in the same CI job*, two probes both succeeded: plain Node,
+ * and the packaged Electron binary run as Node. None of the refused ports were
+ * in the OS's excluded ranges. So it is not the host, not the port and not
+ * Electron — it is the process type, and this is the process type that works.
+ *
+ * The cost, and it is the reason macOS is left alone: a spawned child is not
+ * cleaned up by Electron if this process dies without running `will-quit`.
+ * `stopChildOnExit` below closes the ordinary paths; a hard crash of the main
+ * process could still leave a bouncer holding the data directory.
+ */
+function forkServerChild(
+  entry: string,
+  env: Record<string, string>,
+): ServerChild {
+  if (process.platform !== "win32") {
+    return utilityProcess.fork(entry, [], {
+      serviceName: "emberchat-server",
+      env,
+      stdio: "pipe",
+    });
+  }
+  const child = spawn(process.execPath, [entry], {
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  stopChildOnExit(child);
+  return child;
+}
+
+/**
+ * The backstop `utilityProcess` gives for free and a spawned child does not:
+ * do not outlive the shell. `will-quit` is still the only *deliberate* stop
+ * (invariant 6) — this is for the paths that never reach it, and it is
+ * deliberately a kill rather than a graceful close, because by the time
+ * `process.on("exit")` runs nothing asynchronous can still happen.
+ */
+function stopChildOnExit(child: ReturnType<typeof spawn>): void {
+  const kill = () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+    }
+  };
+  process.once("exit", kill);
+  child.once("exit", () => {
+    process.removeListener("exit", kill);
+  });
 }
 
 /** A boot failure carrying whatever the child managed to say on the way down. */
