@@ -100,6 +100,26 @@ serializes per identity, and it's one user. Items to verify at build time
 (native dep) under Electron, backup story (pglite file copy replaces
 pg_dump; the drill in docs/self-hosting.md gets a desktop sibling).
 
+**Spike done (#297) — the choice holds; see `design/mx2-pglite-spike.md`.**
+All three deferred items came back green, with executed evidence: pglite
+0.5.4 bundles PostgreSQL **18.3**, so `uuidv7()` is native and the schema
+needs no shim at all; all 22 drizzle migrations apply unchanged in ~70 ms and
+the real `buildApp` boots on pglite (`gateway.test.ts` passes 56/56 against
+it); `re2` and `argon2` both load and run under Electron 43 after a mandatory
+`@electron/rebuild` step (~73 s, one-way — a tree rebuilt for Electron can no
+longer run the Node test suite). Four things the spike changes here. (1) The
+`Db` alias must widen to `PgDatabase<PgQueryResultHKT, …>` — `PgliteDatabase`
+is *not* assignable to `NodePgDatabase` — which, plus one `db.execute()` read
+in `gateway/snapshot.ts`, is the entire type cost. (2) The backup primitive is
+`dumpDataDir()` (551 ms, 39 MB → 4.85 MB tarball, restores via `loadDataDir`),
+taken while running; a plain file copy is documented as **quit first**, since
+`cp -R` of a live cluster has no validity guarantee even though it happened to
+work every time it was tried. (3) `fsync` is **off** and cannot be enabled
+(pglite pins it on the command line) — process crashes are safe, power loss can
+lose the last seconds; that belongs in the desktop docs. (4) pglite takes **no
+lock on its data directory** — a second instance opens it happily — so the
+single-instance lock in phase 3 below is correctness, not polish.
+
 ## In-process gateway: loopback, not IPC (decided by this pass)
 
 The renderer needs the gateway. Two options:

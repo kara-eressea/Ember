@@ -5,7 +5,15 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/.turbo/**", "**/coverage/**", "prototype/**"],
+    ignores: [
+      "**/dist/**",
+      "**/.turbo/**",
+      "**/coverage/**",
+      "prototype/**",
+      // Spike harnesses kept as evidence, not as code we ship (#297): they
+      // import dependencies that are deliberately absent from the workspace.
+      "design/spikes/**",
+    ],
   },
   {
     files: ["**/*.{ts,tsx}"],
