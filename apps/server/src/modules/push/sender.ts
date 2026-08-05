@@ -285,6 +285,10 @@ export class PushSender {
         body: request.body,
         signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
       });
+      // Push services answer with an empty or uninteresting body and nothing
+      // here reads it — but an undrained response pins its socket until the
+      // GC gets around to it, which on a busy instance is a slow leak.
+      await response.body?.cancel();
       if (response.status === 404 || response.status === 410) {
         // The push service says this endpoint is gone for good (uninstalled
         // PWA, cleared site data, rotated subscription). Prune it — it can
