@@ -3,6 +3,7 @@
 // migrates on boot). Returns the teardown that stops all three.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
@@ -38,6 +39,35 @@ async function waitForHealthy(url: string, child: ChildProcess): Promise<void> {
     await delay(500);
   }
   throw new Error(`server never became healthy at ${url}`);
+}
+
+/**
+ * A throwaway VAPID keypair, so the stack boots with push CONFIGURED and the
+ * preferences toggle exists to be driven (push.spec). Generated per run rather
+ * than committed: a private key in the repo is a private key in the repo, even
+ * a meaningless one, and the shape is the whole requirement — base64url of a
+ * P-256 point (65 bytes) and its scalar (32), which is exactly what
+ * `web-push generate-vapid-keys` prints and what `config.ts` validates.
+ *
+ * Nothing is ever sent with it. Real delivery needs a real push service, which
+ * is precisely the part of this feature no CI can exercise (web-push.md §5).
+ */
+function vapidKeys(): { publicKey: string; privateKey: string } {
+  const { privateKey } = generateKeyPairSync("ec", {
+    namedCurve: "prime256v1",
+  });
+  // The private JWK carries both halves; the public key VAPID puts on the wire
+  // is the uncompressed point, 0x04 then the two coordinates.
+  const jwk = privateKey.export({ format: "jwk" });
+  const point = Buffer.concat([
+    Buffer.from([0x04]),
+    Buffer.from(jwk.x ?? "", "base64url"),
+    Buffer.from(jwk.y ?? "", "base64url"),
+  ]);
+  return {
+    publicKey: point.toString("base64url"),
+    privateKey: Buffer.from(jwk.d ?? "", "base64url").toString("base64url"),
+  };
 }
 
 /** Resolves true when nothing is listening on 127.0.0.1:`port`. */
@@ -153,6 +183,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // disabled — the E2E stack runs the production shape); the CLI needs
     // the database directly.
     process.env["E2E_DATABASE_URL"] = container.getConnectionUri();
+    const vapid = vapidKeys();
     server = spawn(process.execPath, [SERVER_ENTRY], {
       env: {
         ...process.env,
@@ -193,6 +224,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         CAMPAIGN_SPACING_MS: "250",
         // No phone-home from CI runs.
         UPDATE_CHECK_ENABLED: "false",
+        // Web Push configured, so `/api/push/vapid-key` reports enabled and
+        // the preferences toggle renders (push.spec). All three or none.
+        PUSH_VAPID_PUBLIC_KEY: vapid.publicKey,
+        PUSH_VAPID_PRIVATE_KEY: vapid.privateKey,
+        PUSH_VAPID_SUBJECT: "mailto:e2e@example.test",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

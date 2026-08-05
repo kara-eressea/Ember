@@ -11,6 +11,11 @@ It is ordered as that sitting rather than by milestone: **an Android pass, then
 an iOS pass**, each starting with the install so everything after it happens in
 the window the checks are about. Two devices, perhaps forty minutes.
 
+[Web Push](web-push.md) was appended later, as a third pass at the end. It is
+not part of the MP remainder — it is a feature whose *entire* payoff happens
+while the app is closed, on an operating system's own notification surface,
+and no browser automation anywhere reaches any of that.
+
 Each item says what to look for and — where the failure has a known first
 suspect — where to start if it is wrong. Nothing here blocks a release; this is
 the confidence pass on work that shipped on measurement and inference.
@@ -222,3 +227,84 @@ This is the engine none of MP2's or MP3's work is reachable from, and the one
       `resume` at all, so recovery there rests entirely on `visibilitychange`
       and the probe's staleness test — the paths #432 built. Leave the app for
       half an hour, come back, and check the log catches up.
+
+---
+
+## Web Push pass (WP, #521/#522)
+
+Run this one **after** both installs above, on both devices. Everything here
+needs a real push service — Google's on Android, Apple's on iOS — which is
+exactly the piece no CI can hold: `apps/web/e2e/push.spec.ts` drives the opt-in
+and the two subscription requests with the browser's own handshakes stubbed,
+and stops precisely where delivery begins. Nothing below has ever been observed
+by a test.
+
+Two facts to have in hand before starting:
+
+- **The instance needs VAPID keys and HTTPS.** Push is invisible end-to-end
+  without `PUSH_VAPID_PUBLIC_KEY`/`PUSH_VAPID_PRIVATE_KEY`/`PUSH_VAPID_SUBJECT`
+  (`docs/self-hosting.md`), and no browser subscribes outside a secure context.
+  If the toggle is not in Preferences → Notifications, that is the first thing
+  to check, not a bug in the client.
+- **The push is sent for every qualifying event**, with no server-side check
+  for an attached client (web-push.md §"What triggers a push"). The dedup is at
+  display time: the worker skips display when a window is focused, and it tags
+  notifications exactly as the page does. So "I got two" and "I got none while
+  looking at it" are both real findings.
+
+### Android (Chrome, installed)
+
+- [ ] **The toggle survives a restart.** Enable push in Preferences →
+      Notifications, accept the browser prompt, force-stop the app and reopen
+      it: the toggle is still on. It is a localStorage flag plus a re-PUT on
+      boot, and the re-PUT is what heals a rotated subscription — so this also
+      checks the thing that silently breaks after a few days.
+- [ ] **A push arrives with the app fully closed.** Swipe the app away, have
+      someone PM the character, and wait: a notification, with the sender and
+      the message. This is the milestone — the bouncer has held the session all
+      along and this is the first time it can say so.
+- [ ] **The tap lands on the right conversation.** From the closed state, tap
+      the notification: the app opens on that PM, not on the last conversation
+      and not on the identity picker. Then repeat with the app already open in
+      the background — it should focus the existing window and navigate it,
+      not open a second one.
+- [ ] **A mention in a channel pushes, and a plain message does not.** The
+      pref that gates it is `desktopNotifyMentions`, shared with desktop
+      notifications; a channel the user is merely in must stay silent.
+- [ ] **A muted conversation stays silent.** Mute a PM (the 🔕 chip), close the
+      app, have the partner write: nothing arrives. Same for a muted identity.
+- [ ] **"Show message preview" off hides the body.** Turn it off, close the
+      app, take a PM: the notification names the sender and shows no text. The
+      excerpt is left out of the *payload* server-side, so this is also the
+      check that the message never left the server at all.
+- [ ] **One notification, not two.** With the app open in the background (not
+      focused), take a PM: the page's own notification and the push carry the
+      same tag and must collapse into a single entry, with one sound.
+- [ ] **Nothing arrives while the app is focused and on screen.** The worker
+      suppresses display when a focused window exists.
+- [ ] **Signing out stops delivery.** Log out, then have the partner write:
+      nothing arrives. The subscription row cascades off the auth session
+      server-side, and the client unregisters the worker locally.
+- [ ] **Turning the toggle off stops delivery** without signing out, and the
+      installed app keeps working normally afterwards.
+
+### iOS (Safari, home screen only)
+
+iOS delivers push to **installed** web apps only, from 16.4. In a Safari tab
+there is no `PushManager` at all, which is why the pane carries a static hint
+line rather than a toggle that could only fail.
+
+- [ ] **The toggle is absent in a Safari tab** and present in the installed
+      app, with the Home Screen hint visible in both.
+- [ ] **The permission prompt appears on the toggle, not before it.** iOS only
+      allows the request from a user gesture; a prompt that never appears means
+      the gesture chain was broken.
+- [ ] **A push arrives with the installed app closed**, and shows the sender.
+- [ ] **The tap opens the app on the right conversation.** WebKit's
+      `clients.openWindow` from a notification is the least-exercised path in
+      the whole feature — if any single item here fails, expect it to be this
+      one.
+- [ ] **It still works after a few days of not opening the app.** iOS is the
+      platform most likely to drop a subscription on its own; the boot re-PUT
+      is the repair, so the failure looks like "it worked, then quietly
+      stopped" and needs a gap to reproduce.

@@ -191,6 +191,12 @@ assert on, and `pageshow.persisted` is unit-tested instead.
 - Browser-tab experience: zero change outside `display-mode: standalone`
   except the (invisible) metas and manifest link.
 - No service worker, no caching, no offline claims anywhere user-visible.
+  **Amended by [WP](web-push.md) (#522), exactly as the preamble anticipated:**
+  there is now one worker, `apps/web/public/sw.js`, registered only for a
+  device that opted into push and doing only notification display and click
+  routing. The caching half of this invariant is untouched and is now asserted
+  head-on — `shipping-shape.test.ts` reads that file and fails on any `fetch`
+  handler or Cache API reference.
 - Product name and domains stay config tokens — grep the diff for the literal
   before merging.
 - The CSP hash-pin guard stays green; no new external requests.

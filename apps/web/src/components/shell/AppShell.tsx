@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
 import { gateway } from "../../gateway/socket.js";
 import { startAutoAway } from "../../lib/auto-away.js";
+import { syncPushSubscription } from "../../lib/push.js";
 import {
   identityPath,
   rememberLastIdentity,
@@ -155,6 +156,14 @@ export function AppShell() {
   // Same lifetime for window focus (#440) — the read paths below and in
   // gateway/dispatch read it from the ui store.
   useEffect(() => startWindowFocusTracking(), []);
+
+  // Push, for a device that opted in (design/web-push.md §4). Here rather than
+  // in main.tsx because both calls it makes need an access token, and the
+  // shell is the first thing that only renders once there is one. A no-op —
+  // not even a fetch — for everyone else.
+  useEffect(() => {
+    void syncPushSubscription();
+  }, []);
 
   // Ctrl/Cmd+K toggles the quick-switcher (M9) from anywhere in the shell.
   useEffect(() => {

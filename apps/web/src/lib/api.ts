@@ -402,6 +402,35 @@ export const api = {
     return apiRequest<MetaDto>("/meta", { auth: true });
   },
 
+  /** Web Push feature detection and the instance's VAPID public key
+   * (design/web-push.md §3). `enabled: false` means this instance was never
+   * given a keypair — the whole control hides. */
+  getPushVapidKey() {
+    return apiRequest<{ enabled: boolean; key?: string }>("/push/vapid-key", {
+      auth: true,
+    });
+  },
+  /** Register or refresh this browser's push subscription. Upserts on the
+   * endpoint, so re-PUTting an unchanged one is the intended self-heal. */
+  putPushSubscription(subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  }) {
+    return apiRequest<{ ok: true }>("/push/subscription", {
+      method: "PUT",
+      auth: true,
+      body: subscription,
+    });
+  },
+  /** Drop one endpoint. Idempotent, and scoped server-side to the caller. */
+  deletePushSubscription(endpoint: string) {
+    return apiRequest<{ removed: boolean }>("/push/subscription", {
+      method: "DELETE",
+      auth: true,
+      body: { endpoint },
+    });
+  },
+
   /** Bookmarks, friends and friend requests (M6 step 7), scoped to the
    * identity's character and presence-enriched by the server. Served from
    * the server-side cache while fresh (#194); refresh forces the four

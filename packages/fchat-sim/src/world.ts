@@ -718,6 +718,13 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Vellum Prine"],
     },
+    // Reserved for the #522 Web Push E2E, which needs no partner: the spec
+    // never sends a message. It drives the per-device push toggle in the
+    // preferences window and watches the subscription requests that follow.
+    "pushwort@example.test": {
+      password: "hunter2",
+      characters: ["Pushwort Kell"],
+    },
   },
   channels: [
     {
