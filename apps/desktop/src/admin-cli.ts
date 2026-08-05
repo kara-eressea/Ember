@@ -108,9 +108,15 @@ export async function runAdminCli(
     child.once("error", (cause) => {
       clearTimeout(timer);
       reject(
-        new AdminCliError("The account tool could not be started.", stderr, {
-          cause,
-        }),
+        new AdminCliError(
+          [
+            "The app couldn't finish setting up your account on this computer.",
+            "",
+            "Details: the account tool would not start.",
+          ].join("\n"),
+          stderr,
+          { cause },
+        ),
       );
     });
     child.once("close", (code) => {
