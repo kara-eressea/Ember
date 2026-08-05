@@ -148,14 +148,19 @@ async function boot(): Promise<void> {
     installAppMenu(() => {
       openChooser("switch");
     });
-    startup(planStartup(readConfig(configPath(app.getPath("userData")))));
+    await startup(planStartup(readConfig(configPath(app.getPath("userData")))));
   } catch (error) {
     fail(app.getName() + " could not start", describeStartupError(error));
   }
 }
 
-/** The three answers `planStartup` can give (spec §4). */
-function startup(plan: StartupPlan): void {
+/**
+ * The three answers `planStartup` can give (spec §4).
+ *
+ * Resolves once the launch has a window (or the chooser does), which is what
+ * lets `applyChoice` hold the chooser open until then — see there.
+ */
+async function startup(plan: StartupPlan): Promise<void> {
   // One line on the console so a dev run — and a bug report from somebody
   // whose app opened the wrong thing — says which of the three paths a launch
   // took. The mode is not a secret; the server's address is not printed with
@@ -174,9 +179,7 @@ function startup(plan: StartupPlan): void {
       openAppWindow(plan.serverUrl);
       return;
     case "local":
-      void startLocalMode().catch((error: unknown) => {
-        fail(app.getName() + " could not start", describeStartupError(error));
-      });
+      await startLocalMode();
       return;
   }
 }
@@ -294,8 +297,13 @@ function openChooser(reason: "first-run" | "switch"): void {
 /**
  * Persist the chooser's answer and act on it.
  *
- * On a first run the app simply carries on into the chosen mode — nothing has
- * started yet, so there is nothing to unwind.
+ * On a first run the app carries straight on into the chosen mode — nothing
+ * has started yet, so there is nothing to unwind. The chooser stays on screen
+ * until that mode has a window of its own, for two reasons: `window-all-closed`
+ * quits the app, and a first local boot spends a good few seconds provisioning
+ * with nothing else open — closing the chooser first would quit the app in the
+ * middle of it. It also means the page keeps its busy state until there is
+ * something to look at instead.
  *
  * A later change relaunches instead. `app.relaunch()` + `exit` is the simplest
  * honest implementation and it is chosen deliberately: local mode leaves a
@@ -324,20 +332,30 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
     };
   }
 
-  chooserWindow?.close();
-
   if (switching) {
     stopping = true;
+    // Armed *first*: anything that quits the app between here and `exit` —
+    // a stray `window-all-closed`, the `will-quit` path — would otherwise end
+    // the process for good instead of restarting it into the new mode.
+    app.relaunch();
     // A clean SIGTERM before the process goes: pglite is a file on this user's
-    // disk, not a server somebody else runs.
+    // disk, not a server somebody else runs. The windows go with `exit`; there
+    // is nothing to close by hand.
     await (server?.stop() ?? Promise.resolve());
     server = undefined;
-    app.relaunch();
     app.exit(0);
     return { ok: true };
   }
 
-  startup(planStartup(config));
+  try {
+    await startup(planStartup(config));
+  } catch (error) {
+    // The chooser is still up behind the dialog; `fail` ends the process, so
+    // what this answers with only decides what a still-alive page would show.
+    fail(app.getName() + " could not start", describeStartupError(error));
+    return { ok: false, message: describeStartupError(error) };
+  }
+  chooserWindow?.close();
   return { ok: true };
 }
 
