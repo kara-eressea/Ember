@@ -403,7 +403,7 @@ async function boot(): Promise<void> {
     });
     await startup(planStartup(readConfig(configPath(app.getPath("userData")))));
   } catch (error) {
-    fail(app.getName() + " could not start", describeStartupError(error));
+    fail(app.getName() + " couldn't start", describeStartupError(error));
   }
 }
 
@@ -576,7 +576,11 @@ async function startLocalMode(): Promise<void> {
     });
     if (!(await migrator.stop())) {
       throw new Error(
-        "The embedded server did not shut down after preparing the database, so the account could not be created safely. Try starting EmberChat again.",
+        [
+          `${app.getName()} couldn't finish setting itself up on this computer, so it stopped before changing anything. Please try starting it again.`,
+          "",
+          "Details: the first-run setup step did not shut down.",
+        ].join("\n"),
       );
     }
     await provisionAppAccount({
@@ -606,8 +610,12 @@ async function startLocalMode(): Promise<void> {
       return;
     }
     fail(
-      "The bouncer stopped",
-      `The embedded server exited unexpectedly (code ${String(code)}).`,
+      `${app.getName()} has to close`,
+      [
+        `The part of ${app.getName()} that keeps you connected stopped, so your characters are no longer online. Everything said so far is saved on this computer and will be here when you start it again.`,
+        "",
+        `Details: the local server exited with code ${String(code)}.`,
+      ].join("\n"),
     );
   });
 
@@ -860,7 +868,7 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
   } catch (error) {
     return {
       ok: false,
-      message: `That choice could not be saved to ${path} (${error instanceof Error ? error.message : String(error)}).`,
+      message: `Your choice couldn't be saved, so nothing has changed. Details: ${path} — ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 
@@ -891,7 +899,7 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
   } catch (error) {
     // The chooser is still up behind the dialog; `fail` ends the process, so
     // what this answers with only decides what a still-alive page would show.
-    fail(app.getName() + " could not start", describeStartupError(error));
+    fail(app.getName() + " couldn't start", describeStartupError(error));
     return { ok: false, message: describeStartupError(error) };
   }
   chooserWindow?.close();
@@ -980,13 +988,14 @@ function describeStartupError(error: unknown): string {
     // next boot's provisioning does know how to adopt an existing account —
     // see admin-cli.ts — but the choice to get there stays the user's.)
     return [
-      `The app's stored secrets could not be read (${error.message}).`,
+      `${app.getName()} couldn't read the private settings it keeps for this computer, so it stopped rather than guess. Nothing has been changed.`,
       "",
       `They live in:  ${secretsPath(app.getPath("userData"))}`,
       "",
-      "This usually means the file was edited, restored from another machine,",
-      "or that the operating system's keychain entry for it is gone. Nothing",
-      "has been changed automatically.",
+      "This usually means that file was edited or copied from another computer,",
+      "or that this computer's keychain no longer has the key for it.",
+      "",
+      `Details: ${error.message}.`,
     ].join("\n");
   }
   if (error instanceof AdminCliError) {

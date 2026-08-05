@@ -134,8 +134,16 @@ async function startOnce(
     }
     throw new EmbeddedServerStartError(
       exitCode === undefined
-        ? `The bouncer did not become ready in time (${origin}).`
-        : `The bouncer exited with code ${String(exitCode)} before it was ready.`,
+        ? [
+            "The part of the app that keeps you connected didn't finish starting in time.",
+            "",
+            `Details: nothing answered at ${origin} before the wait ran out.`,
+          ].join("\n")
+        : [
+            "The part of the app that keeps you connected stopped while it was starting.",
+            "",
+            `Details: the local server exited with code ${String(exitCode)}.`,
+          ].join("\n"),
       stderr.trim(),
       { cause, childExited: exitCode !== undefined },
     );

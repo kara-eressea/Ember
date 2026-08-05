@@ -59,7 +59,7 @@ async function choose(call) {
   try {
     const result = await call();
     if (!result.ok) {
-      showMessage(result.message ?? "That did not work.");
+      showMessage(result.message ?? "That didn't work.");
     }
   } catch {
     // An IPC handler that threw rather than answering. The user cannot act on

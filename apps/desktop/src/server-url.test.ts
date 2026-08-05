@@ -131,7 +131,7 @@ describe("probeServerUrl", () => {
         fetch: () => Promise.resolve(response),
       }),
     );
-    expect(message).toContain("does not look like");
+    expect(message).toContain("doesn't look like a server this app can use");
   });
 
   it.each([

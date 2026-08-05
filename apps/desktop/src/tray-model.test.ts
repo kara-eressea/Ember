@@ -121,18 +121,21 @@ describe("the tray menu", () => {
     const running = trayMenuModel({ productName: PRODUCT, status: "running" });
     expect(starting.items).not.toEqual(running.items);
     expect(trayStatusLine("connecting")).toBe("Starting up…");
-    expect(trayStatusLine("running")).toContain("online");
+    // Says what it means for the user, not what a process is doing (#543).
+    expect(trayStatusLine("running")).toBe(
+      "Running — you stay online with the window closed",
+    );
     expect(trayTooltip(PRODUCT, "connecting")).toBe(`${PRODUCT} — starting up`);
     expect(trayTooltip(PRODUCT, "running")).toBe(`${PRODUCT} — running`);
   });
 });
 
 describe("the one-time notice", () => {
-  it("says the deal: still running, sessions online, quit to go offline", () => {
+  it("says the deal: still running, characters online, quit to go offline", () => {
     const notice = trayNoticeMessage(PRODUCT);
     expect(notice.title.toLowerCase()).toContain("tray");
     expect(notice.body).toContain(PRODUCT);
-    expect(notice.body.toLowerCase()).toContain("online");
+    expect(notice.body).toContain("keeps your characters online");
     // The half that makes it an honest deal rather than an advertisement.
     expect(notice.body.toLowerCase()).toContain("quit");
   });

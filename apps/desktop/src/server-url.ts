@@ -176,14 +176,14 @@ export async function probeServerUrl(
     }
     return refuse(
       "unreachable",
-      `Could not reach ${serverUrl}. Check the address, that the server is running, and that this computer can get to it.`,
+      `Couldn't reach ${serverUrl}. Check the address, that your server is running, and that this computer can get to it.`,
     );
   }
 
   if (!response.ok) {
     return refuse(
       "unhealthy",
-      `${serverUrl} answered with ${String(response.status)}. That is not an EmberChat server, or it is not healthy right now.`,
+      `${serverUrl} answered with ${String(response.status)}. Either that isn't your server, or your server isn't healthy right now.`,
       String(response.status),
     );
   }
@@ -201,7 +201,7 @@ export async function probeServerUrl(
   ) {
     return refuse(
       "not-emberchat",
-      `Something answered at ${serverUrl}, but it does not look like an EmberChat server.`,
+      `Something answered at ${serverUrl}, but it doesn't look like a server this app can use.`,
     );
   }
 
@@ -262,7 +262,7 @@ export function certificateProblem(error: unknown): string | undefined {
  * user says would undo the reason https is required in the first place.
  */
 function certificateRefusal(serverUrl: string, code: string): string {
-  return `${serverUrl} presented a security certificate this computer will not accept (${code}). Nothing was sent to it. Fix the certificate on the server — this app will not connect to a server it cannot verify.`;
+  return `This computer wouldn't accept the security certificate at ${serverUrl} (${code}), so nothing was sent to it. The certificate needs fixing on the server — this app will not connect to a server it can't check.`;
 }
 
 function refuse(

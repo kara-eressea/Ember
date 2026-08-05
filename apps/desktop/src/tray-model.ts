@@ -114,7 +114,7 @@ export interface TrayMenuModel {
  */
 export function trayStatusLine(status: TrayStatus): string {
   return status === "running"
-    ? "Running — your sessions stay online"
+    ? "Running — you stay online with the window closed"
     : "Starting up…";
 }
 
@@ -158,6 +158,6 @@ export function trayNoticeMessage(productName: string): {
 } {
   return {
     title: "Still running in the tray",
-    body: `${productName} keeps your sessions online while the window is closed. Quit from the tray to go offline.`,
+    body: `${productName} keeps your characters online while the window is closed. Quit from the tray when you want to go offline.`,
   };
 }
