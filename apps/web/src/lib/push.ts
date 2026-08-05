@@ -182,10 +182,11 @@ export async function enablePush(): Promise<PushEnableResult> {
 }
 
 /**
- * The toggle turning off, and the shape every teardown here shares: local
- * first, server second, and the flag last. Local-first because the flag is
- * what boot reads — a server call that fails must still leave this device
- * genuinely unsubscribed rather than opted in and silent.
+ * The toggle turning off. The flag goes first, deliberately: it is what boot
+ * reads, so clearing it before anything that can fail means a teardown
+ * interrupted halfway still leaves this device opted out. The reverse order
+ * has a state where the user turned push off, something threw, and the next
+ * boot quietly re-subscribes them.
  */
 export async function disablePush(): Promise<void> {
   setEnabledHere(false);
