@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // scripts/*.mjs is plain JS with JSDoc types — the build script's pure
+    // decision logic lives there so the script can import it without a build
+    // step, and the vitest suite can import the same module.
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["src", "scripts", "vitest.config.ts"]
+}

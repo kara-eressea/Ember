@@ -4,6 +4,9 @@
 node_modules
 **/node_modules
 **/dist
+# The desktop shell's deployed server tree (MX3) — a local build artifact, and
+# one whose native modules are built for Electron's ABI. Never in an image.
+apps/desktop/server-runtime
 **/.turbo
 **/test-results
 **/playwright-report

@@ -13,3 +13,14 @@ allowBuilds:
   cpu-features: false
   ssh2: false
   protobufjs: false
+  # electron (MX3, apps/desktop): deliberately OFF, so no install — in CI or in
+  # a Docker build — ever pulls the ~100 MB platform binary for a package no
+  # job launches. Electron 43 fetches it lazily on the first `electron .`
+  # instead, which is exactly when a developer wants it.
+  electron: false
+# pnpm's supply-chain gate holds a new release back for a day before it may
+# enter a lockfile. Written by pnpm itself when electron 43.3.0 was added: the
+# version is the one the MX2 spike verified argon2/re2/pglite against, so it is
+# a deliberate pin rather than an accidental bleeding edge.
+minimumReleaseAgeExclude:
+  - electron@43.3.0
