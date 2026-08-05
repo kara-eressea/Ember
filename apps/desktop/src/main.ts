@@ -35,7 +35,14 @@
  * answers — an untrusted renderer is a real thing to defend against once the
  * main window is somebody else's origin.
  *
- * Not here yet: the tray and close-to-tray lifecycle (#304), packaging (MX4).
+ * #304 finished the lifecycle (§6). In local mode the window no longer *is* the
+ * app: closing it hides it to a tray and the bouncer keeps running, because a
+ * chat client whose sessions drop when the window shuts is the thing this whole
+ * project exists to fix. Quit — from the tray, the menu, or the OS — is the one
+ * path that stops the server child (invariant 6). Thin-client mode is unchanged
+ * and deliberately trayless: there is no local bouncer to keep alive there.
+ *
+ * Not here yet: packaging (MX4).
  */
 
 import { hostname } from "node:os";
@@ -48,6 +55,7 @@ import {
   dialog,
   ipcMain,
   net,
+  Notification,
   safeStorage,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -70,6 +78,7 @@ import {
   configPath,
   readConfig,
   sameConfig,
+  withTrayNoticeSeen,
   writeConfig,
   type DesktopConfig,
 } from "./desktop-config.js";
@@ -98,6 +107,7 @@ import {
   errorPage,
   MissingArtifactError,
   resolveArtifacts,
+  trayIconPath,
 } from "./paths.js";
 import { planBoot, secretsPath } from "./provisioning.js";
 import {
@@ -113,7 +123,16 @@ import {
   type ServerUrlResult,
 } from "./server-url.js";
 import { planStartup, type StartupPlan } from "./startup.js";
+import { lifecycleProbe, LIFECYCLE_PROBE_ENV } from "./test-hooks.js";
 import { planThinClientLaunch } from "./thin-client.js";
+import { createAppTray, type AppTray } from "./tray.js";
+import {
+  decideLastWindowClosed,
+  decideWindowClose,
+  trayNoticeMessage,
+  type CloseContext,
+  type LifecycleMode,
+} from "./tray-model.js";
 import { createMainWindow } from "./window.js";
 
 /** `apps/desktop` — this file lives in its `dist/`. */
@@ -128,9 +147,19 @@ let errorWindow: BrowserWindow | undefined;
 let chooserReason: "first-run" | "switch" = "first-run";
 /** What the app window shows, in whichever mode — also the seed's IPC identity. */
 let appOrigin: string | undefined;
-/** Reopen the app the way this mode opens it (macOS `activate`). */
+/** Reopen the app the way this mode opens it (macOS `activate`, the tray). */
 let reopenApp: (() => void) | undefined;
 let stopping = false;
+/** The system tray — local mode only, and the reason a closed window is not the end. */
+let tray: AppTray | undefined;
+/** What this launch became; `startup` sets it from the plan (see tray-model.ts). */
+let lifecycleMode: LifecycleMode = "choose";
+/**
+ * Something has asked the app to quit — the tray, the menu, Cmd-Q, the OS
+ * logging out. Windows close on the way out rather than hiding, so this is the
+ * flag that keeps close-to-tray from turning a quit into a disappearing act.
+ */
+let quitRequested = false;
 /**
  * This boot's session for the preload to pick up (see `preload.cts`) — created
  * from the startup plan, so a boot that has no business holding one *cannot*
@@ -339,15 +368,11 @@ function probeRemote(serverUrl: string): Promise<ServerUrlResult> {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // A second launch of an app that is already running: show what is there.
+  // With close-to-tray this is also how somebody who forgot the app is in the
+  // tray gets their window back — clicking the icon again is the obvious move.
   app.on("second-instance", () => {
-    const window = mainWindow ?? chooserWindow;
-    if (window === undefined) {
-      return;
-    }
-    if (window.isMinimized()) {
-      window.restore();
-    }
-    window.focus();
+    showApp();
   });
   void boot();
 }
@@ -381,17 +406,22 @@ async function startup(plan: StartupPlan): Promise<void> {
   // seed to give away" is a property of the plan and not of a code path that
   // happens not to have run (see `createSeedHolder`).
   authSeed = createSeedHolder(plan.kind);
+  // The lifecycle's own copy of the same answer: what a closing window means
+  // is a question about the mode, and it gets asked long after this returns.
+  lifecycleMode = plan.kind;
   switch (plan.kind) {
     case "choose":
       openChooser("first-run");
       return;
     case "thin-client":
       await startThinClient(plan.serverUrl);
-      return;
+      break;
     case "local":
       await startLocalMode();
-      return;
+      break;
   }
+  // Inert unless the environment asks for it (test-hooks.ts).
+  runLifecycleProbe();
 }
 
 /**
@@ -485,6 +515,13 @@ async function startLocalMode(): Promise<void> {
   const dataDir = join(userData, "db");
   mkdirSync(dataDir, { recursive: true });
 
+  // Before the server, not after: a first run spends the better part of a
+  // minute provisioning with nothing on screen, and "starting up" in the tray
+  // is the only thing this app can say for itself while that happens. It is
+  // also the mode's one way back once a window has been closed, so it must
+  // exist before any window does.
+  installTray();
+
   const serverOptions = {
     entry,
     dataDir,
@@ -565,6 +602,10 @@ async function startLocalMode(): Promise<void> {
     openAppWindow(origin);
   };
   openAppWindow(origin);
+  // Everything the tray can honestly claim: the child answered /healthz and
+  // has not exited since (`onUnexpectedExit` above is what would say otherwise).
+  // No poller — §6 asks for a status line, not a monitor.
+  tray?.setStatus("running");
 }
 
 function openAppWindow(
@@ -572,10 +613,157 @@ function openAppWindow(
   options: { onFailure?: (failure: WindowFailure) => void } = {},
 ): void {
   appOrigin = origin;
-  mainWindow = createMainWindow(origin, options);
-  mainWindow.on("closed", () => {
-    mainWindow = undefined;
+  const window = createMainWindow(origin, options);
+  mainWindow = window;
+  // The close-to-tray decision, and the only place it is made (§6). Wired to
+  // the app window alone: the chooser and the error window always close, which
+  // is what `decideWindowClose` answers for them — declining the question and
+  // dismissing a failed remote session are both the app being dismissed.
+  window.on("close", (event) => {
+    const verdict = decideWindowClose("app", closeContext());
+    console.log(`${app.getName()} window close: ${verdict}`);
+    if (verdict !== "hide-to-tray") {
+      return;
+    }
+    event.preventDefault();
+    window.hide();
+    // macOS keeps its dock icon (the platform's convention for an app that is
+    // still running), Windows loses its taskbar button with the window — both
+    // are what `hide()` already does, and neither needs help from here.
+    showTrayNoticeOnce();
   });
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = undefined;
+    }
+  });
+}
+
+/** What the close decisions are made against, gathered in one place. */
+function closeContext(): CloseContext {
+  return {
+    mode: lifecycleMode,
+    trayPresent: tray !== undefined,
+    // `stopping` covers the mode switch's relaunch, which quits without ever
+    // going through `before-quit`'s flag.
+    quitting: quitRequested || stopping,
+  };
+}
+
+function installTray(): void {
+  if (tray !== undefined) {
+    return;
+  }
+  tray = createAppTray({
+    iconPath: trayIconPath(DESKTOP_ROOT, process.platform),
+    productName: app.getName(),
+    onOpen: showApp,
+    onQuit: quitFromTray,
+  });
+}
+
+/**
+ * What the tray's Quit item does — the explicit "go offline" half of the deal
+ * (§6). The ordinary quit, deliberately: `before-quit` marks the intent,
+ * windows then close instead of hiding, and `will-quit` stops the bouncer. A
+ * second stop path here would be a second chance to get invariant 6 wrong.
+ */
+function quitFromTray(): void {
+  console.log(`${app.getName()} quit: from the tray`);
+  app.quit();
+}
+
+/**
+ * Bring the app back — from the tray, the dock, or a second launch.
+ *
+ * Whatever window this mode has: the app window (hidden behind the tray, or
+ * merely behind something else), the chooser, or the error page. With none of
+ * them, the mode's own way in — a fresh probe in thin-client mode, the loopback
+ * origin in local mode — never a bare `loadURL` of an address nobody checked.
+ */
+function showApp(): void {
+  if (stopping || quitRequested) {
+    return;
+  }
+  const window = mainWindow ?? chooserWindow ?? errorWindow;
+  if (window !== undefined && !window.isDestroyed()) {
+    if (window.isMinimized()) {
+      window.restore();
+    }
+    window.show();
+    window.focus();
+    return;
+  }
+  reopenApp?.();
+}
+
+/**
+ * The one-time notice (§6): said the first time a window goes to the tray, and
+ * never again.
+ *
+ * A notification rather than a dialog, because the user just closed a window
+ * and a modal box appearing in its place would be the app arguing with them.
+ * The flag is written only once something was actually shown — on a machine
+ * where notifications are unavailable the sentence is still owed, and the next
+ * close is welcome to try again.
+ */
+function showTrayNoticeOnce(): void {
+  const path = configPath(app.getPath("userData"));
+  const config = readConfig(path);
+  if (config === undefined || config.trayNoticeSeen === true) {
+    return;
+  }
+  if (!Notification.isSupported()) {
+    return;
+  }
+  const { title, body } = trayNoticeMessage(app.getName());
+  const notification = new Notification({ title, body, silent: true });
+  notification.on("click", () => {
+    showApp();
+  });
+  notification.show();
+  try {
+    writeConfig(path, withTrayNoticeSeen(config, true));
+  } catch (error) {
+    // Losing this costs one repeated sentence; failing a window close over it
+    // would cost the user their window.
+    console.warn(
+      `Could not record the tray notice in ${path} (${error instanceof Error ? error.message : String(error)}).`,
+    );
+  }
+}
+
+/** How long the lifecycle probe waits before each step (test-hooks.ts). */
+const PROBE_STEP_MS = 2_000;
+
+/**
+ * The app driving its own close and quit, for a verification run that has no
+ * way to click anything. Does nothing at all unless the environment asks.
+ */
+function runLifecycleProbe(): void {
+  const probe = lifecycleProbe(process.env);
+  if (probe === undefined) {
+    return;
+  }
+  console.log(
+    `${app.getName()} lifecycle probe: ${probe} (${LIFECYCLE_PROBE_ENV})`,
+  );
+  setTimeout(() => {
+    console.log(`${app.getName()} lifecycle probe: closing the window`);
+    // Whichever window this launch ended up with — including the error window
+    // of a thin-client session that never loaded (§5), which is its own case
+    // in the close table and the one hardest to reach by hand.
+    (mainWindow ?? errorWindow)?.close();
+    if (probe !== "close-then-quit") {
+      return;
+    }
+    setTimeout(() => {
+      console.log(`${app.getName()} lifecycle probe: quitting`);
+      // The tray's own menu item, called rather than clicked — the point of
+      // the probe is that this is the same function, not a similar one.
+      quitFromTray();
+    }, PROBE_STEP_MS);
+  }, PROBE_STEP_MS);
 }
 
 function openChooser(reason: "first-run" | "switch"): void {
@@ -635,7 +823,13 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
   }
 
   try {
-    writeConfig(path, config);
+    // Carrying one thing across the rewrite: whether close-to-tray has already
+    // introduced itself (§6). Switching away and back is not a reason to
+    // explain the tray a second time.
+    writeConfig(
+      path,
+      withTrayNoticeSeen(config, readConfig(path)?.trayNoticeSeen === true),
+    );
   } catch (error) {
     return {
       ok: false,
@@ -645,6 +839,13 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
 
   if (switching) {
     stopping = true;
+    // The tray belongs to this process and to local mode; the relaunched
+    // instance builds its own if it needs one. Destroyed by hand rather than
+    // left to `exit`, so there is no dead icon in the menu bar during the gap
+    // — and so that nothing between here and then can decide the app should
+    // stay alive because a tray exists (`closeContext`).
+    tray?.destroy();
+    tray = undefined;
     // Armed *first*: anything that quits the app between here and `exit` —
     // a stray `window-all-closed`, the `will-quit` path — would otherwise end
     // the process for good instead of restarting it into the new mode.
@@ -670,8 +871,18 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
   return { ok: true };
 }
 
+// Whatever asked — the tray's Quit, the menu, Cmd-Q, the OS shutting down —
+// the answer to "is this a quit?" has to be known before the windows start
+// closing, or close-to-tray would hide them on the way out and the app would
+// never finish leaving.
+app.on("before-quit", () => {
+  quitRequested = true;
+});
+
 // The bouncer is this app's whole point, so its child must not outlive it —
-// SIGTERM lets apps/server close Fastify and the database properly.
+// SIGTERM lets apps/server close Fastify and the database properly. This stays
+// the ONLY path that stops the child (spec invariant 6): a closing window in
+// local mode hides instead, and #304 changed nothing here.
 app.on("will-quit", (event) => {
   if (server === undefined || stopping) {
     return;
@@ -684,27 +895,24 @@ app.on("will-quit", (event) => {
   });
 });
 
-// #304 turns this into close-to-tray: in local mode the bouncer keeps running
-// after the last window closes — that is the product. Until the tray exists,
-// closing the window with no way to get it back has to mean quitting. It is
-// also how the chooser is declined: closing it without answering quits, and
-// nothing has been written.
+// No windows left. In local mode with a tray that is a normal state — the
+// bouncer is running, the tray is the way back — and everywhere else it is the
+// end of the app: thin-client mode (no local bouncer to keep alive), a chooser
+// declined without an answer, an error window dismissed. `decideLastWindowClosed`
+// holds that table; this carries the verdict out.
 app.on("window-all-closed", () => {
-  app.quit();
+  const verdict = decideLastWindowClosed(closeContext());
+  console.log(`${app.getName()} last window closed: ${verdict}`);
+  if (verdict === "quit") {
+    app.quit();
+  }
 });
 
+// macOS: the dock icon clicked, which after a close-to-tray is the other
+// obvious way back in (the dock icon stays — an app that is still running says
+// so there, and hiding it would leave the menu bar as the only evidence).
 app.on("activate", () => {
-  if (
-    mainWindow === undefined &&
-    chooserWindow === undefined &&
-    errorWindow === undefined &&
-    reopenApp !== undefined &&
-    !stopping
-  ) {
-    // Whatever this mode's way in is — the loopback origin, or a fresh probe of
-    // the remote one. Never a bare `loadURL` of an address nobody has checked.
-    reopenApp();
-  }
+  showApp();
 });
 
 /** A blank window explains nothing; a dialog with the child's own words does. */

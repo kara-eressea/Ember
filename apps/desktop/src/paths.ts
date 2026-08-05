@@ -51,6 +51,30 @@ export function errorPage(desktopRoot: string): string {
   return join(desktopRoot, "error", "index.html");
 }
 
+/**
+ * The tray icon (#304), which is two pictures because the two platforms want
+ * different ones: a macOS menu-bar icon is a *template* — a black stencil the
+ * OS tints for light, dark and selected states — while Windows' notification
+ * area shows the app's own artwork. Both are checked in beside the chooser and
+ * the error page, on the same terms: static files that ship as they are, from
+ * `scripts/generate-tray-icons.mjs`. Electron picks up the `@2x` file beside
+ * each one by name, so this returns the 1x path in both cases.
+ *
+ * Linux is not a target for this release (planning, 2026-08-05); it falls to
+ * the Windows artwork, which is also the right answer for the tray areas that
+ * do exist there.
+ */
+export function trayIconPath(
+  desktopRoot: string,
+  platform: NodeJS.Platform,
+): string {
+  return join(
+    desktopRoot,
+    "assets",
+    platform === "darwin" ? "trayTemplate.png" : "tray.png",
+  );
+}
+
 /** The built web app: `apps/web/dist`, one directory over from here. */
 export function webDistDir(desktopRoot: string): string {
   return resolve(desktopRoot, "..", "web", "dist");

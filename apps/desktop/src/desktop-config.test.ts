@@ -8,6 +8,7 @@ import {
   encodeConfig,
   readConfig,
   sameConfig,
+  withTrayNoticeSeen,
   writeConfig,
   CONFIG_SCHEMA_VERSION,
   type DesktopConfig,
@@ -97,6 +98,58 @@ describe("the config file", () => {
     writeConfig(path, LOCAL);
     expect(readConfig(path)).toEqual(LOCAL);
   });
+});
+
+describe("the one-time tray notice flag (#304)", () => {
+  it("is absent until the notice has been shown", () => {
+    // A file written before this field existed, and a file written after it
+    // by an install that has never closed a window, are the same file.
+    expect(encodeConfig(LOCAL)).not.toContain("trayNoticeSeen");
+    expect(decodeConfig('{"version": 1, "mode": "local"}')).toEqual(LOCAL);
+    expect(readConfig(tempPath())?.trayNoticeSeen).toBeUndefined();
+  });
+
+  it("round-trips through the file once it has", () => {
+    const path = tempPath();
+    writeConfig(path, withTrayNoticeSeen(LOCAL, true));
+    expect(readConfig(path)).toEqual({ mode: "local", trayNoticeSeen: true });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      version: CONFIG_SCHEMA_VERSION,
+      mode: "local",
+      trayNoticeSeen: true,
+    });
+  });
+
+  it("survives a mode switch, in both directions", () => {
+    // Switching to thin-client mode and back is not a reason to explain the
+    // tray a second time — `main.ts` carries the flag onto the config the
+    // chooser writes.
+    const seen = withTrayNoticeSeen(THIN, true);
+    expect(seen).toEqual({ ...THIN, trayNoticeSeen: true });
+    expect(withTrayNoticeSeen(seen, true)).toEqual(seen);
+    expect(withTrayNoticeSeen(seen, false)).toEqual(THIN);
+    expect(withTrayNoticeSeen(LOCAL, false)).toEqual(LOCAL);
+  });
+
+  it("is not part of which install this is", () => {
+    // A config that differs only by the flag is the same choice, so re-picking
+    // the running mode stays the no-op it was (#300).
+    expect(sameConfig(LOCAL, withTrayNoticeSeen(LOCAL, true))).toBe(true);
+    expect(sameConfig(THIN, withTrayNoticeSeen(THIN, true))).toBe(true);
+  });
+
+  it.each([
+    ['"yes"', '{"version": 1, "mode": "local", "trayNoticeSeen": "yes"}'],
+    ["1", '{"version": 1, "mode": "local", "trayNoticeSeen": 1}'],
+    ["false", '{"version": 1, "mode": "local", "trayNoticeSeen": false}'],
+  ])(
+    "reads %s as not yet shown rather than failing the file",
+    (_l, contents) => {
+      // Tolerant on purpose: the cost of misreading this field is one extra
+      // sentence, and the cost of rejecting the file would be the chooser.
+      expect(decodeConfig(contents)).toEqual(LOCAL);
+    },
+  );
 });
 
 describe("sameConfig", () => {

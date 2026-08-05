@@ -9,10 +9,12 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "server-runtime": "node scripts/build-server-runtime.mjs",
-    "dev": "pnpm run build && pnpm run server-runtime && electron ."
+    "dev": "pnpm run build && pnpm run server-runtime && electron .",
+    "tray-icons": "node scripts/generate-tray-icons.mjs"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "electron": "^43.3.0",
     "typescript": "^7.0.2",
