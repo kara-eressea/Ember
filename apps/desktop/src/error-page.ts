@@ -79,7 +79,7 @@ export function describeLoadFailure(
       headline: "That server's certificate wasn't accepted",
       // No "continue anyway", here or anywhere: this app carries a session
       // token and every word the user says.
-      detail: `${serverUrl} presented a security certificate this computer will not accept. Nothing was sent to it. Fix the certificate on the server — this app will not connect to a server it cannot verify.`,
+      detail: `This computer wouldn't accept the security certificate at ${serverUrl}, so nothing was sent to it. The certificate needs fixing on the server — this app will not connect to a server it can't check.`,
       code,
     };
   }
@@ -87,26 +87,26 @@ export function describeLoadFailure(
     case "ERR_CONNECTION_REFUSED":
       return {
         headline: "Your server didn't answer",
-        detail: `Nothing is listening at ${serverUrl}. The server may be stopped, or the address may be pointing at the wrong port.`,
+        detail: `Nothing answered at ${serverUrl}. Your server may be switched off, or the address may be pointing at the wrong port.`,
         code,
       };
     case "ERR_NAME_NOT_RESOLVED":
       return {
         headline: "That address couldn't be found",
-        detail: `${serverUrl} could not be looked up. Check the spelling, and that this computer's network can see that name.`,
+        detail: `This computer couldn't find ${serverUrl} on the network. Check the spelling, and that this computer is able to reach that name.`,
         code,
       };
     case "ERR_CONNECTION_TIMED_OUT":
     case "ERR_TIMED_OUT":
       return {
         headline: "Your server didn't answer in time",
-        detail: `${serverUrl} accepted nothing before the connection timed out. It may be overloaded, asleep, or behind something that is dropping the connection.`,
+        detail: `${serverUrl} took too long to answer. It may be busy, asleep, or behind something that's dropping the connection.`,
         code,
       };
     case "ERR_INTERNET_DISCONNECTED":
       return {
         headline: "This computer is offline",
-        detail: `There is no network connection to reach ${serverUrl} with. Your server is fine; this machine cannot get to it.`,
+        detail: `There's no network connection here to reach ${serverUrl} with. Your server is probably fine — this computer just can't get to it.`,
         code,
       };
     case "ERR_CONNECTION_RESET":
@@ -114,13 +114,13 @@ export function describeLoadFailure(
     case "ERR_EMPTY_RESPONSE":
       return {
         headline: "The connection was cut",
-        detail: `${serverUrl} closed the connection before it answered. If it is behind a proxy, that is the first place to look.`,
+        detail: `${serverUrl} hung up before it answered. If your server sits behind a proxy, that's the first place to look.`,
         code,
       };
     default:
       return {
-        headline: "Your server couldn't be loaded",
-        detail: `${serverUrl} did not load. The address is stored and unchanged — nothing has been forgotten.`,
+        headline: "Your server didn't load",
+        detail: `${serverUrl} didn't load. The address is saved and unchanged — nothing has been forgotten.`,
         code,
       };
   }
@@ -138,11 +138,11 @@ export function describeRenderProcessGone(
   const outOfMemory = failure.reason === "oom";
   return {
     headline: outOfMemory
-      ? "The window ran out of memory"
-      : "The window stopped unexpectedly",
+      ? "This window ran out of memory"
+      : "This window stopped unexpectedly",
     detail: outOfMemory
-      ? `The part of the app that draws ${serverUrl} was closed by the system for using too much memory. Nothing was lost on the server.`
-      : `The part of the app that draws ${serverUrl} stopped. Nothing was lost on the server — it keeps your sessions whatever happens here.`,
+      ? `The part of the app showing ${serverUrl} used too much memory, so this computer closed it. Nothing was lost — your conversations are safe on your server.`
+      : `The part of the app showing ${serverUrl} stopped. Nothing was lost — your server keeps you connected whatever happens here.`,
     code: failure.reason,
   };
 }

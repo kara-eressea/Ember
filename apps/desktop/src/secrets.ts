@@ -70,7 +70,7 @@ export function encodeSecrets(
 ): string {
   if (!encryptor.isEncryptionAvailable()) {
     throw new EncryptionUnavailableError(
-      "The operating system's secure storage is unavailable.",
+      "This computer's secure storage (its keychain) isn't available.",
     );
   }
   const file: SecretsFile = {
@@ -110,7 +110,7 @@ export function decodeSecrets(
   }
   if (!encryptor.isEncryptionAvailable()) {
     throw new EncryptionUnavailableError(
-      "The operating system's secure storage is unavailable.",
+      "This computer's secure storage (its keychain) isn't available.",
     );
   }
   try {

@@ -381,10 +381,10 @@ answers, and that the difference between them is where a lifecycle goes wrong.
    `/healthz` answers, `running` after, and nothing in between. Two states, no
    poller: the shell knows the child booted and that `onUnexpectedExit` has not
    fired, and a status line built out of anything more would be a monitor the
-   spec did not ask for. The status is also deliberately about *the bouncer* —
-   "Running — your sessions stay online" — and not about F-Chat, whose per
-   identity connection state is the web app's to display and not this process's
-   to claim.
+   spec did not ask for. The status is also deliberately about *the bouncer*
+   and not about F-Chat, whose per identity connection state is the web app's
+   to display and not this process's to claim. (The line itself was reworded by
+   the copy pass — see "The copy pass (#543)" below.)
 4. **The notice is a notification, and the flag follows it rather than leading
    it.** A modal dialog appearing where the user's window just was is the app
    arguing with them; a notification is what every other close-to-tray app
@@ -435,6 +435,26 @@ bar), that "Open" and a dock click bring the hidden window back, that the
 notification actually appears — an unsigned dev run's notifications arrive
 under Electron's identity, and a packaged build is the first honest test of
 that — and that the mode switch's `tray.destroy()` leaves no ghost icon.
+
+### The copy pass (#543)
+
+Watching the shell's windows after MX3 showed how much of this spec's own
+vocabulary had leaked into them: "the bouncer stopped", "the embedded server
+exited unexpectedly (code N)", "this computer runs the bouncer". Every sentence
+a user can actually read was rewritten in plain language — the chooser's two
+option bodies, the error page's headlines and note, the tray status line and
+one-time notice, and every `showErrorBox` detail on the startup paths
+(`main.ts`, `embedded-server.ts`, `desktop-login.ts`, `admin-cli.ts`,
+`paths.ts`, `provisioning.ts`, `secrets.ts`, `server-url.ts`).
+
+Two rules came out of it and are worth keeping. **Say what it means for the
+user, not what a process did** — the tray now reads "Running — you stay online
+with the window closed" rather than naming a server child. And **the technical
+detail survives, demoted**: a human first line, a blank line, then
+`Details: <exit code / error name / path / stderr>`, because a bug report needs
+the code and a headline does not. "Bouncer" and "embedded server" stay exactly
+where they were in comments, logs and this document; they are simply not
+sentences any more.
 
 ## 7. What MX3 explicitly does not do
 

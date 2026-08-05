@@ -140,11 +140,11 @@ export function assertArtifactsPresent(artifacts: DesktopArtifacts): void {
   if (artifacts.packaged) {
     throw new MissingArtifactError(
       [
-        `This installation is incomplete — ${missing.what} is not where it should be:`,
+        "This installation is missing a piece of the app, so it can't start.",
+        "Reinstalling should put it back.",
         "",
+        `Details: ${missing.what} is not where it should be —`,
         `  ${missing.where}`,
-        "",
-        "Reinstalling should restore it.",
       ].join("\n"),
     );
   }

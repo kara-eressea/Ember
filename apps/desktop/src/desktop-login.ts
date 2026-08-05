@@ -50,20 +50,32 @@ export async function loginAppAccount(
     });
   } catch (cause) {
     throw new DesktopLoginError(
-      "Could not reach the local bouncer to sign in.",
+      [
+        "The app couldn't sign you in on this computer.",
+        "",
+        "Details: the local server did not answer the sign-in request.",
+      ].join("\n"),
       { cause },
     );
   }
   if (!response.ok) {
     throw new DesktopLoginError(
-      `The local bouncer refused the app account's sign-in (HTTP ${String(response.status)}): ${(await response.text()).slice(0, 500)}`,
+      [
+        "The app couldn't sign you in on this computer.",
+        "",
+        `Details: the local server refused the sign-in (HTTP ${String(response.status)}) — ${(await response.text()).slice(0, 500)}`,
+      ].join("\n"),
     );
   }
   try {
     return buildAuthSeed(await response.json());
   } catch (cause) {
     throw new DesktopLoginError(
-      "The local bouncer's sign-in response was not the expected shape.",
+      [
+        "The app couldn't sign you in on this computer.",
+        "",
+        "Details: the local server's sign-in reply was not in the expected shape.",
+      ].join("\n"),
       { cause },
     );
   }

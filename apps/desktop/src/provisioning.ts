@@ -46,7 +46,7 @@ export function planBoot(options: {
   }
   if (!options.encryptionAvailable) {
     throw new EncryptionUnavailableError(
-      "This computer's secure storage (the OS keychain) is unavailable, so there is nowhere safe to keep the app's secrets. EmberChat will not fall back to storing them unencrypted.",
+      "This computer's secure storage (its keychain) isn't available, so there is nowhere safe to keep the passwords the app needs. It won't store them unprotected, so it can't set itself up here.",
     );
   }
   return {

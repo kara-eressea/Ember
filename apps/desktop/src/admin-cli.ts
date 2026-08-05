@@ -162,14 +162,22 @@ export async function provisionAppAccount(options: {
   }
   if (!isAccountTakenFailure(created.stderr)) {
     throw new AdminCliError(
-      `Creating the local account failed (exit code ${String(created.code)}).`,
+      [
+        "The app couldn't finish setting up your account on this computer.",
+        "",
+        `Details: creating the local account failed (exit code ${String(created.code)}).`,
+      ].join("\n"),
       `${created.stderr}${created.stdout}`.trim(),
     );
   }
   const reset = await run(resetPasswordArgs(options.account));
   if (reset.code !== 0) {
     throw new AdminCliError(
-      `The local account already exists, and resetting its password failed (exit code ${String(reset.code)}).`,
+      [
+        "The app couldn't finish setting up your account on this computer.",
+        "",
+        `Details: the local account already exists and resetting its password failed (exit code ${String(reset.code)}).`,
+      ].join("\n"),
       `${reset.stderr}${reset.stdout}`.trim(),
     );
   }
