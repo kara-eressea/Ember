@@ -261,6 +261,46 @@ export const notificationSeen = pgTable("notification_seen", {
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Web Push endpoints (design/web-push.md §1) — one row per browser install
+ * that opted in, USER-scoped rather than identity-scoped: an install belongs
+ * to a login, and every identity that login owns pushes to it.
+ *
+ * `authSessionId` cascading is the whole revocation story. Logout deletes the
+ * auth_sessions row and the session janitor prunes expired ones — both take
+ * the subscription with them, so no endpoint can outlive the login that
+ * registered it and there is no separate push janitor to forget to run.
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid().primaryKey().default(uuidv7),
+    userId: uuid()
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    authSessionId: uuid()
+      .notNull()
+      .references(() => authSessions.id, { onDelete: "cascade" }),
+    /** The push service's URL for this install. Unique: a browser that
+     * re-subscribes to the same endpoint updates the row rather than
+     * collecting duplicates that would each deliver the same notification. */
+    endpoint: text().notNull().unique(),
+    /** RFC 8291 client keys — the payload is encrypted to these, so the push
+     * service routes the message but can never read it. */
+    p256dh: text().notNull(),
+    auth: text().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // The send path's only read: every endpoint for one user. Doubles as the
+    // referencing-side index for the app_users cascade.
+    index("push_subscriptions_user_idx").on(t.userId),
+    // Referencing-side index for the auth-session cascade (Postgres makes
+    // none), which fires on every logout.
+    index("push_subscriptions_auth_session_idx").on(t.authSessionId),
+  ],
+);
+
 // Delayed-send queue. Rows live only while pending: released and recalled
 // messages are deleted (the messages table holds what actually went out).
 // A row that could not be sent at release keeps state="failed" so the user

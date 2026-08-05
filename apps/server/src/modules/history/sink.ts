@@ -24,6 +24,7 @@ import type {
 } from "../session-engine/fchat-session.js";
 import type { HighlightMatcher } from "../highlights/matcher.js";
 import type { NotificationStore } from "../notifications/store.js";
+import type { PushSender } from "../push/sender.js";
 import type { ServerCommandPayload } from "@emberchat/fchat-protocol";
 
 type ConversationKind = "channel" | "pm";
@@ -91,6 +92,15 @@ export class HistorySink {
   /** Logs stamped mentions into the notification inbox (#467); absent = no
    * inbox (tests that only care about persistence). */
   readonly #notifications: Pick<NotificationStore, "recordMention"> | undefined;
+  /**
+   * Web Push for inbound PMs (design/web-push.md §What triggers a push).
+   * PMs deliberately never reach the notification store — no PM kind exists
+   * there — so this is the one place a persisted PM is visible with its
+   * identity. Absent = push unconfigured. Strictly fire-and-forget: the hook
+   * returns void and never rejects, so a push service can neither fail nor
+   * delay a history write (invariant 3).
+   */
+  readonly #push: Pick<PushSender, "notifyPrivateMessage"> | undefined;
   /** Per-identity serial write queues: message ids must reflect arrival order within an identity. */
   readonly #queues = new Map<string, Promise<void>>();
   /**
@@ -110,6 +120,7 @@ export class HistorySink {
       maxConversationsPerIdentity?: number;
       highlights?: Pick<HighlightMatcher, "mention">;
       notifications?: Pick<NotificationStore, "recordMention">;
+      push?: Pick<PushSender, "notifyPrivateMessage">;
     } = {},
   ) {
     this.#db = db;
@@ -118,6 +129,7 @@ export class HistorySink {
       options.maxConversationsPerIdentity ?? MAX_CONVERSATIONS_PER_IDENTITY;
     this.#highlights = options.highlights;
     this.#notifications = options.notifications;
+    this.#push = options.push;
     this.events = new TypedEventBus<HistoryEvents>(this.#log);
   }
 
@@ -641,6 +653,19 @@ export class HistorySink {
             identityId,
             conversationId,
             messageId: row.id,
+            senderCharacter: row.senderCharacter,
+            bbcode: row.bbcode,
+          });
+        }
+        // Web Push for an inbound DM. Not awaited and never awaitable: the
+        // hook returns void the moment it hands the work off, so this costs
+        // the serial write queue nothing however slow a push service is.
+        // Our own sends are skipped — the point is telling the user about
+        // somebody else.
+        if (entry.kind === "pm" && !entry.sentByUs) {
+          this.#push?.notifyPrivateMessage({
+            identityId,
+            conversationId,
             senderCharacter: row.senderCharacter,
             bbcode: row.bbcode,
           });
