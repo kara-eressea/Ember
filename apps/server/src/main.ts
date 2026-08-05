@@ -1,8 +1,7 @@
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { createDb } from "./db/index.js";
+import { createDb, dbDriverFrom } from "./db/index.js";
 import {
   assertUpgradeSafe,
   loadUpgradeManifest,
@@ -10,12 +9,12 @@ import {
 } from "./db/upgrade-gate.js";
 
 const config = loadConfig();
-const { db, pool } = createDb(config.DATABASE_URL);
+const { db, raw, migrate, close } = await createDb(dbDriverFrom(config));
 
 const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
 try {
   await assertUpgradeSafe({
-    pool,
+    pool: raw,
     manifest: await loadUpgradeManifest(migrationsFolder),
     confirmBreaking: config.CONFIRM_BREAKING_UPGRADE,
     releasesUrl: `https://github.com/${config.UPDATE_CHECK_REPO}/releases`,
@@ -27,7 +26,7 @@ try {
   }
   throw error;
 }
-await migrate(db, { migrationsFolder });
+await migrate(migrationsFolder);
 
 const app = await buildApp({ config, db });
 
@@ -35,7 +34,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     void app
       .close()
-      .then(() => pool.end())
+      .then(() => close())
       .finally(() => process.exit(0));
   });
 }

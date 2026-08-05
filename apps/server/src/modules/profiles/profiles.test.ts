@@ -2,13 +2,7 @@
 // budget wiring (stale-with-flag / 429), history, notes, insights over
 // seeded messages, guestbook gating, memo import, locked-vault 409.
 
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
 import { eq, sql } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FchatSim } from "@emberchat/fchat-sim";
@@ -19,7 +13,8 @@ import type {
 } from "@emberchat/protocol";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
-import { createDb, type Db } from "../../db/index.js";
+import type { Db } from "../../db/index.js";
+import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import {
   characterCache,
   characterNotes,
@@ -36,7 +31,6 @@ import {
   INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
 
-const MIGRATIONS = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const ACCOUNT = "birch@example.test";
 const CHARACTER = "Birch Rowan";
 
@@ -44,9 +38,8 @@ const CHARACTER = "Birch Rowan";
 // throttled FlistApiClient on top of the container round trips.
 vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Db;
-let pool: { end: () => Promise<void> };
 let sim: FchatSim;
 let app: FastifyInstance;
 let budget: CharacterDataBudget;
@@ -86,13 +79,12 @@ beforeAll(async () => {
     kinks: { "620": "yes" },
     infotags: {},
   });
-  container = await new PostgreSqlContainer("postgres:18-alpine").start();
-  ({ db, pool } = createDb(container.getConnectionUri()));
-  await migrate(db, { migrationsFolder: MIGRATIONS });
+  testDb = await makeTestDb();
+  db = testDb.db;
   budget = new CharacterDataBudget({ limit: 1000 });
   app = await buildApp({
     config: loadConfig({
-      DATABASE_URL: container.getConnectionUri(),
+      ...testDb.env,
       AUTH_SECRET: "integration-test-secret-0123456789abcdef",
       AUTH_RATE_LIMIT_MAX: "1000",
       RATE_LIMIT_MAX: "10000",
@@ -137,8 +129,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await pool.end();
-  await container.stop();
+  await testDb.stop();
   await sim.stop();
 });
 
