@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { planBoot, secretsPath } from "./provisioning.js";
 import { EncryptionUnavailableError, type DesktopSecrets } from "./secrets.js";
@@ -53,6 +54,10 @@ describe("planBoot", () => {
   });
 
   it("keeps the secrets file in the user data directory", () => {
-    expect(secretsPath("/data/EmberChat")).toBe("/data/EmberChat/secrets.json");
+    // `join` rather than a literal: this suite runs on Windows too (MX4's
+    // packaging legs), where the separator is the other one.
+    expect(secretsPath(join("/data", "EmberChat"))).toBe(
+      join("/data", "EmberChat", "secrets.json"),
+    );
   });
 });
