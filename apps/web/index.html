@@ -59,6 +59,29 @@
          from the active theme at boot and on every switch, and
          theme-color.test.ts fails if the two ever disagree. -->
     <meta name="theme-color" content="#201e1c" />
+    <!-- The pre-paint ground (#533). Same literal-and-guard arrangement as the
+         theme-color above, for the same reason and one floor lower: this is the
+         DEFAULT theme's `bg` token, and it is the value of --eb-bg between the
+         first paint and applyTheme()'s first write.
+
+         It has to be a seeded *custom property* rather than a background
+         declaration. base.css paints `html, body { background: var(--eb-bg) }`,
+         and with --eb-bg undefined that declaration is invalid at computed-value
+         time — which does not fall through to a rule underneath it, it wins the
+         cascade and computes to `unset`. So a literal `background` here would be
+         overwritten by the very sheet it is covering for; a literal --eb-bg
+         makes base.css's own rule resolve instead, and applyTheme's inline
+         property on the same element takes over the moment it runs.
+
+         Why the window matters at all: an installed iOS window fills the strips
+         behind the status bar and the home indicator from the document's
+         background colour, sampled at load. A document that is transparent at
+         that moment gets black bands for the life of the launch. -->
+    <style>
+      :root {
+        --eb-bg: #1b1917;
+      }
+    </style>
     <!-- Title is placeholder markup only; real branding is runtime config
          injected by the serving Fastify (decisions.md §5). -->
     <title>Chat</title>

@@ -70,6 +70,17 @@ describe("index.html's initial theme-color", () => {
     expect(content).toBe(BASE_THEMES.slate.head);
   });
 
+  // The floor under it (#533): the ground the document is painted with until
+  // applyTheme runs. Same literal-in-HTML problem, same guard — and this one
+  // is load-bearing on iOS, where an installed window fills the safe-area
+  // strips from a document background it samples at load and a transparent
+  // document gets black bands for the life of the launch.
+  it("seeds --eb-bg with the default theme's bg token", () => {
+    const html = readFileSync(resolve("index.html"), "utf8");
+    const seeded = /--eb-bg:\s*([^;\s]+)\s*;/u.exec(html)?.[1];
+    expect(seeded).toBe(BASE_THEMES.slate.bg);
+  });
+
   it("links the manifest and the iOS home-screen icon", () => {
     const html = readFileSync(resolve("index.html"), "utf8");
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');

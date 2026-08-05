@@ -182,15 +182,48 @@ body,
    the identity picker, which are just as installed and just as notched. The
    composer needs nothing of its own as a result: it is in this flow, at the
    bottom of a shell that now ends above the home indicator. The strips show
-   `body`'s ground through, which is the app's own --eb-bg. */
+   the document's own ground through, which is the app's --eb-bg (below). */
 #root {
   padding: var(--eb-safe-top) var(--eb-safe-right) var(--eb-safe-bottom-kb)
     var(--eb-safe-left);
 }
 
+/* ── The canvas (#533) ────────────────────────────────────────────────────
+   `html` as well as `body`, and this one line is the whole fix for the black
+   bands an installed iPhone drew above and below the shell.
+
+   In a browser tab the two are indistinguishable, which is exactly why this
+   shipped: css-backgrounds-3 §2.11.2 propagates the FIRST BODY CHILD's
+   background up to the canvas whenever the root element's own is transparent,
+   so painting only `body` still colours every pixel a tab has — and `body` is
+   `height: 100%` here anyway, so its own box covered the viewport regardless.
+   `viewport-fit=cover` is where the two stop meaning the same thing: the
+   strips behind the status bar and the home indicator are filled from the
+   *document* background, which WebKit resolves off the root element's own
+   `background-color`, and a root element that never declared one leaves them
+   at the base colour. Which is black.
+
+   The other half of the same bug is *when*, and it is why the fix is not only
+   here: `--eb-bg` does not exist until applyTheme() writes it, so until the
+   bundle has run this declaration is invalid at computed-value time and
+   computes to `transparent` whichever element carries it — and an OS that
+   samples the document's colour once, at load, has already made up its mind by
+   then. index.html seeds the default theme's `bg` as a literal custom property
+   for that window, the same duplication (and the same theme-color.test.ts
+   guard) as the `theme-color` meta beside it.
+
+   Deliberately a plain element selector and not `:root`. `:root` would outrank
+   the seed, and an invalid-at-computed-value-time declaration does not politely
+   yield to the rule below it — it wins the cascade and *then* falls back to
+   `unset`, so the higher-specificity form would take the seed's paint with it
+   for exactly the frames the seed exists to cover. */
+html,
+body {
+  background: var(--eb-bg);
+}
+
 body {
   margin: 0;
-  background: var(--eb-bg);
   color: var(--eb-text);
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   font-size: 13px;
@@ -247,6 +280,55 @@ button {
 input,
 textarea {
   font: inherit;
+}
+
+/* ── The 16px floor on a phone (#534) ─────────────────────────────────────
+   iOS zooms the page in when a text-entry control is focused whose text would
+   render under 16px, and an installed window has nowhere to put the zoom back:
+   there is no address bar to tap, the double-tap-to-fit gesture does not
+   restore the initial scale in standalone, and the scale outlives the launch.
+   Every control in the app was under the line — the chrome ramp is 13px, the
+   composer 13.5px, the login fields 13.5px — so the very first thing a new
+   user does on an iPhone, tapping the email box, zooms the app permanently.
+
+   The floor is the honest fix and the only one: `maximum-scale=1` /
+   `user-scalable=no` in the viewport meta also stop the zoom, by taking pinch
+   zoom away from everyone who needs it, which is a WCAG 1.4.4 failure and not
+   on the table.
+
+   `max(1em, …)` rather than a flat 16px so a control that is already larger
+   than the floor keeps its size — the `l` interface-font step pushes several
+   past it — and so the rule reads as a floor rather than a redefinition.
+   1em is the parent's computed size, which for every control here is the size
+   it would otherwise have inherited or been given within a fraction of a
+   pixel.
+
+   Divided by --eb-ui-zoom for the same reason --eb-popover-max-w is (#388):
+   the interface-scale pref is a `zoom` on :root, so what WebKit measures
+   against its threshold is 16 × zoom, not 16. At 80% a 16px control renders at
+   12.8 and still zooms; at 125% the floor is already cleared by the zoom alone
+   and forcing 16px computed would grow the controls past the design for no
+   reason. The division makes the *rendered* size the thing that clears 16, and
+   `max()` keeps the 1em branch winning wherever the zoom has already done it.
+
+   Scoped to the phone tier, not to iOS: a 13px text field is small for a thumb
+   on any engine, and the tier is how this codebase asks that question (MP1 §2)
+   — `data-layout` is the zoom-corrected width, which a media query is not.
+   Checkbox, radio, range and color are excluded: they hold no text, iOS does
+   not zoom for them, and their box in several modules is sized in `em`. */
+:root[data-layout="phone"]
+  :is(
+    input:not(
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="color"]
+    ),
+    textarea,
+    select,
+    [contenteditable="true"]
+  ) {
+  font-size: max(1em, calc(16px / var(--eb-ui-zoom, 1)));
 }
 
 input:focus-visible,

@@ -171,6 +171,43 @@ This is the engine none of MP2's or MP3's work is reachable from, and the one
       identity picker, a long-press sheet and the member-list overlay.
 - [ ] **A browser tab is unchanged** by all of the above: same layout, no
       padding, `viewport-fit=cover` notwithstanding.
+- [ ] **The strips those insets create are the app's own ground**, not black
+      (**#533** — the first soak found them black on both the sidebar and the
+      channel screen, so the shell read as a panel floating between two bands).
+      The fix paints the root element with `--eb-bg` and seeds that token as a
+      literal in `index.html` for the frames before the bundle runs; which of
+      the two mattered is a question only the device answers, so check *both*
+      shapes: the strips are coloured at rest, **and** they are already
+      coloured during the launch animation rather than filling in late.
+- [ ] **They stay the app's ground after a theme switch.** Set Parchment in
+      Preferences: the strips must go pale with the rest of the app, and stay
+      pale across a relaunch. A strip that keeps the dark colour is an OS that
+      sampled the document once at load and never re-read it — the seed is
+      then doing all the work, and the token needs to reach the OS another way.
+- [ ] **The strips still look right on every screen the padding serves** —
+      login, the identity picker and the shell all share one padded `#root`,
+      so a colour chosen for one of them is a band on the other two.
+
+### Zoom
+
+- [ ] **The app does not launch zoomed** (**#534**). Install fresh, launch,
+      and compare a known row's size against the same view in a Safari tab.
+- [ ] **Tapping a text field does not zoom the page.** The one that reported
+      this is the login email box, so start there, then the composer, the
+      channel-browser filter, and a Preferences text field. Every text control
+      now computes ≥16px on this tier, which is the size below which iOS zooms;
+      a zoom that still happens means the floor is being measured against
+      something other than the computed size (the interface-scale `zoom` on
+      `:root` is the suspect, and `--eb-ui-zoom` is already divided out of the
+      floor for exactly that reason — re-check at the 80% and 150% steps).
+- [ ] **Pinch zoom still works, and double-tap-to-fit still restores it.**
+      This is the accessibility half of the fix and the reason
+      `maximum-scale=1` was not the answer: the page must remain zoomable by
+      hand at all times.
+- [ ] **A zoom that a previous build left behind is not mistaken for a
+      regression.** iOS keeps a standalone window's scale across launches, so
+      an app installed before this fix may still open zoomed. Remove it from
+      the Home Screen and re-add it before judging.
 
 ### Touch
 
