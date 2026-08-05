@@ -116,6 +116,39 @@ active theme's `head` token. The §1 cache-header audit found nothing to fix and
 one thing to pin: the exact `max-age=31536000, immutable` / `no-cache` pair now
 has a test.
 
+**A, amended by the first real-iPhone soak (#533, #534).** Two things this
+package got right in a tab and wrong on the device, both invisible to every
+project in `playwright.config.ts`:
+
+- **The safe-area strips were black.** §3 handed the unusable strips back as
+  padding on `#root` and said the app's ground would show through them — which
+  it did not, because the only element painting that ground was `body`. In a
+  tab the distinction is unobservable: a transparent root element propagates
+  `body`'s background to the canvas, and `body` is `height: 100%` besides. Under
+  `viewport-fit=cover` an installed WebKit fills those strips from the
+  *document* background, resolved off the root element, and found nothing.
+  `html` now carries `background: var(--eb-bg)` alongside `body`, and
+  `index.html` seeds `--eb-bg` as a literal (guarded by `theme-color.test.ts`,
+  the same arrangement as the `theme-color` meta beside it) so the document is
+  coloured for the frames before `applyTheme` runs — an OS that samples the
+  page's colour once at load has otherwise already decided.
+- **The app launched zoomed.** iOS zooms when a focused text control renders
+  under 16px and an installed window has nowhere to put the zoom back; every
+  control in the app was under the line (13px chrome, 13.5px composer and login
+  fields), so tapping the login email box on a fresh install zoomed the app for
+  good. `base.css` now floors text-entry controls at
+  `max(1em, calc(16px / var(--eb-ui-zoom, 1)))` on `data-layout="phone"` — a
+  floor, not a resize, zoom-corrected the way `--eb-popover-max-w` is, and
+  **not** `maximum-scale=1`, which fixes the same symptom by removing pinch
+  zoom from everyone (WCAG 1.4.4).
+
+Neither is reproducible in CI — `display-mode: standalone` is still not
+emulatable (§8) and the focus zoom is the OS's decision — so
+`e2e/mobile-ios-shell.spec.ts` pins each fix's precondition instead (the canvas
+resolves to the active theme's ground; no on-screen text control computes under
+16px at the phone tier) and the verdict lives in
+`design/mobile-device-checklist.md`.
+
 **B — lifecycle, E2E, docs (this round).** §5's audit found three real gaps and
 one non-gap; all three are fixed in `gateway/socket.ts` and unit-tested on fake
 timers:
