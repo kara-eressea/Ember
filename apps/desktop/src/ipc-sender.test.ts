@@ -1,13 +1,20 @@
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { senderAllowed, type IpcCaller } from "./ipc-sender.js";
 
-/** The shell's own page, as `loadFile` will have spelled its URL. */
-const CHOOSER_PAGE = "/opt/EmberChat/chooser/index.html";
+/**
+ * The shell's own page, as `loadFile` will have spelled its URL — and as an
+ * *absolute native* path, because this suite runs on Windows too (MX4's
+ * packaging legs) and the real value is whatever `paths.ts` produced there. A
+ * POSIX literal would round-trip through `pathToFileURL`/`fileURLToPath` as a
+ * drive-rooted path and stop matching itself.
+ */
+const CHOOSER_PAGE = resolve("/opt/EmberChat/chooser/index.html");
 const CHOOSER_URL = pathToFileURL(CHOOSER_PAGE).href;
 const CHOOSER: IpcCaller = { kind: "page", page: CHOOSER_PAGE };
 
-const ERROR_PAGE = "/opt/EmberChat/error/index.html";
+const ERROR_PAGE = resolve("/opt/EmberChat/error/index.html");
 const APP_ORIGIN: IpcCaller = {
   kind: "origin",
   origin: "https://chat.example.com",

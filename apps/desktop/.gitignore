@@ -4,3 +4,8 @@
 server-runtime/
 server-runtime.stamp.json
 server-runtime.pglite-stage/
+
+# electron-builder's output (MX4): the DMG/installer plus the staging trees it
+# builds them from. Bundles an Electron runtime, so it is both enormous and
+# entirely derived.
+release/

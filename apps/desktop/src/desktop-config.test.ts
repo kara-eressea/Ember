@@ -26,7 +26,11 @@ function tempPath(): string {
 
 describe("the config file", () => {
   it("lives beside the secrets file in the user data directory", () => {
-    expect(configPath("/data/EmberChat")).toBe("/data/EmberChat/config.json");
+    // `join` rather than a literal: this suite runs on Windows too (MX4's
+    // packaging legs), where the separator is the other one.
+    expect(configPath(join("/data", "EmberChat"))).toBe(
+      join("/data", "EmberChat", "config.json"),
+    );
   });
 
   it("round-trips both modes", () => {

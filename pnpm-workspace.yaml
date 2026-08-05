@@ -18,6 +18,11 @@ allowBuilds:
   # job launches. Electron 43 fetches it lazily on the first `electron .`
   # instead, which is exactly when a developer wants it.
   electron: false
+  # electron-winstaller (MX4, via electron-builder): the Squirrel.Windows
+  # target's toolchain, and its install script downloads that toolchain. This
+  # repo builds NSIS installers (electron-builder.yml) and never Squirrel, so
+  # the download is pure weight on every install on every platform.
+  electron-winstaller: false
 # pnpm's supply-chain gate holds a new release back for a day before it may
 # enter a lockfile. Written by pnpm itself when electron 43.3.0 was added: the
 # version is the one the MX2 spike verified argon2/re2/pglite against, so it is

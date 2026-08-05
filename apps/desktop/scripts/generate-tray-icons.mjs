@@ -1,8 +1,9 @@
-// Tray icons (MX3 §6, #304), derived from the web app's `public/favicon.svg`.
+// Tray icons (MX3 §6, #304) and the packaged app's icon (MX4 §, #305), derived
+// from the web app's `public/favicon.svg`.
 //
 // Run by hand, outputs checked in:
 //
-//     pnpm --filter @emberchat/desktop tray-icons
+//     pnpm --filter @emberchat/desktop icons
 //
 // The same deal `apps/web/scripts/generate-icons.mjs` strikes, for the same
 // reasons: the only rasteriser this repo owns is Playwright's Chromium, which
@@ -24,6 +25,13 @@
 //
 // Both at 1x and 2x — Electron's `nativeImage` picks up the `@2x` file beside
 // the one it was given, by name.
+//
+// And one more, for MX4: `packaging/icon.png` at 1024², the app's own icon. That is
+// a single file rather than an `.icns` and an `.ico` because electron-builder
+// derives both formats from a large square PNG in `directories.buildResources`
+// — which keeps the one rasteriser this repo owns (Playwright's Chromium) as
+// the only one, and avoids committing two binary formats no tool here can
+// re-read.
 
 import { chromium } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
@@ -35,7 +43,9 @@ const desktopRoot = path.resolve(
   "..",
 );
 const source = path.resolve(desktopRoot, "..", "web", "public", "favicon.svg");
-const outDir = path.join(desktopRoot, "assets");
+const trayDir = path.join(desktopRoot, "assets");
+/** electron-builder's `directories.buildResources` — packaging inputs, not runtime ones. */
+const buildDir = path.join(desktopRoot, "packaging");
 
 const SVG_NS = 'xmlns="http://www.w3.org/2000/svg"';
 
@@ -45,10 +55,26 @@ const SVG_NS = 'xmlns="http://www.w3.org/2000/svg"';
  * it does not touch the menu bar's edges.
  */
 const VARIANTS = [
-  { file: "trayTemplate.png", size: 16, style: "template", flame: 0.86 },
-  { file: "trayTemplate@2x.png", size: 32, style: "template", flame: 0.86 },
-  { file: "tray.png", size: 16, style: "art" },
-  { file: "tray@2x.png", size: 32, style: "art" },
+  {
+    dir: trayDir,
+    file: "trayTemplate.png",
+    size: 16,
+    style: "template",
+    flame: 0.86,
+  },
+  {
+    dir: trayDir,
+    file: "trayTemplate@2x.png",
+    size: 32,
+    style: "template",
+    flame: 0.86,
+  },
+  { dir: trayDir, file: "tray.png", size: 16, style: "art" },
+  { dir: trayDir, file: "tray@2x.png", size: 32, style: "art" },
+  // The app icon. 1024² is what electron-builder wants as the source it
+  // downsamples the whole .icns/.ico ladder from; anything smaller and macOS's
+  // largest slot is an upscale.
+  { dir: buildDir, file: "icon.png", size: 1024, style: "art" },
 ];
 
 /** `<path d="…" fill="…"/>` in document order — the plate, then the flame. */
@@ -84,8 +110,8 @@ const box = await page.locator("#probe path").evaluate((node) => {
   return { x, y, width, height };
 });
 
-await mkdir(outDir, { recursive: true });
 for (const variant of VARIANTS) {
+  await mkdir(variant.dir, { recursive: true });
   await page.setViewportSize({ width: variant.size, height: variant.size });
   await page.setContent(
     `<style>html,body{margin:0;background:none}svg{display:block}</style>
@@ -94,10 +120,12 @@ for (const variant of VARIANTS) {
      </svg>`,
   );
   await page.locator("svg").screenshot({
-    path: path.join(outDir, variant.file),
+    path: path.join(variant.dir, variant.file),
     omitBackground: true,
   });
-  console.log(`${variant.file} (${String(variant.size)}px)`);
+  console.log(
+    `${path.relative(desktopRoot, variant.dir)}/${variant.file} (${String(variant.size)}px)`,
+  );
 }
 await browser.close();
 
