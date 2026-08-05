@@ -153,7 +153,9 @@ test("push: the per-device toggle subscribes and unsubscribes this browser", asy
     auth: "fake-auth-secret",
   });
   // The worker itself is real, served from public/ at the origin root.
-  await expect.poll(() => hasRegistration(page), { timeout: 10_000 }).toBe(true);
+  await expect
+    .poll(() => hasRegistration(page), { timeout: 10_000 })
+    .toBe(true);
 
   // ── Disable ──────────────────────────────────────────────────────────────
   const removed = page.waitForRequest(
