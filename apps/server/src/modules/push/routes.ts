@@ -30,9 +30,13 @@ export const PUSH_RATE_LIMIT_MAX = 60;
 
 /**
  * Installs one login may keep. Phones, desktops, a work machine — ten covers
- * any honest user; past it the oldest goes, because an endpoint that has not
- * been re-registered in ten installs is almost certainly a browser profile
- * nobody opens any more.
+ * any honest user, so this is an anti-bloat ceiling rather than a cache
+ * eviction policy: past it the oldest registration goes, first-registered
+ * first. `createdAt` deliberately keeps meaning "first seen" across the
+ * upsert, so a device that has been here since the beginning is not aged out
+ * by one that merely re-registered more recently. At ten, which endpoint goes
+ * is nearly always moot — and a device that loses its row simply re-PUTs on
+ * its next boot.
  */
 export const MAX_SUBSCRIPTIONS_PER_USER = 10;
 
