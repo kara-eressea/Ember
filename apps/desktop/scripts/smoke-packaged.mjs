@@ -53,6 +53,13 @@ const releaseDir = join(desktopDir, "release");
  * boots, an argon2 hash and a login, and a cold CI runner is not fast. */
 const LAUNCH_TIMEOUT_MS = 5 * 60_000;
 
+/**
+ * How long the pipes get to deliver what is left after the app process exits.
+ * Short, because by then the interesting output is already written; nonzero,
+ * because the last few lines are usually the ones being asserted on.
+ */
+const EXIT_DRAIN_MS = 2_000;
+
 const args = process.argv.slice(2);
 const expectedVersion = valueOf("--version");
 const unpackedOnly = args.includes("--unpacked");
@@ -183,20 +190,64 @@ function launch(binary, userData) {
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
+
+    let settled = false;
+    const finish = (code, signal) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(drain);
+      resolveLaunch({ code, signal, output });
+    };
+
+    // `exit` rather than `close`, plus a short grace period for the pipes.
+    //
+    // `close` waits for every writer on the child's stdout and stderr to let
+    // go, and this app has more writers than the process we spawned: the
+    // bouncer runs as a utility process that inherited those pipes, and
+    // Chromium has helpers of its own. A killed app leaves them holding the
+    // handles, so waiting for `close` after a timeout is waiting forever —
+    // which turns "the app misbehaved" into "the CI step hung".
+    let drain;
+    child.on("exit", (code, signal) => {
+      drain = setTimeout(() => {
+        finish(code, signal);
+      }, EXIT_DRAIN_MS);
+    });
+    child.on("close", finish);
+
     const timer = setTimeout(() => {
       output += "\nsmoke: timed out; killing the app\n";
-      child.kill("SIGKILL");
+      killTree(child);
     }, LAUNCH_TIMEOUT_MS);
+
     child.on("error", (error) => {
       clearTimeout(timer);
       console.error(`smoke: could not launch ${binary}: ${error.message}`);
       rejectLaunch(new SmokeFailure(error.message));
     });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      resolveLaunch({ code, signal, output });
-    });
   });
+}
+
+/**
+ * Kill the app and everything it started.
+ *
+ * `child.kill` signals one process. What is on screen is a process *tree* — the
+ * bouncer, Chromium's helpers — and on Windows there are no process groups to
+ * signal, so the only way to take the tree down is to ask the OS by name.
+ * Failing to do this leaves an orphaned bouncer holding a port and a data
+ * directory on the runner.
+ */
+function killTree(child) {
+  if (process.platform === "win32" && child.pid !== undefined) {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
+    return;
+  }
+  child.kill("SIGKILL");
 }
 
 // ── Finding the thing to launch ──────────────────────────────────────────────

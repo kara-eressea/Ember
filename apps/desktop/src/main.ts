@@ -944,7 +944,17 @@ app.on("activate", () => {
 
 /** A blank window explains nothing; a dialog with the child's own words does. */
 function fail(title: string, detail: string): void {
-  dialog.showErrorBox(title, detail);
+  // The console first, and always. A dialog is for the person at the machine;
+  // a log line is for the bug report, and for the one launch where there is
+  // nobody to click OK.
+  console.error(`${title}\n${detail}`);
+  // `showErrorBox` is modal and synchronous: on an automated launch — the
+  // packaged smoke test (MX4), a probe run — it waits for a click that will
+  // never come, and a failure that should take a second takes the whole
+  // timeout. Under the probe the sentence above is the whole report.
+  if (lifecycleProbe(process.env) === undefined) {
+    dialog.showErrorBox(title, detail);
+  }
   stopping = true;
   void (server?.stop() ?? Promise.resolve()).finally(() => {
     app.exit(1);

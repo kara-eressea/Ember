@@ -37,14 +37,52 @@ const READY_TIMEOUT_MS = 60_000;
 const READY_POLL_MS = 150;
 /** Tail of the child's stderr kept for the crash dialog. */
 const STDERR_KEEP_BYTES = 8_000;
+/**
+ * How many ports a boot may try before giving up (MX4, #305).
+ *
+ * `findFreePort` documents the race it accepts: the port is probed in this
+ * process, released, and bound by the child a moment later, and anything on the
+ * machine may take it in between. Windows widens that gap into something worth
+ * handling — the OS keeps ranges of ephemeral ports excluded (Hyper-V, WSL and
+ * anything else that reserved a block), and a bind into one of those fails for
+ * that port and no other. A second draw costs milliseconds and turns a
+ * coin-toss failure into a retry; three of them failing is a real problem and
+ * should be reported as one, which is why this is a small number and not a
+ * loop.
+ */
+const PORT_ATTEMPTS = 3;
 
 /**
  * Forks the bouncer as an Electron `utilityProcess` and waits for it to answer
  * `/healthz` (the same readiness contract the container image's smoke test
  * uses). Rejects — with the child's own stderr attached — if it dies first,
  * so a broken boot shows the reason instead of a blank window.
+ *
+ * A child that dies before it is ready gets a fresh port and one more go (up to
+ * `PORT_ATTEMPTS`); see there for why the port and not something else.
  */
 export async function startEmbeddedServer(
+  options: StartEmbeddedServerOptions,
+): Promise<EmbeddedServer> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await startOnce(options);
+    } catch (error) {
+      const worthAnotherPort =
+        attempt < PORT_ATTEMPTS &&
+        error instanceof EmbeddedServerStartError &&
+        error.childExited;
+      if (!worthAnotherPort) {
+        throw error;
+      }
+      console.warn(
+        `The bouncer did not come up on that port (attempt ${String(attempt)} of ${String(PORT_ATTEMPTS)}); trying another.`,
+      );
+    }
+  }
+}
+
+async function startOnce(
   options: StartEmbeddedServerOptions,
 ): Promise<EmbeddedServer> {
   const port = await findFreePort();
@@ -99,7 +137,7 @@ export async function startEmbeddedServer(
         ? `The bouncer did not become ready in time (${origin}).`
         : `The bouncer exited with code ${String(exitCode)} before it was ready.`,
       stderr.trim(),
-      { cause },
+      { cause, childExited: exitCode !== undefined },
     );
   }
 
@@ -132,11 +170,23 @@ export async function startEmbeddedServer(
 /** A boot failure carrying whatever the child managed to say on the way down. */
 export class EmbeddedServerStartError extends Error {
   readonly childStderr: string;
+  /**
+   * Whether the child died on its own, as opposed to never becoming ready while
+   * still alive. Only the first is worth another port — a child that is up and
+   * silent has a different problem, and retrying it would cost three times the
+   * ready timeout to arrive at the same answer.
+   */
+  readonly childExited: boolean;
 
-  constructor(message: string, childStderr: string, options?: ErrorOptions) {
+  constructor(
+    message: string,
+    childStderr: string,
+    options?: ErrorOptions & { childExited?: boolean },
+  ) {
     super(message, options);
     this.name = "EmbeddedServerStartError";
     this.childStderr = childStderr;
+    this.childExited = options?.childExited ?? false;
   }
 }
 
