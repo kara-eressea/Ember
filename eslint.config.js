@@ -27,4 +27,12 @@ export default tseslint.config(
     // Plain-node scripts (scripts/*.mjs, config files).
     languageOptions: { globals: globals.node },
   },
+  {
+    // The push service worker (design/web-push.md §4) is the one .js file that
+    // is neither a script nor a bundle: it ships verbatim out of public/ and
+    // runs in a ServiceWorkerGlobalScope, so `self`, `clients` and friends are
+    // its globals rather than node's.
+    files: ["apps/web/public/sw.js"],
+    languageOptions: { globals: globals.serviceworker },
+  },
 );

@@ -1,7 +1,7 @@
-// Two things the bundle is not allowed to contain (MP3 §7). Both are
-// decisions rather than omissions, which is exactly why they need a guard:
-// nothing breaks when someone adds either one, so nothing but a test will
-// notice it went in.
+// Things the bundle is not allowed to contain (MP3 §7, WP §6). All of them
+// are decisions rather than omissions, which is exactly why they need a guard:
+// nothing breaks when someone adds one, so nothing but a test will notice it
+// went in.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -55,7 +55,17 @@ function workerScripts(dir: string): string[] {
   });
 }
 
-describe("no service worker (MP3 §7)", () => {
+/**
+ * The two files Web Push is allowed to add, and nothing else (web-push.md §4).
+ * Named by exact path rather than by pattern on purpose: the exception is one
+ * worker and one module that registers it, so a second of either — a caching
+ * worker, a stray `navigator.serviceWorker` call in a component — still fails
+ * both guards below exactly as it did before WP.
+ */
+const PUSH_WORKER = resolve("public/sw.js");
+const PUSH_REGISTRATION = resolve("src/lib/push.ts");
+
+describe("no service worker beyond push (MP3 §7, WP §6)", () => {
   // The absence is the design (mp3-pwa.md's preamble), not a corner nobody
   // got to. The client is a live view onto a bouncer that holds the real
   // session: what it renders is only ever true because a socket said so a
@@ -67,23 +77,51 @@ describe("no service worker (MP3 §7)", () => {
   // outlives its own deployment: it keeps serving from disk after the tab
   // that installed it is gone, so shipping one by accident is a bug that
   // cannot be fixed by shipping a fix.
-  it("is registered anywhere in the client", () => {
-    const offenders = sources().flatMap(([path, source]) => {
-      const code = uncommented(source);
-      return [...code.matchAll(/serviceworker|service-worker|workbox/giu)].map(
-        (match) => `${path}:${String(lineOf(code, match.index))}: ${match[0]}`,
-      );
-    });
+  //
+  // Web Push (design/web-push.md) narrowed that from "none" to "one, and only
+  // for the display of push notifications", because no engine will deliver a
+  // push to a page — a worker is the only receiver there is. Everything the
+  // original decision was actually about is untouched and is now asserted
+  // directly, in the third test below.
+  it("is registered anywhere but the push module", () => {
+    const offenders = sources()
+      .filter(([path]) => path !== PUSH_REGISTRATION)
+      .flatMap(([path, source]) => {
+        const code = uncommented(source);
+        return [
+          ...code.matchAll(/serviceworker|service-worker|workbox/giu),
+        ].map(
+          (match) =>
+            `${path}:${String(lineOf(code, match.index))}: ${match[0]}`,
+        );
+      });
     expect(offenders).toEqual([]);
   });
 
   // A worker also has to be *served* from the origin to claim a scope, so the
   // file sitting in public/ is half of shipping one even with no registration
   // call anywhere near it.
-  it("sits on disk under public/ or src/ either", () => {
+  it("sits on disk under public/ or src/ beyond the push worker", () => {
     const offenders = [resolve("public"), resolve("src")]
       .filter((root) => existsSync(root))
-      .flatMap((root) => workerScripts(root));
+      .flatMap((root) => workerScripts(root))
+      .filter((path) => path !== PUSH_WORKER);
+    expect(offenders).toEqual([]);
+  });
+
+  // The teeth. The push worker exists to call `showNotification` and to route
+  // the click; the moment it also answers a `fetch` it becomes the thing MP3
+  // refused — a layer that serves the app from disk, before the socket gets a
+  // word in, for as long as it stays registered. `fetch` is banned outright
+  // rather than only as an event name: a worker with no cache and no offline
+  // story has no reason to make requests either, and the narrower rule would
+  // pass `caches.open` reached through a plain fetch wrapper.
+  it("keeps the push worker to display and click routing", () => {
+    expect(existsSync(PUSH_WORKER)).toBe(true);
+    const code = uncommented(readFileSync(PUSH_WORKER, "utf8"));
+    const offenders = [
+      ...code.matchAll(/\bfetch\b|\bcaches\b|CacheStorage/giu),
+    ].map((match) => `sw.js:${String(lineOf(code, match.index))}: ${match[0]}`);
     expect(offenders).toEqual([]);
   });
 });
@@ -104,7 +142,8 @@ describe("the product name (MP3 §7)", () => {
   //    keys and one `Symbol.for`, currently `emberchat.composeMarkdown`,
   //    `emberchat.sidebarOrder` (legacy, still read for migration),
   //    `emberchat.sidebarCollapsed`, `emberchat.searchRun.<id>`,
-  //    `emberchat.lastIdentityId` and `emberchat.longpress.claimed`. They are
+  //    `emberchat.lastIdentityId`, `emberchat.pushEnabled` and
+  //    `emberchat.longpress.claimed`. They are
   //    persisted keys: renaming them with the product would orphan every
   //    user's saved state on upgrade, so they are frozen on purpose.
   //  - `lib/config.ts`, which owns the working title as its documented

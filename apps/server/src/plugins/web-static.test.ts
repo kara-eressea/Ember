@@ -23,6 +23,8 @@ beforeAll(async () => {
     path.join(root, "assets", "app-abc123.js"),
     "console.log(1);",
   );
+  // Vite copies public/ to the dist root, so the push worker lands here.
+  await writeFile(path.join(root, "sw.js"), "self.addEventListener;");
 
   app = Fastify();
   await app.register(webStatic, { root, appName: "Testline </script>" });
@@ -75,6 +77,17 @@ describe("webStatic", () => {
     const index = await app.inject({ method: "GET", url: "/" });
     expect(index.statusCode).toBe(200);
     expect(index.headers["cache-control"]).toBe("no-cache");
+  });
+
+  // A root-scope service worker is the one file a stale cache can pin past a
+  // deploy: it keeps running from disk until its entry expires, and the only
+  // update path it has is the browser re-requesting the script. It is served
+  // out of the same static root as the hashed bundles above and carries no
+  // hash of its own, so the exemption has to be explicit (web-push.md §4).
+  it("never caches the push service worker", async () => {
+    const worker = await app.inject({ method: "GET", url: "/sw.js" });
+    expect(worker.statusCode).toBe(200);
+    expect(worker.headers["cache-control"]).toBe("no-cache");
   });
 
   it("keeps unknown API paths as JSON 404s", async () => {

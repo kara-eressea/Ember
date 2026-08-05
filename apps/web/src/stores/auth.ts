@@ -12,6 +12,7 @@
 
 import { create } from "zustand";
 import { api, ApiError, type UserDto } from "../lib/api.js";
+import { forgetPushOnLogout } from "../lib/push.js";
 
 const STORAGE_KEY = "eb.auth";
 
@@ -222,6 +223,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   async logout() {
     const { refreshToken } = get();
+    // Take this browser's push registration down with the session. The row is
+    // already gone server-side (it cascades off the auth session), so this is
+    // purely local hygiene — and it is deliberately not awaited: a signed-out
+    // user is signed out now, whatever the service worker is doing about it.
+    void forgetPushOnLogout();
     set({
       user: undefined,
       accessToken: undefined,

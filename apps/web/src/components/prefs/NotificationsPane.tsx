@@ -5,16 +5,37 @@
 // and clears them). Mutes silence alerts only; badges and tint still
 // accrue (decisions.md §10).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import {
   ensureNotifyPermission,
   notificationsSupported,
 } from "../../lib/desktop-notify.js";
+import { api } from "../../lib/api.js";
+import {
+  disablePush,
+  enablePush,
+  pushEnabledHere,
+  pushSupported,
+} from "../../lib/push.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { FieldRow, GroupLabel, Toggle } from "./controls.js";
 import { patchPrefs } from "./patch.js";
 import styles from "./prefs.module.css";
+
+/** What to say when `enablePush` comes back with something other than a
+ * subscription. `enabled` has nothing to report. */
+const PUSH_ERRORS: Record<
+  Awaited<ReturnType<typeof enablePush>>,
+  string | undefined
+> = {
+  enabled: undefined,
+  denied:
+    "Notifications are blocked — allow them in your browser's site settings first.",
+  unsupported: "This browser cannot receive push notifications.",
+  unavailable: "This server has no push keys configured.",
+  failed: "Could not subscribe for push notifications. Try again in a moment.",
+};
 
 export function NotificationsPane({ identityId }: { identityId: string }) {
   const prefs = useSessionsStore(
@@ -26,6 +47,64 @@ export function NotificationsPane({ identityId }: { identityId: string }) {
   const set = (patch: Parameters<typeof patchPrefs>[1]) => {
     void patchPrefs(identityId, patch);
   };
+
+  /**
+   * Push is device state, so its row is not a pref: it reads the local flag
+   * and asks the server once whether this instance has VAPID keys at all.
+   * `undefined` means the answer has not come back — the row stays hidden
+   * until it does, so a self-host without push never flashes a control. The
+   * browser half is derived rather than stored: `PushManager` either exists
+   * in this engine or does not, and nothing in a session changes it.
+   */
+  const [instanceHasPush, setInstanceHasPush] = useState<boolean>();
+  const pushAvailable = pushSupported() && instanceHasPush === true;
+  const [pushOn, setPushOn] = useState(pushEnabledHere);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string>();
+
+  useEffect(() => {
+    if (!pushSupported()) {
+      return; // nothing to ask about — the row cannot render either way
+    }
+    let live = true;
+    void api
+      .getPushVapidKey()
+      .then((capability) => {
+        if (live) {
+          setInstanceHasPush(capability.enabled);
+        }
+      })
+      .catch(() => {
+        if (live) {
+          setInstanceHasPush(false);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function togglePush(on: boolean): Promise<void> {
+    setPushError(undefined);
+    setPushBusy(true);
+    try {
+      if (!on) {
+        await disablePush();
+        setPushOn(false);
+        return;
+      }
+      const result = await enablePush();
+      setPushOn(result === "enabled");
+      setPushError(PUSH_ERRORS[result]);
+      if (result === "unavailable") {
+        // The keys went away between the pane opening and the toggle — take
+        // the control with them rather than leave a dead switch on screen.
+        setInstanceHasPush(false);
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   /** Flip a desktop toggle on only once the browser permission exists. */
   async function enableDesktop(
@@ -132,6 +211,48 @@ export function NotificationsPane({ identityId }: { identityId: string }) {
             will show until you re-allow them there.
           </p>
         )}
+
+      {/* Web Push (design/web-push.md §4). Per device, not per account: the
+          subscription belongs to this browser install, so it is the one
+          control in this window that does not go through prefs. Hidden
+          outright where it could not work — no PushManager here, or an
+          instance with no VAPID keys. */}
+      {pushAvailable && (
+        <>
+          <GroupLabel>Push notifications</GroupLabel>
+          <FieldRow
+            label="On this device"
+            help="Alerts arrive even with the app closed — the server keeps your session"
+          >
+            <Toggle
+              label="Push notifications on this device"
+              checked={pushOn}
+              disabled={pushBusy}
+              onChange={(on) => {
+                void togglePush(on);
+              }}
+            />
+          </FieldRow>
+          <p className={styles.paneNote}>
+            On iPhone and iPad, add this site to the Home Screen first — Safari
+            only delivers push to installed apps.
+          </p>
+          {pushError !== undefined && (
+            <p className={styles.paneError} role="alert">
+              {pushError}
+            </p>
+          )}
+          {pushOn &&
+            pushError === undefined &&
+            notificationsSupported() &&
+            Notification.permission !== "granted" && (
+              <p className={styles.paneError} role="alert">
+                Notifications are blocked in your browser's site settings — no
+                push will show until you re-allow them there.
+              </p>
+            )}
+        </>
+      )}
 
       <GroupLabel>Muted identities</GroupLabel>
       <p className={styles.paneNote}>

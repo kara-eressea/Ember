@@ -60,6 +60,14 @@ export async function webStatic(
           "public, max-age=31536000, immutable",
         );
       }
+      // The push service worker (design/web-push.md §4) is the one script
+      // served under its own unhashed name, and it is also the one that
+      // outlives the deployment that installed it: a cached copy keeps
+      // running until its entry expires, on a file whose whole update path is
+      // the browser re-requesting it. Never cached, same as the document.
+      if (filePath.endsWith(`${path.sep}sw.js`)) {
+        void reply.header("cache-control", "no-cache");
+      }
     },
   });
 
