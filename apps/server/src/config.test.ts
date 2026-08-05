@@ -1,9 +1,21 @@
+import * as webpush from "web-push";
 import { describe, expect, it } from "vitest";
 import { loadConfig, trustProxyValue } from "./config.js";
 
 const BASE_ENV = {
   DATABASE_URL: "postgres://emberchat:emberchat@localhost:5432/emberchat",
   AUTH_SECRET: "unit-test-secret-0123456789abcdef-xyz",
+};
+
+// Generated rather than hardcoded: a "VAPID keypair" literal in a public repo
+// invites somebody to paste it into a real .env (secrets hygiene,
+// decisions.md §7), and the library's own generator is the authority on the
+// shape the config guard has to accept.
+const keys = webpush.generateVAPIDKeys();
+const VAPID_ENV = {
+  PUSH_VAPID_PUBLIC_KEY: keys.publicKey,
+  PUSH_VAPID_PRIVATE_KEY: keys.privateKey,
+  PUSH_VAPID_SUBJECT: "mailto:admin@example.test",
 };
 
 describe("loadConfig", () => {
@@ -78,6 +90,78 @@ describe("loadConfig", () => {
       loadConfig({ ...BASE_ENV, FCHAT_URL: "ws://127.0.0.1:9090/chat2" })
         .FCHAT_URL,
     ).toBe("ws://127.0.0.1:9090/chat2");
+  });
+
+  it("leaves web push unconfigured when no PUSH_VAPID_* var is set", () => {
+    const config = loadConfig(BASE_ENV);
+    expect(config.PUSH_VAPID_PUBLIC_KEY).toBeUndefined();
+    expect(config.PUSH_VAPID_PRIVATE_KEY).toBeUndefined();
+    expect(config.PUSH_VAPID_SUBJECT).toBeUndefined();
+  });
+
+  it("accepts a complete VAPID triple, empty strings reading as unset", () => {
+    expect(
+      loadConfig({ ...BASE_ENV, ...VAPID_ENV }).PUSH_VAPID_PUBLIC_KEY,
+    ).toBe(VAPID_ENV.PUSH_VAPID_PUBLIC_KEY);
+    // docker-compose passes `${VAR:-}`: all three empty is "push disabled",
+    // not "three half-set vars".
+    expect(
+      loadConfig({
+        ...BASE_ENV,
+        PUSH_VAPID_PUBLIC_KEY: "",
+        PUSH_VAPID_PRIVATE_KEY: "",
+        PUSH_VAPID_SUBJECT: "",
+      }).PUSH_VAPID_SUBJECT,
+    ).toBeUndefined();
+  });
+
+  it("refuses a half-configured VAPID triple", () => {
+    for (const key of [
+      "PUSH_VAPID_PUBLIC_KEY",
+      "PUSH_VAPID_PRIVATE_KEY",
+      "PUSH_VAPID_SUBJECT",
+    ] as const) {
+      const partial: Record<string, string> = { ...VAPID_ENV };
+      delete partial[key];
+      expect(() => loadConfig({ ...BASE_ENV, ...partial })).toThrow(
+        /must all be set together/,
+      );
+    }
+  });
+
+  it("names the decoded length when a VAPID key is the wrong size", () => {
+    expect(() =>
+      loadConfig({
+        ...BASE_ENV,
+        ...VAPID_ENV,
+        // The private key's 32 bytes, offered as the public key.
+        PUSH_VAPID_PUBLIC_KEY: VAPID_ENV.PUSH_VAPID_PRIVATE_KEY,
+      }),
+    ).toThrow(/PUSH_VAPID_PUBLIC_KEY must decode to exactly 65 bytes/);
+    expect(() =>
+      loadConfig({
+        ...BASE_ENV,
+        ...VAPID_ENV,
+        PUSH_VAPID_PRIVATE_KEY: "not-a-real-key",
+      }),
+    ).toThrow(/generate-vapid-keys/);
+  });
+
+  it("requires a mailto: or https: VAPID subject", () => {
+    expect(() =>
+      loadConfig({
+        ...BASE_ENV,
+        ...VAPID_ENV,
+        PUSH_VAPID_SUBJECT: "admin@example.test",
+      }),
+    ).toThrow(/mailto:/);
+    expect(
+      loadConfig({
+        ...BASE_ENV,
+        ...VAPID_ENV,
+        PUSH_VAPID_SUBJECT: "https://example.test/contact",
+      }).PUSH_VAPID_SUBJECT,
+    ).toBe("https://example.test/contact");
   });
 });
 

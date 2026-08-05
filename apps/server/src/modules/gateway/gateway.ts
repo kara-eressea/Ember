@@ -429,6 +429,12 @@ export interface GatewayRoutesOptions {
   /** Cached social lists — served in the snapshot (#194). */
   social: SocialCache;
   /**
+   * The process-wide prefs cache. Passed in so other readers — the push
+   * sender (design/web-push.md §3) — share the entry this connection's prefs
+   * patch invalidates; omitted, the gateway keeps its own.
+   */
+  userPrefs?: UserPrefsCache;
+  /**
    * Origins allowed to open the gateway from a browser (M7 exposure
    * hardening). A request WITHOUT an Origin header is allowed — non-browser
    * clients (tests, tooling, the future desktop shell) don't send one, and
@@ -460,13 +466,13 @@ export async function gatewayRoutes(
     allowedOrigins,
     tuning,
   } = options;
+  // One per process, not per connection: the whole point is that a user's
+  // second device (and the next msg.send) reads no row at all.
+  const userPrefs = options.userPrefs ?? new UserPrefsCache(db);
   const originAllowList = new Set(
     allowedOrigins.map((origin) => origin.toLowerCase()),
   );
   const HELLO_BUDGET_PER_MINUTE = 20;
-  // One per process, not per connection: the whole point is that a user's
-  // second device (and the next msg.send) reads no row at all.
-  const userPrefs = new UserPrefsCache(db);
 
   /** True while the auth session row exists and is unexpired. */
   async function sessionAlive(sid: string): Promise<boolean> {

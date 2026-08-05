@@ -44,6 +44,7 @@ import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import { CredentialVault } from "./modules/flist-accounts/vault.js";
 import type { GatewayTuning } from "./modules/gateway/connection.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
+import { UserPrefsCache } from "./modules/gateway/user-prefs.js";
 import { UpdateChecker } from "./modules/meta/update-check.js";
 import { HighlightMatcher } from "./modules/highlights/matcher.js";
 import { highlightsRoutes } from "./modules/highlights/routes.js";
@@ -54,6 +55,8 @@ import { HistorySink } from "./modules/history/sink.js";
 import { NotificationStore } from "./modules/notifications/store.js";
 import { notificationsRoutes } from "./modules/notifications/routes.js";
 import { Outbox } from "./modules/outbox/outbox.js";
+import { PushSender } from "./modules/push/sender.js";
+import { pushRoutes } from "./modules/push/routes.js";
 import { SeenMembersStore } from "./modules/seen-members/store.js";
 import {
   SessionRegistry,
@@ -139,7 +142,32 @@ export async function buildApp({
   // eslint-disable-next-line prefer-const -- forward declaration
   let campaignScheduler: CampaignScheduler | undefined;
   const notifications = new NotificationStore(db, app.log);
-  const history = new HistorySink(db, app.log, { highlights, notifications });
+  // Shared with the push sender so one prefs patch invalidates both readers.
+  const userPrefs = new UserPrefsCache(db);
+  // Web Push (design/web-push.md) — built only when the instance has VAPID
+  // keys. Unset config means no sender, no routes advertising one, and no UI:
+  // the feature is invisible end-to-end (invariant 6).
+  const push =
+    config.PUSH_VAPID_PUBLIC_KEY !== undefined &&
+    config.PUSH_VAPID_PRIVATE_KEY !== undefined &&
+    config.PUSH_VAPID_SUBJECT !== undefined
+      ? new PushSender({
+          db,
+          vapid: {
+            subject: config.PUSH_VAPID_SUBJECT,
+            publicKey: config.PUSH_VAPID_PUBLIC_KEY,
+            privateKey: config.PUSH_VAPID_PRIVATE_KEY,
+          },
+          userPrefs,
+          notifications,
+          logger: app.log,
+        })
+      : undefined;
+  const history = new HistorySink(db, app.log, {
+    highlights,
+    notifications,
+    ...(push !== undefined ? { push } : {}),
+  });
   const hub = new GatewayHub({ history, notifications, logger: app.log });
   // Per-identity social lists (#194) — in memory alongside the sessions;
   // a restart just means the first GET refetches.
@@ -382,6 +410,15 @@ export async function buildApp({
     notifications,
     hub,
   });
+  await app.register(pushRoutes, {
+    prefix: "/api/push",
+    db,
+    // Undefined when the instance has no VAPID config — the route reports
+    // `enabled: false` and the client hides the feature.
+    ...(config.PUSH_VAPID_PUBLIC_KEY !== undefined
+      ? { vapidPublicKey: config.PUSH_VAPID_PUBLIC_KEY }
+      : {}),
+  });
   await app.register(directoryRoutes, {
     prefix: "/api/identities",
     db,
@@ -460,6 +497,7 @@ export async function buildApp({
     imagePreviewHosts,
     campaigns: campaignScheduler,
     social: socialCache,
+    userPrefs,
     ...(process.env.NODE_ENV === "test" && gatewayTuning !== undefined
       ? { tuning: gatewayTuning }
       : {}),

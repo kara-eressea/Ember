@@ -179,7 +179,54 @@ const configSchema = z.object({
     .int()
     .min(60_000)
     .default(24 * 60 * 60 * 1000),
+  /**
+   * Web Push VAPID keypair (design/web-push.md §2). All three PUSH_VAPID_*
+   * vars are set together or not at all (guard in loadConfig); unset means
+   * push is invisible end-to-end — no sender, no routes advertising it, no
+   * client UI. The private key signs the JWT that identifies this instance
+   * to the push services; it never encrypts anything (payloads are encrypted
+   * to the browser's own keys, RFC 8291).
+   */
+  PUSH_VAPID_PUBLIC_KEY: vapidKey("PUSH_VAPID_PUBLIC_KEY", 65),
+  PUSH_VAPID_PRIVATE_KEY: vapidKey("PUSH_VAPID_PRIVATE_KEY", 32),
+  /**
+   * Contact for the push services when a subscription misbehaves — they
+   * require it in the VAPID claim. `mailto:` address or an `https:` URL.
+   */
+  PUSH_VAPID_SUBJECT: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().optional(),
+  ),
 });
+
+/**
+ * One of the two VAPID keys: base64url of an exact byte length (65 for the
+ * uncompressed P-256 public point, 32 for the private scalar). Same shape as
+ * CREDENTIALS_KEY — `""` is unset so docker-compose's `${VAR:-}` passthrough
+ * reads as absent, and the message names what we decoded rather than the key.
+ */
+function vapidKey(name: string, bytes: number) {
+  return z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .superRefine((key, ctx) => {
+        // Node's base64url decoder skips invalid characters instead of
+        // failing, so a wrong length is the only signal a paste went wrong.
+        const decoded = Buffer.from(key, "base64url").length;
+        if (decoded !== bytes) {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              `${name} must decode to exactly ${String(bytes)} bytes of base64url; ` +
+              `got a ${String(key.length)}-character value decoding to ${String(decoded)} bytes. ` +
+              `Generate a keypair: npx web-push generate-vapid-keys`,
+          });
+        }
+      })
+      .optional(),
+  );
+}
 
 export type AppConfig = z.infer<typeof configSchema>;
 
@@ -232,6 +279,28 @@ export function loadConfig(
   if (campaignShrunk && isFlistHost(config.FCHAT_URL)) {
     throw new Error(
       "CAMPAIGN_* timings below the policy floors are only allowed against a local fchat-sim, never the real F-Chat",
+    );
+  }
+  // Web Push is all-three-or-none: a half-configured keypair would boot a
+  // server that advertises push and then fails every send, which is a worse
+  // outcome than refusing to start. Unset is a first-class answer — the
+  // feature simply does not exist on that instance.
+  const vapidSet = [
+    config.PUSH_VAPID_PUBLIC_KEY,
+    config.PUSH_VAPID_PRIVATE_KEY,
+    config.PUSH_VAPID_SUBJECT,
+  ].filter((value) => value !== undefined).length;
+  if (vapidSet !== 0 && vapidSet !== 3) {
+    throw new Error(
+      "PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY and PUSH_VAPID_SUBJECT must all be set together (or all left unset to disable web push). Generate a keypair: npx web-push generate-vapid-keys",
+    );
+  }
+  if (
+    config.PUSH_VAPID_SUBJECT !== undefined &&
+    !/^(mailto:|https:\/\/)/.test(config.PUSH_VAPID_SUBJECT)
+  ) {
+    throw new Error(
+      "PUSH_VAPID_SUBJECT must be a mailto: address or an https:// URL — the push services reject anything else",
     );
   }
   return config;

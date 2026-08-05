@@ -131,6 +131,7 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `FLIST_MAPPINGS_TTL_MS` | `604800000` (7 d) | Refresh window for F-List's bulk infotag/kink mapping lists |
 | `EICON_INDEX_BASE_URL` | `https://xariah.net` | Eicon search index host (see the privacy note below) |
 | `EICON_INDEX_REFRESH_MS` | `86400000` (24 h) | Delta-refresh cadence for the eicon index |
+| `PUSH_VAPID_PUBLIC_KEY` / `PUSH_VAPID_PRIVATE_KEY` / `PUSH_VAPID_SUBJECT` | unset | Enables web push (see below). Set all three or none — a partial set refuses to boot |
 
 **Remembered credentials & restarts**: by default F-List passwords live
 only in server memory — every restart (including upgrades) logs your
@@ -173,6 +174,37 @@ local copy — **user search text never leaves your server**, and users' IPs
 never reach xariah. The only xariah-bound traffic is your server's
 periodic bulk fetch. Point the knob at fchat-sim (or leave search
 disabled) if you'd rather have no third-party egress at all.
+
+**Web push notifications**: off unless you set the three `PUSH_VAPID_*`
+keys. With them set, a user can opt a device in (Preferences →
+Notifications) and get OS notifications for mentions, DMs and friend
+requests **while no tab is open** — the payoff for running a bouncer.
+Generate the keypair once, keep it in `.env`, and don't rotate it
+casually: every device's subscription is bound to the key that created
+it, so a new keypair silently stops delivery until each device re-opts-in.
+
+```sh
+npx web-push generate-vapid-keys
+```
+
+Two requirements come from the browsers, not from this software:
+
+- **HTTPS.** Push needs a secure context. Behind the reverse proxy above
+  you already have it; a plain-`http://` instance cannot offer push at all
+  (`localhost` is the one exception, which is why local development works).
+- **iOS needs a home-screen install.** Safari 16.4+ supports web push only
+  for sites added via Share → *Add to Home Screen*. In a normal Safari tab
+  the toggle does nothing useful — the in-app copy says so.
+
+What actually crosses the network: the push services (Google, Apple,
+Mozilla) route the message but **cannot read it** — the payload is
+encrypted end-to-end to the browser's own keys (RFC 8291), and the VAPID
+key only identifies your instance to them. They do learn that *some*
+notification went to *some* endpoint, when. Users who would rather not
+send message text at all can turn off "Show message content in
+notifications", which applies to push as it already did to desktop
+notifications. Subscriptions are tied to the login that created them:
+logging out deletes them, immediately and server-side.
 
 **Your logs**: message/command history lives in the `messages` table inside
 the Postgres volume (and in the dumps under `BACKUP_DIR`) — known and
