@@ -29,8 +29,7 @@
  * loads the web app out of `resources/web`. Every packaged path except the two
  * a person has to look at (the tray icon rendering, the notification).
  *
- *   node scripts/smoke-packaged.mjs [--version <x.y.z>] [--expect lifecycle|startup]
- *                                   [--unpacked] [--keep]
+ *   node scripts/smoke-packaged.mjs [--version <x.y.z>] [--unpacked] [--keep]
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -65,25 +64,6 @@ const args = process.argv.slice(2);
 const expectedVersion = valueOf("--version");
 const unpackedOnly = args.includes("--unpacked");
 const keep = args.includes("--keep");
-/**
- * How much of the launch this run is allowed to assert.
- *
- * `lifecycle` (the default, and what a developer's machine runs) is the whole
- * thing: boot, bouncer, close-to-tray, quit. `startup` stops at the app being
- * up and correctly assembled, and is the documented degrade for a host where
- * the *bouncer* cannot run for reasons that have nothing to do with this
- * package — see the CI workflow, which names the host and the reason where it
- * passes this. It still proves the installer, the Electron boot, the asar, the
- * packaged branch of `paths.ts` and the version injection; it does not prove
- * the tray or the server child, and it says so out loud rather than passing
- * quietly.
- */
-const depth = valueOf("--expect") ?? "lifecycle";
-if (depth !== "lifecycle" && depth !== "startup") {
-  console.error(`smoke: --expect takes "lifecycle" or "startup", not ${depth}`);
-  process.exit(2);
-}
-
 const workspace = mkdtempSync(join(tmpdir(), "ember-smoke-"));
 let mountPoint;
 
@@ -130,13 +110,9 @@ async function main() {
   console.log("────────────────────────────────────────────────────────────");
 
   const problems = [];
-  // Only the full run owns the exit code. In `startup` depth the app is
-  // expected to fail *after* the part being asserted, so its code says nothing
-  // about the claim — but the process must have ended rather than hung, which
-  // a `null` code (killed at the timeout) would mean it did not.
-  if (depth === "lifecycle" ? code !== 0 : code === null) {
+  if (code !== 0) {
     problems.push(
-      `exited with code ${String(code)}${signal === null ? "" : ` (signal ${signal})`}, expected ${depth === "lifecycle" ? "0" : "any exit rather than a timeout"}`,
+      `exited with code ${String(code)}${signal === null ? "" : ` (signal ${signal})`}, expected 0`,
     );
   }
   for (const expected of expectations()) {
@@ -147,11 +123,7 @@ async function main() {
   if (problems.length > 0) {
     fail(["the packaged app did not behave:", ...problems].join("\n  "));
   }
-  console.log(
-    depth === "lifecycle"
-      ? "smoke: packaged app booted, closed to tray and quit cleanly"
-      : "smoke: packaged app installed and started correctly (--expect startup: the bouncer, tray and quit are NOT covered by this run)",
-  );
+  console.log("smoke: packaged app booted, closed to tray and quit cleanly");
 }
 
 /**
@@ -174,15 +146,11 @@ function expectations() {
     expectedVersion === undefined
       ? "\\S+"
       : expectedVersion.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const startup = {
-    what: `the startup line at version ${expectedVersion ?? "(any)"}, in local mode, packaged`,
-    pattern: new RegExp(`\\s${version} startup: local \\(packaged\\)`),
-  };
-  if (depth === "startup") {
-    return [startup];
-  }
   return [
-    startup,
+    {
+      what: `the startup line at version ${expectedVersion ?? "(any)"}, in local mode, packaged`,
+      pattern: new RegExp(`\\s${version} startup: local \\(packaged\\)`),
+    },
     {
       what: "the probe announcing itself",
       pattern: /lifecycle probe: close-then-quit/,

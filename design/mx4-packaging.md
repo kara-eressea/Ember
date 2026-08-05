@@ -133,7 +133,19 @@ things that need a person: whether the tray icon *renders* legibly and whether
 the close-to-tray notification actually appears. Those stay on MX3's device-pass
 list.
 
-**It earned its keep on the first run.** See §6.
+**It earned its keep twice**, and neither finding was reachable any other way:
+it caught a bundle missing 95% of the server's dependencies (§6.1) and it
+caught a Windows build whose bouncer could not open a socket at all (§6.3). Both
+legs now run it in full — the Windows leg was never degraded.
+
+Two changes came out of running it that belong to the shell rather than the
+packaging. A boot that dies before readiness now **retries on a fresh port**
+(three attempts; `findFreePort` always documented the race it accepts, and
+Windows widens it with OS-excluded port ranges) — which is also the instrument
+that proved the Windows failure was not port-specific. And `fail()` **logs
+instead of raising a modal dialog** when the lifecycle probe is set: a modal
+`showErrorBox` on an automated launch waits for a click that never comes, which
+turned a one-second failure into a five-minute timeout.
 
 ## 5. CI: a second workflow, not two more jobs
 
@@ -178,7 +190,7 @@ that is a matrix entry the day it is wanted, and nothing in
 `electron-builder.yml` is arm-specific. Cross-compiling argon2 and re2 to make
 one universal binary would trade a runner for a whole class of build failure.
 
-## 6. As built — the three things that were only true after running it
+## 6. As built — the four things that were only true after running it
 
 1. **electron-builder drops the root `node_modules` of any copy, and no filter
    can put it back.** `app-builder-lib`'s `filter.js` opens with `if (relative
@@ -204,7 +216,35 @@ one universal binary would trade a runner for a whole class of build failure.
    resolve. The seal walk stays — it now asserts a property instead of
    repairing one, which is the right direction for a guard.
 
-3. **Windows portability in `build-server-runtime.mjs`**, each fix naming the
+3. **A Windows `utilityProcess` cannot open a listening socket — so the bouncer
+   is spawned differently there.** The largest finding of the round, and a real
+   defect rather than a CI inconvenience: the packaged Windows app started,
+   read its config, resolved every artifact out of `resources/`, and then its
+   embedded server died on `listen UNKNOWN 127.0.0.1:<port>`, with
+   `getaddrinfo EAI_FAIL` and `WSALookupServiceBegin failed with: 10108`
+   alongside — a process with no usable Winsock. Three ports in a row, so not
+   the port. Two probes on the *same machine in the same job* then settled it:
+
+   | Probe | Result |
+   |---|---|
+   | the runner's own Node, `listen(0, "127.0.0.1")` | OK |
+   | the **packaged Electron binary**, `ELECTRON_RUN_AS_NODE=1`, same listen | OK |
+   | the OS's excluded TCP port ranges | 80, 5985–5986, 47001, 49700–49899 — none of the refused ports |
+   | the Electron `utilityProcess` | refused, every time |
+
+   Not the host, not the port, not Electron: the process type. Windows
+   therefore starts the bouncer with `child_process.spawn(process.execPath,
+   [entry], { ELECTRON_RUN_AS_NODE: "1" })` — the mechanism `admin-cli.ts`
+   already uses, for the same reason it gives there (identical runtime, same
+   `NODE_MODULE_VERSION`, so the Electron-ABI natives still load, but an
+   ordinary OS process). macOS keeps `utilityProcess`, deliberately: it is
+   proven there, and Electron cleans it up when the main process dies, which is
+   worth having for a child holding a pglite directory no second writer may
+   touch. The Windows path buys that back only for the ordinary exits
+   (`stopChildOnExit`); a hard crash of the main process could still leave a
+   bouncer behind, and that is the one thing this split costs.
+
+4. **Windows portability in `build-server-runtime.mjs`**, each fix naming the
    behavior it accommodates:
    - **`.cmd` cannot be spawned directly.** corepack's `pnpm` on Windows is
      `pnpm.cmd`, and since the BatBadBut fix (Node 18.20.2/20.12.2/21.7.3,
@@ -246,3 +286,6 @@ one universal binary would trade a runner for a whole class of build failure.
 9. Nothing in `apps/web` or `apps/server` is packaging-aware. The desktop build
    consumes their ordinary outputs and nothing else (MX3 invariant 2, extended
    from the shell to the build).
+10. Both packaging legs run the packaged smoke test in full. A leg that cannot
+    is a finding to chase, not a check to weaken — §6.3 is what that looks like
+    when it is chased, and the answer was a real defect in the product.
