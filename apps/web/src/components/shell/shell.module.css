@@ -347,14 +347,8 @@
   flex: none;
 }
 
-.serverName {
-  font-size: calc(14px * var(--eb-font-ui-scale));
-  font-weight: 700;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* The app name itself is components/common/Wordmark.tsx — one mark, one
+   treatment, rendered here and on the auth screens (#537). */
 
 .serverVersion {
   font-family: "IBM Plex Mono", ui-monospace, monospace;

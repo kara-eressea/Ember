@@ -1,0 +1,15 @@
+/* The product wordmark (COMPONENTS.md §2 ServerHead, §13 Auth). One rule for
+   one mark: the sidebar head and the auth screens both render Wordmark.tsx.
+
+   The ellipsis pair is here rather than at the shell's call site because it is
+   the mark's own defence — a self-hoster's product name is arbitrary text, and
+   it has to shorten inside the grid column the head gives it instead of
+   pushing the version off the row. */
+.wordmark {
+  font-size: calc(14px * var(--eb-font-ui-scale));
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

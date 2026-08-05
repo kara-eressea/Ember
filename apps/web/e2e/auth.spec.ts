@@ -231,6 +231,40 @@ test("identities can be connected, disconnected and removed from the picker", as
   await expect(accountField).toHaveValue("");
 });
 
+test("the auth panel is still a centred card above the phone tier (#535, #537)", async ({
+  page,
+}) => {
+  const creds = await provisionUser();
+  await page.goto("/login");
+  const panel = page.getByTestId("auth-panel");
+  await expect(panel).toBeVisible();
+
+  // Boxes, not classes (the MP4 lesson) — and the box is the whole claim here:
+  // #535 made these screens full-bleed on `phone`, and this is the assertion
+  // that says the desktop card was left where it was.
+  const viewport = page.viewportSize();
+  const card = await panel.boundingBox();
+  expect(card?.width).toBe(400);
+  // Page background either side of it, and it is centred in that page.
+  expect(card!.x).toBeGreaterThan(0);
+  expect(
+    Math.abs(card!.x + card!.width / 2 - viewport!.width / 2),
+  ).toBeLessThanOrEqual(1);
+  expect(card!.height).toBeLessThan(viewport!.height);
+
+  // The mark is the configured product name here too — document.title comes
+  // from the same appConfig(), so this compares against the config rather than
+  // against a literal (#537).
+  const appName = await page.evaluate(() => document.title);
+  expect(appName).not.toBe("");
+  await expect(page.getByTestId("wordmark")).toHaveText(appName);
+
+  // …and the picker keeps its own, wider card.
+  await login(page, creds);
+  await expect(page).toHaveURL(/\/identities$/);
+  expect((await panel.boundingBox())?.width).toBe(440);
+});
+
 test("login with a wrong password is rejected", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("nobody@example.test");

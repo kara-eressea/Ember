@@ -725,6 +725,15 @@ export const DEFAULT_WORLD: SimWorld = {
       password: "hunter2",
       characters: ["Pushwort Kell"],
     },
+    // Reserved for the #535/#536/#537 phone auth-screen E2E, which needs no
+    // partner: the spec never joins a channel. Latch Ward is connected once so
+    // the identity picker has a live row — the one that carries both "Open"
+    // and "Disconnect" — and the second character is what makes it a picker
+    // with something to pick rather than a one-row list.
+    "latchward@example.test": {
+      password: "hunter2",
+      characters: ["Latch Ward", "Latch Fen"],
+    },
   },
   channels: [
     {
