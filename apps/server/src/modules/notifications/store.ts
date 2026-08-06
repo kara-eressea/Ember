@@ -90,6 +90,12 @@ export class NotificationStore {
     string,
     { identities: Set<string>; conversations: Set<string> }
   >();
+  /** Bumped by invalidatePrefs(): a read that began before the bump saw the
+   * pre-patch row and must not populate the cache with it — the stale entry
+   * would sit there until the next prefs write, and `muted` is immutable once
+   * stamped, so every mention in a just-muted conversation would badge and
+   * push forever. Same guard, same reason, as UserPrefsCache's. */
+  readonly #mutesGeneration = new Map<string, number>();
   /** Inserts since each identity's last prune pass. */
   readonly #sincePrune = new Map<string, number>();
   /**
@@ -126,6 +132,7 @@ export class NotificationStore {
 
   /** Drop cached mute lists after a prefs patch (mirrors HighlightMatcher). */
   invalidatePrefs(userId: string): void {
+    this.#mutesGeneration.set(userId, this.#mutesGen(userId) + 1);
     this.#mutesByUser.delete(userId);
   }
 
@@ -426,6 +433,7 @@ export class NotificationStore {
     if (cached !== undefined) {
       return cached;
     }
+    const generation = this.#mutesGen(userId);
     const [row] = await this.#db
       .select({ prefs: userPreferences.prefs })
       .from(userPreferences)
@@ -436,7 +444,16 @@ export class NotificationStore {
       identities: new Set(prefs.mutedIdentityIds),
       conversations: new Set(prefs.mutedConvIds),
     };
-    this.#mutesByUser.set(userId, mutes);
+    // Only if nothing invalidated while the SELECT was in flight. The caller
+    // still gets what it read — this notification is allowed to predate the
+    // patch — but the next one re-reads instead of inheriting it.
+    if (generation === this.#mutesGen(userId)) {
+      this.#mutesByUser.set(userId, mutes);
+    }
     return mutes;
+  }
+
+  #mutesGen(userId: string): number {
+    return this.#mutesGeneration.get(userId) ?? 0;
   }
 }

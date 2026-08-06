@@ -595,6 +595,128 @@ describe("notification inbox — lifecycle", () => {
   });
 });
 
+describe("mute cache", () => {
+  /**
+   * Wraps `db.select(...)` so a chain runs as usual but parks its *result*
+   * until `hold` resolves — the only way to sit inside the await gap the
+   * generation guard is about, holding a row that is already stale.
+   * Everything else on the database passes straight through.
+   */
+  function withHeldSelects(
+    base: Db,
+    hold: () => Promise<void> | undefined,
+  ): Db {
+    const call = (fn: unknown, self: object, args: unknown[]) =>
+      (fn as (this: object, ...rest: unknown[]) => unknown).apply(self, args);
+    const wrapChain = (chain: object): object =>
+      new Proxy(chain, {
+        get(target, prop) {
+          if (prop === "then") {
+            return (
+              onFulfilled?: (value: unknown) => unknown,
+              onRejected?: (reason: unknown) => unknown,
+            ) =>
+              Promise.resolve(target as PromiseLike<unknown>)
+                .then(async (value) => {
+                  await hold();
+                  return value;
+                })
+                .then(onFulfilled, onRejected);
+          }
+          const value: unknown = Reflect.get(target, prop);
+          if (typeof value !== "function") {
+            return value;
+          }
+          return (...args: unknown[]) => {
+            const result = call(value, target, args);
+            return typeof result === "object" && result !== null
+              ? wrapChain(result)
+              : result;
+          };
+        },
+      });
+    return new Proxy(base, {
+      get(target, prop) {
+        const value: unknown = Reflect.get(target, prop);
+        if (typeof value !== "function") {
+          return value;
+        }
+        if (prop !== "select") {
+          return (...args: unknown[]) => call(value, target, args);
+        }
+        return (...args: unknown[]) =>
+          wrapChain(call(value, target, args) as object);
+      },
+    }) as Db;
+  }
+
+  it("never refills from a read a prefs patch overtook", async () => {
+    const { identityId, userId } = await startIdentity();
+    let holding = false;
+    let reached!: () => void;
+    let release!: () => void;
+    // `read` settles once a held query has actually run — so the row parked
+    // behind `held` is provably the pre-patch one, with no timing guesswork.
+    const read = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = new NotificationStore(
+      withHeldSelects(db, () => {
+        if (!holding) {
+          return undefined;
+        }
+        reached();
+        return held;
+      }),
+      undefined,
+    );
+
+    // Warms the identity→user map and caches "nothing is muted".
+    const first = await store.recordRtb(
+      identityId,
+      "note",
+      "Nyx Firemane",
+      "a",
+    );
+    expect(first?.muted).toBe(false);
+
+    // Drop the cache so the next mention has to read, and park that read
+    // at exactly the point the guard covers.
+    store.invalidatePrefs(userId);
+    holding = true;
+    const overtaken = store.recordRtb(identityId, "note", "Nyx Firemane", "b");
+    await read;
+
+    // Meanwhile the user mutes this identity from another tab.
+    await db
+      .insert(userPreferences)
+      .values({ userId, prefs: { mutedIdentityIds: [identityId] } })
+      .onConflictDoUpdate({
+        target: userPreferences.userId,
+        set: { prefs: { mutedIdentityIds: [identityId] } },
+      });
+    store.invalidatePrefs(userId);
+
+    release();
+    await overtaken;
+    holding = false;
+
+    // The in-flight read saw the pre-patch row; it must not have parked it
+    // in the cache. `muted` is immutable once written and drives Web Push,
+    // so a stale entry keeps pushing to a muted identity indefinitely.
+    const after = await store.recordRtb(
+      identityId,
+      "note",
+      "Nyx Firemane",
+      "c",
+    );
+    expect(after?.muted).toBe(true);
+  });
+});
+
 describe("excerptOf", () => {
   it("strips BBCode, collapses whitespace and truncates", () => {
     expect(excerptOf("[b]bold[/b]  and\n[i]more[/i]")).toBe("bold and more");
