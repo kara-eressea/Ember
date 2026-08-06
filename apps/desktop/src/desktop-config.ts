@@ -5,11 +5,16 @@
  *   { "version": 1, "mode": "local" }
  *   { "version": 1, "mode": "thin-client", "serverUrl": "https://…" }
  *
- * …plus one optional flag, `"trayNoticeSeen": true`, once close-to-tray has
- * explained itself for the first and only time (§6). Additive and absent until
- * it happens, so the version stays 1: a build that does not know the key
- * ignores it, and a build that does treats a file without it as "not said
- * yet". The worst case in either direction is one extra sentence.
+ * …plus the optional flags in `DesktopFlags`, each recording something the user
+ * has settled once and the app should stop deciding for them:
+ *
+ *   "trayNoticeSeen": true       close-to-tray has explained itself (§6)
+ *   "updateCheckDisabled": true  the daily release check is switched off (#549)
+ *
+ * All of them are additive and absent until they happen, so the version stays
+ * 1: a build that does not know a key ignores it, and a build that does treats
+ * a file without it as the default. The worst case in either direction is one
+ * extra sentence, or one more release check.
  *
  * Not a secret, and pointedly unlike `secrets.json` next to it: plain JSON,
  * no `safeStorage`, readable and editable by the person whose computer this
@@ -36,15 +41,34 @@ import { normalizeServerUrl } from "./server-url.js";
 /** Bumped if the file's shape changes; an unknown version reads as absent. */
 export const CONFIG_SCHEMA_VERSION = 1;
 
-export type DesktopConfig =
-  /** This machine runs the bouncer (§2, §3). */
-  | { readonly mode: "local"; readonly trayNoticeSeen?: true }
-  /** The window is a view onto somebody's own server (§5). */
-  | {
-      readonly mode: "thin-client";
-      readonly serverUrl: string;
-      readonly trayNoticeSeen?: true;
-    };
+/**
+ * The settled-once flags (see the module comment). Every one is optional and
+ * literally `true` when present — a flag that is absent, `false`, or hand-edited
+ * to something else reads as the default, because the cost of misreading any of
+ * them is small and the cost of rejecting the whole file is the chooser.
+ *
+ * They travel together: `configFlags` lifts them off a config and `applyFlags`
+ * puts them back, so adding the next one is one line in each rather than a new
+ * shape for every function here to know about.
+ */
+export interface DesktopFlags {
+  /** The one-time close-to-tray notice has been shown (§6, #304). */
+  readonly trayNoticeSeen?: true;
+  /**
+   * The user has turned the daily release check off (#549). Stored as the
+   * *negative* so that a file which has never heard of the feature — every file
+   * written before this build — means "on", which is the server's own default.
+   */
+  readonly updateCheckDisabled?: true;
+}
+
+export type DesktopConfig = DesktopFlags &
+  (
+    | /** This machine runs the bouncer (§2, §3). */
+      { readonly mode: "local" }
+      /** The window is a view onto somebody's own server (§5). */
+    | { readonly mode: "thin-client"; readonly serverUrl: string }
+  );
 
 /** `<userData>/config.json`. */
 export function configPath(userDataDir: string): string {
@@ -56,9 +80,10 @@ export function encodeConfig(config: DesktopConfig): string {
     version: CONFIG_SCHEMA_VERSION,
     mode: config.mode,
     ...(config.mode === "thin-client" ? { serverUrl: config.serverUrl } : {}),
-    // Written only once it is true, so a file that never had the notice looks
-    // exactly as it did before this field existed.
-    ...(config.trayNoticeSeen === true ? { trayNoticeSeen: true } : {}),
+    // Flags are written only once they are true, so a file belonging to an
+    // install that has done none of these things looks exactly as it did before
+    // any of the fields existed.
+    ...configFlags(config),
   };
   return `${JSON.stringify(file, undefined, 2)}\n`;
 }
@@ -79,19 +104,21 @@ export function decodeConfig(contents: string): DesktopConfig | undefined {
     mode?: unknown;
     serverUrl?: unknown;
     trayNoticeSeen?: unknown;
+    updateCheckDisabled?: unknown;
   };
   if (file.version !== CONFIG_SCHEMA_VERSION) {
     return undefined;
   }
   // Anything but a literal `true` — absent, `"yes"`, hand-edited to nonsense —
-  // means the notice has not been shown, which costs the user one extra
-  // sentence at worst. That is why it did not need a schema version of its
-  // own: a build that predates the field ignores it, and a build that has it
-  // treats a file without it as a first close (see `withTrayNoticeSeen`).
-  const seen: { readonly trayNoticeSeen?: true } =
-    file.trayNoticeSeen === true ? { trayNoticeSeen: true } : {};
+  // reads as the default: the notice has not been shown, the release check is
+  // on. That is why these fields did not need a schema version of their own,
+  // and why a wrong value never fails the file (see `DesktopFlags`).
+  const flags: DesktopFlags = {
+    ...(file.trayNoticeSeen === true ? { trayNoticeSeen: true } : {}),
+    ...(file.updateCheckDisabled === true ? { updateCheckDisabled: true } : {}),
+  };
   if (file.mode === "local") {
-    return { mode: "local", ...seen };
+    return { mode: "local", ...flags };
   }
   if (file.mode === "thin-client") {
     if (typeof file.serverUrl !== "string") {
@@ -101,10 +128,36 @@ export function decodeConfig(contents: string): DesktopConfig | undefined {
     // a `loadURL`, and the file is one a person can open in an editor.
     const normalized = normalizeServerUrl(file.serverUrl);
     return normalized.ok
-      ? { mode: "thin-client", serverUrl: normalized.url, ...seen }
+      ? { mode: "thin-client", serverUrl: normalized.url, ...flags }
       : undefined;
   }
   return undefined;
+}
+
+/**
+ * Flags as they are stored: present when true, absent otherwise. The one place
+ * that knows the whole list, so adding the next flag is one line here.
+ */
+export function configFlags(flags: DesktopFlags): DesktopFlags {
+  return {
+    ...(flags.trayNoticeSeen === true ? { trayNoticeSeen: true } : {}),
+    ...(flags.updateCheckDisabled === true
+      ? { updateCheckDisabled: true }
+      : {}),
+  };
+}
+
+/**
+ * A config's mode wearing exactly the flags given — every flag not named is
+ * dropped, so this is a replacement rather than a merge. Callers that mean
+ * "change one thing" spread the current flags first, which is what the two
+ * `with*` helpers below do.
+ */
+function applyFlags(config: DesktopConfig, flags: DesktopFlags): DesktopConfig {
+  const kept = configFlags(flags);
+  return config.mode === "local"
+    ? { mode: "local", ...kept }
+    : { mode: "thin-client", serverUrl: config.serverUrl, ...kept };
 }
 
 /**
@@ -113,25 +166,49 @@ export function decodeConfig(contents: string): DesktopConfig | undefined {
  * A function rather than a spread at the call sites because there are two of
  * them and they pull in opposite directions: the close handler sets the flag
  * on whatever is stored, and the chooser writes a *new* config that must carry
- * the old flag across — switching to thin-client mode and back is not a reason
- * to explain the tray a second time.
+ * the old flag across (`carryFlags`) — switching to thin-client mode and back
+ * is not a reason to explain the tray a second time.
  */
 export function withTrayNoticeSeen(
   config: DesktopConfig,
   seen: boolean,
 ): DesktopConfig {
-  if (!seen) {
-    return config.mode === "local"
-      ? { mode: "local" }
-      : { mode: "thin-client", serverUrl: config.serverUrl };
-  }
-  return config.mode === "local"
-    ? { mode: "local", trayNoticeSeen: true }
-    : {
-        mode: "thin-client",
-        serverUrl: config.serverUrl,
-        trayNoticeSeen: true,
-      };
+  return applyFlags(config, {
+    ...configFlags(config),
+    trayNoticeSeen: seen ? true : undefined,
+  });
+}
+
+/**
+ * The same config with the daily release check on or off (#549).
+ *
+ * Stored as `updateCheckDisabled` — the negative — so "on" is the absence of a
+ * field and every config file written before this existed already says the
+ * right thing. `update-check.ts` reads it back.
+ */
+export function withUpdateCheck(
+  config: DesktopConfig,
+  enabled: boolean,
+): DesktopConfig {
+  return applyFlags(config, {
+    ...configFlags(config),
+    updateCheckDisabled: enabled ? undefined : true,
+  });
+}
+
+/**
+ * A newly chosen config wearing the flags of whatever was stored before it.
+ *
+ * The chooser writes a *new* config (§4), and none of these flags is about
+ * which install this is: switching to thin-client mode and back should not
+ * re-explain the tray, and it should not quietly switch the release check back
+ * on for somebody who turned it off.
+ */
+export function carryFlags(
+  config: DesktopConfig,
+  previous: DesktopConfig | undefined,
+): DesktopConfig {
+  return applyFlags(config, previous ?? {});
 }
 
 /**
@@ -161,8 +238,8 @@ export function writeConfig(path: string, config: DesktopConfig): void {
 
 /**
  * Whether two configs describe the same install — a switch that isn't one.
- * The mode and the address only: `trayNoticeSeen` is a note about something
- * the user has already been told, not part of which install this is.
+ * The mode and the address only: the flags record preferences the user has
+ * settled, not which install this is.
  */
 export function sameConfig(
   a: DesktopConfig | undefined,

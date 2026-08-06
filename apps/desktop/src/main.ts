@@ -82,10 +82,12 @@ import {
 } from "./chooser-ipc.js";
 import { createChooserWindow } from "./chooser-window.js";
 import {
+  carryFlags,
   configPath,
   readConfig,
   sameConfig,
   withTrayNoticeSeen,
+  withUpdateCheck,
   writeConfig,
   type DesktopConfig,
 } from "./desktop-config.js";
@@ -108,7 +110,7 @@ import {
 } from "./error-page.js";
 import { createErrorWindow, showErrorPage } from "./error-window.js";
 import { senderAllowed, type IpcCaller } from "./ipc-sender.js";
-import { installAppMenu } from "./menu.js";
+import { installAppMenu, type AppMenuOptions } from "./menu.js";
 import {
   assertArtifactsPresent,
   MissingArtifactError,
@@ -132,6 +134,7 @@ import {
 import { planStartup, type StartupPlan } from "./startup.js";
 import { lifecycleProbe, LIFECYCLE_PROBE_ENV } from "./test-hooks.js";
 import { planThinClientLaunch } from "./thin-client.js";
+import { updateCheckEnabled, updateCheckNotice } from "./update-check.js";
 import { createAppTray, type AppTray } from "./tray.js";
 import {
   decideLastWindowClosed,
@@ -410,9 +413,6 @@ async function boot(): Promise<void> {
     installPermissionHandlers(created);
   });
   try {
-    installAppMenu(() => {
-      openChooser("switch");
-    });
     await startup(planStartup(readConfig(configPath(app.getPath("userData")))));
   } catch (error) {
     fail(app.getName() + " couldn't start", describeStartupError(error));
@@ -448,6 +448,10 @@ async function startup(plan: StartupPlan): Promise<void> {
   // The lifecycle's own copy of the same answer: what a closing window means
   // is a question about the mode, and it gets asked long after this returns.
   lifecycleMode = plan.kind;
+  // Before any window: the menu is per-mode now (#549), and a first run that
+  // answers the chooser comes back through here, so the local-mode menu is
+  // built by the same line that built the chooser's.
+  installAppMenu(appMenuOptions());
   switch (plan.kind) {
     case "choose":
       openChooser("first-run");
@@ -461,6 +465,76 @@ async function startup(plan: StartupPlan): Promise<void> {
   }
   // Inert unless the environment asks for it (test-hooks.ts).
   runLifecycleProbe();
+}
+
+/**
+ * What the application menu offers this launch.
+ *
+ * Everything past "Switch mode…" is local-mode only, because everything past it
+ * is about the server this process runs: in thin-client mode that server is
+ * somebody else's and its settings are theirs (see `update-check.ts`).
+ */
+function appMenuOptions(): AppMenuOptions {
+  const onSwitchMode = () => {
+    openChooser("switch");
+  };
+  if (lifecycleMode !== "local") {
+    return { onSwitchMode };
+  }
+  return {
+    onSwitchMode,
+    updateCheck: {
+      enabled: updateCheckEnabled(
+        readConfig(configPath(app.getPath("userData"))),
+      ),
+      onToggle: setUpdateCheck,
+    },
+  };
+}
+
+/**
+ * The release-check checkbox, clicked (#549). Persist, then say what happens —
+ * nothing on screen changes, and the change lands on the next boot, so silence
+ * here would read as a setting that does nothing.
+ */
+function setUpdateCheck(enabled: boolean): void {
+  const path = configPath(app.getPath("userData"));
+  const config = readConfig(path);
+  if (config === undefined) {
+    // No stored config to amend — the file went missing or unreadable under a
+    // running app, which the next launch answers by asking again (§4). Put the
+    // checkbox back where the file says it is rather than writing a config this
+    // process was not asked to write.
+    installAppMenu(appMenuOptions());
+    return;
+  }
+  try {
+    writeConfig(path, withUpdateCheck(config, enabled));
+  } catch (error) {
+    console.warn(
+      `Could not record the update-check setting in ${path} (${error instanceof Error ? error.message : String(error)}).`,
+    );
+    // Rebuilt from the file, so the tick matches what is actually stored.
+    installAppMenu(appMenuOptions());
+    dialog.showErrorBox(
+      "That setting couldn't be saved",
+      [
+        `${app.getName()} could not write down your choice, so nothing has changed.`,
+        "",
+        `Details: ${path} — ${error instanceof Error ? error.message : String(error)}`,
+      ].join("\n"),
+    );
+    return;
+  }
+  const { title, body } = updateCheckNotice(app.getName(), enabled);
+  void dialog.showMessageBox({
+    type: "info",
+    title,
+    message: title,
+    detail: body,
+    buttons: ["OK"],
+    noLink: true,
+  });
 }
 
 /**
@@ -566,6 +640,9 @@ async function startLocalMode(): Promise<void> {
     dataDir,
     webDist: ARTIFACTS.webDist,
     clientVersion: app.getVersion(),
+    // Read once, here, and handed to the child as an environment variable —
+    // which is why the menu's checkbox says "next time you open it" (#549).
+    updateCheckEnabled: updateCheckEnabled(readConfig(configPath(userData))),
   };
   // The Electron half of starting a child, handed to the Electron-free
   // lifecycle module (embedded-server.ts's module comment says why).
@@ -868,13 +945,11 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
   }
 
   try {
-    // Carrying one thing across the rewrite: whether close-to-tray has already
-    // introduced itself (§6). Switching away and back is not a reason to
-    // explain the tray a second time.
-    writeConfig(
-      path,
-      withTrayNoticeSeen(config, readConfig(path)?.trayNoticeSeen === true),
-    );
+    // Carrying the settled-once flags across the rewrite: whether close-to-tray
+    // has already introduced itself (§6), and whether the user turned the
+    // release check off (#549). Switching away and back is not a reason to
+    // explain the tray a second time, nor to start phoning GitHub again.
+    writeConfig(path, carryFlags(config, readConfig(path)));
   } catch (error) {
     return {
       ok: false,
