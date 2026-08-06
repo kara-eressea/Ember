@@ -50,6 +50,7 @@ import { PlainNamesProvider, RichText } from "./RichText.js";
 import {
   measuredRows,
   noteLogWidth,
+  noteVisit,
   rememberMeasuredRows,
 } from "./row-measurements.js";
 import styles from "./chat.module.css";
@@ -330,6 +331,13 @@ export function MessageLog({
     () => measuredRows(convId, layoutSignature),
     [convId, layoutSignature],
   );
+  // Committing the signature is a write, so it belongs to a commit and not to
+  // the render above (#560): a discarded render must not clear the heights of
+  // a conversation that is still on screen. Layout phase, so it still lands
+  // before the outgoing log's snapshot is filed on unmount.
+  useLayoutEffect(() => {
+    noteVisit(convId, layoutSignature);
+  }, [convId, layoutSignature]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -1544,7 +1552,13 @@ function AdLine({
   // rows, so a divergence here read as two characters of different genders.
   const nameColor = useGenderColorVar(identityId, sender);
   const [expanded, setExpanded] = useState(false);
-  const [editorAnchor, setEditorAnchor] = useState<DOMRect>();
+  // The trigger element rides along with the rect it measured (#560): the log
+  // scrolls under the editor, so the rect is only the first frame's placement —
+  // the editor re-measures the element for every frame after it.
+  const [editorAnchor, setEditorAnchor] = useState<{
+    rect: DOMRect;
+    element: Element;
+  }>();
 
   // Rating the poster (M11 §6): never on our own ads. A rated poster's
   // ads carry their stars; unrated ones get the quiet hover/focus pill.
@@ -1562,7 +1576,10 @@ function AdLine({
           : `Rate ${sender}`
       }
       onClick={(event) => {
-        setEditorAnchor(event.currentTarget.getBoundingClientRect());
+        setEditorAnchor({
+          rect: event.currentTarget.getBoundingClientRect(),
+          element: event.currentTarget,
+        });
       }}
     >
       {rating ? (
@@ -1585,7 +1602,8 @@ function AdLine({
   const editor = editorAnchor && (
     <RateEditor
       character={sender}
-      anchor={editorAnchor}
+      anchor={editorAnchor.rect}
+      anchorElement={editorAnchor.element}
       onClose={() => {
         setEditorAnchor(undefined);
       }}
@@ -1593,11 +1611,15 @@ function AdLine({
   );
 
   // A poster rated ≤2★ collapses to a dimmed one-line stub (§8) — the ad
-  // is never unreachable; "show ▾" expands in place.
+  // is never unreachable; "show ▾" expands in place. Never while the editor
+  // is open, though: rating someone 1★ from this very row would otherwise
+  // collapse the ad, unmount the ★ button the editor is anchored to, and take
+  // the note field away mid-sentence (#560). It collapses on close.
   if (
     rating !== undefined &&
     rating.score <= 2 &&
     !expanded &&
+    editorAnchor === undefined &&
     !message.sentByUs
   ) {
     return (

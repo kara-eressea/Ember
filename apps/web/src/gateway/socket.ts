@@ -221,7 +221,24 @@ export class GatewayClient {
     });
   }
 
+  /**
+   * Opens the one socket this client has. Idempotent by design, not by luck:
+   * every *caller* guards against opening a second socket — `connect` on
+   * `#ws || #reconnectTimer`, `#probe` on `#ws === undefined` — but
+   * `#handleUnauthorized` awaits a token refresh with neither of those set, and
+   * across that network round-trip (a laptop resuming is exactly when a 4401
+   * refresh is in flight) any of them may open one. The refresh then opened a
+   * second: the first socket's `onclose` correctly saw itself superseded, but
+   * its keepalive `setInterval` lives in the shared `#pingTimer` field, which
+   * the second socket's `onopen` overwrote — so it ran forever, sending on
+   * whatever socket was live. The tab pinged at twice the intended rate for the
+   * life of the page, against a server that enforces MAX_FRAMES_PER_MINUTE, and
+   * every extra `#awaitPong` could close a healthy socket (#560).
+   */
   #open(): void {
+    if (this.#ws !== undefined) {
+      return; // already connecting or connected — that socket is the one
+    }
     useUiStore.getState().setGatewayStatus("connecting");
     this.#lastOpenAt = Date.now();
     this.#lastFrameAt = Date.now();
@@ -230,6 +247,13 @@ export class GatewayClient {
     this.#ws = ws;
 
     ws.onopen = () => {
+      if (this.#ws !== ws) {
+        // Superseded before it finished connecting. Never arm a keepalive for
+        // a socket the client has stopped tracking: the interval outlives the
+        // socket and would send on its replacement (#560).
+        ws.close(1000, "superseded");
+        return;
+      }
       const token = useAuthStore.getState().accessToken;
       if (token === undefined) {
         ws.close(1000, "no session");

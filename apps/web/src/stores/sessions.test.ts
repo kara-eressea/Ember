@@ -6,7 +6,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import type { ConversationDto, MemberDto } from "@emberchat/protocol";
-import { useSessionsStore, type IdentitySummary } from "./sessions.js";
+import {
+  genderOf,
+  useSessionsStore,
+  type IdentitySummary,
+} from "./sessions.js";
 
 const IDENTITY = "11111111-1111-7111-8111-111111111111";
 const CONV = "22222222-2222-7222-8222-222222222222";
@@ -696,5 +700,210 @@ describe("identity mirror maintenance", () => {
     useSessionsStore.getState().removeIdentity(OTHER);
 
     expect(identities()?.map((i) => i.id)).toEqual([IDENTITY]);
+  });
+});
+
+// The other half of #355 (#560). Reference preservation spares the *render*;
+// it does not spare the *selector* — zustand runs every subscriber's selector
+// on every `set()`, whatever that set produced. A stream carrying every
+// character on F-List must therefore not write at all when it changed nothing.
+describe("presence writes nothing when it changes nothing (#560)", () => {
+  const OTHER_IDENTITY = "44444444-4444-7444-8444-444444444444";
+
+  beforeEach(() => {
+    const store = useSessionsStore.getState();
+    store.applyChannelMembers(IDENTITY, {
+      key: KEY,
+      mode: "chat",
+      members: [member("Amber Vale"), member("Nyx Firemane")],
+    });
+    store.applyConversation(IDENTITY, pmConversation("Nyx Firemane"));
+    store.applySocial(IDENTITY, {
+      bookmarks: [],
+      friends: [
+        { name: "Amber Vale", online: true, status: "online", statusmsg: "" },
+      ],
+      incoming: [],
+      outgoing: [],
+      fetchedAt: 0,
+    });
+  });
+
+  /** How many times the store notified its subscribers during `run`. */
+  function notifications(run: () => void): number {
+    let count = 0;
+    const unsubscribe = useSessionsStore.subscribe(() => {
+      count += 1;
+    });
+    run();
+    unsubscribe();
+    return count;
+  }
+
+  it("notifies nobody for a character in no channel, DM or social row", () => {
+    const before = useSessionsStore.getState().sessions[IDENTITY];
+    const count = notifications(() => {
+      for (let i = 0; i < 5; i += 1) {
+        useSessionsStore.getState().applyPresence(IDENTITY, {
+          character: `Stranger ${String(i)}`,
+          online: true,
+          status: "online",
+        });
+      }
+    });
+
+    expect(count).toBe(0);
+    // Not merely equal — the same object, which is what AppShell subscribes to.
+    expect(useSessionsStore.getState().sessions[IDENTITY]).toBe(before);
+  });
+
+  it("still notifies for a character the viewer can see", () => {
+    const count = notifications(() => {
+      useSessionsStore.getState().applyPresence(IDENTITY, {
+        character: "Nyx Firemane",
+        online: true,
+        status: "away",
+      });
+    });
+
+    expect(count).toBe(1);
+    expect(
+      useSessionsStore.getState().sessions[IDENTITY]?.dms[CONV]?.status,
+    ).toBe("away");
+  });
+
+  it("still notifies for our own STA, which no channel row carries", () => {
+    // The MeBar and the rail read ownStatus, and an STA for ourselves may
+    // arrive while we are in no channel at all — the bail must not eat it.
+    useSessionsStore.getState().applySnapshot({
+      identityId: IDENTITY,
+      self: {
+        character: "Amber Vale",
+        sessionStatus: "online",
+        status: "online",
+        statusmsg: "",
+        ignores: [],
+        limits: {
+          chatMax: 4096,
+          privMax: 50000,
+          lfrpMax: 50000,
+          lfrpFlood: 600,
+        },
+        iconBlacklist: [],
+        chatop: false,
+        sendDelaySeconds: 0,
+        prefs: PREFS_DEFAULTS,
+        outbox: [],
+        campaign: null,
+        social: null,
+      },
+      channels: [],
+      dms: [],
+    });
+
+    const count = notifications(() => {
+      useSessionsStore.getState().applyPresence(IDENTITY, {
+        character: "amber vale",
+        online: true,
+        status: "busy",
+        statusmsg: "writing",
+      });
+    });
+
+    expect(count).toBe(1);
+    expect(useSessionsStore.getState().sessions[IDENTITY]?.ownStatus).toBe(
+      "busy",
+    );
+  });
+
+  it("notifies nobody for an LIS batch that touches nothing", () => {
+    const before = useSessionsStore.getState().sessions[IDENTITY];
+    const count = notifications(() => {
+      useSessionsStore
+        .getState()
+        .applyPresenceBulk(IDENTITY, [
+          ["Stranger Nobody", "Male", "online", ""],
+        ]);
+    });
+
+    expect(count).toBe(0);
+    expect(useSessionsStore.getState().sessions[IDENTITY]).toBe(before);
+  });
+
+  it("still creates a slice for an identity it has never seen", () => {
+    // The bail is only available to a session that already exists: the first
+    // event for an identity has to bring its slice into being regardless.
+    const count = notifications(() => {
+      useSessionsStore.getState().applyPresence(OTHER_IDENTITY, {
+        character: "Stranger Nobody",
+        online: true,
+        status: "online",
+      });
+    });
+
+    expect(count).toBe(1);
+    expect(useSessionsStore.getState().sessions[OTHER_IDENTITY]).toBeDefined();
+  });
+});
+
+// genderOf answers from a per-roster index rather than scanning every member
+// of every channel with two string allocations per comparison (#560). Same
+// answers — including the orderings that make it the shared source of truth
+// for the member list and the log (#338).
+describe("gender lookup (#560)", () => {
+  const OTHER_KEY = "OtherRoom";
+
+  beforeEach(() => {
+    useSessionsStore.getState().applyChannelMembers(IDENTITY, {
+      key: KEY,
+      mode: "chat",
+      members: [member("Nyx Firemane", "Female")],
+    });
+  });
+
+  const session = () => useSessionsStore.getState().sessions[IDENTITY];
+
+  it("finds a present member, case-insensitively (#265)", () => {
+    expect(genderOf(session(), "nyx firemane")).toBe("Female");
+    expect(genderOf(session(), "NYX FIREMANE")).toBe("Female");
+  });
+
+  it("has nothing for a character no roster holds", () => {
+    expect(genderOf(session(), "Stranger Nobody")).toBeUndefined();
+    expect(genderOf(undefined, "Nyx Firemane")).toBeUndefined();
+  });
+
+  it("re-reads a gender the presence stream just changed", () => {
+    // The index is cached against the roster array's identity, so a write that
+    // rebuilds that array has to be visible on the very next lookup.
+    useSessionsStore.getState().applyPresence(IDENTITY, {
+      character: "Nyx Firemane",
+      online: true,
+      gender: "Male",
+      status: "online",
+    });
+
+    expect(genderOf(session(), "Nyx Firemane")).toBe("Male");
+  });
+
+  it("prefers any present member over every seen roster", () => {
+    // Nyx is present in one channel and only remembered in another; the live
+    // roster wins wherever it sits in the iteration order.
+    useSessionsStore.getState().applyChannelMembers(IDENTITY, {
+      key: OTHER_KEY,
+      mode: "chat",
+      members: [member("Nyx Firemane", "Male")],
+    });
+    useSessionsStore.getState().applyMemberLeave(IDENTITY, KEY, "Nyx Firemane");
+
+    expect(session()?.channels[KEY]?.seen).toHaveLength(1);
+    expect(genderOf(session(), "Nyx Firemane")).toBe("Male");
+  });
+
+  it("falls back to the seen roster once nobody holds them", () => {
+    useSessionsStore.getState().applyMemberLeave(IDENTITY, KEY, "Nyx Firemane");
+
+    expect(session()?.channels[KEY]?.members).toHaveLength(0);
+    expect(genderOf(session(), "nyx firemane")).toBe("Female");
   });
 });

@@ -6,9 +6,17 @@ import type { VirtualItem } from "@tanstack/react-virtual";
 import {
   measuredRows,
   noteLogWidth,
+  noteVisit,
   rememberMeasuredRows,
   resetMeasuredRows,
 } from "./row-measurements.js";
+
+/** What a mounting log does: commit the visit, then read (#560 — the read
+ * itself is pure, so the two are separate calls now). */
+function visit(convId: string, signature: string): VirtualItem[] {
+  noteVisit(convId, signature);
+  return measuredRows(convId, signature);
+}
 
 const SIG = "m|cozy|false|false|time";
 
@@ -31,10 +39,20 @@ describe("row measurements", () => {
 
   it("hands a conversation's snapshot back on the next visit", () => {
     rememberMeasuredRows("a", SIG, snapshot(["m:1", "m:2"]));
-    expect(measuredRows("a", SIG).map((item) => item.key)).toEqual([
-      "m:1",
-      "m:2",
-    ]);
+    expect(visit("a", SIG).map((item) => item.key)).toEqual(["m:1", "m:2"]);
+  });
+
+  // The read runs in render, and render is not a commit: React 19 StrictMode
+  // double-invokes it, and a discarded transition renders for a commit that
+  // never happens. Reading must therefore change nothing at all (#560) — this
+  // is the case that used to clear the whole store from a render that was
+  // about to be thrown away.
+  it("changes nothing when a render only reads", () => {
+    rememberMeasuredRows("a", SIG, snapshot(["m:1"]));
+    expect(measuredRows("a", "l|cozy|false|false|time")).toEqual([]);
+    expect(measuredRows("a", "l|cozy|false|false|time")).toEqual([]);
+    // Still there: the abandoned render under the other layout took nothing.
+    expect(measuredRows("a", SIG)).toHaveLength(1);
   });
 
   it("has nothing for a conversation it has never seen", () => {
@@ -44,8 +62,8 @@ describe("row measurements", () => {
 
   it("drops everything when the type or density prefs change", () => {
     rememberMeasuredRows("a", SIG, snapshot(["m:1"]));
-    expect(measuredRows("a", "l|cozy|false|false|time")).toEqual([]);
-    expect(measuredRows("a", SIG)).toEqual([]);
+    expect(visit("a", "l|cozy|false|false|time")).toEqual([]);
+    expect(visit("a", SIG)).toEqual([]);
   });
 
   // The unmounting log files its heights after the incoming one has read the
@@ -54,9 +72,9 @@ describe("row measurements", () => {
   it("drops a save measured under a layout the app has already left", () => {
     const grown = "l|cozy|false|false|time";
     rememberMeasuredRows("a", SIG, snapshot(["m:1"]));
-    expect(measuredRows("a", grown)).toEqual([]);
+    expect(visit("a", grown)).toEqual([]);
     rememberMeasuredRows("a", SIG, snapshot(["m:1"]));
-    expect(measuredRows("a", grown)).toEqual([]);
+    expect(visit("a", grown)).toEqual([]);
   });
 
   it("drops everything when the log's width changes", () => {
@@ -87,8 +105,9 @@ describe("row measurements", () => {
     rememberMeasuredRows("keep", SIG, snapshot(["m:1"]));
     for (let i = 0; i < 20; i += 1) {
       rememberMeasuredRows(`c${String(i)}`, SIG, snapshot([`m:${String(i)}`]));
-      // Reading is a visit: it moves the entry back to the front of the queue.
-      expect(measuredRows("keep", SIG)).toHaveLength(1);
+      // Opening it is a visit: it moves the entry back to the front of the
+      // queue. (The read is pure — `noteVisit` is what a mount commits.)
+      expect(visit("keep", SIG)).toHaveLength(1);
     }
   });
 

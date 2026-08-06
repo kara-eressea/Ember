@@ -65,7 +65,13 @@ const CHIP_INFOTAG_IDS = [2, 1, 9, 15];
  * the in-log ad row collapses. */
 function CardRating({ name }: { name: string }) {
   const rating = useRatingsStore((s) => ratingFor(s.byName, name));
-  const [editorAnchor, setEditorAnchor] = useState<DOMRect>();
+  // Rect plus trigger: the card itself follows the page (see `place` below),
+  // so an editor placed once from a frozen rect would drift off the button it
+  // belongs to the moment the card moved (#560).
+  const [editorAnchor, setEditorAnchor] = useState<{
+    rect: DOMRect;
+    element: Element;
+  }>();
   if (!rating) {
     return null;
   }
@@ -81,7 +87,10 @@ function CardRating({ name }: { name: string }) {
           type="button"
           className={ratingsStyles.cardEdit}
           onClick={(event) => {
-            setEditorAnchor(event.currentTarget.getBoundingClientRect());
+            setEditorAnchor({
+              rect: event.currentTarget.getBoundingClientRect(),
+              element: event.currentTarget,
+            });
           }}
         >
           Edit
@@ -93,7 +102,8 @@ function CardRating({ name }: { name: string }) {
       {editorAnchor && (
         <RateEditor
           character={name}
-          anchor={editorAnchor}
+          anchor={editorAnchor.rect}
+          anchorElement={editorAnchor.element}
           onClose={() => {
             setEditorAnchor(undefined);
           }}
