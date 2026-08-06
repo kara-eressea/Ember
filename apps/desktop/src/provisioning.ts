@@ -1,9 +1,9 @@
 /**
- * The one decision first-run provisioning turns on: is there a secrets file?
+ * First-run provisioning: the one decision it turns on (is there a secrets
+ * file?) and the sequence it then runs.
  *
- * Kept pure (and Electron-free) so the branch is testable without booting an
- * app — the expensive half, creating the account and writing the file, is
- * `main.ts`'s job to carry out.
+ * Kept Electron-free so both are testable without booting an app — `main.ts`
+ * supplies the steps, this file owns the order they happen in.
  */
 
 import { join } from "node:path";
@@ -53,4 +53,46 @@ export function planBoot(options: {
     kind: "provision",
     secrets: (options.generate ?? generateSecrets)(),
   };
+}
+
+/**
+ * The first-run sequence (spec §3 step 2, MX2), whose whole point is that its
+ * three steps never overlap:
+ *
+ *  1. one short server boot, purely to create the schema. The admin CLI does
+ *     not migrate — "the server migrates on boot", as its own header says —
+ *     and on a first run the database is empty, so `create-user` would fail
+ *     on a table that does not exist yet.
+ *  2. the CLI, and only once the server has actually exited.
+ *  3. the secrets file, and only once the account exists: a file written
+ *     before a failed creation would make the next boot think it had already
+ *     provisioned.
+ *
+ * Step 2 must not start while step 1's process lives. pglite is one whole
+ * Postgres inside one process, with no shared buffers and no data-directory
+ * lock, so two of them over one directory are two different databases:
+ * writes vanish, silently, in whichever direction the flushes fall
+ * (apps/server/src/test-support/db.ts, #558). `stop()` waiting for the exit
+ * is what makes this safe, which is why its `false` is fatal here.
+ */
+export async function provisionFirstRun(steps: {
+  readonly appName: string;
+  /** Boots the migrate-only server; its stop() resolves false if it hung. */
+  readonly startMigrator: () => Promise<{ stop: () => Promise<boolean> }>;
+  /** Runs the admin CLI as a child process against the same data directory. */
+  readonly createAccount: () => Promise<unknown>;
+  readonly persistSecrets: () => void;
+}): Promise<void> {
+  const migrator = await steps.startMigrator();
+  if (!(await migrator.stop())) {
+    throw new Error(
+      [
+        `${steps.appName} couldn't finish setting itself up on this computer, so it stopped before changing anything. Please try starting it again.`,
+        "",
+        "Details: the first-run setup step did not shut down.",
+      ].join("\n"),
+    );
+  }
+  await steps.createAccount();
+  steps.persistSecrets();
 }

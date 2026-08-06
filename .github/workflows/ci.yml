@@ -56,10 +56,19 @@ jobs:
   # driver no deployment uses. This runs the db-heaviest files only, and needs
   # no Docker at all (pglite is in-process WASM), so it is cheap and parallel.
   #
-  # One test is skipped here on purpose: history's write-queue sharding needs
-  # two connections and cannot pass on a single-connection database
-  # (design/mx2-pglite-spike.md §Q2). It still runs, unweakened, in the job
-  # above — which is the run that protects the property on a server.
+  # Three tests are skipped here on purpose, all for the same reason — pglite
+  # is one Postgres inside one process:
+  #
+  #   * history's write-queue sharding needs two connections, and an open
+  #     transaction on a single-connection database blocks forever
+  #     (design/mx2-pglite-spike.md §Q2);
+  #   * the two admin-CLI tests need a second *process*, and two processes
+  #     over one pglite data directory see two different databases (#558).
+  #
+  # All three still run, unweakened, in the job above — which is the run that
+  # protects those properties on a server. `src/modules/auth` is in the subset
+  # regardless: it is the only suite that meets the CLI at all, so leaving it
+  # out left that path CI-blind.
   pglite:
     name: server-suite-pglite
     runs-on: ubuntu-latest
@@ -78,6 +87,7 @@ jobs:
       - run: >-
           pnpm --filter @emberchat/server exec vitest run
           src/db/upgrade-gate.test.ts
+          src/modules/auth
           src/modules/gateway
           src/modules/history
           src/modules/notifications
