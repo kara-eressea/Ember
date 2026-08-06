@@ -15,7 +15,12 @@ import {
   flistAccounts,
   identities,
 } from "../../db/schema.js";
-import { AdCooldownError, type FchatSession } from "@emberchat/session-engine";
+import { FchatErrorCode } from "@emberchat/fchat-protocol";
+import {
+  AdCooldownError,
+  type FchatSession,
+  SessionNotOnlineError,
+} from "@emberchat/session-engine";
 import { CampaignError, CampaignScheduler } from "./scheduler.js";
 import {
   CONTAINER_BOOT_MS,
@@ -80,6 +85,10 @@ interface FakeSessionControls {
     channels: { key: string; mode?: string; description?: string }[],
   ) => void;
   throwNext: (error: Error) => void;
+  /** Flips `session.status`, which gates every posting tick. */
+  setStatus: (status: string) => void;
+  /** Fires a frame on the session's bus, as the live socket would. */
+  emit: (kind: string, payload: unknown) => void;
 }
 
 function fakeSession(
@@ -96,8 +105,17 @@ function fakeSession(
   };
   const listeners = new Map<string, ((payload: unknown) => void)[]>();
   let pendingError: Error | undefined;
+  let status = "online";
   const controls: FakeSessionControls = {
     sent,
+    setStatus(next) {
+      status = next;
+    },
+    emit(kind, payload) {
+      for (const listener of listeners.get(kind) ?? []) {
+        listener(payload);
+      }
+    },
     setChannels(next) {
       state.channels.clear();
       for (const channel of next) {
@@ -113,7 +131,9 @@ function fakeSession(
       pendingError = error;
     },
     session: {
-      status: "online",
+      get status() {
+        return status;
+      },
       state,
       events: {
         on(kind: string, listener: (payload: unknown) => void) {
@@ -151,6 +171,8 @@ interface Harness {
   clock: { value: number };
   broadcasts: (CampaignDto | null)[];
   attached: { value: boolean };
+  /** Whether the registry still hands out a session for this identity. */
+  connected: { value: boolean };
   controls: FakeSessionControls;
   identityId: string;
   userId: string;
@@ -165,10 +187,11 @@ async function harness(
   const controls = fakeSession(channels);
   const clock = { value: 1_000_000 };
   const attached = { value: true };
+  const connected = { value: true };
   const broadcasts: (CampaignDto | null)[] = [];
   const scheduler = new CampaignScheduler({
     db,
-    sessions: { get: () => controls.session },
+    sessions: { get: () => (connected.value ? controls.session : undefined) },
     hub: {
       hasSubscribers: () => attached.value,
       broadcast: (_id, event) => {
@@ -189,6 +212,7 @@ async function harness(
     clock,
     broadcasts,
     attached,
+    connected,
     controls,
     identityId,
     userId,
@@ -444,6 +468,271 @@ describe("campaign scheduler", () => {
       .from(campaigns)
       .where(eq(campaigns.identityId, h.identityId));
     expect(row!.channels[0]!.posts).toBe(2);
+  });
+});
+
+// Every way a campaign post can go wrong (#561). The success path is covered
+// above and end-to-end in apps/web/e2e/m11.spec.ts; these are the guards that
+// stand between a running rotation and posting ads F-Chat is already refusing
+// — the exact thing the developer policy forbids.
+describe("campaign scheduler refusals", () => {
+  it("attributes a live ERR 56 to the ad it just posted and pauses that channel", async () => {
+    const h = await harness(
+      [{ key: "Busy Room" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Busy Room"],
+    });
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(1);
+    const broadcastsBefore = h.broadcasts.length;
+
+    // Another client of the same character posted into this channel's window
+    // and F-Chat refused ours. LRP carries no correlation on the wire, so the
+    // ERR is attributed to our most recent campaign post.
+    h.controls.emit("command", {
+      cmd: "ERR",
+      payload: {
+        number: FchatErrorCode.AdFlood,
+        message: "You must wait longer before posting another ad.",
+      },
+    });
+
+    const dto = h.scheduler.dtoFor(h.identityId)!;
+    expect(dto.channels[0]!.state).toBe("refused");
+    // The live lfrp_flood VAR decides how long the pause lasts — read from
+    // the server at refusal time, never a hardcoded window.
+    expect(dto.channels[0]!.retryAt).toBe(h.clock.value + 30_000);
+    // Attached devices see the pause, not a silently stalled channel.
+    expect(h.broadcasts.length).toBeGreaterThan(broadcastsBefore);
+    expect(h.broadcasts.at(-1)!.channels[0]!.state).toBe("refused");
+
+    // And nothing else goes out while it is refused.
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(1);
+
+    // The pause survives a restart: it is written through to the row.
+    await vi.waitFor(async () => {
+      const [row] = await db
+        .select({ channels: campaigns.channels })
+        .from(campaigns)
+        .where(eq(campaigns.identityId, h.identityId));
+      expect(row!.channels[0]!.state).toBe("refused");
+    });
+  });
+
+  it("ignores an ERR 56 that cannot belong to a campaign post", async () => {
+    const h = await harness(
+      [{ key: "Busy Room" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Busy Room"],
+    });
+
+    // Before any campaign post there is nothing to attribute to: a refusal
+    // earned by the user's own manual ad must not pause the rotation.
+    h.controls.emit("command", {
+      cmd: "ERR",
+      payload: { number: FchatErrorCode.AdFlood, message: "too soon" },
+    });
+    expect(h.scheduler.dtoFor(h.identityId)!.channels[0]!.state).toBe("active");
+
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(1);
+
+    // A minute later the ERR is far outside the attribution window, and a
+    // non-ad ERR never counts at all.
+    h.clock.value += 60_000;
+    h.controls.emit("command", {
+      cmd: "ERR",
+      payload: { number: FchatErrorCode.AdFlood, message: "too soon" },
+    });
+    h.controls.emit("command", {
+      cmd: "ERR",
+      payload: { number: FchatErrorCode.MessageTooLong, message: "too long" },
+    });
+    expect(h.scheduler.dtoFor(h.identityId)!.channels[0]!.state).toBe("active");
+  });
+
+  it("never dips under the live per-channel floor, whatever the timeline says", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Cabin Fever"],
+    });
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(1);
+    const postedAt = h.clock.value;
+
+    // Renew rebuilds the timeline with a fresh start stagger — which, two
+    // seconds after a post, would come due long before the channel's floor.
+    // The post-time guard is what makes that safe (audit HIGH).
+    h.clock.value += 2_000;
+    await h.scheduler.renewCampaign(h.identityId);
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+
+    expect(h.controls.sent).toHaveLength(1);
+    const dto = h.scheduler.dtoFor(h.identityId)!;
+    expect(dto.channels[0]!.nextAt).toBe(postedAt + 60_000);
+    // …and once the floor has actually passed, it posts again.
+    h.clock.value = postedAt + 60_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(2);
+  });
+
+  it("leaves a channel untouched when the socket drops mid-tick", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Cabin Fever"],
+    });
+    const dueAt = h.scheduler.dtoFor(h.identityId)!.channels[0]!.nextAt;
+
+    h.controls.throwNext(new SessionNotOnlineError("connecting"));
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+
+    // No post, no state change, no rescheduling: the next tick re-evaluates
+    // from exactly where this one started.
+    expect(h.controls.sent).toHaveLength(0);
+    const dto = h.scheduler.dtoFor(h.identityId)!;
+    expect(dto.channels[0]!.state).toBe("active");
+    expect(dto.channels[0]!.nextAt).toBe(dueAt);
+    expect(dto.channels[0]!.posts).toBe(0);
+
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(1);
+  });
+
+  it("skips an ad it cannot send, advances the cycle, and keeps the channel alive", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [
+        { content: "ad one", tags: ["t"] },
+        { content: "ad two", tags: ["t"] },
+      ],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Cabin Fever"],
+    });
+
+    // Anything that is neither a cooldown nor a dropped socket — an ad that
+    // translates over the byte limit, an unexpected refusal. Retrying the
+    // same ad forever would be the wrong answer.
+    h.controls.throwNext(new Error("Message exceeds the server's byte limit"));
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(0);
+    const dto = h.scheduler.dtoFor(h.identityId)!;
+    expect(dto.channels[0]!.state).toBe("active");
+    expect(dto.channels[0]!.nextAt).toBe(h.clock.value + 60_000);
+
+    // The next slot posts the NEXT ad in the rotation, not the one that failed.
+    h.clock.value += 60_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent.map((s) => s.message)).toEqual(["ad two"]);
+  });
+
+  it("waits out the interval when the library empties under a running campaign", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await h.scheduler.startCampaign(h.identityId, h.userId, {
+      tags: ["t"],
+      channels: ["Cabin Fever"],
+    });
+    // The user disabled the only ad the campaign's tags select.
+    await db
+      .update(ads)
+      .set({ disabled: true })
+      .where(eq(ads.identityId, h.identityId));
+
+    h.clock.value += 1_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(0);
+    const dto = h.scheduler.dtoFor(h.identityId)!;
+    // Rescheduled rather than spun on every 5-second tick.
+    expect(dto.channels[0]!.state).toBe("active");
+    expect(dto.channels[0]!.nextAt).toBe(h.clock.value + 60_000);
+
+    // Re-enabling it resumes the rotation with no further intervention.
+    await db
+      .update(ads)
+      .set({ disabled: false })
+      .where(eq(ads.identityId, h.identityId));
+    h.clock.value += 60_000;
+    await h.scheduler.tickOnce();
+    expect(h.controls.sent).toHaveLength(1);
+  });
+
+  it("refuses to start against a character that isn't connected", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    h.connected.value = false;
+    await expect(
+      h.scheduler.startCampaign(h.identityId, h.userId, {
+        tags: ["t"],
+        channels: ["Cabin Fever"],
+      }),
+    ).rejects.toThrow("This character isn't connected right now");
+
+    // A session that exists but has not finished identifying is no better.
+    h.connected.value = true;
+    h.controls.setStatus("connecting");
+    await expect(
+      h.scheduler.startCampaign(h.identityId, h.userId, {
+        tags: ["t"],
+        channels: ["Cabin Fever"],
+      }),
+    ).rejects.toThrow("This character isn't connected right now");
+  });
+
+  it("refuses to start on a channel the character has already left", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    await expect(
+      h.scheduler.startCampaign(h.identityId, h.userId, {
+        tags: ["t"],
+        channels: ["Cabin Fever", "Ghost Room"],
+      }),
+    ).rejects.toThrow("You're not in one of those channels any more");
+    expect(h.scheduler.dtoFor(h.identityId)).toBeNull();
+  });
+
+  it("refuses stop, renew and drop for a character with no campaign", async () => {
+    const h = await harness(
+      [{ key: "Cabin Fever" }],
+      [{ content: "ad", tags: ["t"] }],
+    );
+    for (const call of [
+      () => h.scheduler.stopCampaign(h.identityId),
+      () => h.scheduler.renewCampaign(h.identityId),
+      () => h.scheduler.dropChannel(h.identityId, "Cabin Fever"),
+    ]) {
+      await expect(call()).rejects.toThrow(
+        "There's no campaign for this character",
+      );
+    }
   });
 });
 
