@@ -126,124 +126,134 @@ export class DetachedAway {
     }
     this.#sweeping = true;
     try {
-      const now = this.#now();
-      const entries = this.#options.sessions.entries();
-      // Prune state for sessions that no longer run (explicit disconnect,
-      // identity delete): a stale #applied entry would block re-applying
-      // away after a reconnect — the fresh session starts plain "online",
-      // there is nothing left to restore.
-      const live = new Set(entries.map(([identityId]) => identityId));
-      for (const identityId of [...this.#applied.keys()]) {
-        if (!live.has(identityId)) {
-          this.#applied.delete(identityId);
-        }
-      }
-      for (const identityId of [...this.#detachedSince.keys()]) {
-        if (!live.has(identityId)) {
-          this.#detachedSince.delete(identityId);
-        }
-      }
-      const candidates: {
-        identityId: string;
-        session: (typeof entries)[number][1];
-      }[] = [];
-      for (const [identityId, session] of entries) {
-        if (this.#options.hub.hasSubscribers(identityId)) {
-          this.#detachedSince.delete(identityId);
-          continue;
-        }
-        // The stamp tracks detachment, not connectivity: it is set on the
-        // first subscriber-less sweep even while the session is between
-        // F-Chat connections, so both thresholds count from the detach.
-        const since = this.#detachedSince.get(identityId);
-        if (since === undefined) {
-          this.#detachedSince.set(identityId, now);
-          // Persisted so the ceiling and boot resume survive restarts
-          // (§15) — one write per detachment, not per sweep.
-          this.#persistDetachedAt(identityId, new Date(now));
-          continue;
-        }
-        // Detached-disconnect ceiling (decisions.md §15): a session in
-        // reconnect-backoff counts too — stopping it also ends the retries.
-        const disconnectAfterMs = this.#options.disconnectAfterMs ?? 0;
-        if (disconnectAfterMs > 0 && now - since >= disconnectAfterMs) {
-          this.#detachedSince.delete(identityId);
-          this.#applied.delete(identityId);
-          const hours = Math.round(disconnectAfterMs / 3_600_000);
-          this.#options.sessions.stop(
-            identityId,
-            `disconnected after ${String(hours)}h with no attached device`,
-          );
-          this.#options.logger.info(
-            { identityId },
-            "detached session disconnected",
-          );
-          continue;
-        }
-        if (session.status !== "online") {
-          // Not connected to F-Chat — no status to set; the clock keeps
-          // counting from the detach, not the reconnect.
-          continue;
-        }
-        if (this.#applied.has(identityId)) {
-          continue; // already away by our hand
-        }
-        if (session.ownStatus.status !== "online") {
-          continue; // a chosen status is the user's — never clobber it
-        }
-        candidates.push({ identityId, session });
-      }
-      if (candidates.length === 0) {
-        return;
-      }
-      // One prefs query per sweep, not one per detached identity (M5
-      // audit backlog) — a bouncer with many idle identities was paying
-      // N queries a minute for a feature most users leave off.
-      const prefsById = await this.#userPrefsBatch(
-        candidates.map((candidate) => candidate.identityId),
-      );
-      for (const { identityId, session } of candidates) {
-        const since = this.#detachedSince.get(identityId);
-        const prefs = prefsById.get(identityId);
-        try {
-          if (
-            since === undefined ||
-            !prefs?.detachedAwayEnabled ||
-            now - since < prefs.detachedAwayMinutes * 60_000
-          ) {
-            continue;
-          }
-          // A browser may have attached during the prefs await — onAttach
-          // clears #detachedSince, so a vanished stamp (or a live
-          // subscriber) means the user is looking again: don't go away.
-          if (this.#options.hub.hasSubscribers(identityId)) {
-            continue;
-          }
-          const previous = session.ownStatus;
-          await session.setStatus("away", prefs.autoAwayMessage);
-          if (this.#options.hub.hasSubscribers(identityId)) {
-            // Attached while the STA was in flight (the send is flood- and
-            // status-gated); onAttach found nothing to restore, so hand back
-            // here instead of leaving a fresh attach sitting away. A hand-back
-            // inside the status gate supersedes the away rather than queueing
-            // behind it — the session keeps only the newest desire.
-            await session.setStatus(previous.status, previous.statusmsg);
-          } else {
-            this.#applied.set(identityId, previous);
-            this.#options.logger.info(
-              { identityId },
-              "detached auto-away applied",
-            );
-          }
-        } catch (error) {
-          this.#options.logger.warn(
-            { err: error, identityId },
-            "detached-away sweep failed for identity",
-          );
-        }
-      }
+      await this.#sweep();
+    } catch (error) {
+      // The interval calls this with no rejection handler, and an unhandled
+      // rejection ends the process — which, with the vault being memory-only,
+      // logs everyone out of F-Chat. A blip on the prefs query is not worth
+      // that; the next tick retries. Same shape as RetentionJob.sweepOnce.
+      this.#options.logger.error({ err: error }, "detached-away sweep failed");
     } finally {
       this.#sweeping = false;
+    }
+  }
+
+  async #sweep(): Promise<void> {
+    const now = this.#now();
+    const entries = this.#options.sessions.entries();
+    // Prune state for sessions that no longer run (explicit disconnect,
+    // identity delete): a stale #applied entry would block re-applying
+    // away after a reconnect — the fresh session starts plain "online",
+    // there is nothing left to restore.
+    const live = new Set(entries.map(([identityId]) => identityId));
+    for (const identityId of [...this.#applied.keys()]) {
+      if (!live.has(identityId)) {
+        this.#applied.delete(identityId);
+      }
+    }
+    for (const identityId of [...this.#detachedSince.keys()]) {
+      if (!live.has(identityId)) {
+        this.#detachedSince.delete(identityId);
+      }
+    }
+    const candidates: {
+      identityId: string;
+      session: (typeof entries)[number][1];
+    }[] = [];
+    for (const [identityId, session] of entries) {
+      if (this.#options.hub.hasSubscribers(identityId)) {
+        this.#detachedSince.delete(identityId);
+        continue;
+      }
+      // The stamp tracks detachment, not connectivity: it is set on the
+      // first subscriber-less sweep even while the session is between
+      // F-Chat connections, so both thresholds count from the detach.
+      const since = this.#detachedSince.get(identityId);
+      if (since === undefined) {
+        this.#detachedSince.set(identityId, now);
+        // Persisted so the ceiling and boot resume survive restarts
+        // (§15) — one write per detachment, not per sweep.
+        this.#persistDetachedAt(identityId, new Date(now));
+        continue;
+      }
+      // Detached-disconnect ceiling (decisions.md §15): a session in
+      // reconnect-backoff counts too — stopping it also ends the retries.
+      const disconnectAfterMs = this.#options.disconnectAfterMs ?? 0;
+      if (disconnectAfterMs > 0 && now - since >= disconnectAfterMs) {
+        this.#detachedSince.delete(identityId);
+        this.#applied.delete(identityId);
+        const hours = Math.round(disconnectAfterMs / 3_600_000);
+        this.#options.sessions.stop(
+          identityId,
+          `disconnected after ${String(hours)}h with no attached device`,
+        );
+        this.#options.logger.info(
+          { identityId },
+          "detached session disconnected",
+        );
+        continue;
+      }
+      if (session.status !== "online") {
+        // Not connected to F-Chat — no status to set; the clock keeps
+        // counting from the detach, not the reconnect.
+        continue;
+      }
+      if (this.#applied.has(identityId)) {
+        continue; // already away by our hand
+      }
+      if (session.ownStatus.status !== "online") {
+        continue; // a chosen status is the user's — never clobber it
+      }
+      candidates.push({ identityId, session });
+    }
+    if (candidates.length === 0) {
+      return;
+    }
+    // One prefs query per sweep, not one per detached identity (M5
+    // audit backlog) — a bouncer with many idle identities was paying
+    // N queries a minute for a feature most users leave off.
+    const prefsById = await this.#userPrefsBatch(
+      candidates.map((candidate) => candidate.identityId),
+    );
+    for (const { identityId, session } of candidates) {
+      const since = this.#detachedSince.get(identityId);
+      const prefs = prefsById.get(identityId);
+      try {
+        if (
+          since === undefined ||
+          !prefs?.detachedAwayEnabled ||
+          now - since < prefs.detachedAwayMinutes * 60_000
+        ) {
+          continue;
+        }
+        // A browser may have attached during the prefs await — onAttach
+        // clears #detachedSince, so a vanished stamp (or a live
+        // subscriber) means the user is looking again: don't go away.
+        if (this.#options.hub.hasSubscribers(identityId)) {
+          continue;
+        }
+        const previous = session.ownStatus;
+        await session.setStatus("away", prefs.autoAwayMessage);
+        if (this.#options.hub.hasSubscribers(identityId)) {
+          // Attached while the STA was in flight (the send is flood- and
+          // status-gated); onAttach found nothing to restore, so hand back
+          // here instead of leaving a fresh attach sitting away. A hand-back
+          // inside the status gate supersedes the away rather than queueing
+          // behind it — the session keeps only the newest desire.
+          await session.setStatus(previous.status, previous.statusmsg);
+        } else {
+          this.#applied.set(identityId, previous);
+          this.#options.logger.info(
+            { identityId },
+            "detached auto-away applied",
+          );
+        }
+      } catch (error) {
+        this.#options.logger.warn(
+          { err: error, identityId },
+          "detached-away sweep failed for identity",
+        );
+      }
     }
   }
 
