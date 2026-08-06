@@ -276,6 +276,14 @@ export class FchatSession {
   #watchdogTimer: NodeJS.Timeout | undefined;
   #lastPinSentAt = 0;
   #identifyRejections = 0;
+  /**
+   * The ticket this connection identified with. Kept so a rejection can name
+   * it: TicketManager.invalidate drops the cache only while it still holds
+   * that exact ticket, which is what stops one identity's late refusal from
+   * evicting a fresh ticket its siblings are already using — and every new
+   * ticket kills the previous one account-wide.
+   */
+  #currentTicket: string | undefined;
   /** Channels the user wants to be in; rejoined after every reconnect. */
   readonly #desiredChannels = new Set<string>();
   /**
@@ -998,6 +1006,7 @@ export class FchatSession {
       }
       // Identify first or be disconnected.
       this.#setStatus("identifying");
+      this.#currentTicket = ticket;
       this.#send({
         cmd: "IDN",
         payload: {
@@ -1175,8 +1184,15 @@ export class FchatSession {
       // The cached ticket may have been invalidated account-wide by a newer
       // one. Drop it and reconnect with a fresh fetch; if the password itself
       // is stale, the TicketManager throws FlistAuthError and we stop.
+      //
+      // Conditional on the ticket we actually identified with: sessions on
+      // one account share a TicketManager, so an unconditional drop lets a
+      // late refusal here evict the fresh ticket a sibling just minted —
+      // which mints another, invalidating that one account-wide, and the
+      // churn sustains itself across every identity (the cascade
+      // TicketManager.invalidate's docblock describes).
       this.#log.warn({ number }, "identification rejected, dropping ticket");
-      this.#tickets.invalidate();
+      this.#tickets.invalidate(this.#currentTicket);
       this.#identifyRejections += 1;
       if (this.#identifyRejections >= MAX_IDENTIFY_REJECTIONS) {
         // Fresh tickets keep being rejected: the character is gone or the
@@ -1240,6 +1256,9 @@ export class FchatSession {
     // back up on identify).
     this.#queuedStatus = undefined;
     this.#lastStatusSentAt = 0;
+    // The ticket belonged to the socket that just died; the next #connect
+    // stamps the one it identifies with.
+    this.#currentTicket = undefined;
     this.#rateGate.clear();
     this.#notifiedIgnored.clear();
     this.#typingSent.clear();
