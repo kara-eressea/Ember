@@ -31,25 +31,46 @@ function fakeDb(row: typeof IDENTITY | undefined = IDENTITY): Db {
   } as unknown as Db;
 }
 
-const tickets = {
-  managerFor: () => ({ getTicket: () => Promise.resolve("ticket-1") }),
-} as unknown as TicketManagerRegistry;
+/** Counts ticket acquisitions: every one of them invalidates the account's
+ * previous ticket on F-List, so "did this path take a ticket at all" is the
+ * property #546 turns on, not just "did it fetch". */
+function fakeTickets(onGetTicket: () => void): TicketManagerRegistry {
+  return {
+    managerFor: () => ({
+      getTicket: () => {
+        onGetTicket();
+        return Promise.resolve("ticket-1");
+      },
+    }),
+  } as unknown as TicketManagerRegistry;
+}
 
-const sessions = { get: () => undefined } as unknown as SessionRegistry;
+/** An RTB refresh is always scheduled by a live session, so the registry
+ * answers with one unless a case is specifically about a stopped identity.
+ * The object only has to be non-undefined: `enriched` reads its roster,
+ * which is empty here. */
+function fakeSessions(live = true): SessionRegistry {
+  return {
+    get: () => (live ? { state: { characters: new Map() } } : undefined),
+  } as unknown as SessionRegistry;
+}
 
 interface Harness {
   service: SocialService;
   cache: SocialCache;
   broadcasts: { identityId: string; friends: string[] }[];
   fetches: () => number;
+  /** Ticket acquisitions the refresh path asked for (#546). */
+  ticketsTaken: () => number;
   /** Resolves the pending friendList call (in-flight coalescing test). */
   release: () => void;
 }
 
-function buildService(options?: { hold?: boolean }): Harness {
+function buildService(options?: { hold?: boolean; live?: boolean }): Harness {
   const cache = new SocialCache();
   const broadcasts: Harness["broadcasts"] = [];
   let calls = 0;
+  let ticketsTaken = 0;
   let release = () => undefined as void;
   const flistApi = {
     bookmarkList: () => Promise.resolve({ error: "", characters: [] }),
@@ -82,8 +103,10 @@ function buildService(options?: { hold?: boolean }): Harness {
   } as unknown as GatewayHub;
   const service = new SocialService({
     db: fakeDb(),
-    sessions,
-    tickets,
+    sessions: fakeSessions(options?.live ?? true),
+    tickets: fakeTickets(() => {
+      ticketsTaken += 1;
+    }),
     flistApi,
     cache,
     hub,
@@ -95,6 +118,7 @@ function buildService(options?: { hold?: boolean }): Harness {
     cache,
     broadcasts,
     fetches: () => calls,
+    ticketsTaken: () => ticketsTaken,
     release: () => {
       release();
     },
@@ -152,5 +176,20 @@ describe("SocialService.refreshSoon", () => {
     service.stop();
     await vi.advanceTimersByTimeAsync(200);
     expect(fetches()).toBe(2);
+  });
+
+  it("drops a refresh whose session stopped inside the window (#546)", async () => {
+    // RTB is a live-socket event: if the session is gone when the debounce
+    // fires, there is no device to fan out to. The refetch must not happen
+    // — not because the work is wasted, but because it would take a
+    // ticket, and F-List invalidates tickets per ACCOUNT. A mint here
+    // breaks the ticket every other session on the same F-List account is
+    // holding; one identifying at that instant takes ERR 4 and reconnects
+    // on the 10-second policy floor, which is the CI flake in #546.
+    const { service, fetches, ticketsTaken } = buildService({ live: false });
+    service.refreshSoon(IDENTITY.id);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(fetches()).toBe(0);
+    expect(ticketsTaken()).toBe(0);
   });
 });
