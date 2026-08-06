@@ -166,6 +166,19 @@ export class SocialService {
   }
 
   async #refresh(identityId: string): Promise<void> {
+    // Only for identities that still hold a session. RTB is a live-socket
+    // event, so a scheduled refresh whose session stopped inside the
+    // debounce window has nobody left to fan out to — and the fetch is not
+    // free: it acquires a ticket, and F-List invalidates tickets per
+    // ACCOUNT, not per identity. Minting one here for a dead identity
+    // invalidates the ticket every OTHER session on the same F-List
+    // account is holding, and a session that happens to be identifying at
+    // that moment takes ERR 4 and reconnects on the 10-second policy floor
+    // (#546). The cache was already dropped by the RTB handler, so the
+    // next GET still fetches the truth.
+    if (!this.#sessions.get(identityId)) {
+      return;
+    }
     if (this.#running.has(identityId)) {
       // Straddling an in-flight fetch: remember to run once more rather
       // than racing two four-call fetches into the same cache slot.

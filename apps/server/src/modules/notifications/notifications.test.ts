@@ -22,6 +22,7 @@ import {
 } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
+  FRAME_WAIT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
 import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
@@ -120,10 +121,19 @@ async function startIdentity(): Promise<Fixture> {
   return { identityId: identity!.id, userId: user.id, session, token };
 }
 
+/**
+ * The three waits below take their deadline from `FRAME_WAIT_MS`, not from a
+ * literal, because `budgets.ts` requires a wait helper's default deadline to
+ * be ≥ its file's `testTimeout` tier — this file had 10s and 5s helpers under
+ * a 15s tier, which is the #404/#425 shape. Note this is hygiene, not a fix
+ * for #546: the flake there is an `IDN` refused mid-handshake, and the
+ * session's policy backoff is a jittered 10–20s, so no deadline this file
+ * could honestly carry would have caught it.
+ */
 function waitForStatus(
   session: FchatSession,
   status: string,
-  timeoutMs = 10_000,
+  timeoutMs = FRAME_WAIT_MS,
 ): Promise<void> {
   if (session.status === status) {
     return Promise.resolve();
@@ -147,7 +157,7 @@ function joinAndSettle(session: FchatSession, channel: string): Promise<void> {
   const settled = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`timed out joining ${channel}`));
-    }, 5000);
+    }, FRAME_WAIT_MS);
     const off = session.events.on("command", (command) => {
       if (command.cmd === "CDS" && command.payload.channel === channel) {
         clearTimeout(timer);
@@ -194,11 +204,12 @@ function rowsFor(identityId: string) {
 /** The RTB path is fire-and-forget from the session's command handler, so
  * its rows land a tick or two after the frame was processed. */
 async function waitForRows(identityId: string, count: number): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const pollMs = 50;
+  for (let attempt = 0; attempt < FRAME_WAIT_MS / pollMs; attempt += 1) {
     if ((await rowsFor(identityId)).length >= count) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
   throw new Error(`timed out waiting for ${String(count)} inbox rows`);
 }
