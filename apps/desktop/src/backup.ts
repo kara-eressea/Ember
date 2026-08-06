@@ -108,7 +108,16 @@ export async function downloadBackup(
       `the local server answered HTTP ${String(response.status)}${said === "" ? "" : ` — ${said}`}.`,
     );
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  let bytes: Uint8Array;
+  try {
+    // A body that dies mid-transfer throws here, not above — the headers were
+    // fine. Same answer either way: no bytes, so no file.
+    bytes = new Uint8Array(await response.arrayBuffer());
+  } catch (cause) {
+    throw new BackupError("the download stopped before it finished.", {
+      cause,
+    });
+  }
   if (bytes.byteLength === 0) {
     // Refused rather than written. A zero-byte file that looks like a backup
     // is worse than no file at all: it is a backup you would rely on.

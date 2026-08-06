@@ -106,6 +106,11 @@ describe("downloadBackup", () => {
     const failures = [
       answering({}),
       answering({ ok: false, status: 500 }),
+      // A body that dies mid-transfer: the headers were fine, the bytes were
+      // not — which is a different throw site from an unreachable server.
+      answering({
+        arrayBuffer: () => Promise.reject(new Error("connection reset")),
+      }),
       unreachable("boom"),
     ];
     for (const fetchImpl of failures) {
