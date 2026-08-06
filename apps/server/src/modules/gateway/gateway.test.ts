@@ -3744,15 +3744,23 @@ describe("gateway refusals", () => {
     const { identityId, token } = await createIdentity();
     const session = await startSession(identityId);
     await joinAndSettle(session, "Frontpage");
-    const [conversation] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(
-        and(
-          eq(conversations.identityId, identityId),
-          eq(conversations.channelKey, "Frontpage"),
-        ),
-      );
+    // The join echo and the conversation row are separate steps: poll for
+    // the row rather than assuming the persist already landed (it has not,
+    // reliably, under the pglite driver).
+    let convId = "";
+    await vi.waitFor(async () => {
+      const [row] = await db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.identityId, identityId),
+            eq(conversations.channelKey, "Frontpage"),
+          ),
+        );
+      expect(row).toBeDefined();
+      convId = row!.id;
+    }, FRAME_WAIT_MS);
     const client = await connectClient();
     await client.hello(token);
     await client.subscribe(identityId);
@@ -3772,7 +3780,7 @@ describe("gateway refusals", () => {
       d: {
         identityId,
         action: "msg.send",
-        d: { convId: conversation!.id, bbcode: "a".repeat(5000) },
+        d: { convId, bbcode: "a".repeat(5000) },
       },
     });
     expect((await ackFor(client, 2)).d).toEqual({
@@ -3795,7 +3803,7 @@ describe("gateway refusals", () => {
       d: {
         identityId,
         action: "msg.send",
-        d: { convId: conversation!.id, bbcode: "short enough" },
+        d: { convId, bbcode: "short enough" },
       },
     });
     expect((await ackFor(client, 3)).d.ok).toBe(true);

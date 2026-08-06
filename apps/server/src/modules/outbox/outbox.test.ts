@@ -29,14 +29,17 @@ import {
 import {
   CONTAINER_BOOT_MS,
   FRAME_WAIT_MS,
-  INTEGRATION_MS,
+  INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
 import { FAILED_ROW_TTL_MS, Outbox } from "./outbox.js";
 
-vi.setConfig({ testTimeout: INTEGRATION_MS });
+// Every wait below is FRAME_WAIT_MS; the per-test budget must sit ABOVE it or
+// the outer timeout fires first and the helper's diagnostic never prints
+// (the #404/#425 lesson, spelled out in the budgets module).
+vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
 /** Fast enough that "the next poll" is never the slow part of a test. */
-const POLL_MS = 10;
+const POLL_MS = 20;
 
 let testDb: TestDb;
 let db: Db;
@@ -382,8 +385,11 @@ describe("outbox concurrency", () => {
     slow.hold();
     h.outbox.start();
 
-    // The other user's row goes out while the slow chain is still parked —
-    // that is the whole invariant.
+    // The slow identity's chain is parked on its first send…
+    await vi.waitFor(() => {
+      expect(slow.sent.map((call) => call.bbcode)).toEqual(["one"]);
+    }, FRAME_WAIT_MS);
+    // …and the other user's row still goes out. That is the whole invariant.
     await vi.waitFor(() => {
       expect(fast.sent.map((call) => call.bbcode)).toEqual(["unrelated"]);
     }, FRAME_WAIT_MS);
@@ -392,7 +398,10 @@ describe("outbox concurrency", () => {
     }, FRAME_WAIT_MS);
 
     // And the stalled identity's own second row was not claimed by a later
-    // poll: release order within an identity is promised, so it waits.
+    // poll: release order within an identity is promised, so it waits. A
+    // negative assertion cannot be polled — give a broken guard a generous
+    // run of poll intervals to claim the row in.
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS * 25));
     expect(slow.sent.map((call) => call.bbcode)).toEqual(["one"]);
     expect((await rowsFor(slowId)).map((row) => row.state)).toEqual([
       "releasing",
