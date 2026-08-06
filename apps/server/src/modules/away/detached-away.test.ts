@@ -25,6 +25,7 @@ import type { GatewayConnection } from "../gateway/connection.js";
 import type { HistorySink } from "../history/sink.js";
 import {
   CONTAINER_BOOT_MS,
+  FRAME_WAIT_MS,
   INTEGRATION_MS,
 } from "../../test-support/budgets.js";
 
@@ -269,8 +270,12 @@ describe("detached auto-away", () => {
     app.detachedAway.onAttach(identityId);
     await expectOwnStatus(session, "online", ""); // accepted at once
     expect(restored).toEqual([]); // …but not yet on the wire
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    expect(restored.length).toBeGreaterThan(0);
+    // Poll rather than sleeping out a wall-clock constant: the gate's release
+    // is a positive event, so a loaded runner should make this slower, not
+    // flaky (#546).
+    await vi.waitFor(() => {
+      expect(restored.length).toBeGreaterThan(0);
+    }, FRAME_WAIT_MS);
     expect(new Set(restored)).toEqual(new Set([""]));
     expect(errors).toEqual([]);
   });

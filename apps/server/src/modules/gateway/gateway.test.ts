@@ -2,6 +2,7 @@
 // and a listening HTTP server — app.inject cannot carry a WebSocket upgrade,
 // so the suite talks to /gateway over real sockets like a browser would.
 
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
@@ -36,6 +37,7 @@ import { loadConfig } from "../../config.js";
 import type { Db } from "../../db/index.js";
 import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import {
+  ads,
   authSessions,
   conversations,
   identities,
@@ -43,6 +45,7 @@ import {
   messages,
   outboxMessages,
 } from "../../db/schema.js";
+import { ConversationLimitError } from "../history/sink.js";
 import {
   CONTAINER_BOOT_MS,
   FRAME_WAIT_MS,
@@ -158,6 +161,11 @@ class TestClient {
 
   send(frame: ClientFrame): void {
     this.#socket.send(JSON.stringify(frame));
+  }
+
+  /** Bypasses the frame type — for the "what if it isn't JSON at all" path. */
+  sendRaw(text: string): void {
+    this.#socket.send(text);
   }
 
   /** Removes and returns the first frame matching the predicate, in arrival
@@ -3611,5 +3619,484 @@ describe("typing telemetry (TPN)", () => {
       ok: false,
       error: "session not connected",
     });
+  });
+});
+
+// ── The refusal side (#561) ──────────────────────────────────────────────────
+//
+// Everything above walks the happy path. This block walks the other axis: the
+// frames the gateway must reject, and the acks that say so. A refusal that
+// quietly stops being sent is a button that does nothing, forever, with no
+// error anywhere — and the pre-`hello` cases are the auth ordering itself.
+
+describe("gateway refusals", () => {
+  /** Awaits the ack for one specific cmd id (the acks below interleave). */
+  function ackFor(client: TestClient, id: number) {
+    return client.next(
+      (frame): frame is Extract<ServerFrame, { t: "ack" }> & { id: number } =>
+        frame.t === "ack" && frame.id === id,
+    );
+  }
+
+  it("drops a pre-hello frame that is not JSON, and only errors on one after hello", async () => {
+    const early = await connectClient();
+    early.sendRaw("{ not json at all");
+    const closed = await early.waitForClose();
+    expect(closed.code).toBe(GATEWAY_CLOSE.badRequest);
+    expect(closed.reason).toBe("frame is not valid JSON");
+
+    // Once identified there is a session worth preserving: the same garbage
+    // earns an error frame, not a disconnect.
+    const { token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    client.sendRaw("{ not json at all");
+    expect((await client.nextOfType("error")).d.message).toBe(
+      "frame is not valid JSON",
+    );
+    client.send({ t: "ping" });
+    await client.nextOfType("pong");
+  });
+
+  it("closes a well-formed cmd that arrives before hello", async () => {
+    const { identityId } = await createIdentity();
+    const client = await connectClient();
+    // Schema-valid, owner-valid — and still refused, because identity comes
+    // before everything.
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "session.disconnect" },
+    });
+    const closed = await client.waitForClose();
+    expect(closed.code).toBe(GATEWAY_CLOSE.unauthorized);
+    expect(closed.reason).toBe("hello first");
+  });
+
+  it("refuses a second hello without disturbing the first", async () => {
+    const { identityId, token } = await createIdentity();
+    const client = await connectClient();
+    await client.hello(token);
+    client.send({
+      t: "hello",
+      d: { token, protocolVersion: PROTOCOL_VERSION },
+    });
+    expect((await client.nextOfType("error")).d.message).toBe(
+      "already identified",
+    );
+    // The connection keeps the identity it already had.
+    const snapshot = await client.subscribe(identityId);
+    expect(snapshot.d.identityId).toBe(identityId);
+  });
+
+  it("answers ok:false for a conversation id that is not this identity's", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // A well-formed UUID nobody owns — conversation ids are guessable, so
+    // ownership is checked on every path that takes one.
+    const stranger = randomUUID();
+    const cases: {
+      action: string;
+      d: Record<string, unknown>;
+      error: string;
+    }[] = [
+      {
+        action: "conv.pin",
+        d: { convId: stranger, pinned: true },
+        error: "conversation not found",
+      },
+      {
+        action: "msg.send",
+        d: { convId: stranger, bbcode: "hello?" },
+        error: "conversation not found",
+      },
+      {
+        action: "history.page",
+        d: { convId: stranger, beforeId: 1, limit: 10 },
+        error: "conversation not found",
+      },
+      {
+        action: "pm.close",
+        d: { convId: stranger },
+        error: "Conversation not found",
+      },
+    ];
+    let id = 100;
+    for (const testCase of cases) {
+      id += 1;
+      client.send({
+        t: "cmd",
+        id,
+        d: { identityId, action: testCase.action, d: testCase.d },
+      } as ClientFrame);
+      expect((await ackFor(client, id)).d, testCase.action).toEqual({
+        ok: false,
+        error: testCase.error,
+      });
+    }
+  });
+
+  it("refuses an over-long delayed send at compose time, not at release time", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    await joinAndSettle(session, "Frontpage");
+    // The join echo and the conversation row are separate steps: poll for
+    // the row rather than assuming the persist already landed (it has not,
+    // reliably, under the pglite driver).
+    let convId = "";
+    await vi.waitFor(async () => {
+      const [row] = await db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.identityId, identityId),
+            eq(conversations.channelKey, "Frontpage"),
+          ),
+        );
+      expect(row).toBeDefined();
+      convId = row!.id;
+    }, FRAME_WAIT_MS);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "prefs.set", d: { sendDelaySeconds: 120 } },
+    });
+    expect((await ackFor(client, 1)).d.ok).toBe(true);
+
+    // Deferring the VAR check to release time would fail the send silently,
+    // minutes after the user could still do anything about it.
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "a".repeat(5000) },
+      },
+    });
+    expect((await ackFor(client, 2)).d).toEqual({
+      ok: false,
+      // chat_max, read from the live VARs — never a hardcoded number.
+      error: `Message exceeds the server's ${String(session.state.vars.chat_max)}-byte limit`,
+    });
+    expect(
+      await db
+        .select({ id: outboxMessages.id })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.identityId, identityId)),
+    ).toEqual([]);
+
+    // The same text under the limit does park, so the refusal above is the
+    // length check and not the delayed path being broken.
+    client.send({
+      t: "cmd",
+      id: 3,
+      d: {
+        identityId,
+        action: "msg.send",
+        d: { convId, bbcode: "short enough" },
+      },
+    });
+    expect((await ackFor(client, 3)).d.ok).toBe(true);
+  });
+
+  it("refuses pm.open past the per-identity conversation ceiling", async () => {
+    const { identityId, token } = await createIdentity();
+    await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    // The ceiling itself (and the count that reaches it) belongs to the sink
+    // and is tested there; what is dark here is the gateway's handling —
+    // this one error class must become an ack instead of propagating as an
+    // internal error, and every other failure must still propagate.
+    const spy = vi
+      .spyOn(app.history, "ensurePmConversation")
+      .mockRejectedValue(new ConversationLimitError());
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: { identityId, action: "pm.open", d: { character: "One Too Many" } },
+    });
+    expect((await ackFor(client, 1)).d).toEqual({
+      ok: false,
+      error: "Too many conversations for this identity",
+    });
+
+    spy.mockRejectedValue(new Error("the database fell over"));
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "pm.open", d: { character: "Another" } },
+    });
+    // Anything else is a genuine fault: it reaches the cmd handler's catch,
+    // which says so rather than dressing it up as a user-facing refusal.
+    expect((await ackFor(client, 2)).d).toEqual({
+      ok: false,
+      error: "internal error",
+    });
+    spy.mockRestore();
+  });
+
+  it("routes every campaign command and turns a CampaignError into plain language", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    // A room that allows ads: the campaign refuses a chat-only channel.
+    await joinAndSettle(session, "Development");
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    let id = 0;
+    const campaignCmd = async (action: string, d: Record<string, unknown>) => {
+      id += 1;
+      client.send({
+        t: "cmd",
+        id,
+        d: { identityId, action, d },
+      } as ClientFrame);
+      return (await ackFor(client, id)).d;
+    };
+
+    // stop / renew / drop before there is anything to act on.
+    for (const action of ["campaign.stop", "campaign.renew"]) {
+      expect(await campaignCmd(action, {}), action).toEqual({
+        ok: false,
+        error: "There's no campaign for this character",
+      });
+    }
+    expect(await campaignCmd("campaign.drop", { key: "Development" })).toEqual({
+      ok: false,
+      error: "There's no campaign for this character",
+    });
+
+    // A start with nothing to rotate.
+    expect(
+      await campaignCmd("campaign.start", {
+        tags: ["winter"],
+        channels: ["Development"],
+      }),
+    ).toEqual({
+      ok: false,
+      error: "None of your enabled ads carry those tags — nothing would post",
+    });
+
+    await db.insert(ads).values({
+      identityId,
+      content: "warm fire, cold night",
+      tags: ["winter"],
+      sortOrder: 0,
+    });
+    // A start naming a room the character is not in.
+    expect(
+      await campaignCmd("campaign.start", {
+        tags: ["winter"],
+        channels: ["Ghost Room"],
+      }),
+    ).toEqual({
+      ok: false,
+      error:
+        "You're not in one of those channels any more — reopen the setup and pick again",
+    });
+
+    expect(
+      await campaignCmd("campaign.start", {
+        tags: ["winter"],
+        channels: ["Development"],
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      eventPayload<{ campaign: { channels: { key: string }[] } }>(
+        await client.nextEvent("campaign.updated"),
+      ).campaign.channels.map((c) => c.key),
+    ).toEqual(["Development"]);
+
+    // Replacing a running campaign is an explicit confirmation, and a drop
+    // only takes a channel the campaign actually has.
+    expect(
+      await campaignCmd("campaign.start", {
+        tags: ["winter"],
+        channels: ["Development"],
+      }),
+    ).toEqual({
+      ok: false,
+      error:
+        "A campaign is already running — replacing it needs an explicit confirmation",
+    });
+    expect(await campaignCmd("campaign.drop", { key: "Ghost Room" })).toEqual({
+      ok: false,
+      error: "That channel isn't part of the campaign",
+    });
+    expect(await campaignCmd("campaign.renew", {})).toEqual({ ok: true });
+    expect(await campaignCmd("campaign.stop", {})).toEqual({ ok: true });
+  });
+
+  it("turns a refused session send into an ok:false ack rather than silence", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    const key = "Frontpage";
+    const character = "Birch Rowan";
+    // Each entry arms one session method to reject and then drives the cmd
+    // that is supposed to carry that rejection back to the browser. Stubbing
+    // is the point: these are wire refusals (not an op, room gone, gate
+    // full) that the sim cannot be made to produce on demand.
+    const cases: {
+      action: string;
+      d: Record<string, unknown>;
+      arm: (error: Error) => { mockRestore: () => void };
+    }[] = [
+      {
+        action: "channel.create",
+        d: { title: "Moss Parlour" },
+        arm: (e) => vi.spyOn(session, "createRoom").mockRejectedValue(e),
+      },
+      {
+        action: "channel.invite",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "inviteToChannel").mockRejectedValue(e),
+      },
+      {
+        action: "channel.status",
+        d: { key, status: "public" },
+        arm: (e) => vi.spyOn(session, "setRoomStatus").mockRejectedValue(e),
+      },
+      {
+        action: "status.set",
+        d: { status: "away", statusmsg: "brb" },
+        arm: (e) => vi.spyOn(session, "setStatus").mockRejectedValue(e),
+      },
+      {
+        action: "ignore.add",
+        d: { character },
+        arm: (e) => vi.spyOn(session, "ignore").mockRejectedValue(e),
+      },
+      {
+        action: "ignore.remove",
+        d: { character },
+        arm: (e) => vi.spyOn(session, "unignore").mockRejectedValue(e),
+      },
+      {
+        action: "channel.roll",
+        d: { key, dice: "1d10" },
+        arm: (e) => vi.spyOn(session, "rollDice").mockRejectedValue(e),
+      },
+      {
+        action: "user.report",
+        d: { character, report: "spam" },
+        arm: (e) => vi.spyOn(session, "reportToStaff").mockRejectedValue(e),
+      },
+      {
+        action: "channel.kick",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "kickFromChannel").mockRejectedValue(e),
+      },
+      {
+        action: "channel.ban",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "banFromChannel").mockRejectedValue(e),
+      },
+      {
+        action: "channel.unban",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "unbanFromChannel").mockRejectedValue(e),
+      },
+      {
+        action: "channel.timeout",
+        d: { key, character, minutes: 5 },
+        arm: (e) =>
+          vi.spyOn(session, "timeoutFromChannel").mockRejectedValue(e),
+      },
+      {
+        action: "channel.promote",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "promoteOp").mockRejectedValue(e),
+      },
+      {
+        action: "channel.demote",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "demoteOp").mockRejectedValue(e),
+      },
+      {
+        action: "channel.owner",
+        d: { key, character },
+        arm: (e) => vi.spyOn(session, "setRoomOwner").mockRejectedValue(e),
+      },
+      {
+        action: "channel.describe",
+        d: { key, description: "moss, mostly" },
+        arm: (e) =>
+          vi.spyOn(session, "setRoomDescription").mockRejectedValue(e),
+      },
+      {
+        action: "channel.mode",
+        d: { key, mode: "chat" },
+        arm: (e) => vi.spyOn(session, "setRoomMode").mockRejectedValue(e),
+      },
+      {
+        action: "channel.banlist",
+        d: { key },
+        arm: (e) => vi.spyOn(session, "requestBanlist").mockRejectedValue(e),
+      },
+    ];
+
+    let id = 200;
+    for (const testCase of cases) {
+      const spy = testCase.arm(new Error(`${testCase.action} was refused`));
+      id += 1;
+      client.send({
+        t: "cmd",
+        id,
+        d: { identityId, action: testCase.action, d: testCase.d },
+      } as ClientFrame);
+      expect((await ackFor(client, id)).d, testCase.action).toEqual({
+        ok: false,
+        error: `${testCase.action} was refused`,
+      });
+      spy.mockRestore();
+    }
+  });
+
+  it("delivers a failed character search as an outcome, not as a dropped ack", async () => {
+    const { identityId, token } = await createIdentity();
+    const session = await startSession(identityId);
+    const client = await connectClient();
+    await client.hello(token);
+    await client.subscribe(identityId);
+
+    const spy = vi
+      .spyOn(session, "searchCharacters")
+      .mockRejectedValue(new Error("the search went nowhere"));
+    client.send({
+      t: "cmd",
+      id: 1,
+      d: {
+        identityId,
+        action: "character.search",
+        d: { kinks: ["523"] },
+      },
+    });
+    // The cmd is acked as accepted — the pace gate can hold the frame for
+    // seconds — and the outcome arrives as its own event.
+    expect((await ackFor(client, 1)).d.ok).toBe(true);
+    expect(
+      eventPayload<{ ok: boolean; code: number; message: string }>(
+        await client.nextEvent("character.search"),
+      ),
+    ).toEqual({ ok: false, code: 0, message: "the search went nowhere" });
+    spy.mockRestore();
   });
 });
