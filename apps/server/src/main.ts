@@ -9,7 +9,11 @@ import {
 } from "./db/upgrade-gate.js";
 
 const config = loadConfig();
-const { db, raw, migrate, close } = await createDb(dbDriverFrom(config));
+// `dumpDataDir` is the embedded database's alone (#548) — undefined on
+// node-postgres, which is what makes GET /api/backup refuse there.
+const { db, raw, migrate, close, dumpDataDir } = await createDb(
+  dbDriverFrom(config),
+);
 
 const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
 try {
@@ -28,7 +32,11 @@ try {
 }
 await migrate(migrationsFolder);
 
-const app = await buildApp({ config, db });
+const app = await buildApp({
+  config,
+  db,
+  ...(dumpDataDir !== undefined ? { dumpDataDir } : {}),
+});
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {

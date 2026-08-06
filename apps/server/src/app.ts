@@ -52,6 +52,7 @@ import { flistAccountsRoutes } from "./modules/flist-accounts/routes.js";
 import type { GatewayTuning } from "./modules/gateway/connection.js";
 import { GatewayHub, gatewayRoutes } from "./modules/gateway/gateway.js";
 import { UserPrefsCache } from "./modules/gateway/user-prefs.js";
+import { backupRoutes } from "./modules/meta/backup.js";
 import { UpdateChecker } from "./modules/meta/update-check.js";
 import { HighlightMatcher } from "./modules/highlights/matcher.js";
 import { highlightsRoutes } from "./modules/highlights/routes.js";
@@ -92,6 +93,12 @@ const SHUTDOWN_DRAIN_MS = 5_000;
 export interface BuildAppOptions {
   config: AppConfig;
   db: Db;
+  /**
+   * The storage handle's `dumpDataDir`, when it has one — i.e. under the
+   * embedded database, and only there (db/index.ts). Present enables
+   * `GET /api/backup`; absent is what makes that route refuse (#548).
+   */
+  dumpDataDir?: () => Promise<Blob>;
   logger?: FastifyServerOptions["logger"];
   /** Injectable for tests (e.g. a client with no request throttle). */
   flistApiClient?: FlistApiClient;
@@ -110,6 +117,7 @@ export interface BuildAppOptions {
 export async function buildApp({
   config,
   db,
+  dumpDataDir,
   logger = true,
   flistApiClient,
   sessionTuning,
@@ -562,6 +570,13 @@ export async function buildApp({
   // Version/update surface for the UI (M7). Authenticated: the running
   // version is nobody else's business.
   app.get("/api/meta", { preHandler: app.authenticate }, () => updates.status);
+  // Whole-database download, for the desktop client's "Save a backup…" (#548).
+  // Registered on every instance and gated by the driver's own capability —
+  // see modules/meta/backup.ts for why it is an endpoint at all.
+  await app.register(backupRoutes, {
+    prefix: "/api",
+    ...(dumpDataDir !== undefined ? { dumpDataDir } : {}),
+  });
   // The install manifest (MP3 §1). Unauthenticated and always registered: it
   // names the app the browser is about to put on a home screen, and in dev
   // the Vite proxy reaches it here rather than at a WEB_DIST that does not
