@@ -4,7 +4,6 @@
 
 import { eq } from "drizzle-orm";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -464,26 +463,20 @@ describe("security headers", () => {
       expect(csp).toContain("img-src 'self' data: https://static.f-list.net");
       expect(csp).toContain("frame-ancestors 'none'");
 
-      // The policy must name a hash for every inline script the page it just
-      // served actually carries — re-derived here, because a mismatch is
-      // invisible at runtime: the browser blocks the script and the client
-      // quietly falls back. And the permission must be the hash, never
-      // 'unsafe-inline'/'unsafe-eval'.
+      // The served document carries no inline script at all since the
+      // runtime-branding bootstrap went away with the rename knob (#556), so
+      // `script-src` is exactly `'self'` — no hash to keep in step with a
+      // script, and nothing an injected `<script>` could be mistaken for.
+      // A mismatch here was always invisible at runtime (the browser blocks
+      // the script and nothing says so), which is why it is asserted at all.
       const inline = [
         ...page.body.matchAll(
           /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g,
         ),
       ].map(([, script]) => script ?? "");
-      expect(inline.length).toBeGreaterThan(0);
-      for (const script of inline) {
-        const digest = createHash("sha256")
-          .update(script, "utf8")
-          .digest("base64");
-        expect(csp).toContain(`'sha256-${digest}'`);
-      }
+      expect(inline).toEqual([]);
       const scriptSrc = /(?:^|;)\s*script-src ([^;]*)/.exec(csp)?.[1] ?? "";
-      expect(scriptSrc).not.toContain("'unsafe-inline'");
-      expect(scriptSrc).not.toContain("'unsafe-eval'");
+      expect(scriptSrc.trim()).toBe("'self'");
     } finally {
       await spa.close();
       await rm(dist, { recursive: true, force: true });

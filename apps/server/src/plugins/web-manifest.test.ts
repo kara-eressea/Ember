@@ -1,9 +1,11 @@
-// The install manifest (MP3 §1, #377): served from config, coloured from the
-// web app's default theme, and pointing at icons that exist.
+// The install manifest (MP3 §1, #377): named from the one product-name
+// constant, coloured from the web app's default theme, and pointing at icons
+// that exist.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { APP_NAME } from "@emberchat/protocol";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -16,14 +18,10 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(here, "../../../web");
 
-/** A product name no self-host would pick, so a literal in the route shows up
- * as a failure rather than as a coincidence. */
-const APP_NAME = "Firestarter Testline";
-
 const app = Fastify();
 
 beforeAll(async () => {
-  webManifestRoute(app, { appName: APP_NAME });
+  webManifestRoute(app);
   await app.ready();
 });
 
@@ -32,7 +30,7 @@ afterAll(async () => {
 });
 
 describe("GET /manifest.webmanifest", () => {
-  it("names the app from config, as the manifest media type", async () => {
+  it("names the app from the shared constant, as the manifest media type", async () => {
     const response = await app.inject({
       method: "GET",
       url: "/manifest.webmanifest",
@@ -41,19 +39,22 @@ describe("GET /manifest.webmanifest", () => {
     expect(response.headers["content-type"]).toContain(
       "application/manifest+json",
     );
-    // It carries configuration; a cached copy would outlive a rename.
+    // A cached copy would outlive an upgrade that changed an icon or a
+    // shortcut, and nothing else can reach a browser that already read it.
     expect(response.headers["cache-control"]).toBe("no-cache");
 
     const manifest = response.json<ReturnType<typeof webManifest>>();
     expect(manifest.name).toBe(APP_NAME);
     expect(manifest.short_name).toBe(APP_NAME);
-    // The whole document, product name included, must contain no trace of the
-    // working title (CLAUDE.md): the name is a config token everywhere.
-    expect(JSON.stringify(manifest)).not.toMatch(/ember/i);
+    // The name reaches the home screen through the constant and nowhere else:
+    // the only "ember" in the document is the two `name` fields (#556).
+    expect(
+      JSON.stringify({ ...manifest, name: "", short_name: "" }),
+    ).not.toMatch(/ember/i);
   });
 
   it("is installable: scope, start_url, standalone, and both icon purposes", () => {
-    const manifest = webManifest(APP_NAME);
+    const manifest = webManifest();
     expect(manifest.start_url).toBe("/");
     expect(manifest.scope).toBe("/");
     expect(manifest.id).toBe("/");
@@ -66,7 +67,7 @@ describe("GET /manifest.webmanifest", () => {
   });
 
   it("offers route-based shortcuts that name no character and no instance", () => {
-    const manifest = webManifest(APP_NAME);
+    const manifest = webManifest();
     expect(manifest.shortcuts.map((shortcut) => shortcut.url)).toEqual([
       // The identity-agnostic alias and the picker: the only two routes that
       // mean the same thing to every user of an instance on every launch.
@@ -76,8 +77,8 @@ describe("GET /manifest.webmanifest", () => {
     for (const shortcut of manifest.shortcuts) {
       expect(shortcut.name.length).toBeGreaterThan(0);
       expect(shortcut.short_name.length).toBeGreaterThan(0);
-      // Baked once per instance, so a label may not carry the product name —
-      // configured or working-title. Both would be wrong in a self-host.
+      // One document for every install, and a launcher menu is not the place
+      // to spend a row repeating the app's own name.
       expect(shortcut.name).not.toContain(APP_NAME);
       expect(shortcut.short_name).not.toContain(APP_NAME);
       expect(`${shortcut.name} ${shortcut.short_name}`).not.toMatch(/ember/i);
@@ -102,7 +103,7 @@ describe("GET /manifest.webmanifest", () => {
       .filter((pattern) => pattern !== "*")
       // React Router's `:param` matches one non-empty path segment.
       .map((pattern) => new RegExp(`^${pattern.replace(/:[^/]+/g, "[^/]+")}$`));
-    for (const shortcut of webManifest(APP_NAME).shortcuts) {
+    for (const shortcut of webManifest().shortcuts) {
       expect(
         declared.some((route) => route.test(shortcut.url)),
         shortcut.url,
@@ -111,7 +112,7 @@ describe("GET /manifest.webmanifest", () => {
   });
 
   it("points at icons that exist, at the sizes it claims", () => {
-    const manifest = webManifest(APP_NAME);
+    const manifest = webManifest();
     const icons = [
       ...manifest.icons,
       ...manifest.shortcuts.flatMap((shortcut) => shortcut.icons),

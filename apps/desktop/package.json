@@ -5,7 +5,7 @@
   "type": "module",
   "productName": "EmberChat",
   "main": "dist/main.js",
-  "// packaging metadata": "electron-builder reads these into the bundle: the description becomes the macOS bundle's and the installer's, the author the copyright holder. Kept here rather than in electron-builder.yml because they are facts about the package, and because productName already lives here (MX4, #305).",
+  "// packaging metadata": "electron-builder reads these into the bundle: the description becomes the macOS bundle's and the installer's, the author the copyright holder. Kept here rather than in electron-builder.yml because they are facts about the package, and because productName already lives here (MX4, #305). productName is the one literal spelling of the product name in this app: Electron reads it from package.json before any code runs, and it must equal APP_NAME in @emberchat/protocol, which is the source of truth (#556).",
   "description": "A desktop client for F-Chat with its own built-in bouncer.",
   "author": "The EmberChat contributors",
   "license": "MIT",

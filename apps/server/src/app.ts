@@ -31,6 +31,7 @@ import {
 import { enrichSocial, SocialCache } from "./modules/social/cache.js";
 import { socialRoutes } from "./modules/social/routes.js";
 import { SocialService } from "./modules/social/service.js";
+import { APP_NAME } from "@emberchat/protocol";
 import {
   CredentialVault,
   FlistApiClient,
@@ -64,7 +65,7 @@ import { pushRoutes } from "./modules/push/routes.js";
 import { SeenMembersStore } from "./modules/seen-members/store.js";
 import { authPlugin } from "./plugins/auth.js";
 import { webManifestRoute } from "./plugins/web-manifest.js";
-import { runtimeConfigScript, webStatic } from "./plugins/web-static.js";
+import { webStatic } from "./plugins/web-static.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -201,7 +202,7 @@ export async function buildApp({
   const sessions = new SessionRegistry({
     tickets,
     wsUrl: config.FCHAT_URL,
-    clientName: config.CLIENT_NAME,
+    clientName: APP_NAME,
     clientVersion: config.CLIENT_VERSION,
     logger: app.log,
     tuning,
@@ -314,7 +315,7 @@ export async function buildApp({
   const updates = new UpdateChecker({
     currentVersion: config.CLIENT_VERSION,
     repo: config.UPDATE_CHECK_REPO,
-    clientName: config.CLIENT_NAME,
+    clientName: APP_NAME,
     // Test runs never phone home, whatever the config says.
     enabled: config.UPDATE_CHECK_ENABLED && process.env.NODE_ENV !== "test",
     logger: app.log,
@@ -361,12 +362,10 @@ export async function buildApp({
             // The extra-hosts source is a function helmet evaluates per
             // response, so a pref update (which calls registry.refresh())
             // widens the policy without a restart or a per-request DB read.
-            // The script hash is the runtime-config bootstrap webStatic
-            // injects below — derived from the same builder, so the two can
-            // never drift apart.
-            directives: contentSecurityDirectives(
-              () => imagePreviewHosts.mediaSourceString(),
-              [runtimeConfigScript(config.APP_NAME).cspSource],
+            // Nothing names an inline script any more: the document webStatic
+            // serves is Vite's own, unmodified (#556).
+            directives: contentSecurityDirectives(() =>
+              imagePreviewHosts.mediaSourceString(),
             ),
           }
         : false,
@@ -523,13 +522,10 @@ export async function buildApp({
   // names the app the browser is about to put on a home screen, and in dev
   // the Vite proxy reaches it here rather than at a WEB_DIST that does not
   // exist. Nothing in it is private — it is the product name and four colours.
-  webManifestRoute(app, { appName: config.APP_NAME });
+  webManifestRoute(app);
 
   if (config.WEB_DIST !== undefined) {
-    await app.register(webStatic, {
-      root: config.WEB_DIST,
-      appName: config.APP_NAME,
-    });
+    await app.register(webStatic, { root: config.WEB_DIST });
   }
 
   // Boot-time session resume (§15): fire-and-forget after the app is

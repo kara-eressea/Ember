@@ -1,18 +1,21 @@
 // The web app manifest (MP3 §1, #377) — what a browser reads to offer "install"
 // and how the installed window is named, coloured and shaped.
 //
-// Served by Fastify rather than shipped as a static file in apps/web/public
-// because the product name is runtime config (decisions.md §5, CLAUDE.md): the
-// same `APP_NAME` that titles the document names the home-screen icon, and a
-// file baked at build time could only carry the working title. Registered
-// unconditionally, not behind WEB_DIST — in dev and E2E the pages come from
-// Vite, which proxies this path through to here (vite.config.ts), so the
-// installed shape is the same object in every mode.
+// Served by Fastify rather than shipped as a static file in apps/web/public.
+// The original reason was that the product name was runtime config and a baked
+// file could only carry the working title; the name is a constant now (#556),
+// and the route stays because the document is still assembled from things the
+// server owns — the default theme's colours and the shortcut routes, both of
+// which have drift guards in web-manifest.test.ts. Registered unconditionally,
+// not behind WEB_DIST — in dev and E2E the pages come from Vite, which proxies
+// this path through to here (vite.config.ts), so the installed shape is the
+// same object in every mode.
 //
 // No service worker anywhere in this: the client is a live view onto the
 // bouncer, and Chromium has not required one for installability for years
 // (design/mp3-pwa.md).
 
+import { APP_NAME } from "@emberchat/protocol";
 import type { FastifyInstance } from "fastify";
 
 /**
@@ -34,10 +37,10 @@ export const MANIFEST_BACKGROUND_COLOR = "#1b1917";
 /**
  * Long-press the installed icon and these are the entries under it.
  *
- * The manifest is baked once per instance, so a shortcut can only point at a
- * route that means the same thing to every user of that instance and on every
- * launch — no character, no conversation, no configured name in a label. Two
- * routes clear that bar:
+ * The manifest is one document for every install, so a shortcut can only point
+ * at a route that means the same thing to every user and on every launch — no
+ * character, no conversation, no product name in a label. Two routes clear that
+ * bar:
  *
  *  • `/app/@me` — the identity-agnostic alias (lib/routes.ts) that resolves to
  *    whichever character was last active, falling back to the first. On a
@@ -64,15 +67,15 @@ const SHORTCUTS = [
   },
 ];
 
-/** The manifest document for a given configured product name. */
-export function webManifest(appName: string) {
+/** The manifest document. */
+export function webManifest() {
   return {
     // `id` pins the app's identity across future start_url changes — without
     // it the browser derives identity from start_url and a later change
     // installs a second app beside the first.
     id: "/",
-    name: appName,
-    short_name: appName,
+    name: APP_NAME,
+    short_name: APP_NAME,
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -96,21 +99,14 @@ export function webManifest(appName: string) {
   };
 }
 
-export interface WebManifestOptions {
-  appName: string;
-}
-
-export function webManifestRoute(
-  instance: FastifyInstance,
-  options: WebManifestOptions,
-): void {
-  const document = webManifest(options.appName);
+export function webManifestRoute(instance: FastifyInstance): void {
+  const document = webManifest();
   instance.get("/manifest.webmanifest", (_request, reply) =>
     reply
       .type("application/manifest+json")
-      // It carries configuration, so it must not be cached past a restart
-      // that changed the name. It is one small document fetched once per
-      // install prompt — there is nothing to save here.
+      // Never cached: it is one small document fetched once per install
+      // prompt, and an upgrade that changes an icon or a shortcut has no
+      // other way to reach a browser that already read it.
       .header("cache-control", "no-cache")
       .send(document),
   );

@@ -145,7 +145,6 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `BIND_ADDRESS` / `PORT` | `127.0.0.1` / `3000` | Host bind address and host-side published port (the container always listens on 3000 internally). Reaching a non-default port directly (no proxy)? Put it in `APP_BASE_URL` too |
 | `TRUST_PROXY` | unset | **Required behind a proxy** — hop count or CIDRs |
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |
-| `APP_NAME` / `CLIENT_NAME` | `EmberChat` | Branding / IDN `cname` (keep it honest) |
 | `CREDENTIALS_KEY` | unset | Enables "Remember on this server" (see below); must be exactly 32 bytes of base64url (43 characters) — use the node one-liner from `.env.example`, not a hex generator |
 | `RETENTION_POLICY` | `forever` | `forever` \| `30d` \| `90d` \| `1y` message retention |
 | `DETACHED_DISCONNECT_HOURS` | `72` | Log a character out of F-Chat after this long with no device attached (`0` = never); reopening the app reconnects automatically |
@@ -322,11 +321,9 @@ Home Screen** → *Add*. It must be Safari — on iOS the other browsers cannot
 install anything. The shortcut menu is Android's; iOS ignores that part of the
 manifest.
 
-What lands on the home screen is yours, not ours: the name under the icon is
-whatever you set `APP_NAME` to, and the status/title bar takes its colour from
-the app's own top bar, following your theme. If the name looks wrong after an
-install, change `APP_NAME`, restart, and re-install — the manifest is read once
-at install time.
+The icon is labelled **EmberChat** — the product's name is fixed and not
+something an instance sets — and the status/title bar takes its colour from the
+app's own top bar, so it follows your theme.
 
 Two honest expectations:
 

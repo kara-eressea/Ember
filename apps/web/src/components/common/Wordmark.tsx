@@ -13,13 +13,13 @@
 // from the authenticated /api/meta and the login screen has no session to ask
 // with.
 
-import { appConfig } from "../../lib/config.js";
+import { APP_NAME } from "@emberchat/protocol";
 import styles from "./wordmark.module.css";
 
 export function Wordmark() {
   return (
     <span className={styles.wordmark} data-testid="wordmark">
-      {appConfig().appName}
+      {APP_NAME}
     </span>
   );
 }

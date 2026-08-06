@@ -115,21 +115,21 @@ export function extraMediaSourceString(unionHosts: readonly string[]): string {
  * `img-src` and `media-src` only — evaluated per response so the union of
  * user-added preview hosts (#342) can change (a pref update) without a restart.
  *
- * `scriptSources` names the inline scripts the served document actually
- * carries, as `'sha256-…'` hashes — the only way `script-src 'self'` can permit
- * one. Callers derive them from the script itself (see `runtimeConfigScript`),
- * never by hand. Every other directive is unchanged.
+ * `script-src` is `'self'` and nothing else. The served document used to carry
+ * one inline script — the runtime-config bootstrap — and the policy carried its
+ * hash; the product name became a build-time constant (#556) and both went
+ * away. An inline script added here would need its own hash back, derived from
+ * the script rather than written by hand.
  */
 export function contentSecurityDirectives(
   extraMediaSource?: (req: IncomingMessage, res: ServerResponse) => string,
-  scriptSources: readonly string[] = [],
 ): Record<string, CspDirectiveEntry[]> {
   const mediaHosts = mediaHostSources();
   const extra: CspDirectiveEntry[] =
     extraMediaSource === undefined ? [] : [extraMediaSource];
   return {
     "default-src": ["'self'"],
-    "script-src": ["'self'", ...scriptSources],
+    "script-src": ["'self'"],
     // React style attributes need inline styles allowed.
     "style-src": ["'self'", "'unsafe-inline'"],
     // Avatars/eicons hotlink from F-List's static host; link previews hotlink

@@ -82,9 +82,13 @@
         --eb-bg: #1b1917;
       }
     </style>
-    <!-- Title is placeholder markup only; real branding is runtime config
-         injected by the serving Fastify (decisions.md §5). -->
-    <title>Chat</title>
+    <!-- The product name, final since 2026-08-06 (#556). A literal here and a
+         constant in the bundle, the same arrangement as the theme-color above
+         and for the same reason: the document is titled before any script
+         runs, and a title written from JavaScript is a tab that says something
+         else first. shipping-shape.test.ts fails if this and APP_NAME
+         (@emberchat/protocol) ever disagree. -->
+    <title>EmberChat</title>
   </head>
   <body>
     <div id="root"></div>

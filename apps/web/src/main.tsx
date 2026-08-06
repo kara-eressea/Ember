@@ -10,7 +10,6 @@ import "@fontsource/ibm-plex-mono/600.css";
 import "@fontsource/ibm-plex-mono/700.css";
 import "./styles/base.css";
 
-import { loadRuntimeConfig } from "./lib/config.js";
 import { startLayoutTracking } from "./lib/layout-mode.js";
 import { startKeyboardTracking } from "./lib/visual-viewport.js";
 import { AppRouter } from "./router.js";
@@ -34,8 +33,10 @@ startLayoutTracking();
 // AppShell effect: the login and identity-picker screens are typed into too,
 // and the property has to exist before the first paint (#376).
 startKeyboardTracking();
-const config = await loadRuntimeConfig();
-document.title = config.appName;
+// The document title is the product name, and index.html already carries it —
+// there is nothing to wait for and nothing to overwrite (#556). The unread
+// indicator and the highlight flash rewrite it from APP_NAME thereafter
+// (lib/use-unread-indicator.ts).
 void useAuthStore.getState().restore();
 
 const root = document.getElementById("root");

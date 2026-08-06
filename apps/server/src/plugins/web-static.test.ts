@@ -1,23 +1,22 @@
-// The production static mode: files served, SPA routes falling back to an
-// index.html carrying the injected runtime config, API 404s staying JSON.
+// The production static mode: files served, SPA routes falling back to
+// index.html, API 404s staying JSON.
 
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runtimeConfigScript, webStatic } from "./web-static.js";
+import { webStatic } from "./web-static.js";
+
+const INDEX_HTML =
+  "<!doctype html><html><head><title>x</title></head><body></body></html>";
 
 let root: string;
 let app: FastifyInstance;
 
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "emberchat-webdist-"));
-  await writeFile(
-    path.join(root, "index.html"),
-    "<!doctype html><html><head><title>x</title></head><body></body></html>",
-  );
+  await writeFile(path.join(root, "index.html"), INDEX_HTML);
   await mkdir(path.join(root, "assets"));
   await writeFile(
     path.join(root, "assets", "app-abc123.js"),
@@ -27,7 +26,7 @@ beforeAll(async () => {
   await writeFile(path.join(root, "sw.js"), "self.addEventListener;");
 
   app = Fastify();
-  await app.register(webStatic, { root, appName: "Testline </script>" });
+  await app.register(webStatic, { root });
   await app.ready();
 });
 
@@ -37,14 +36,13 @@ afterAll(async () => {
 });
 
 describe("webStatic", () => {
-  it("serves the SPA at / with the runtime config injected", async () => {
+  // Byte-identical to what Vite emitted: the document is no longer rewritten
+  // on the way out, and the app it boots carries no inline script (#556).
+  it("serves the SPA at / exactly as built", async () => {
     const response = await app.inject({ method: "GET", url: "/" });
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
-    expect(response.body).toContain('window.__CONFIG__={"appName":"Testline ');
-    // The injected JSON must not be able to close the script tag.
-    expect(response.body).not.toContain("</script></script>");
-    expect(response.body).toContain("\\u003c/script>");
+    expect(response.body).toBe(INDEX_HTML);
   });
 
   it("falls back to index.html for client routes", async () => {
@@ -53,7 +51,7 @@ describe("webStatic", () => {
       url: "/app/some-identity/some-conv",
     });
     expect(response.statusCode).toBe(200);
-    expect(response.body).toContain("window.__CONFIG__");
+    expect(response.body).toBe(INDEX_HTML);
     expect(response.headers["cache-control"]).toBe("no-cache");
   });
 
@@ -99,27 +97,10 @@ describe("webStatic", () => {
     expect(post.statusCode).toBe(404);
   });
 
-  it("serves /config.json as the fallback config source", async () => {
+  // The runtime-branding endpoint is gone with the knob it served (#556); a
+  // request for it is an ordinary client route, not a config source.
+  it("has no /config.json endpoint left", async () => {
     const response = await app.inject({ method: "GET", url: "/config.json" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ appName: "Testline </script>" });
-  });
-});
-
-// Under `script-src 'self'` the injected bootstrap was silently blocked in
-// every browser for as long as the CSP has existed, and nothing failed — the
-// client just fell back to fetching /config.json. The hash the policy carries
-// therefore has to come from the script itself, and stay that way.
-describe("runtimeConfigScript", () => {
-  it("hashes exactly the script the document carries", async () => {
-    const { js, cspSource } = runtimeConfigScript("Testline </script>");
-    const body = (await app.inject({ method: "GET", url: "/" })).body;
-    const inline = [
-      ...body.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g),
-    ].map(([, script]) => script ?? "");
-
-    expect(inline).toEqual([js]);
-    const digest = createHash("sha256").update(js, "utf8").digest("base64");
-    expect(cspSource).toBe(`'sha256-${digest}'`);
+    expect(response.headers["content-type"]).toContain("text/html");
   });
 });

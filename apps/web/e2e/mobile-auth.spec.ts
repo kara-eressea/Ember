@@ -151,10 +151,9 @@ test("phone: every auth screen fills the screen, and every control on it is a 44
     TARGET_MIN_PX,
   );
 
-  // The wordmark is the configured product name, not a literal (#537).
-  // document.title is written from the same appConfig() by main.tsx, so this
-  // compares the mark against the config rather than against a string this
-  // file made up — which is the whole point of the config.
+  // The wordmark is the product name, not a literal (#537, #556). The document
+  // title is the same constant, so this compares the two renderings of it
+  // rather than against a string this file made up.
   const appName = await page.evaluate(() => document.title);
   expect(appName).not.toBe("");
   await expect(page.getByTestId("wordmark")).toHaveText(appName);

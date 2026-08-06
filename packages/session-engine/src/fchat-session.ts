@@ -210,7 +210,9 @@ export interface FchatSessionOptions {
   readonly tickets: SessionTickets;
   /** F-Chat WebSocket URL (config FCHAT_URL, or fchat-sim's wsUrl). */
   readonly wsUrl: string;
-  /** IDN cname/cversion (config CLIENT_NAME/CLIENT_VERSION). */
+  /** IDN cname/cversion. The host supplies both — the server and the desktop
+   * shell pass the frozen product name (`APP_NAME`) and the release version;
+   * the engine stays a library and takes whatever it is handed. */
   readonly clientName: string;
   readonly clientVersion: string;
   readonly logger?: SessionLogger;

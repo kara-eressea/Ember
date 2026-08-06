@@ -16,13 +16,13 @@ export const APP_ACCOUNT_USERNAME = "desktop";
  * (`emailField` = `z.email()`) and there is nowhere to send mail, so this is a
  * placeholder in the reserved `.localhost` namespace, which by definition
  * never resolves off this machine. The product half is derived from the app's
- * configured name (Electron's `app.getName()` — `productName` in
- * package.json), because the product name is config, not a literal to scatter
- * (CLAUDE.md).
+ * own name (Electron's `app.getName()` — `productName` in package.json, which
+ * must equal `APP_NAME` in @emberchat/protocol, #556) rather than spelled out
+ * here, because the name belongs in one place and this is not it.
  */
 const EMAIL_DOMAIN_SUFFIX = ".localhost";
 
-/** If the configured name slugs down to nothing, this stands in. */
+/** If the name slugs down to nothing, this stands in. */
 const FALLBACK_SLUG = "desktop-app";
 
 export interface AppAccount {
@@ -39,7 +39,7 @@ export function productSlug(productName: string): string {
   return slug === "" ? FALLBACK_SLUG : slug;
 }
 
-/** The provisioned account's identity, derived from the configured app name. */
+/** The provisioned account's identity, derived from the app's own name. */
 export function appAccount(productName: string): AppAccount {
   return {
     email: `${APP_ACCOUNT_USERNAME}@${productSlug(productName)}${EMAIL_DOMAIN_SUFFIX}`,
