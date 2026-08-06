@@ -23,14 +23,15 @@
 // handled by the same arithmetic and wants the same answer).
 //
 // Shape is deliberately `layout-mode.ts`'s: a module-level listener set armed
-// by the first consumer, one coalesced frame per burst, `useSyncExternalStore`
-// for React. The difference is what the consumer is — see startKeyboardTracking
-// at the bottom: the inset is published as a CSS custom property, NOT as React
-// state, because a keyboard animates open over ~250ms and re-rendering the
-// conversation on every one of those frames is a cost with no benefit. CSS can
-// read a variable that changes 15 times without React hearing about it at all.
+// by the first consumer, one coalesced frame per burst. The difference is what
+// the consumer is — see startKeyboardTracking at the bottom: the inset is
+// published as a CSS custom property, NOT as React state, because a keyboard
+// animates open over ~250ms and re-rendering the conversation on every one of
+// those frames is a cost with no benefit. CSS can read a variable that changes
+// 15 times without React hearing about it at all. That decision is why this
+// module imports no React: the `useSyncExternalStore` hook it once also
+// exported never found a consumer, and was dropped in #559.
 
-import { useSyncExternalStore } from "react";
 import { uiZoom } from "./ui-zoom.js";
 
 /** The CSS custom property the tracker publishes on :root. Consumers style
@@ -251,13 +252,6 @@ function subscribe(listener: () => void): () => void {
       unwatch();
     }
   };
-}
-
-/** The live keyboard inset, kept current. For the rare consumer that needs the
- * number in JS; anything that only needs to *lay out* around the keyboard
- * should read the CSS variable instead and cost React nothing. */
-export function useKeyboardInset(): number {
-  return useSyncExternalStore(subscribe, getSnapshot, () => 0);
 }
 
 /**

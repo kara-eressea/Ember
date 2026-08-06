@@ -72,7 +72,6 @@ const LABEL_BAND =
 
 /** Controls the floor does not apply to, keyed by their (de-hashed) class. */
 const EXCLUSIONS: Record<string, string> = {
-  bodyLink: PROSE_LINE,
   bodyMention: PROSE_LINE,
   bodyChannel: PROSE_LINE,
   nameButton: PROSE_LINE,

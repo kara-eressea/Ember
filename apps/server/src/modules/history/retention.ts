@@ -17,7 +17,7 @@ const POLICY_MAX_AGE_MS: Record<Exclude<RetentionPolicy, "forever">, number> = {
 };
 
 /** Rows deleted per statement; the sweep loops until the backlog is gone. */
-export const RETENTION_BATCH_SIZE = 5_000;
+const RETENTION_BATCH_SIZE = 5_000;
 
 export interface RetentionJobOptions {
   readonly db: Db;

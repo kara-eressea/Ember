@@ -13,10 +13,10 @@ import type { FchatSession } from "@emberchat/session-engine";
 /** Cache age below which a refresh request serves the cache without touching
  * the wire. The listings move slowly; the cooldown keeps a busy browser-open
  * habit from becoming CHA/ORS spam. */
-export const DIRECTORY_REFRESH_COOLDOWN_MS = 60_000;
+const DIRECTORY_REFRESH_COOLDOWN_MS = 60_000;
 /** How long a refresh waits for the CHA+ORS responses before serving
  * whatever the cache holds. Never an error — staleness is displayable. */
-export const DIRECTORY_RESPONSE_TIMEOUT_MS = 10_000;
+const DIRECTORY_RESPONSE_TIMEOUT_MS = 10_000;
 
 export type DirectoryKind = "official" | "open";
 

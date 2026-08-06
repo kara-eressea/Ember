@@ -7,7 +7,7 @@ import { lt } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { authSessions } from "../../db/schema.js";
 
-export const SESSION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const SESSION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 interface JanitorLogger {
   info: (obj: object, msg: string) => void;

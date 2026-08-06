@@ -34,7 +34,7 @@ export type SocialFetchResult =
 
 /** An accept lands friendadd on both parties and often rides alongside a
  * friendrequest event — one burst must cost one refetch, not one each. */
-export const SOCIAL_REFRESH_DEBOUNCE_MS = 500;
+const SOCIAL_REFRESH_DEBOUNCE_MS = 500;
 
 export interface SocialServiceOptions {
   db: Db;

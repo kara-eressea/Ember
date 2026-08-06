@@ -48,18 +48,18 @@ export const WATCHDOG_MS = 90_000;
  * character no longer exists on the account — retrying forever would churn
  * tickets, which invalidate account-wide and degrade sibling sessions.
  */
-export const MAX_IDENTIFY_REJECTIONS = 3;
+const MAX_IDENTIFY_REJECTIONS = 3;
 /** JCH sends without an echo before a channel is dropped from the desired
  * set. See #unconfirmedJoins. */
-export const MAX_UNCONFIRMED_JOIN_ATTEMPTS = 2;
+const MAX_UNCONFIRMED_JOIN_ATTEMPTS = 2;
 
 /** An immediate ad may briefly wait out a short gate (tests, generous
  * VARs) but never longer than the client's ack window can survive. */
-export const AD_IMMEDIATE_WAIT_CEILING_MS = 10_000;
+const AD_IMMEDIATE_WAIT_CEILING_MS = 10_000;
 
 /** The server paces character searches at one per 5 s (ERR 50) — a
  * protocol constant; no VAR carries it. */
-export const FKS_PACE_SECONDS = 5;
+const FKS_PACE_SECONDS = 5;
 /**
  * Minimum spacing between our own STA frames. F-Chat refuses a status change
  * made within five seconds of the last one — ERR 14, "You must wait five
@@ -68,7 +68,7 @@ export const FKS_PACE_SECONDS = 5;
  * status changes itself because the browsers can't: auto-away runs in every
  * attached browser, and only the session knows what already went on the wire.
  */
-export const STATUS_GATE_MS = 5_500;
+const STATUS_GATE_MS = 5_500;
 /** How long a fired search waits for its FKS/ERR before giving up. */
 const SEARCH_RESPONSE_TIMEOUT_MS = 10_000;
 

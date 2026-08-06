@@ -56,8 +56,10 @@ The M7 kickoff coupling analysis found the engine already almost a library.
 | `api-client.ts`, `ticket-manager.ts` | `apps/server/src/modules/flist-api/` |
 | `vault.ts` (CredentialVault) | `apps/server/src/modules/flist-accounts/` (misfiled there — it has zero dependency on that module) |
 
-Dependencies after the move: `ws`, node stdlib, `@emberchat/fchat-protocol`,
-zod (plus vitest and `@emberchat/fchat-sim` for the suites that came along).
+Dependencies after the move: `ws`, node stdlib, `@emberchat/fchat-protocol`
+(plus vitest and `@emberchat/fchat-sim` for the suites that came along). zod
+was provisioned here too and never imported — the manifest entry and the
+boundary allow-list row were both dropped in #559, so the walk now refuses it.
 No Fastify, no pino (logging is already a structural `SessionLogger`), no
 Drizzle, no config module — all I/O is injected or event-bus-inverted. The
 prediction held: nothing needed a new injection seam to make the move.

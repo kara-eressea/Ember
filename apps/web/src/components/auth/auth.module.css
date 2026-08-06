@@ -76,17 +76,6 @@
   font-size: calc(13.5px * var(--eb-font-ui-scale));
 }
 
-.inputSuffix {
-  position: absolute;
-  right: 12px;
-  background: none;
-  border: none;
-  color: var(--eb-meta);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: var(--eb-font-ui-tiny);
-  padding: 4px;
-}
-
 .checkboxRow {
   display: flex;
   align-items: center;

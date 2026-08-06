@@ -22,6 +22,7 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { setWindowWidth } from "../../test-support/dom.js";
 
 // The shell opens the socket and subscribes every identity on mount; none of
 // that is under test here.
@@ -109,13 +110,6 @@ function session(): IdentitySession {
       fetchedAt: 0,
     },
   };
-}
-
-function setWindowWidth(width: number) {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
 }
 
 function renderShell(path: string) {

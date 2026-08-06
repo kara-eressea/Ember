@@ -17,6 +17,7 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { stubNoHover } from "../../test-support/dom.js";
 
 vi.mock("../../gateway/socket.js", () => ({
   gateway: { cmd: vi.fn().mockResolvedValue({ ok: true }) },
@@ -42,22 +43,6 @@ function seedPrefs(patch: Partial<UserPrefs> = {}): void {
   } as unknown as IdentitySession;
   useSessionsStore.setState({ sessions: { [IDENTITY]: session } });
   useUiStore.setState({ activeIdentityId: IDENTITY });
-}
-
-/** jsdom ships no matchMedia at all, which is already the "has a hover"
- * answer (useNoHover defaults to false). This installs one that says the
- * primary pointer cannot hover. */
-function stubNoHover(noHover: boolean): void {
-  vi.stubGlobal(
-    "matchMedia",
-    (query: string): MediaQueryList =>
-      ({
-        matches: query === "(hover: none)" ? noHover : false,
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }) as unknown as MediaQueryList,
-  );
 }
 
 const initialSessions = useSessionsStore.getState().sessions;

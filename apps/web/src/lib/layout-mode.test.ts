@@ -13,13 +13,7 @@ import {
   layoutModeFor,
   startLayoutTracking,
 } from "./layout-mode.js";
-
-function setWindowWidth(width: number) {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
-}
+import { setWindowWidth } from "../test-support/dom.js";
 
 function setUiScale(percent: number) {
   document.documentElement.style.setProperty(

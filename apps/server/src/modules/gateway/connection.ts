@@ -66,17 +66,17 @@ import {
 import type { ResolvedUserPrefs, UserPrefsCache } from "./user-prefs.js";
 
 /** Close the socket if no hello arrived within this window. */
-export const HELLO_TIMEOUT_MS = 10_000;
+const HELLO_TIMEOUT_MS = 10_000;
 /** Outbound backlog beyond this is a slow consumer — disconnect, don't buffer. */
-export const MAX_BUFFERED_BYTES = 1024 * 1024;
+const MAX_BUFFERED_BYTES = 1024 * 1024;
 /** Messages per catchup frame. */
-export const CATCHUP_BATCH_SIZE = 200;
+const CATCHUP_BATCH_SIZE = 200;
 /**
  * Idle re-verification interval: a read-only listener sends no frames, so
  * without this a revoked session would keep receiving fan-out forever.
  * (Frames re-verify on every sub/cmd/ack, like REST does per request.)
  */
-export const AUTH_RECHECK_MS = 30_000;
+const AUTH_RECHECK_MS = 30_000;
 /** Inbound frame quota — generous for humans, a wall for loops. */
 export const MAX_FRAMES_PER_MINUTE = 600;
 /**
@@ -88,7 +88,7 @@ export const MAX_FRAMES_PER_MINUTE = 600;
  * pings; a tick that finds the previous ping unanswered terminates the
  * socket, which unsubscribes it and lets the client reconnect and catch up.
  */
-export const HEARTBEAT_MS = 30_000;
+const HEARTBEAT_MS = 30_000;
 
 /**
  * Test-only connection knobs (an integration test can neither wait out a 10s

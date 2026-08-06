@@ -31,7 +31,7 @@ export interface OutboxOptions {
 
 const POLL_INTERVAL_MS = 1000;
 /** Failed rows older than this are swept (their text is gone with them). */
-export const FAILED_ROW_TTL_MS = 7 * 86_400_000;
+const FAILED_ROW_TTL_MS = 7 * 86_400_000;
 /** How often the failed-row sweep runs (piggybacked on the poll). */
 const FAILED_SWEEP_INTERVAL_MS = 60 * 60_000;
 

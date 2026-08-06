@@ -19,6 +19,7 @@ import { MemoryRouter } from "react-router";
 import { MemberContextMenu } from "./MemberContextMenu.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
 import type { MemberDto } from "@emberchat/protocol";
+import { stubNoHover } from "../../test-support/dom.js";
 
 vi.mock("../../lib/social.js", () => ({
   loadSocial: vi.fn(() => Promise.resolve()),
@@ -29,22 +30,6 @@ afterEach(() => {
   useSessionsStore.setState({ sessions: initialSessions });
   vi.unstubAllGlobals();
 });
-
-/** jsdom ships no matchMedia, which is already the "has a hover" answer
- * (useNoHover defaults to false). This installs one that says otherwise —
- * same stub RichText.touch.test.tsx uses. */
-function stubNoHover(): void {
-  vi.stubGlobal(
-    "matchMedia",
-    (query: string): MediaQueryList =>
-      ({
-        matches: query === "(hover: none)",
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }) as unknown as MediaQueryList,
-  );
-}
 
 const HARBOR: ChannelView = {
   convId: "c1",

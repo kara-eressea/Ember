@@ -7,7 +7,7 @@
 
 import type { SessionLogger } from "@emberchat/session-engine";
 
-export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface UpdateCheckerOptions {
   /** The running version ("0.5.0" or "v0.5.0" — the v is tolerated). */

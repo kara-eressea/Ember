@@ -7,13 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { usePane, visiblePane } from "./pane.js";
-
-function setWindowWidth(width: number) {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
-}
+import { setWindowWidth } from "../test-support/dom.js";
 
 /** A window resize, the way the browser delivers one. */
 function resizeTo(width: number) {
