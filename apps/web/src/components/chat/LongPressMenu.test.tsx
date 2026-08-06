@@ -23,7 +23,7 @@ import {
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
 import { useEiconMenuStore } from "../../stores/eicon-menu.js";
-import { NO_HOVER_QUERY } from "../../lib/pointer.js";
+import { setWindowWidth, stubNoHover } from "../../test-support/dom.js";
 
 vi.mock("../../gateway/socket.js", () => ({
   gateway: { cmd: vi.fn().mockResolvedValue({ ok: true }) },
@@ -45,27 +45,9 @@ function seed(): void {
   useUiStore.setState({ activeIdentityId: IDENTITY });
 }
 
-/** The capability the recognizer is gated on. jsdom has no matchMedia at all,
- * which is the desktop answer — so the touch cases have to supply one. */
-function stubNoHover(noHover: boolean): void {
-  vi.stubGlobal(
-    "matchMedia",
-    (query: string) =>
-      ({
-        matches: query === NO_HOVER_QUERY ? noHover : false,
-        media: query,
-        addEventListener: () => undefined,
-        removeEventListener: () => undefined,
-      }) as unknown as MediaQueryList,
-  );
-}
-
-function setWindowWidth(width: number): void {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
-}
+// `stubNoHover` supplies the capability the recognizer is gated on: jsdom has
+// no matchMedia at all, which is the desktop answer, so the touch cases have
+// to install one.
 
 function renderEicon() {
   return render(

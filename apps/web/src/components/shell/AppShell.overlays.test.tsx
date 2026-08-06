@@ -28,6 +28,7 @@ import {
   type IdentitySession,
 } from "../../stores/sessions.js";
 import { useUiStore } from "../../stores/ui.js";
+import { setWindowWidth } from "../../test-support/dom.js";
 
 vi.mock("../../gateway/socket.js", () => ({
   gateway: {
@@ -204,13 +205,6 @@ function profileOf(name: string): ProfileResponse {
     note: null,
     timezone: null,
   };
-}
-
-function setWindowWidth(width: number) {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
 }
 
 function renderShell(path: string) {

@@ -32,11 +32,11 @@ function sameCharacter(a: string, b: string | undefined): boolean {
 }
 
 /** Rows older than this are aged out (spec: retention ~1 week). */
-export const SEEN_RETENTION_MS = 7 * 86_400_000;
+const SEEN_RETENTION_MS = 7 * 86_400_000;
 /** Per-channel ceiling (spec: a few hundred); oldest lastSeen evicts first. */
-export const SEEN_CAP_PER_CHANNEL = 300;
+const SEEN_CAP_PER_CHANNEL = 300;
 /** How often the background sweep ages out expired rows. */
-export const SEEN_SWEEP_INTERVAL_MS = 3_600_000;
+const SEEN_SWEEP_INTERVAL_MS = 3_600_000;
 
 /** The slice of FchatSession the store consumes (test seam). */
 export interface SeenSessionLike {

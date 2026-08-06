@@ -1579,12 +1579,6 @@
   vertical-align: baseline;
 }
 
-.bodyLink {
-  color: var(--eb-accent-text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .bodyMention {
   color: var(--eb-accent-text);
   background: var(--eb-accent-soft);
@@ -1756,12 +1750,6 @@
      message font size like every other line's timestamp (#381). */
   font-size: var(--eb-msg-meta-font, 10.5px);
   color: var(--eb-meta);
-}
-
-.footerControls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 /* One footer run (left toggles+chips / right hints+counter), all meta. */

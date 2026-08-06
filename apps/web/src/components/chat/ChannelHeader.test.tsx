@@ -13,6 +13,7 @@ import { ChannelHeader, DmHeader } from "./ChannelHeader.js";
 import { gateway } from "../../gateway/socket.js";
 import { useProfileStore } from "../../stores/profile.js";
 import { useUiStore } from "../../stores/ui.js";
+import { setWindowWidth } from "../../test-support/dom.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -57,14 +58,9 @@ function measureRow(width: number) {
   resize(width);
 }
 
-/** Put the window on a tier. The header only collapses below `wide`, and the
- * `phone` tier keeps exactly two chips whatever the measurement says. */
-function setWindowWidth(width: number) {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
-}
+// `setWindowWidth` puts the window on a tier: the header only collapses below
+// `wide`, and the `phone` tier keeps exactly two chips whatever the
+// measurement says.
 
 const initialSessions = useSessionsStore.getState().sessions;
 afterEach(() => {

@@ -1,7 +1,7 @@
 // The library boundary, enforced instead of reviewed for.
 //
 // design/standalone-client.md fixes this package's dependencies at: `ws`, the
-// node stdlib, `@emberchat/fchat-protocol` and zod — no Fastify, no pino (the
+// node stdlib and `@emberchat/fchat-protocol` — no Fastify, no pino (the
 // logger is the structural `SessionLogger`), no Drizzle, no config module. All
 // I/O is injected or event-bus-inverted, which is what lets the same engine
 // drive the Fastify bouncer and the embedded desktop one. The design doc's
@@ -27,7 +27,7 @@ const SRC_DIR = import.meta.dirname;
 
 /** Everything the engine may import at runtime. Node builtins are allowed on
  * top of this (see `isBuiltin`). */
-const ALLOWED_RUNTIME = new Set(["ws", "zod", "@emberchat/fchat-protocol"]);
+const ALLOWED_RUNTIME = new Set(["ws", "@emberchat/fchat-protocol"]);
 
 /** Additionally allowed in `*.test.ts` — the runner and the protocol sim the
  * engine's suites drive instead of the live F-Chat server. */
@@ -151,6 +151,11 @@ describe("session-engine boundary", () => {
       "drizzle-orm",
       "pino",
       "pg",
+      // The engine was provisioned with zod at the extraction and never
+      // imported it (#559). Dropping the manifest entry is only half the
+      // fix; this row is the other half, so re-adding the import has to be
+      // argued into the allow-list above rather than resolving off a hoist.
+      "zod",
       "../../db/index.js",
       "../../../apps/server/src/config.js",
     ]) {
@@ -163,7 +168,6 @@ describe("session-engine boundary", () => {
   it("allows the dependencies the design fixes", () => {
     for (const specifier of [
       "ws",
-      "zod",
       "node:crypto",
       "@emberchat/fchat-protocol",
       "./session-state.js",

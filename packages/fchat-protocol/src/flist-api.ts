@@ -5,6 +5,14 @@
 // minutes, each new ticket invalidates all previous tickets account-wide,
 // and the endpoint budget is ≤ 1 request/second — all ticket acquisition
 // must go through the per-account TicketManager.
+//
+// Every schema here gets its `z.infer` companion type, whether or not anything
+// names it today. That is deliberate and was re-affirmed in #559: this file is
+// the repo's written record of the F-List wire shapes, and a schema whose type
+// exists only inside a `parse()` call site documents nothing. The alias is the
+// schema's public face — the thing a consumer imports to hold a parsed value —
+// so a dead-code sweep finding one unreferenced is finding an endpoint we have
+// not needed yet, not a mistake. Do not delete them for being unused.
 
 import { z } from "zod";
 

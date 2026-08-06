@@ -407,7 +407,7 @@ function exportTimestamp(date: Date): string {
 }
 
 /** Messages fetched per streamed page (keyset on messages.id). */
-export const EXPORT_PAGE_SIZE = 1000;
+const EXPORT_PAGE_SIZE = 1000;
 
 const EXPORT_CONTENT_TYPES = {
   json: "application/json; charset=utf-8",

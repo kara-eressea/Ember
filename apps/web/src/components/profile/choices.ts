@@ -12,8 +12,6 @@ export const CHOICES = [
   { id: "no", label: "No", glyph: "✕", color: "var(--eb-kink-no)" },
 ] as const;
 
-export type ChoiceId = (typeof CHOICES)[number]["id"];
-
 export function choiceOf(id: string) {
   return CHOICES.find((choice) => choice.id === id);
 }

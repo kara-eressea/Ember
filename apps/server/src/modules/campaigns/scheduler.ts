@@ -49,7 +49,7 @@ export const CAMPAIGN_INTERVAL_JITTER_MS = 10 * 60_000;
 /** First-post stagger after Start — rotation never fires instantly. */
 export const CAMPAIGN_START_JITTER_MS = 3 * 60_000;
 /** Minimum gap between any two of a user's ads, campaign or manual. */
-export const CAMPAIGN_AD_SPACING_MS = 7_500;
+const CAMPAIGN_AD_SPACING_MS = 7_500;
 /** A live ERR 56 this soon after our own campaign LRP is attributed to it
  * (LRP carries no correlation on the wire). */
 const REFUSAL_ATTRIBUTION_MS = 3_000;

@@ -4,6 +4,10 @@
 // command schemas (the live server may grow new values, and an unknown value
 // must never make a whole command unparseable); these unions are for
 // client-constructed commands and for downstream narrowing.
+//
+// Every tuple gets its companion type, named or not — re-affirmed in #559.
+// The type is the tuple's public face, and one with no consumer means a value
+// set nothing has had to narrow yet. Do not delete them for being unused.
 
 export const GENDERS = [
   "Male",

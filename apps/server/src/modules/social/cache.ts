@@ -27,7 +27,7 @@ interface Entry extends SocialLists {
 /** GET serves the cache inside this window; older entries refetch. The
  * snapshot serves whatever is cached regardless of age — the manual
  * refresh button (and this TTL on the next GET) covers staleness. */
-export const SOCIAL_CACHE_TTL_MS = 15 * 60_000;
+const SOCIAL_CACHE_TTL_MS = 15 * 60_000;
 
 export class SocialCache {
   readonly #entries = new Map<string, Entry>();

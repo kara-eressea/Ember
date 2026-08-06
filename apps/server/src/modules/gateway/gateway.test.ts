@@ -54,9 +54,11 @@ import { MAX_FRAMES_PER_MINUTE } from "./connection.js";
 
 const ACCOUNT = "amber@example.test";
 const CHARACTER = "Amber Vale";
-/** Injected handshake window (production: HELLO_TIMEOUT_MS). */
+/** Injected handshake window; production's is `HELLO_TIMEOUT_MS`, private to
+ * connection.ts — this is a shorter one, not a reference to that value. */
 const HELLO_TIMEOUT_TEST_MS = 2_000;
-/** Injected slow-consumer cap (production: MAX_BUFFERED_BYTES). */
+/** Injected slow-consumer cap; production's is `MAX_BUFFERED_BYTES`, likewise
+ * private to connection.ts. */
 const MAX_BUFFERED_TEST_BYTES = 16 * 1024;
 
 // Sim-backed round trips (connect → IDN → join → relay) outgrow the 5s default.

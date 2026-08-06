@@ -8,6 +8,14 @@
 // the sparse form. Each preferences pane adds its fields here alongside its
 // milestone step; `sendDelaySeconds` predates this document and stays a
 // dedicated column.
+//
+// Each vocabulary below is an `as const` tuple plus its `(typeof X)[number]`
+// companion type, whether or not anything names the type today. Deliberate,
+// and re-affirmed in #559: the tuple is the runtime value the schema
+// validates against and the type is its public face — the thing a consumer
+// imports to hold one of these values — so a sweep finding one unreferenced
+// has found a preference no UI has needed to name yet, not a mistake. Do not
+// delete them for being unused.
 
 import { z } from "zod";
 
