@@ -45,7 +45,7 @@ import {
   messages,
   outboxMessages,
 } from "../../db/schema.js";
-import { MAX_CONVERSATIONS_PER_IDENTITY } from "../history/sink.js";
+import { ConversationLimitError } from "../history/sink.js";
 import {
   CONTAINER_BOOT_MS,
   FRAME_WAIT_MS,
@@ -3812,30 +3812,40 @@ describe("gateway refusals", () => {
   it("refuses pm.open past the per-identity conversation ceiling", async () => {
     const { identityId, token } = await createIdentity();
     await startSession(identityId);
-    // Fill the table to the cap in one insert; the ceiling exists so a
-    // browser looping pm.open cannot bloat it.
-    await db.insert(conversations).values(
-      Array.from({ length: MAX_CONVERSATIONS_PER_IDENTITY }, (_unused, i) => ({
-        identityId,
-        kind: "pm" as const,
-        partnerCharacter: `Filler ${String(i)}`,
-        title: `Filler ${String(i)}`,
-      })),
-    );
     const client = await connectClient();
     await client.hello(token);
     await client.subscribe(identityId);
 
+    // The ceiling itself (and the count that reaches it) belongs to the sink
+    // and is tested there; what is dark here is the gateway's handling —
+    // this one error class must become an ack instead of propagating as an
+    // internal error, and every other failure must still propagate.
+    const spy = vi
+      .spyOn(app.history, "ensurePmConversation")
+      .mockRejectedValue(new ConversationLimitError());
     client.send({
       t: "cmd",
       id: 1,
       d: { identityId, action: "pm.open", d: { character: "One Too Many" } },
     });
-    // Acked as a refusal, not thrown as an internal error.
     expect((await ackFor(client, 1)).d).toEqual({
       ok: false,
       error: "Too many conversations for this identity",
     });
+
+    spy.mockRejectedValue(new Error("the database fell over"));
+    client.send({
+      t: "cmd",
+      id: 2,
+      d: { identityId, action: "pm.open", d: { character: "Another" } },
+    });
+    // Anything else is a genuine fault: it reaches the cmd handler's catch,
+    // which says so rather than dressing it up as a user-facing refusal.
+    expect((await ackFor(client, 2)).d).toEqual({
+      ok: false,
+      error: "internal error",
+    });
+    spy.mockRestore();
   });
 
   it("routes every campaign command and turns a CampaignError into plain language", async () => {

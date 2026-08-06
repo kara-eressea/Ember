@@ -31,7 +31,7 @@ import {
   FRAME_WAIT_MS,
   INTEGRATION_SLOW_MS,
 } from "../../test-support/budgets.js";
-import { FAILED_ROW_TTL_MS, Outbox } from "./outbox.js";
+import { Outbox } from "./outbox.js";
 
 // Every wait below is FRAME_WAIT_MS; the per-test budget must sit ABOVE it or
 // the outer timeout fires first and the helper's diagnostic never prints
@@ -40,6 +40,15 @@ vi.setConfig({ testTimeout: INTEGRATION_SLOW_MS });
 
 /** Fast enough that "the next poll" is never the slow part of a test. */
 const POLL_MS = 20;
+
+/**
+ * Older than any plausible failed-row TTL. Deliberately a fixed date rather
+ * than `now - FAILED_ROW_TTL_MS`: the sweep's window is the module's business,
+ * and a test that imports the constant to rebuild the same arithmetic only
+ * restates it. "Ancient" and "just now" are the two cases the sweep has to
+ * separate, whatever the window happens to be.
+ */
+const LONG_AGO = new Date("2001-01-01T00:00:00Z");
 
 let testDb: TestDb;
 let db: Db;
@@ -423,7 +432,6 @@ describe("outbox failed-row sweep", () => {
   it("reaps failures past the TTL, keeps recent ones, and fans the change", async () => {
     const identityId = await seedIdentity();
     const convId = await seedChannelConversation(identityId, "Cabin Fever");
-    const now = Date.now();
     const failed = (
       markdown: string,
       failedAt: Date | null,
@@ -439,22 +447,15 @@ describe("outbox failed-row sweep", () => {
       releaseAt,
     });
     await db.insert(outboxMessages).values([
-      // Past the week: gone.
-      failed(
-        "ancient",
-        new Date(now - FAILED_ROW_TTL_MS - 60_000),
-        new Date(now - FAILED_ROW_TTL_MS - 60_000),
-      ),
+      // Well past any TTL: gone.
+      failed("ancient", LONG_AGO, LONG_AGO),
       // A pre-migration row has no failedAt — the sweep falls back to
       // releaseAt rather than keeping it forever.
-      failed("legacy", null, new Date(now - FAILED_ROW_TTL_MS - 60_000)),
-      // Failed a week after its release: the TTL keys on the failure, so
-      // this one still has its full window to be seen.
-      failed(
-        "recent",
-        new Date(now - 60_000),
-        new Date(now - FAILED_ROW_TTL_MS - 60_000),
-      ),
+      failed("legacy", null, LONG_AGO),
+      // Failed long after its release: the TTL keys on the failure, not on
+      // releaseAt, so this one still has its full window to be seen (M7
+      // audit). Both halves of that rule are in this one row.
+      failed("recent", new Date(), LONG_AGO),
     ]);
     const h = makeOutbox(new Map());
     h.outbox.start();
@@ -476,7 +477,6 @@ describe("outbox failed-row sweep", () => {
     const theirs = await seedIdentity();
     const mineConv = await seedChannelConversation(mine, "Mine");
     const theirsConv = await seedChannelConversation(theirs, "Theirs");
-    const old = new Date(Date.now() - FAILED_ROW_TTL_MS - 60_000);
     await db.insert(outboxMessages).values([
       {
         identityId: mine,
@@ -484,8 +484,8 @@ describe("outbox failed-row sweep", () => {
         markdown: "stale",
         bbcode: "stale",
         state: "failed",
-        failedAt: old,
-        releaseAt: old,
+        failedAt: LONG_AGO,
+        releaseAt: LONG_AGO,
       },
       {
         identityId: theirs,
@@ -494,7 +494,7 @@ describe("outbox failed-row sweep", () => {
         bbcode: "fresh",
         state: "failed",
         failedAt: new Date(),
-        releaseAt: old,
+        releaseAt: LONG_AGO,
       },
     ]);
     const h = makeOutbox(new Map());
