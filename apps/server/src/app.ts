@@ -4,6 +4,7 @@ import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, {
+  type FastifyError,
   type FastifyInstance,
   type FastifyServerOptions,
 } from "fastify";
@@ -132,7 +133,7 @@ export async function buildApp({
   // port. 4xx keeps flowing through the framework's own serialization —
   // those messages (zod validation, the rate limiter) are about the request,
   // not about us.
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler<FastifyError>((error, request, reply) => {
     if ((error.statusCode ?? 500) < 500) {
       return reply.send(error);
     }

@@ -74,9 +74,9 @@ describe("upstreamStatus", () => {
 
   it("keeps the two arms written for the user", () => {
     expect(upstreamStatus(new AccountLockedError("amber"), log).code).toBe(409);
-    expect(upstreamStatus(new AccountLockedError("amber"), log).error).toContain(
-      "locked",
-    );
+    expect(
+      upstreamStatus(new AccountLockedError("amber"), log).error,
+    ).toContain("locked");
   });
 
   it("logs an internal failure and answers with a fixed 502", () => {

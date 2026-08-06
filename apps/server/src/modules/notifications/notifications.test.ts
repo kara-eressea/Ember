@@ -647,7 +647,7 @@ describe("mute cache", () => {
         return (...args: unknown[]) =>
           wrapChain(call(value, target, args) as object);
       },
-    }) as Db;
+    });
   }
 
   it("never refills from a read a prefs patch overtook", async () => {

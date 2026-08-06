@@ -780,9 +780,9 @@ describe("FchatSession against fchat-sim", () => {
     // sibling session on this account minted while this one was reconnecting
     // — which mints another, kills that one account-wide, and cascades.
     expect(invalidate).toHaveBeenCalledWith("fct_bogus");
-    expect(invalidate.mock.calls.every(([ticket]) => ticket !== undefined)).toBe(
-      true,
-    );
+    expect(
+      invalidate.mock.calls.every(([ticket]) => ticket !== undefined),
+    ).toBe(true);
   });
 
   it("does not rejoin a channel it was kicked from", async () => {
