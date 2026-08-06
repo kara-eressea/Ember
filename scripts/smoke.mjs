@@ -1,13 +1,18 @@
 // Smoke test against a running EmberChat instance pointed at fchat-sim
 // (M1 step 11: "docker compose up → usable app against sim"). Walks the full
-// slice over the public surface: statics, register,
+// slice over the public surface: statics, sign-in,
 // F-List account vaulting (ticket flow server↔sim), identity creation, and a
 // gateway session that actually reaches "online".
 //
-//   node scripts/smoke.mjs http://127.0.0.1:3900
+//   node scripts/smoke.mjs http://127.0.0.1:3900 you@example.test your-password
+//
+// The account is not created here: instances are admin-only since M7, so
+// scripts/smoke.sh makes it with the admin CLI in the container first and
+// passes the credentials in. Signing in is what a user does anyway.
 
 const base = process.argv[2] ?? "http://127.0.0.1:3000";
-const unique = String(Date.now());
+const email = process.argv[3] ?? "smoke@example.test";
+const password = process.argv[4] ?? "correct-horse-battery";
 
 function fail(step, detail) {
   console.error(`✗ ${step}: ${detail}`);
@@ -55,15 +60,11 @@ async function json(step, path, { method = "GET", body, token } = {}) {
 }
 
 // ── App account ──────────────────────────────────────────────────────────────
-const session = await json("register", "/api/auth/register", {
+const session = await json("sign in", "/api/auth/login", {
   method: "POST",
-  body: {
-    email: `smoke-${unique}@example.test`,
-    username: `smoke${unique}`,
-    password: "correct-horse-battery",
-  },
+  body: { email, password, deviceLabel: "smoke test" },
 });
-ok("register");
+ok("sign in");
 const token = session.accessToken;
 
 // ── F-List account (ticket fetch server → sim) + identity ────────────────────

@@ -1,0 +1,44 @@
+# The self-hoster's own path, walked end to end (#562).
+#
+# `scripts/smoke.sh` has always existed and ran in no workflow: it builds the
+# production image, brings the whole compose stack up with the `sim` profile
+# (fake F-Chat), creates the app account with the admin CLI in the container,
+# and then walks statics → sign-in → F-List account vaulting (a real ticket
+# round-trip against the sim) → identity → a gateway session that reaches
+# `online`. CI's `image-boot-smoke` job only curls `/healthz`, so
+# docker-compose.yml, the sim profile's wiring, the CLI's path inside the
+# image and the SPA fallback were unguarded — and they are exactly what a
+# person following docs/self-hosting.md runs.
+#
+# Not on every PR: it builds an image and boots five containers. It runs when
+# the deployment surface itself changes, and on demand.
+name: Compose stack smoke
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "scripts/smoke.sh"
+      - "scripts/smoke.mjs"
+      - "packages/fchat-sim/**"
+      - ".github/workflows/compose-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: compose-stack-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      # Everything else the script needs is Docker, which the runner has. No
+      # pnpm install: `smoke.mjs` is dependency-free on purpose (it talks to a
+      # container over HTTP and a WebSocket, exactly as a browser would).
+      # The script dumps the containers' logs itself before tearing them down;
+      # a step here could not, because by then there is nothing left to ask.
+      - name: Build the image, boot the stack, walk it
+        run: ./scripts/smoke.sh

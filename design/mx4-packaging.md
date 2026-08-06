@@ -181,6 +181,31 @@ The build script fingerprints those files internally; this is the cheap second
 witness, and it is the one that would catch a Windows link kind the seal walk
 does not recognise as a way out of the tree.
 
+### The PR leg (#562, added after the fact)
+
+The workflow originally triggered on `v*.*.*` and `workflow_dispatch` only,
+which meant the artifact pipeline, electron-builder and the packaged smoke test
+first ran *after* a release tag was pushed — the worst moment to learn that the
+bundle no longer boots, and the only verification `embedded-server.ts` and
+`main.ts` had at all (a test audit put both at 0% unit coverage; the first is no
+longer).
+
+So the workflow also triggers on pull requests that touch `apps/desktop/**`,
+`packages/session-engine/**` or the workflow file, and those runs take the
+`pr-smoke` job instead of the matrix: **macOS only**, `--mac dir` instead of a
+DMG, and `smoke-packaged.mjs --unpacked`. Same pipeline, same probe, no
+installer.
+
+One platform and that platform, for reasons rather than thrift. Linux is not a
+target (below), and packaging one would mean a runner whose tray needs
+libappindicator and whose `safeStorage` has no keyring — a green that means
+nothing. macOS is a shipped target, its runners are free for public
+repositories, and it is the `utilityProcess` branch of the child split, which is
+what every platform except Windows uses. Windows stays on the tag leg: slower
+runner, slower smoke (a real NSIS install), and the same code path the PR leg
+already proved everywhere else. What only a tag run still answers: the DMG and
+the NSIS script themselves, and Windows' `spawn` branch.
+
 ### macOS is arm64 only, and that is an arch decision about natives
 
 Not a popularity call. The server runtime's native modules are compiled on the

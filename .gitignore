@@ -11,6 +11,11 @@ coverage/
 test-results/
 playwright-report/
 
+# Database dumps — docker-compose.yml's backup service writes here by default
+# (BACKUP_DIR), and scripts/smoke.sh brings that service up too. Never commit
+# one: it is a whole database, and on a self-host it is somebody's chat log.
+backups/
+
 # Environment — never commit secrets; ship .env.example instead
 .env
 .env.*

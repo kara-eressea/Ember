@@ -17,7 +17,7 @@
 // the defect, and the second writer (the arrival path's settle pass), are
 // measured on a real engine in e2e/history-climb.spec.ts and its phone twin.
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { MessageDto } from "@emberchat/protocol";
 import { PREFS_DEFAULTS } from "@emberchat/protocol";
@@ -196,6 +196,7 @@ beforeEach(() => {
   observers.length = 0;
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   useSessionsStore.setState({ sessions: initialSessions });
   useMessagesStore.getState().reset();
 });
@@ -243,12 +244,18 @@ describe("the bottom-stick re-stick observer", () => {
     expect(log.scrollTop).toBe(BOTTOM);
   });
 
-  it("resumes once the reader's hands have been off long enough", async () => {
+  it("resumes once the reader's hands have been off long enough", () => {
     const log = renderLog();
     wheel(log, -100);
     // Past SCROLL_INTENT_WINDOW_MS: the climb is over, and a log left short of
     // the tail with the intent still held is the #284 case again.
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    //
+    // The window is moved on rather than waited out (#546's shape): the gate
+    // reads `performance.now()`, so pushing that forward is exactly "hands off
+    // for longer than the window" — instant, and true at 600 ms rather than
+    // approximately true after a real 600 ms on a loaded runner.
+    const clock = performance.now.bind(performance);
+    vi.spyOn(performance, "now").mockImplementation(() => clock() + 600);
     log.scrollTop = READING_AT;
     geometryMoved();
     expect(log.scrollTop).toBe(BOTTOM);
