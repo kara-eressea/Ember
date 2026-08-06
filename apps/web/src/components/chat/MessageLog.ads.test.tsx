@@ -139,14 +139,22 @@ async function renderLog(): Promise<void> {
   // The log paints a skeleton over hidden rows until the first measurement
   // pass settles (MEASURE_REVEAL_MAX_FRAMES), and hidden rows are not in the
   // accessibility tree — so the ★ affordance is not reachable until then.
-  await waitFor(async () => {
-    await act(async () => {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    });
-    expect(
-      screen.getByRole("button", { name: `Rate ${POSTER}` }),
-    ).toBeInTheDocument();
-  });
+  //
+  // A condition poll with a deliberately generous deadline: the reveal rides
+  // the component's own rAF chain, and CI runs nine packages' suites on four
+  // cores — waitFor's default second was measured expiring there while the
+  // same wait settles locally in a frame or two (#560).
+  await waitFor(
+    async () => {
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      expect(
+        screen.getByRole("button", { name: `Rate ${POSTER}` }),
+      ).toBeInTheDocument();
+    },
+    { timeout: 10_000 },
+  );
 }
 
 const initialSessions = useSessionsStore.getState().sessions;
@@ -172,7 +180,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("the ad row's rate editor (#560)", () => {
+// The renderLog() reveal wait may take most of its 10s deadline on a
+// contended CI runner; the per-test budget has to clear it.
+describe("the ad row's rate editor (#560)", { timeout: 15_000 }, () => {
   it("keeps the ad open while the editor is, then collapses on close", async () => {
     const user = userEvent.setup();
     await renderLog();
