@@ -121,6 +121,7 @@ import {
   writeSecrets,
 } from "./secrets.js";
 import { buildAdminCliEnv } from "./server-env.js";
+import { forkServerChild } from "./server-fork.js";
 import {
   normalizeServerUrl,
   probeServerUrl,
@@ -555,6 +556,9 @@ async function startLocalMode(): Promise<void> {
     webDist: ARTIFACTS.webDist,
     clientVersion: app.getVersion(),
   };
+  // The Electron half of starting a child, handed to the Electron-free
+  // lifecycle module (embedded-server.ts's module comment says why).
+  const serverRuntime = { fork: forkServerChild };
   const account = appAccount(app.getName());
   const plan = planBoot({
     stored: readSecrets(secretsPath(userData), safeStorage),
@@ -570,10 +574,13 @@ async function startLocalMode(): Promise<void> {
     //     `create-user` would fail on a table that does not exist yet.
     //  2. the CLI, once the server has actually exited (`stop()` waits).
     //  3. the real boot, below.
-    const migrator = await startEmbeddedServer({
-      ...serverOptions,
-      authSecret: plan.secrets.authSecret,
-    });
+    const migrator = await startEmbeddedServer(
+      {
+        ...serverOptions,
+        authSecret: plan.secrets.authSecret,
+      },
+      serverRuntime,
+    );
     if (!(await migrator.stop())) {
       throw new Error(
         [
@@ -599,12 +606,15 @@ async function startLocalMode(): Promise<void> {
     writeSecrets(secretsPath(userData), plan.secrets, safeStorage);
   }
 
-  server = await startEmbeddedServer({
-    ...serverOptions,
-    // Stable across boots (that is what makes a seeded session survive a
-    // restart), and it exists only inside the OS keychain.
-    authSecret: plan.secrets.authSecret,
-  });
+  server = await startEmbeddedServer(
+    {
+      ...serverOptions,
+      // Stable across boots (that is what makes a seeded session survive a
+      // restart), and it exists only inside the OS keychain.
+      authSecret: plan.secrets.authSecret,
+    },
+    serverRuntime,
+  );
   server.onUnexpectedExit((code) => {
     if (stopping) {
       return;

@@ -48,7 +48,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox
+      # All three engines, as ci.yml installs them. The `specs` input defaults
+      # to the whole suite, and the whole suite includes the `mobile-webkit`
+      # project (playwright.config.ts) — with two engines installed, this
+      # workflow's own default run died on a missing browser before it could
+      # repeat anything.
+      - run: pnpm --filter @emberchat/web exec playwright install --with-deps chromium firefox webkit
       # Playwright directly rather than `turbo e2e`, so the flags reach it
       # unmangled; `pnpm build` above already produced what the e2e task would
       # have built. Retries off — a retry is what hides the flake we're

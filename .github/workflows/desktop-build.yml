@@ -16,6 +16,18 @@ name: Desktop build
 on:
   push:
     tags: ["v*.*.*"]
+  # The PR path (#562). Until this existed, everything below the workspace's
+  # unit tests — the server-runtime pipeline, electron-builder, and the
+  # packaged smoke test that boots the real bouncer — ran for the first time
+  # *after* a release tag was pushed, which is the worst moment to learn that
+  # the bundle no longer boots. The `paths` filter is what keeps that off every
+  # other PR: nothing here runs unless the shell, the session library they
+  # share, or this file changed.
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "packages/session-engine/**"
+      - ".github/workflows/desktop-build.yml"
   # Proving the pipeline without a release. In this mode nothing is published:
   # the installers land as workflow artifacts and the version is a dev one.
   # (GitHub only registers a workflow_dispatch once the file is on the default
@@ -26,6 +38,8 @@ on:
 jobs:
   package:
     name: package-${{ matrix.os }}
+    # Tags and dispatches build installers; a PR gets the cheaper leg below.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ${{ matrix.runner }}
     permissions:
       # Tag runs upload to the GitHub release; dispatch runs never touch it.
@@ -157,3 +171,72 @@ jobs:
           done
           echo "::error::no GitHub release for $GITHUB_REF_NAME to attach the installer to"
           exit 1
+
+  # The PR leg (#562): the same pipeline as above, minus everything a PR does
+  # not need an answer about.
+  #
+  # ONE PLATFORM, AND IT IS macOS. Not thrift — honesty. The two shipped
+  # targets are macOS and Windows (mx4-packaging.md: no Linux targets, by
+  # decision), so an ubuntu leg would be packaging a platform nobody ships, on
+  # a runner where the tray needs libappindicator and `safeStorage` needs a
+  # keyring the runner does not have — a green that means nothing and a red
+  # that means the runner. macOS is a real target, its runners are free for
+  # public repositories, and it is the `utilityProcess` branch of the child
+  # split (embedded-server.ts), which is the one every other platform uses.
+  # Windows stays on the tag leg: it is the slower runner and the NSIS install
+  # is the slower smoke, and this job exists to catch the pipeline breaking,
+  # not to replace the release build.
+  #
+  # NO INSTALLER, EITHER. `--dir` stops at electron-builder's staging tree and
+  # `--unpacked` points the smoke test at it: the same bundle, the same boot,
+  # without spending a minute making a DMG nobody will mount. What the DMG and
+  # the NSIS script themselves do is still the tag leg's question.
+  pr-smoke:
+    name: desktop-package-smoke
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: macos-latest
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # A version that could not be mistaken for a release, injected the same
+      # way the release leg injects the real one — which is what makes the
+      # smoke test's version assertion below a test of the injection.
+      - id: version
+        run: echo "value=0.0.0-pr.${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @emberchat/desktop server-runtime
+
+      # Invariant 1, as on the tag leg: the Electron rebuild must not have
+      # reached the workspace's own native modules, and the proof is that they
+      # still load under plain Node.
+      - name: Workspace natives still load under Node (invariant 1)
+        run: >-
+          pnpm --filter @emberchat/server exec node --input-type=commonjs
+          -e "require('argon2'); require('re2'); console.log('workspace argon2 + re2 are still Node-ABI')"
+
+      - name: Package (staging tree only)
+        run: >-
+          pnpm --filter @emberchat/desktop exec electron-builder
+          --mac dir
+          --publish never
+          -c.extraMetadata.version=${{ steps.version.outputs.value }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # The whole point of the leg: boot the bundle out of its own
+      # `resources/`, provision an account against pglite, close to the tray
+      # and quit — headless, through the sanctioned lifecycle probe (MX3 §6),
+      # with no GUI automation anywhere near it.
+      - name: Packaged smoke test
+        run: >-
+          pnpm --filter @emberchat/desktop exec node scripts/smoke-packaged.mjs
+          --unpacked --version ${{ steps.version.outputs.value }}

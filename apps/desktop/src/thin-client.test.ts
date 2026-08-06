@@ -134,6 +134,7 @@ describe("certificate errors are fatal", () => {
       "error-window.ts",
       "chooser-window.ts",
       "embedded-server.ts",
+      "server-fork.ts",
     ]) {
       const source = read(file);
       // The call, not the word: both are named in the comments that explain

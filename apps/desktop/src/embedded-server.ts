@@ -1,6 +1,18 @@
-import { spawn } from "node:child_process";
-import { utilityProcess } from "electron";
-import { findFreePort, loopbackOrigin } from "./loopback.js";
+/**
+ * The embedded bouncer's lifecycle: start it, wait for it to answer, stop it
+ * and know whether it is gone.
+ *
+ * Nothing here imports Electron. The one thing that must — forking a utility
+ * process — is passed in as `ServerRuntime.fork`, the same seam `secrets.ts`
+ * uses for `safeStorage`: `main.ts` hands over the real implementation
+ * (`server-fork.ts`) and the tests hand over a fake. That is what makes the
+ * decision table below — retry only a child that died, three ports at most,
+ * `stop()` telling the truth about a child that would not go — testable
+ * without booting an app.
+ */
+
+import type { SpawnOptions } from "node:child_process";
+import { findFreePort as probeFreePort, loopbackOrigin } from "./loopback.js";
 import { buildServerEnv } from "./server-env.js";
 
 export interface StartEmbeddedServerOptions {
@@ -12,6 +24,25 @@ export interface StartEmbeddedServerOptions {
   readonly clientVersion: string;
   /** How long to wait for the first `/healthz` 200 before giving up. */
   readonly readyTimeoutMs?: number;
+}
+
+/** The little of a child process this module uses, from either mechanism. */
+export interface ServerChild {
+  readonly stdout: NodeJS.ReadableStream | null;
+  readonly stderr: NodeJS.ReadableStream | null;
+  once(event: "exit", listener: (code: number | null) => void): unknown;
+  kill(): unknown;
+}
+
+/**
+ * Where the child, the port and the network come from — see the module
+ * comment. Only `fork` has no sensible default; the other two are the real
+ * loopback probe and the real `fetch` unless a test says otherwise.
+ */
+export interface ServerRuntime {
+  readonly fork: (entry: string, env: Record<string, string>) => ServerChild;
+  readonly findFreePort?: () => Promise<number>;
+  readonly fetch?: typeof globalThis.fetch;
 }
 
 export interface EmbeddedServer {
@@ -54,20 +85,21 @@ const STDERR_KEEP_BYTES = 8_000;
 const PORT_ATTEMPTS = 3;
 
 /**
- * Forks the bouncer as an Electron `utilityProcess` and waits for it to answer
- * `/healthz` (the same readiness contract the container image's smoke test
- * uses). Rejects — with the child's own stderr attached — if it dies first,
- * so a broken boot shows the reason instead of a blank window.
+ * Forks the bouncer and waits for it to answer `/healthz` (the same readiness
+ * contract the container image's smoke test uses). Rejects — with the child's
+ * own stderr attached — if it dies first, so a broken boot shows the reason
+ * instead of a blank window.
  *
  * A child that dies before it is ready gets a fresh port and one more go (up to
  * `PORT_ATTEMPTS`); see there for why the port and not something else.
  */
 export async function startEmbeddedServer(
   options: StartEmbeddedServerOptions,
+  runtime: ServerRuntime,
 ): Promise<EmbeddedServer> {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await startOnce(options);
+      return await startOnce(options, runtime);
     } catch (error) {
       const worthAnotherPort =
         attempt < PORT_ATTEMPTS &&
@@ -85,8 +117,9 @@ export async function startEmbeddedServer(
 
 async function startOnce(
   options: StartEmbeddedServerOptions,
+  runtime: ServerRuntime,
 ): Promise<EmbeddedServer> {
-  const port = await findFreePort();
+  const port = await (runtime.findFreePort ?? probeFreePort)();
   const origin = loopbackOrigin(port);
   const env = buildServerEnv({
     port,
@@ -96,7 +129,7 @@ async function startOnce(
     clientVersion: options.clientVersion,
   });
 
-  const child = forkServerChild(options.entry, env);
+  const child = runtime.fork(options.entry, env);
 
   let stderr = "";
   const capture = (chunk: Buffer | string, stream: NodeJS.WriteStream) => {
@@ -127,6 +160,7 @@ async function startOnce(
     await waitForHealthz(origin, {
       timeoutMs: options.readyTimeoutMs ?? READY_TIMEOUT_MS,
       hasExited: () => exitCode !== undefined,
+      fetch: runtime.fetch ?? globalThis.fetch,
     });
   } catch (cause) {
     if (exitCode === undefined) {
@@ -175,13 +209,8 @@ async function startOnce(
   };
 }
 
-/** The little of a child process this module uses, from either mechanism. */
-interface ServerChild {
-  readonly stdout: NodeJS.ReadableStream | null;
-  readonly stderr: NodeJS.ReadableStream | null;
-  once(event: "exit", listener: (code: number | null) => void): unknown;
-  kill(): unknown;
-}
+/** Which kind of child process the bouncer runs as on this platform. */
+export type ServerChildMechanism = "utility-process" | "node-child";
 
 /**
  * Start the bouncer as a child of this process — by one of two mechanisms,
@@ -213,24 +242,55 @@ interface ServerChild {
  * `stopChildOnExit` below closes the ordinary paths; a hard crash of the main
  * process could still leave a bouncer holding the data directory.
  */
-function forkServerChild(
+export function serverChildMechanism(
+  platform: NodeJS.Platform,
+): ServerChildMechanism {
+  return platform === "win32" ? "node-child" : "utility-process";
+}
+
+/** How `server-fork.ts` spawns the `node-child` half of the split above. */
+export interface NodeChildLaunch {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly options: SpawnOptions;
+}
+
+/**
+ * Electron's own binary, told to be Node, running the server's entry — with
+ * the environment `buildServerEnv` composed and nothing else. `env` is
+ * replaced rather than extended for the reason `server-env.ts` gives: a stray
+ * `DATABASE_URL` in the user's shell must not reach the bouncer.
+ */
+export function nodeChildLaunch(
+  execPath: string,
   entry: string,
   env: Record<string, string>,
-): ServerChild {
-  if (process.platform !== "win32") {
-    return utilityProcess.fork(entry, [], {
-      serviceName: "emberchat-server",
-      env,
-      stdio: "pipe",
-    });
-  }
-  const child = spawn(process.execPath, [entry], {
-    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
-  });
-  stopChildOnExit(child);
-  return child;
+): NodeChildLaunch {
+  return {
+    command: execPath,
+    args: [entry],
+    options: {
+      env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+      // No stdin (nothing writes to this child; the admin CLI is the one that
+      // needs one), and both output streams piped so a crash has a reason.
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    },
+  };
+}
+
+/** The `process`-side of `stopChildOnExit`, so a test can supply its own. */
+interface ExitHost {
+  once(event: "exit", listener: () => void): unknown;
+  removeListener(event: "exit", listener: () => void): unknown;
+}
+
+/** The child-side of `stopChildOnExit`: a spawned child, or a stand-in. */
+interface KillableChild {
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+  kill(): unknown;
+  once(event: "exit", listener: () => void): unknown;
 }
 
 /**
@@ -240,15 +300,18 @@ function forkServerChild(
  * deliberately a kill rather than a graceful close, because by the time
  * `process.on("exit")` runs nothing asynchronous can still happen.
  */
-function stopChildOnExit(child: ReturnType<typeof spawn>): void {
+export function stopChildOnExit(
+  child: KillableChild,
+  host: ExitHost = process,
+): void {
   const kill = () => {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill();
     }
   };
-  process.once("exit", kill);
+  host.once("exit", kill);
   child.once("exit", () => {
-    process.removeListener("exit", kill);
+    host.removeListener("exit", kill);
   });
 }
 
@@ -277,7 +340,11 @@ export class EmbeddedServerStartError extends Error {
 
 async function waitForHealthz(
   origin: string,
-  options: { timeoutMs: number; hasExited: () => boolean },
+  options: {
+    timeoutMs: number;
+    hasExited: () => boolean;
+    fetch: typeof globalThis.fetch;
+  },
 ): Promise<void> {
   const deadline = Date.now() + options.timeoutMs;
   for (;;) {
@@ -285,7 +352,7 @@ async function waitForHealthz(
       throw new Error("the server process exited before answering /healthz");
     }
     try {
-      const response = await fetch(`${origin}/healthz`);
+      const response = await options.fetch(`${origin}/healthz`);
       if (response.ok) {
         return;
       }
