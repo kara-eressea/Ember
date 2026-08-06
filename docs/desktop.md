@@ -198,6 +198,19 @@ The warnings you see are your OS telling you the truth: it does not know
 who made this. The mitigation available to you is the ordinary one —
 download it from the project's own releases page, and nowhere else.
 
+If you want to check that a download arrived intact, each release also
+carries a `checksums.txt` with the SHA-256 of every installer. Compare
+against the file you downloaded — on a Mac, in Terminal, from your
+Downloads folder:
+
+    shasum -a 256 -c checksums.txt --ignore-missing
+
+and on Windows, in PowerShell:
+
+    Get-FileHash .\EmberChat-*.exe
+
+then compare the printed hash with the matching line in `checksums.txt`.
+
 **Why is there no Intel Mac build?**
 Parts of the app are compiled rather than interpreted, and they are
 compiled on the machine that packages the build — so a build can only
