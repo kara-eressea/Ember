@@ -5,6 +5,7 @@
 import {
   AccountLockedError,
   FlistApiBusyError,
+  type SessionLogger,
   type SocialAuth,
   type TicketManagerRegistry,
 } from "@emberchat/session-engine";
@@ -49,8 +50,17 @@ export async function withTicket<T extends { error: string }>(
  * user re-enters the password — the MOST likely production failure of these
  * routes, so it gets its own status instead of a bare 500 (M6 audit).
  * Busy = the shared 1 req/s budget shed the call.
+ *
+ * The two named arms carry text written for the user. Everything else is an
+ * internal failure — a pg error, a zod parse of an upstream body, a raw
+ * undici message — and its `message` is for the log, not for the browser:
+ * echoing it verbatim disclosed internal hosts and ports. Hence the logger
+ * being required rather than optional.
  */
-export function upstreamStatus(error: unknown): {
+export function upstreamStatus(
+  error: unknown,
+  log: SessionLogger,
+): {
   code: 409 | 502 | 503;
   error: string;
 } {
@@ -64,8 +74,6 @@ export function upstreamStatus(error: unknown): {
   if (error instanceof FlistApiBusyError) {
     return { code: 503, error: error.message };
   }
-  return {
-    code: 502,
-    error: error instanceof Error ? error.message : "F-List API error",
-  };
+  log.error({ err: error }, "upstream F-List call failed");
+  return { code: 502, error: "F-List is unavailable right now — try again" };
 }

@@ -133,7 +133,7 @@ export async function socialRoutes(
       try {
         result = await service.fetch(identity);
       } catch (error) {
-        const mapped = upstreamStatus(error);
+        const mapped = upstreamStatus(error, request.log);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
       if (result.error !== undefined) {
@@ -179,7 +179,7 @@ export async function socialRoutes(
             : flistApi.bookmarkRemove(auth, name),
         );
       } catch (error) {
-        const mapped = upstreamStatus(error);
+        const mapped = upstreamStatus(error, request.log);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
       if (result.error !== "") {
@@ -264,7 +264,7 @@ export async function socialRoutes(
           }
         });
       } catch (error) {
-        const mapped = upstreamStatus(error);
+        const mapped = upstreamStatus(error, request.log);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
       if (result.error !== "") {

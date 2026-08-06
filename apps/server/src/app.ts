@@ -125,6 +125,22 @@ export async function buildApp({
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+  // Anything that reaches here is unhandled: a deliberate rethrow, a pg
+  // client that cannot connect, argon2 on a corrupt hash. Fastify's default
+  // answers with the error's own message, so an *unauthenticated* login
+  // attempt against an unreachable database learned our internal host and
+  // port. 4xx keeps flowing through the framework's own serialization —
+  // those messages (zod validation, the rate limiter) are about the request,
+  // not about us.
+  app.setErrorHandler((error, request, reply) => {
+    if ((error.statusCode ?? 500) < 500) {
+      return reply.send(error);
+    }
+    request.log.error({ err: error }, "unhandled request error");
+    return reply
+      .code(500)
+      .send({ error: "Something went wrong on the server" });
+  });
 
   const vault = new CredentialVault();
   const credentialStore = new CredentialStore({
