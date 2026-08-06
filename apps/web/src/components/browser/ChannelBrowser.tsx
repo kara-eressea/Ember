@@ -8,9 +8,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { APP_NAME } from "@emberchat/protocol";
 import { gateway } from "../../gateway/socket.js";
 import { api, type DirectoryChannelDto } from "../../lib/api.js";
-import { appConfig } from "../../lib/config.js";
 import { channelPath } from "../../lib/routes.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import { useFocusTrap } from "../../lib/useFocusTrap.js";
@@ -144,7 +144,7 @@ export function ChannelBrowser({
           <div>
             <h2 className={styles.title}>Browse channels</h2>
             <div className={styles.sub}>
-              {appConfig().appName} ·{" "}
+              {APP_NAME} ·{" "}
               {data ? stalenessLabel(data.refreshedAt, data.fetchedAt) : "…"} ·{" "}
               <span className={styles.subCount}>{channels.length} rooms</span>
             </div>

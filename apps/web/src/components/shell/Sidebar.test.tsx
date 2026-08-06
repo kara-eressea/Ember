@@ -14,11 +14,10 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
+import { APP_NAME, PREFS_DEFAULTS, type UserPrefs } from "@emberchat/protocol";
 import { Sidebar } from "./Sidebar.js";
 import { gateway } from "../../gateway/socket.js";
 import { useUiStore } from "../../stores/ui.js";
-import { appConfig } from "../../lib/config.js";
 import type { MetaDto } from "../../lib/api.js";
 import type {
   ChannelView,
@@ -397,7 +396,7 @@ describe("Sidebar head", () => {
     meta.current = { version: "0.19.1", updateAvailable: false, releasesUrl };
     const { container } = renderSidebar();
 
-    expect(head(container)?.textContent).toBe(`${appConfig().appName}v0.19.1`);
+    expect(head(container)?.textContent).toBe(`${APP_NAME}v0.19.1`);
     // No presence dot, no character/status line.
     expect(
       head(container)?.querySelector("span[class*='serverDot']"),
@@ -498,7 +497,7 @@ describe("Sidebar head", () => {
 
     meta.current = undefined;
     const unknown = renderSidebar().container;
-    expect(head(unknown)?.textContent).toBe(appConfig().appName);
+    expect(head(unknown)?.textContent).toBe(APP_NAME);
     expect(head(unknown)?.querySelector("[class*='serverVersion']")).toBeNull();
   });
 });

@@ -252,9 +252,9 @@ test("the auth panel is still a centred card above the phone tier (#535, #537)",
   ).toBeLessThanOrEqual(1);
   expect(card!.height).toBeLessThan(viewport!.height);
 
-  // The mark is the configured product name here too — document.title comes
-  // from the same appConfig(), so this compares against the config rather than
-  // against a literal (#537).
+  // The mark is the product name here too — document.title is the same
+  // constant, so this compares the two renderings of it rather than against a
+  // literal this file made up (#537, #556).
   const appName = await page.evaluate(() => document.title);
   expect(appName).not.toBe("");
   await expect(page.getByTestId("wordmark")).toHaveText(appName);

@@ -5,10 +5,12 @@
 # desktop-build.yml attaches them to the release `gh release create` made.
 #
 # The product name is NOT restated here: electron-builder reads `productName`
-# from package.json, which is the one place the shell's name lives (it is also
-# what `app.getName()` returns and therefore what names the user-data
-# directory). `appId` below is the only other brand-shaped string, and it is
-# here rather than scattered because a rename has to change exactly two lines.
+# from package.json, which is where Electron's own machinery insists it lives
+# (it is what `app.getName()` returns and therefore what names the user-data
+# directory, the installer and the .app). The source of truth for the name is
+# `APP_NAME` in @emberchat/protocol (#556) — package.json and `appId` below
+# are literals because these two files are read by tooling before any of our
+# code runs, and the name is final, so they cannot drift by accident.
 #
 # The version is not here either, deliberately. package.json versions stay
 # `0.0.0` for the whole workspace (house policy), and a release build gets the

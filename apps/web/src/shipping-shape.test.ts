@@ -5,6 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { APP_NAME } from "@emberchat/protocol";
 import { describe, expect, it } from "vitest";
 
 /** Every source file the app ships, as `[path, text]`. Tests excluded. */
@@ -126,48 +127,54 @@ describe("no service worker beyond push (MP3 §7, WP §6)", () => {
   });
 });
 
-describe("the product name (MP3 §7)", () => {
-  // "EmberChat" is a working title and every instance is somebody's
-  // self-host, so the name belongs to the runtime config and not to the
-  // build. A literal in a component is a sentence that goes on saying
-  // "EmberChat" to a user whose server is called something else — and the
-  // sentences it tends to appear in are the ones about where their data
-  // lives, which is precisely where being wrong costs trust (#378).
+describe("the product name (MP3 §7, #556)", () => {
+  // "EmberChat" is the product's final name (decisions.md §5), and it has
+  // exactly one home: `APP_NAME` in @emberchat/protocol. It was a config token
+  // before, for a self-hoster who might have renamed the product; it is a
+  // constant now, and the guard is the same guard for a different reason — a
+  // name spelled out in twelve components is a name that gets half-renamed,
+  // half-capitalised and quietly wrong in the sentences that matter (the ones
+  // about where a user's data lives, #378).
   //
-  // Three shapes are allowed through:
+  // Two shapes are allowed through:
   //
-  //  - `@emberchat/…` — workspace package specifiers. These are module
-  //    identity, never rendered.
+  //  - `@emberchat/…` — workspace package specifiers, including the import of
+  //    the constant itself. These are module identity, never rendered.
   //  - the lowercase dotted namespace `emberchat.<something>` — localStorage
   //    keys and one `Symbol.for`, currently `emberchat.composeMarkdown`,
   //    `emberchat.sidebarOrder` (legacy, still read for migration),
   //    `emberchat.sidebarCollapsed`, `emberchat.searchRun.<id>`,
   //    `emberchat.lastIdentityId`, `emberchat.pushEnabled` and
-  //    `emberchat.longpress.claimed`. They are
-  //    persisted keys: renaming them with the product would orphan every
-  //    user's saved state on upgrade, so they are frozen on purpose.
-  //  - `lib/config.ts`, which owns the working title as its documented
-  //    fallback for when the server injects no config at all.
-  it("is a config token everywhere it is shown", () => {
-    const fallbackHome = resolve("src/lib/config.ts");
-    const offenders = sources()
-      .filter(([path]) => path !== fallbackHome)
-      .flatMap(([path, source]) => {
-        const code = uncommented(source);
-        return [...code.matchAll(/emberchat/giu)]
-          .filter((match) => {
-            const before = code[match.index - 1];
-            const after = code[match.index + match[0].length];
-            const isPackage = before === "@";
-            const isNamespace = match[0] === "emberchat" && after === ".";
-            return !isPackage && !isNamespace;
-          })
-          .map((match) => {
-            const line = lineOf(code, match.index);
-            const text = source.split("\n")[line - 1]?.trim() ?? "";
-            return `${path}:${String(line)}: ${text}`;
-          });
-      });
+  //    `emberchat.longpress.claimed`. They are persisted keys: renaming them
+  //    with the product would orphan every user's saved state on upgrade, so
+  //    they are frozen on purpose.
+  it("is imported, never spelled out", () => {
+    const offenders = sources().flatMap(([path, source]) => {
+      const code = uncommented(source);
+      return [...code.matchAll(/emberchat/giu)]
+        .filter((match) => {
+          const before = code[match.index - 1];
+          const after = code[match.index + match[0].length];
+          const isPackage = before === "@";
+          const isNamespace = match[0] === "emberchat" && after === ".";
+          return !isPackage && !isNamespace;
+        })
+        .map((match) => {
+          const line = lineOf(code, match.index);
+          const text = source.split("\n")[line - 1]?.trim() ?? "";
+          return `${path}:${String(line)}: ${text}`;
+        });
+    });
     expect(offenders).toEqual([]);
+  });
+
+  // The one deliberate literal: index.html titles the document before any
+  // module of ours exists to do it, so the tab would otherwise read something
+  // else for the length of a boot. Same arrangement as the theme-color meta
+  // (theme-color.test.ts) — a literal in the markup, and a test that fails the
+  // moment it stops agreeing with the constant.
+  it("titles the document with the constant's own spelling", () => {
+    const html = readFileSync(resolve("index.html"), "utf8");
+    expect(/<title>([^<]*)<\/title>/u.exec(html)?.[1]).toBe(APP_NAME);
   });
 });

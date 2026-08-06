@@ -14,7 +14,7 @@ export interface UpdateCheckerOptions {
   readonly currentVersion: string;
   /** "owner/repo" the releases are read from. */
   readonly repo: string;
-  /** Client identifier for the API call (config CLIENT_NAME). */
+  /** Client identifier for the API call (the frozen `APP_NAME`). */
   readonly clientName: string;
   readonly enabled: boolean;
   readonly logger?: SessionLogger;

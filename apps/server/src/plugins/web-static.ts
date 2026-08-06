@@ -1,9 +1,14 @@
 // Production static serving (M1 step 11): one Fastify serves both the API
-// and the built web app. Branding stays runtime config (decisions.md §5) —
-// index.html gets `window.__CONFIG__` injected at boot so the client never
-// needs a config fetch, and /config.json remains as the documented fallback.
+// and the built web app.
+//
+// This used to rewrite index.html on the way in, injecting a
+// `window.__CONFIG__` bootstrap (with a matching CSP script hash) and serving
+// `/config.json` as its fallback — the whole of it existed to carry one string,
+// the configured product name, into a build that was not allowed to contain it.
+// The name is a build-time constant now (#556, decisions.md §5), so the
+// document is served exactly as Vite emitted it and the served app carries no
+// inline script at all.
 
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import fastifyStatic from "@fastify/static";
@@ -12,41 +17,15 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 export interface WebStaticOptions {
   /** Absolute path to the built web app (apps/web/dist). */
   root: string;
-  appName: string;
-}
-
-/**
- * The `window.__CONFIG__` bootstrap injected into index.html, plus the CSP
- * source that permits it.
- *
- * The script must be inline — it exists precisely so boot doesn't wait on a
- * `/config.json` round-trip — and `script-src 'self'` blocks inline scripts, so
- * the policy has to name its hash. Hash rather than nonce: the document is
- * rendered once at boot and served byte-identical to everyone. Deriving both
- * halves here is what keeps them paired: change the script and the hash follows
- * (`web-static.test.ts` re-derives it from the served document as a guard).
- */
-export function runtimeConfigScript(appName: string): {
-  js: string;
-  cspSource: string;
-} {
-  // <-escape so a hostile APP_NAME can't close the script tag.
-  const json = JSON.stringify({ appName }).replaceAll("<", "\\u003c");
-  const js = `window.__CONFIG__=${json}`;
-  const digest = createHash("sha256").update(js, "utf8").digest("base64");
-  return { js, cspSource: `'sha256-${digest}'` };
 }
 
 export async function webStatic(
   instance: FastifyInstance,
   options: WebStaticOptions,
 ): Promise<void> {
-  const runtimeConfig = { appName: options.appName };
-  const indexHtml = (
-    await readFile(path.join(options.root, "index.html"), "utf8")
-  ).replace(
-    "</head>",
-    `<script>${runtimeConfigScript(options.appName).js}</script></head>`,
+  const indexHtml = await readFile(
+    path.join(options.root, "index.html"),
+    "utf8",
   );
 
   await instance.register(fastifyStatic, {
@@ -80,8 +59,6 @@ export async function webStatic(
   // `index: false` makes a bare `/` a directory request (403), so the root
   // is an explicit route rather than a static lookup.
   instance.get("/", (_request, reply) => sendIndex(reply));
-
-  instance.get("/config.json", () => runtimeConfig);
 
   // SPA fallback: any unknown GET outside the API surface is a client route
   // (/login, /app/:identityId/…) and gets the injected index.html.

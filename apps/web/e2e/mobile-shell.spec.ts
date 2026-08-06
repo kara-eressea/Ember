@@ -261,10 +261,10 @@ test("phone device: two chips inline, everything else through ⋯, and the compo
 // public and the question is only whether the wiring holds end to end — the
 // document points at it, the dev server's proxy reaches the Fastify route the
 // way production's single server does, and the icons it names are actually
-// served. The name-from-config assertion that matters lives in the server's
-// own test (plugins/web-manifest.test.ts), which can configure a name; here
-// the check is that the manifest and the client agree on whatever it is,
-// which is what would break if either side stopped reading APP_NAME.
+// served. The name assertion that matters lives in the server's own test
+// (plugins/web-manifest.test.ts); here the check is that the manifest and the
+// document agree, which is what would break if either side stopped reading the
+// one product-name constant (#556).
 test("installable: the document links a manifest whose icons resolve (#377)", async ({
   page,
 }) => {
@@ -300,8 +300,9 @@ test("installable: the document links a manifest whose icons resolve (#377)", as
     shortcuts: { url: string; icons: { src: string }[] }[];
   };
   expect(manifest.display).toBe("standalone");
-  // main.tsx titles the document from the same configured product name, once
-  // the runtime config has loaded — hence the retrying assertion.
+  // index.html and the manifest route are two spellings of `APP_NAME`, and a
+  // guard in the web suite keeps the markup honest; this is the end-to-end
+  // half of that pair.
   await expect(page).toHaveTitle(manifest.name);
   expect(manifest.shortcuts.length).toBeGreaterThan(0);
 

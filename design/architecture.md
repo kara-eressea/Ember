@@ -65,7 +65,7 @@ The EmberChat gateway envelope, event/command unions, REST DTOs, shared enums (p
 ```
 apps/server/src/
 ├── main.ts                      # bootstrap: config, db, fastify, registry, gateway
-├── config.ts                    # env parsing (zod): DATABASE_URL, FCHAT_URL, APP_NAME, APP_BASE_URL,
+├── config.ts                    # env parsing (zod): DATABASE_URL, FCHAT_URL, APP_BASE_URL,
 │                                #   CLIENT_NAME/VERSION (IDN cname/cversion; default honest + unique)
 ├── db/                          # drizzle schema + migrations
 ├── modules/
@@ -162,7 +162,7 @@ apps/web/src/
 ```
 
 - Every component styles against `var(--eb-*)` tokens — never hex (COMPONENTS.md mandate). Accent switch = re-run `applyTheme()`.
-- **Branding is runtime config** (decisions.md §5): the web build contains no hardcoded product name/domain — it reads `window.__CONFIG__` (injected into `index.html` by the serving Fastify) or falls back to fetching `/config.json`, populated from the container's `APP_NAME`/`APP_BASE_URL` env. Renaming the product is a `.env` change + restart, no rebuild.
+- **The product name is a build-time constant** (decisions.md §5, revised 2026-08-06, #556): `APP_NAME` in `packages/protocol`, imported by the web build, the server and the install manifest. It used to be runtime config — a `window.__CONFIG__` bootstrap injected into `index.html` with `/config.json` as its fallback — and all of that plumbing is gone with the knob, so the served document is Vite's own and carries no inline script. **Domains and origins remain deployment config** (`APP_BASE_URL`), as does the IDN `cversion`.
 - Fonts: IBM Plex Sans/Mono self-hosted via `@fontsource`.
 - Message log virtualized with @tanstack/react-virtual; reverse infinite scroll prepends older REST pages with scroll anchoring; store buffers are windowed so neither store nor DOM grows unbounded.
 - Inbound BBCode → `parseBBCode()` AST → React elements. `[url]` gets rel=noopener + shown-host safety; `[user]` links to the character's profile; `[icon]/[eicon]` render as inline images from f-list URLs at a **fixed ~60px box with explicit width/height** (keeps virtualized row measurement stable before the GIF loads), lazy-loaded. User preferences (M5): display mode inline vs. name-only chip with hover-preview popover, and animate on/off (frozen first frame via canvas when off) — decisions.md §8.

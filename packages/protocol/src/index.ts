@@ -5,6 +5,7 @@
 import "./jitless.js";
 
 export * from "./ads.js";
+export * from "./brand.js";
 export * from "./campaigns.js";
 export * from "./gateway.js";
 export * from "./ratings.js";

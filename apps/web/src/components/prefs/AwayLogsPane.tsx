@@ -5,9 +5,8 @@
 // and accessible to the user.
 
 import { useState } from "react";
-import { PREFS_DEFAULTS } from "@emberchat/protocol";
+import { APP_NAME, PREFS_DEFAULTS } from "@emberchat/protocol";
 import { api, ApiError } from "../../lib/api.js";
-import { appConfig } from "../../lib/config.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { FieldRow, GroupLabel, Segmented, Toggle } from "./controls.js";
 import { patchPrefs } from "./patch.js";
@@ -153,13 +152,12 @@ export function AwayLogsPane({ identityId }: { identityId: string }) {
 
       <GroupLabel>Chat logs</GroupLabel>
       <p className={styles.paneNote}>
-        {/* The product name is a config token (CLAUDE.md), not a literal —
-            this line had been the one place in the client that forgot, so a
-            renamed self-host told its users their logs were on somebody
-            else's server (#378). */}
-        Your message history is stored in the {appConfig().appName} server
-        database — nothing is logged anywhere else. Browse it any time by
-        scrolling up in a conversation, or download a full copy here.
+        {/* The product name comes from the one constant, never a literal
+            (CLAUDE.md, #556) — this line had been the one place in the client
+            that forgot (#378). */}
+        Your message history is stored in the {APP_NAME} server database —
+        nothing is logged anywhere else. Browse it any time by scrolling up in a
+        conversation, or download a full copy here.
       </p>
       <LogExport identityId={identityId} />
     </>

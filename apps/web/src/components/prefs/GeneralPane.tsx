@@ -6,11 +6,11 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import {
+  APP_NAME,
   DEFAULT_IMAGE_PREVIEW_HOSTS,
   IMAGE_PREVIEW_HOST,
   PREFS_DEFAULTS,
 } from "@emberchat/protocol";
-import { appConfig } from "../../lib/config.js";
 import { useServerMeta } from "../../lib/use-meta.js";
 import { useSessionsStore } from "../../stores/sessions.js";
 import { FieldRow, GroupLabel, Segmented, Toggle } from "./controls.js";
@@ -116,7 +116,7 @@ export function GeneralPane({
       </p>
       <GroupLabel>About</GroupLabel>
       <p className={styles.stub}>
-        {appConfig().appName}
+        {APP_NAME}
         {meta && ` v${meta.version}`}
         {meta?.updateAvailable && meta.latestVersion !== undefined && (
           <>

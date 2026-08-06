@@ -5,8 +5,15 @@ import { RECONNECT_FLOOR_MS } from "@emberchat/session-engine";
 // unedited env file cannot silently ship a world-readable signing secret.
 const PLACEHOLDER_AUTH_SECRET = "dev-only-secret-change-me-0000000000";
 
-// All deployment-specific values — including branding and the IDN
-// cname/cversion — come from the environment (decisions.md §5).
+// All deployment-specific values come from the environment (decisions.md §5).
+// The product name is NOT among them: it is a build-time constant (`APP_NAME`
+// in @emberchat/protocol) as of 2026-08-06, and so is the name half of the IDN
+// cname. `CLIENT_VERSION` and `APP_BASE_URL` stay here — the version is the
+// release build's to set, and the origin genuinely differs per instance.
+//
+// A self-hoster who still has `APP_NAME=` or `CLIENT_NAME=` in their .env is
+// not broken by this: zod objects strip unknown keys, so the value is simply
+// ignored from now on (#556).
 const configSchema = z.object({
   /**
    * Which storage driver createDb builds (MX2, #298). `node-postgres` is the
@@ -69,7 +76,6 @@ const configSchema = z.object({
    * (`node dist/cli/admin.js`). Dev and test stacks may enable it.
    */
   REGISTRATION_ENABLED: z.stringbool().default(false),
-  APP_NAME: z.string().default("EmberChat"),
   APP_BASE_URL: z.url().default("http://localhost:3000"),
   /**
    * Absolute path to the built web app (apps/web/dist). When set, the server
@@ -77,7 +83,7 @@ const configSchema = z.object({
    * Unset in development, where Vite serves the web app itself.
    */
   WEB_DIST: z.string().optional(),
-  CLIENT_NAME: z.string().default("EmberChat"),
+  /** The IDN `cversion`; the `cname` half is the frozen APP_NAME (#556). */
   CLIENT_VERSION: z.string().default("0.0.0"),
   /**
    * Daily update check against the GitHub Releases API — a quiet "update

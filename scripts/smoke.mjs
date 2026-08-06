@@ -1,6 +1,6 @@
 // Smoke test against a running EmberChat instance pointed at fchat-sim
 // (M1 step 11: "docker compose up → usable app against sim"). Walks the full
-// slice over the public surface: statics with injected config, register,
+// slice over the public surface: statics, register,
 // F-List account vaulting (ticket flow server↔sim), identity creation, and a
 // gateway session that actually reaches "online".
 //
@@ -36,21 +36,22 @@ async function json(step, path, { method = "GET", body, token } = {}) {
   return response.json();
 }
 
-// ── Statics + runtime config injection ───────────────────────────────────────
+// ── Statics ──────────────────────────────────────────────────────────────────
 {
   const health = await fetch(`${base}/healthz`);
   if (!health.ok) fail("healthz", String(health.status));
   ok("healthz");
 
+  // The document is Vite's own since #556 — nothing is injected into it — so
+  // the check is that a client route gets the app's index.html at all. The
+  // title is spelled out because this script runs outside the workspace
+  // (against a container) and cannot import APP_NAME; it is the same string.
   const index = await fetch(`${base}/app/deep/link`);
   const html = await index.text();
-  if (!index.ok || !html.includes("window.__CONFIG__")) {
-    fail(
-      "spa",
-      "index.html with injected __CONFIG__ not served for a client route",
-    );
+  if (!index.ok || !html.includes("<title>EmberChat</title>")) {
+    fail("spa", "index.html not served for a client route");
   }
-  ok("spa fallback + injected runtime config");
+  ok("spa fallback");
 }
 
 // ── App account ──────────────────────────────────────────────────────────────
