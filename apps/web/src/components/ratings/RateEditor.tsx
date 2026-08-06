@@ -4,7 +4,7 @@
 // promise. Dismissal follows the HelpPanel pattern: capture-phase Escape
 // and click-away, stopping propagation so stacked layers don't also close.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Avatar } from "../common/Avatar.js";
 import { StarPicker } from "./StarRating.js";
@@ -12,6 +12,7 @@ import {
   placePopoverInWindow,
   popoverWidthInWindow,
 } from "../profile/popover.js";
+import { liveAnchor, type CardAnchor } from "../../stores/profile.js";
 import { ratingFor, useRatingsStore } from "../../stores/ratings.js";
 import { useEscapeToClose } from "../../lib/useEscapeToClose.js";
 import styles from "./ratings.module.css";
@@ -22,10 +23,15 @@ const EDITOR_HEIGHT = 268;
 export function RateEditor({
   character,
   anchor,
+  anchorElement,
   onClose,
 }: {
   character: string;
-  anchor: DOMRect;
+  /** Where the trigger was when the editor opened — the first frame's
+   * placement, and the fallback for a trigger that was never handed over. */
+  anchor: CardAnchor;
+  /** The trigger itself, re-measured as the log scrolls under the editor. */
+  anchorElement?: Element;
   onClose: () => void;
 }) {
   const byName = useRatingsStore((s) => s.byName);
@@ -54,12 +60,63 @@ export function RateEditor({
     };
   }, [onClose]);
 
-  const placement = placePopoverInWindow(anchor, {
-    // The width CSS actually drew, which on a narrow phone is the viewport
-    // cap rather than EDITOR_WIDTH (MP1 §5-E).
-    width: popoverWidthInWindow(EDITOR_WIDTH),
-    height: EDITOR_HEIGHT,
-  });
+  // Follow the trigger (#284, #560), the way MiniProfileCard does: this editor
+  // opens on an ad row inside the virtualized log, which auto-scrolls behind it
+  // as messages arrive — so the rect captured at click time is stale by the
+  // next line, and the row can be virtualized away entirely while the editor is
+  // still on screen.
+  //
+  // The editor's box is a constant, so unlike the mini card it never has to
+  // measure itself after rendering: the only inputs are the trigger's rect and
+  // the viewport, and both change only when something scrolls or resizes. One
+  // placement at mount, then one per frame that moves it.
+  const measure = useCallback(
+    (rect: CardAnchor) =>
+      placePopoverInWindow(rect, {
+        // The width CSS actually drew, which on a narrow phone is the viewport
+        // cap rather than EDITOR_WIDTH (MP1 §5-E).
+        width: popoverWidthInWindow(EDITOR_WIDTH),
+        height: EDITOR_HEIGHT,
+      }),
+    [],
+  );
+  const [placement, setPlacement] = useState(() =>
+    measure(liveAnchor(anchorElement) ?? anchor),
+  );
+
+  useEffect(() => {
+    let frame = 0;
+    function place() {
+      frame = 0;
+      const live = liveAnchor(anchorElement);
+      if (anchorElement && !live) {
+        // The trigger left the document (virtualized away, conversation
+        // switched) — close rather than float at stale coordinates over an
+        // unrelated message.
+        onClose();
+        return;
+      }
+      const next = measure(live ?? anchor);
+      // Only commit a placement that actually moved: this runs on every scroll
+      // frame, and a fresh object each time would re-render the editor — and
+      // the note field the user is typing in — sixty times a second.
+      setPlacement((prev) =>
+        prev.top === next.top && prev.left === next.left ? prev : next,
+      );
+    }
+    function schedule() {
+      frame ||= requestAnimationFrame(place);
+    }
+    // Capture phase, so the log's own scroller counts and not just the window;
+    // resize matters for the viewport clamp.
+    window.addEventListener("scroll", schedule, true);
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [anchor, anchorElement, measure, onClose]);
 
   async function save(nextScore: number, nextNote: string) {
     const ok = await useRatingsStore

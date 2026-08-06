@@ -160,6 +160,10 @@ function bumpEpoch(convId: string): number {
 
 /** Merge ascending & dedupe by id, then trim to the window from the front. */
 function merge(existing: MessageDto[], incoming: MessageDto[]): MessageDto[] {
+  const appended = appendIfNewer(existing, incoming);
+  if (appended !== undefined) {
+    return appended;
+  }
   const byId = new Map<number, MessageDto>();
   for (const message of existing) {
     byId.set(message.id, message);
@@ -168,6 +172,34 @@ function merge(existing: MessageDto[], incoming: MessageDto[]): MessageDto[] {
     byId.set(message.id, message);
   }
   return [...byId.values()].sort((a, b) => a.id - b.id);
+}
+
+/**
+ * The append case, which is what a live message almost always is: `incoming`
+ * is itself ascending and starts after the last row we hold, so the result is
+ * a concatenation — no dedupe to do and nothing out of order to sort (#560).
+ *
+ * `merge` is otherwise the only way into the buffer, and the buffer holds up
+ * to `BUFFER_WINDOW` rows: one arriving message was costing 1500 Map
+ * insertions and a full 1500-element sort. Undefined means "not an append" —
+ * a prepended history page, a catch-up batch that overlaps, a re-delivery of
+ * a row we already have — and the general path above handles those unchanged.
+ */
+function appendIfNewer(
+  existing: MessageDto[],
+  incoming: MessageDto[],
+): MessageDto[] | undefined {
+  if (incoming.length === 0) {
+    return existing;
+  }
+  let previous = existing.at(-1)?.id ?? Number.NEGATIVE_INFINITY;
+  for (const message of incoming) {
+    if (message.id <= previous) {
+      return undefined;
+    }
+    previous = message.id;
+  }
+  return existing.length === 0 ? [...incoming] : [...existing, ...incoming];
 }
 
 export const useMessagesStore = create<MessagesState>()((set, get) => {

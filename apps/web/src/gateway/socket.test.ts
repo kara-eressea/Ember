@@ -547,3 +547,98 @@ it("stops probing after a deliberate teardown", async () => {
   expect(pings(socket)).toHaveLength(0);
   expect(FakeSocket.instances).toHaveLength(1);
 });
+
+// ── one socket, one keepalive (#560) ─────────────────────────────────────────
+//
+// `#handleUnauthorized` awaits a token refresh with `#ws` already cleared and
+// no reconnect timer armed — so for a whole network round-trip, every guard in
+// the client reads "nothing is open". A laptop resuming is exactly when a 4401
+// refresh is in flight, so the wake probe, `connect()` and the sidebar's
+// reconnect chip can all open a socket inside that window; the refresh then
+// opened a second one on top. The loser's `onclose` correctly stood down, but
+// its keepalive `setInterval` lived in the shared `#pingTimer` field, was
+// overwritten, and went on firing forever — sending on whatever socket was
+// live. The tab pinged at twice the intended rate for the life of the page,
+// against a server that enforces MAX_FRAMES_PER_MINUTE.
+
+/** A refresh that hangs until the test says otherwise — the race window. */
+function pendingRefresh() {
+  let settle: (outcome: "ok" | "rejected" | "unavailable") => void = () =>
+    undefined;
+  auth.refreshSession.mockReturnValue(
+    new Promise((resolve) => {
+      settle = resolve;
+    }),
+  );
+  return async (outcome: "ok" | "rejected" | "unavailable" = "ok") => {
+    settle(outcome);
+    await vi.advanceTimersByTimeAsync(0);
+  };
+}
+
+it("opens one socket when a reconnect lands inside the token refresh", async () => {
+  const finishRefresh = pendingRefresh();
+  const { client, socket } = await connectClient();
+
+  socket.close(GATEWAY_CLOSE.unauthorized, "invalid token");
+  await vi.advanceTimersByTimeAsync(0); // parked on the refresh
+  expect(FakeSocket.instances).toHaveLength(1);
+
+  // The user taps the offline chip while the refresh is still in the air.
+  client.reconnectNow();
+  expect(FakeSocket.instances).toHaveLength(2);
+  const reopened = FakeSocket.instances.at(-1)!;
+  reopened.onopen?.();
+
+  // The refresh comes back and asks for a socket it already has.
+  await finishRefresh("ok");
+  expect(FakeSocket.instances).toHaveLength(2);
+
+  // One keepalive, not two: the whole point of the bug.
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(pings(reopened)).toHaveLength(1);
+});
+
+it("opens one socket when a wake probe lands inside the token refresh", async () => {
+  const finishRefresh = pendingRefresh();
+  const { socket } = await connectClient();
+
+  socket.close(GATEWAY_CLOSE.unauthorized, "invalid token");
+  await vi.advanceTimersByTimeAsync(0);
+
+  // The same resume that expired the token wakes the probe: no socket, no
+  // reconnect timer, so the probe opens one.
+  await vi.advanceTimersByTimeAsync(1_000); // past the #lastOpenAt floor
+  wake("focus");
+  await vi.advanceTimersByTimeAsync(300);
+  expect(FakeSocket.instances).toHaveLength(2);
+  FakeSocket.instances.at(-1)!.onopen?.();
+
+  await finishRefresh("ok");
+  expect(FakeSocket.instances).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(pings(FakeSocket.instances.at(-1)!)).toHaveLength(1);
+});
+
+it("never arms a keepalive for a socket the client has let go", async () => {
+  const { GatewayClient } = await import("./socket.js");
+  const client = new GatewayClient();
+  clients.push(client);
+
+  // Abandoned while still CONNECTING (a sign-out, then a sign-in): its
+  // `onopen` arrives afterwards, as browsers are entitled to deliver it.
+  client.connect();
+  const abandoned = FakeSocket.instances.at(-1)!;
+  client.stop();
+  client.connect();
+  const live = FakeSocket.instances.at(-1)!;
+  live.onopen?.();
+
+  abandoned.onopen?.();
+  expect(abandoned.closed).toBeDefined();
+
+  // The stale socket must not have armed an interval of its own: it would be
+  // unreachable, immortal, and sending its pings down the live socket.
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(pings(live)).toHaveLength(1);
+});

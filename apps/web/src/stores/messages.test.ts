@@ -294,3 +294,86 @@ describe("catch-up gaps", () => {
     ).toEqual([10, 11]);
   });
 });
+
+// A live message is, overwhelmingly, "push one row whose id is larger than the
+// last" — and it was paying for a full Map rebuild and a full re-sort of a
+// buffer up to BUFFER_WINDOW long, per message, in a channel that can carry
+// several a second (#560). The append is now the cheap path; everything else
+// falls back to the merge, which is what keeps the dedupe honest.
+describe("append fast path (#560)", () => {
+  /** How many times `run` sorted an array — the cost the fast path skips. */
+  function sorts(run: () => void): number {
+    const spy = vi.spyOn(Array.prototype, "sort");
+    try {
+      run();
+      return spy.mock.calls.length;
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  const ids = () =>
+    useMessagesStore.getState().buffers[CONV]?.messages.map((m) => m.id);
+
+  it("appends a newer message without sorting the buffer", () => {
+    const store = useMessagesStore.getState();
+    store.appendMany(
+      CONV,
+      Array.from({ length: BUFFER_WINDOW }, (_, i) => message(i + 1)),
+    );
+
+    const count = sorts(() => {
+      for (let i = 0; i < 10; i += 1) {
+        store.appendLive(CONV, message(BUFFER_WINDOW + i + 1));
+      }
+    });
+
+    expect(count).toBe(0);
+    expect(ids()?.at(-1)).toBe(BUFFER_WINDOW + 10);
+    // Still exactly one window's worth: the fast path trims like the slow one.
+    expect(ids()).toHaveLength(BUFFER_WINDOW);
+    expect(useMessagesStore.getState().buffers[CONV]?.hasMoreBefore).toBe(true);
+  });
+
+  it("appends a whole ascending catch-up batch as one concatenation", () => {
+    const store = useMessagesStore.getState();
+    store.appendMany(CONV, [message(1), message(2)]);
+
+    const count = sorts(() => {
+      store.appendMany(CONV, [message(3), message(4), message(5)]);
+    });
+
+    expect(count).toBe(0);
+    expect(ids()).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("falls back to the merge for a replayed id", () => {
+    const store = useMessagesStore.getState();
+    store.appendMany(CONV, [message(1), message(2)]);
+    store.appendLive(CONV, message(2)); // the server re-delivered it
+    expect(ids()).toEqual([1, 2]);
+  });
+
+  it("falls back to the merge for a prepended history page", () => {
+    const store = useMessagesStore.getState();
+    store.appendMany(CONV, [message(10), message(11)]);
+    store.appendMany(CONV, [message(8), message(9)]);
+    expect(ids()).toEqual([8, 9, 10, 11]);
+  });
+
+  it("falls back to the merge for a batch that is not ascending", () => {
+    const store = useMessagesStore.getState();
+    store.appendMany(CONV, [message(1)]);
+    store.appendMany(CONV, [message(3), message(2)]);
+    expect(ids()).toEqual([1, 2, 3]);
+  });
+
+  it("takes the fast path into an empty buffer too", () => {
+    const count = sorts(() => {
+      useMessagesStore.getState().appendMany(CONV, [message(1), message(2)]);
+    });
+
+    expect(count).toBe(0);
+    expect(ids()).toEqual([1, 2]);
+  });
+});

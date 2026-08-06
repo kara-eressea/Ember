@@ -23,7 +23,8 @@ const MAX_CONVERSATIONS = 12;
 const EMPTY: VirtualItem[] = [];
 
 /** convId → the virtualizer snapshot from that conversation's last visit.
- * Insertion order IS the LRU order: a hit re-inserts. */
+ * Insertion order IS the LRU order: `rememberMeasuredRows` re-inserts, and a
+ * conversation is only read back after a visit that filed it. */
 const byConversation = new Map<string, VirtualItem[]>();
 let logWidth = 0;
 let prefsSignature = "";
@@ -44,21 +45,51 @@ export function noteLogWidth(width: number): void {
   }
 }
 
-/** Heights measured under the previous visit's layout, or empty when there is
- * nothing usable. Pass straight to `initialMeasurementsCache`. */
+/**
+ * Heights measured under the previous visit's layout, or empty when there is
+ * nothing usable. Pass straight to `initialMeasurementsCache`.
+ *
+ * A pure read, deliberately (#560): the log calls it from render, and render is
+ * not a commit — React 19 StrictMode invokes it twice in development, and a
+ * render discarded by a transition or a Suspense retry runs it for a commit
+ * that never happens. Clearing the store from there would throw away the
+ * heights of a conversation that is still mounted, which is the #460 stacking
+ * bug this module exists to prevent. `noteVisit` does the writing, from a
+ * layout effect.
+ */
 export function measuredRows(convId: string, signature: string): VirtualItem[] {
+  if (signature !== prefsSignature) {
+    return EMPTY;
+  }
+  return byConversation.get(convId) ?? EMPTY;
+}
+
+/**
+ * A log is now on screen for `convId` under `signature` — everything the read
+ * above used to do as a side effect, moved to where a side effect belongs.
+ *
+ * Two things happen here. A signature the store has not seen invalidates every
+ * remembered height at once (the type ramp, the density and the layout tier
+ * reflow every row of every conversation, exactly like `noteLogWidth`); and the
+ * visited conversation moves to the front of the LRU queue, so a channel the
+ * user keeps coming back to is not evicted by the ones they pass through.
+ *
+ * Called from a layout effect, so it still lands before the outgoing log's
+ * unmount cleanup files its snapshot — `rememberMeasuredRows` compares against
+ * this signature specifically to drop heights measured under the old layout.
+ */
+export function noteVisit(convId: string, signature: string): void {
   if (signature !== prefsSignature) {
     prefsSignature = signature;
     byConversation.clear();
-    return EMPTY;
+    return;
   }
   const items = byConversation.get(convId);
   if (items === undefined) {
-    return EMPTY;
+    return;
   }
   byConversation.delete(convId);
   byConversation.set(convId, items);
-  return items;
 }
 
 /** Keep this visit's measurements for the next one (`virtualizer.takeSnapshot()`

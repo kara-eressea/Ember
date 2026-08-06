@@ -351,23 +351,64 @@ export function genderOf(
   if (!session) {
     return undefined;
   }
-  for (const channel of Object.values(session.channels)) {
-    const member = channel.members.find((m) =>
-      sameCharacter(m.character, character),
-    );
-    if (member) {
-      return member.gender;
+  const lower = character.toLowerCase();
+  const channels = Object.values(session.channels);
+  // Present members across every channel first, then the seen rosters —
+  // the same two passes the linear scan made, one Map lookup each (#560).
+  // `has`, not a truthy `get`: a member the roster holds ends the search even
+  // if their gender is blank, exactly as the `find()` this replaced did — a
+  // stale seen-roster entry must never outrank someone who is present.
+  for (const channel of channels) {
+    const members = rosterIndex(channel.members);
+    if (members.has(lower)) {
+      return members.get(lower);
     }
   }
-  for (const channel of Object.values(session.channels)) {
-    const seen = channel.seen.find((s) =>
-      sameCharacter(s.character, character),
-    );
-    if (seen) {
-      return seen.gender;
+  for (const channel of channels) {
+    const seen = rosterIndex(channel.seen);
+    if (seen.has(lower)) {
+      return seen.get(lower);
     }
   }
   return undefined;
+}
+
+/**
+ * Lowercased name → gender for one roster array, cached against the array's
+ * own identity (#560).
+ *
+ * `genderOf` used to walk every member of every channel, allocating two
+ * lowercased strings per comparison — and zustand runs every subscriber's
+ * selector on every write, with one `useGenderColorVar` subscriber per
+ * message row, per ad row and per `[user]` tag. A 200-member room and forty
+ * visible rows made a single presence event tens of thousands of string
+ * allocations.
+ *
+ * A WeakMap on the array is the whole cache-invalidation story: every write
+ * path here builds member/seen arrays with `mapPreserving` or a fresh array,
+ * so a roster that changed is a new object (miss, rebuilt once) and one that
+ * did not is the same object (hit). Nothing has to remember to invalidate,
+ * and a dropped channel takes its index with it.
+ */
+const rosterIndexes = new WeakMap<object, Map<string, string>>();
+
+function rosterIndex(
+  roster: readonly { character: string; gender: string }[],
+): Map<string, string> {
+  const cached = rosterIndexes.get(roster);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const index = new Map<string, string>();
+  for (const entry of roster) {
+    // First entry wins, matching the `find()` this replaced.
+    const key = entry.character.toLowerCase();
+    if (!index.has(key)) {
+      index.set(key, entry.gender);
+    }
+  }
+  rosterIndexes.set(roster, index);
+  return index;
 }
 
 /**
@@ -564,19 +605,32 @@ function moveMemberToSeen(
 }
 
 export const useSessionsStore = create<SessionsState>()((set, get) => {
-  /** Immutable single-session update; creates the session if unknown. */
+  /**
+   * Immutable single-session update; creates the session if unknown.
+   *
+   * An update that returns the session it was handed is a no-op, and the store
+   * says so by returning the state object itself: zustand skips the whole
+   * notification when `setState` produces the current state (`Object.is`), so
+   * not one subscriber's selector runs. That is the other half of #355 (#560).
+   * Reference-preservation alone spares the *re-render*; it does not spare the
+   * selector, and the global presence stream — ~14 events/sec, almost all of
+   * them for characters this identity shares no channel, DM or bookmark with —
+   * was still paying for one run of every mounted selector on every event.
+   */
   function patch(
     identityId: string,
     update: (session: IdentitySession) => IdentitySession,
   ): void {
-    set((state) => ({
-      sessions: {
-        ...state.sessions,
-        [identityId]: update(
-          state.sessions[identityId] ?? emptySession(identityId),
-        ),
-      },
-    }));
+    set((state) => {
+      const current = state.sessions[identityId];
+      const next = update(current ?? emptySession(identityId));
+      // Only a session that already existed can bail: the first event for an
+      // identity has to create its slice even when it changes nothing in it.
+      if (next === current) {
+        return state;
+      }
+      return { sessions: { ...state.sessions, [identityId]: next } };
+    });
   }
 
   /**
@@ -1029,23 +1083,37 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
         );
         // Our own STA (set from any tab, or restored after a reconnect)
         // converges the MeBar/rail status everywhere.
-        const own =
-          d.online && sameCharacter(d.character, session.character)
-            ? {
-                ownStatus: d.status ?? session.ownStatus,
-                ownStatusmsg: d.statusmsg ?? session.ownStatusmsg,
-              }
-            : {};
+        const mine = d.online && sameCharacter(d.character, session.character);
+        const ownStatus = mine
+          ? (d.status ?? session.ownStatus)
+          : session.ownStatus;
+        const ownStatusmsg = mine
+          ? (d.statusmsg ?? session.ownStatusmsg)
+          : session.ownStatusmsg;
         // Bookmark/friend rows track the same global NLN/FLN/STA stream —
         // presence there must never freeze at fetch time (#218).
         const social = session.social
           ? patchSocialPresence(session.social, d)
           : undefined;
+        // Nothing here holds this character: keep the session reference, so
+        // `patch` skips the write entirely (#560). This is the common case —
+        // the stream is global and carries every character on F-List, while
+        // the four collections above are one viewer's.
+        if (
+          channels === session.channels &&
+          dms === session.dms &&
+          social === session.social &&
+          ownStatus === session.ownStatus &&
+          ownStatusmsg === session.ownStatusmsg
+        ) {
+          return session;
+        }
         return {
           ...session,
           channels,
           dms,
-          ...own,
+          ownStatus,
+          ownStatusmsg,
           ...(social ? { social } : {}),
         };
       });
@@ -1082,6 +1150,11 @@ export const useSessionsStore = create<SessionsState>()((set, get) => {
             bookmarks === social.bookmarks && friends === social.friends
               ? social
               : { ...social, bookmarks, friends };
+        }
+        // Same bail as applyPresence: an LIS batch that touched no DM and no
+        // social row must not replace the session object (#560).
+        if (dms === session.dms && social === session.social) {
+          return session;
         }
         return { ...session, dms, ...(social ? { social } : {}) };
       });

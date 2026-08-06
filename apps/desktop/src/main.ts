@@ -63,6 +63,7 @@ import {
   net,
   Notification,
   safeStorage,
+  session,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron";
@@ -113,6 +114,7 @@ import {
   MissingArtifactError,
   resolveArtifactPaths,
 } from "./paths.js";
+import { installPermissionHandlers } from "./permissions.js";
 import { planBoot, provisionFirstRun, secretsPath } from "./provisioning.js";
 import {
   EncryptionUnavailableError,
@@ -398,6 +400,15 @@ if (!app.requestSingleInstanceLock()) {
 
 async function boot(): Promise<void> {
   await app.whenReady();
+  // Before any window exists to ask for anything: Electron grants web
+  // permissions by default when no handler is installed, and in thin-client
+  // mode the window shows an origin this process does not control (#560).
+  // Both the default session and any session created later — a partition is
+  // one line away, and it would otherwise start from the unsafe default.
+  installPermissionHandlers(session.defaultSession);
+  app.on("session-created", (created) => {
+    installPermissionHandlers(created);
+  });
   try {
     installAppMenu(() => {
       openChooser("switch");

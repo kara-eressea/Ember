@@ -6,7 +6,7 @@
 // armed on pointerdown — before the focus change — so the blur stands down.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { RatingDto } from "@emberchat/protocol";
 import { RateEditor } from "./RateEditor.js";
@@ -117,5 +117,96 @@ describe("RateEditor clear flow (M11)", () => {
     expect(putRating).toHaveBeenCalledWith("Sorrel", 5, "good scene partner");
     expect(await screen.findByText("Saved ✓")).toBeInTheDocument();
     expect(rated()?.score).toBe(5);
+  });
+});
+
+// The editor opens on an ad row inside the virtualized log, and the log
+// auto-scrolls behind it as messages arrive (#284). Placed once from the rect
+// captured at click time, it drifted away from its own trigger and pointed at
+// an unrelated message — and stayed on screen after the virtualizer unmounted
+// the row entirely. MiniProfileCard solved this; this is the same machinery
+// (#560).
+describe("RateEditor follows its trigger", () => {
+  /** A trigger whose box the test can move, the way scrolling would. */
+  function trigger(box: { top: number; left: number }) {
+    const button = document.createElement("button");
+    document.body.append(button);
+    let current = box;
+    button.getBoundingClientRect = () => ({
+      top: current.top,
+      left: current.left,
+      bottom: current.top + 30,
+      right: current.left + 100,
+      width: 100,
+      height: 30,
+      x: current.left,
+      y: current.top,
+      toJSON: () => ({}),
+    });
+    const moveTo = (next: { top: number; left: number }) => {
+      current = next;
+    };
+    return { button, moveTo };
+  }
+
+  /** One scroll frame: the capture-phase listener, then its rAF. */
+  async function scrollFrame() {
+    await act(async () => {
+      window.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+  }
+
+  const editor = () => screen.getByRole("dialog", { name: "Rate Sorrel" });
+
+  it("re-measures its trigger as the log scrolls under it", async () => {
+    const { button, moveTo } = trigger({ top: 400, left: 100 });
+    render(
+      <RateEditor
+        character="Sorrel"
+        anchor={button.getBoundingClientRect()}
+        anchorElement={button}
+        onClose={vi.fn()}
+      />,
+    );
+    const opened = editor().style.top;
+
+    // A message arrives and the bottom-stick controller moves the row up.
+    moveTo({ top: 240, left: 100 });
+    await scrollFrame();
+
+    expect(editor().style.top).not.toBe(opened);
+    // 30px tall trigger + the shared 6px popover gap.
+    expect(editor().style.top).toBe("276px");
+    expect(editor().style.left).toBe("100px");
+  });
+
+  it("closes rather than float on when the row is virtualized away", async () => {
+    const { button } = trigger({ top: 400, left: 100 });
+    const onClose = vi.fn();
+    render(
+      <RateEditor
+        character="Sorrel"
+        anchor={button.getBoundingClientRect()}
+        anchorElement={button}
+        onClose={onClose}
+      />,
+    );
+    expect(onClose).not.toHaveBeenCalled();
+
+    button.remove(); // scrolled out of the virtualizer's window
+    await scrollFrame();
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("still places from the given rect when no trigger was handed over", async () => {
+    render(
+      <RateEditor character="Sorrel" anchor={anchor()} onClose={vi.fn()} />,
+    );
+    // The mini card's docked placement has no element to follow, and a scroll
+    // must not close an editor that never had a trigger to lose.
+    await scrollFrame();
+    expect(editor().style.top).toBe("136px");
   });
 });
