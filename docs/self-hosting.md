@@ -6,6 +6,13 @@ abuse management leans on IP/household correlation, and unrelated users
 sharing one server's IP would look like one household to their moderation
 tooling. Run your own; it's designed to be painless.
 
+One household limitation worth knowing: if two users on the same instance
+add the *same* F-List account, their connections will occasionally
+interrupt each other — F-List honours only one login ticket per account at
+a time, and each user's sessions hold their own. The app says so when the
+second person adds the account. Give each person their own F-List account
+and this never comes up.
+
 What you get: a bouncer that keeps your F-Chat characters online while your
 browser is closed, catch-up on missed history, Markdown composing, delayed
 send, multi-device login, and granular highlights — reachable from anywhere

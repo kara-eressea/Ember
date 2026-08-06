@@ -107,6 +107,18 @@
   cursor: default;
 }
 
+/* The error band's shape in the warning tier — for things that worked but
+   deserve a caution (the shared-account notice, #573). */
+.notice {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: var(--eb-radius);
+  border: 1px solid var(--eb-warn);
+  color: var(--eb-warn);
+  font-size: calc(12.5px * var(--eb-font-ui-scale));
+  line-height: 1.45;
+}
+
 .error {
   margin: 0 0 14px;
   padding: 10px 12px;

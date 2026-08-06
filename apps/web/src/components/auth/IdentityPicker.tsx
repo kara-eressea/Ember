@@ -452,15 +452,37 @@ function AccountForm({
   const [remember, setRemember] = useState(unlock?.remembered ?? false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** The add worked, but the server had something to say first (#573 —
+   * another user here runs the same F-List account). Holds the handoff, not
+   * the account: Continue releases it. */
+  const [notice, setNotice] = useState<{
+    message: string;
+    account: FlistAccountDto;
+  }>();
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      const { account } = unlock
-        ? await api.unlockFlistAccount(unlock.id, password, remember)
-        : await api.addFlistAccount({ accountName, password, remember });
+      if (unlock) {
+        const { account } = await api.unlockFlistAccount(
+          unlock.id,
+          password,
+          remember,
+        );
+        onReady(account);
+        return;
+      }
+      const { account, warning } = await api.addFlistAccount({
+        accountName,
+        password,
+        remember,
+      });
+      if (warning !== undefined) {
+        setNotice({ message: warning, account });
+        return;
+      }
       onReady(account);
     } catch (cause) {
       setError(
@@ -469,6 +491,26 @@ function AccountForm({
     } finally {
       setBusy(false);
     }
+  }
+
+  if (notice) {
+    return (
+      <div>
+        <p className={styles.sectionLabel}>One thing to know</p>
+        <p className={styles.notice} role="status">
+          {notice.message}
+        </p>
+        <button
+          className={styles.primaryButton}
+          type="button"
+          onClick={() => {
+            onReady(notice.account);
+          }}
+        >
+          Continue
+        </button>
+      </div>
+    );
   }
 
   return (
