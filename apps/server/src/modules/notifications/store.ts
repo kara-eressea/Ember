@@ -115,6 +115,15 @@ export class NotificationStore {
     this.events = new TypedEventBus<NotificationEvents>(logger);
   }
 
+  /**
+   * Settles once every write enqueued so far has landed. Shutdown drains
+   * through here (app.ts onClose): the pool closes the moment app.close()
+   * resolves, and a notification still queued then is lost outright.
+   */
+  async drain(): Promise<void> {
+    await Promise.all(this.#queues.values());
+  }
+
   /** Drop cached mute lists after a prefs patch (mirrors HighlightMatcher). */
   invalidatePrefs(userId: string): void {
     this.#mutesByUser.delete(userId);

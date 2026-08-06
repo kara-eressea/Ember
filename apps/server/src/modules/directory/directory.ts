@@ -81,8 +81,9 @@ export class ChannelDirectory {
     this.#now = options.now ?? Date.now;
   }
 
-  /** Resolves once every replacement enqueued so far has committed. Test
-   * hook: sleeping "long enough" for the queue flakes on loaded runners. */
+  /** Resolves once every replacement enqueued so far has committed. Shutdown
+   * drains through here (app.ts onClose); tests use it because sleeping
+   * "long enough" for the queue flakes on loaded runners. */
   async flushWrites(): Promise<void> {
     await this.#writeQueue;
   }

@@ -155,7 +155,7 @@ export class SeenMembersStore {
     this.#detach.set(identityId, detach);
   }
 
-  /** Settles once every write enqueued so far has landed (tests). */
+  /** Settles once every write enqueued so far has landed (shutdown; tests). */
   async idle(): Promise<void> {
     await this.#queue;
   }
