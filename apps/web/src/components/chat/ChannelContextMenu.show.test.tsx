@@ -19,6 +19,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { ChannelContextMenu } from "./ChannelContextMenu.js";
 import { useSessionsStore, type ChannelView } from "../../stores/sessions.js";
+import { stubNoHover } from "../../test-support/dom.js";
 
 vi.mock("../../gateway/socket.js", () => ({
   gateway: { cmd: vi.fn().mockResolvedValue({ ok: true }) },
@@ -29,22 +30,6 @@ afterEach(() => {
   useSessionsStore.setState({ sessions: initialSessions });
   vi.unstubAllGlobals();
 });
-
-/** jsdom ships no matchMedia, which is already the "has a hover" answer
- * (useNoHover defaults to false). This installs one that says otherwise —
- * the same stub RichText.touch.test.tsx uses. */
-function stubNoHover(): void {
-  vi.stubGlobal(
-    "matchMedia",
-    (query: string): MediaQueryList =>
-      ({
-        matches: query === "(hover: none)",
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }) as unknown as MediaQueryList,
-  );
-}
 
 const LANTERN: ChannelView = {
   convId: "c1",

@@ -26,7 +26,7 @@ export interface PushRoutesOptions {
  * Browsers re-PUT their subscription on every boot and rotation, and a
  * multi-tab user does it once per tab. Generous for that, closed to a loop.
  */
-export const PUSH_RATE_LIMIT_MAX = 60;
+const PUSH_RATE_LIMIT_MAX = 60;
 
 /**
  * Installs one login may keep. Phones, desktops, a work machine — ten covers

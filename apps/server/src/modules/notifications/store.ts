@@ -37,7 +37,7 @@ export interface NotificationEvents {
 }
 
 /** Rows kept per identity; the oldest beyond this are pruned on insert. */
-export const MAX_NOTIFICATIONS_PER_IDENTITY = 500;
+const MAX_NOTIFICATIONS_PER_IDENTITY = 500;
 
 /**
  * Inserts between prune passes. Pruning every insert would add a keyset
@@ -45,13 +45,13 @@ export const MAX_NOTIFICATIONS_PER_IDENTITY = 500;
  * once every few hundred rows, so it runs on a counter — the cap is a
  * ceiling on growth, not an exact row budget.
  */
-export const PRUNE_EVERY = 50;
+const PRUNE_EVERY = 50;
 
 /** Excerpt length stored per row — a list-row preview, not the message. */
-export const EXCERPT_MAX = 160;
+const EXCERPT_MAX = 160;
 
 /** Unseen counts are capped like the badge totals; the client renders 99+. */
-export const UNSEEN_CAP = 99;
+const UNSEEN_CAP = 99;
 
 /** Strip BBCode for the stored excerpt. Mirrors the client's previewText:
  * the wire grammar is `[name]`/`[name=arg]`/`[/name]`, so a bracket strip is

@@ -22,8 +22,7 @@
   },
   "dependencies": {
     "@emberchat/fchat-protocol": "workspace:*",
-    "ws": "^8.21.0",
-    "zod": "^4.4.3"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@emberchat/fchat-sim": "workspace:*",

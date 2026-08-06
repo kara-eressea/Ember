@@ -55,10 +55,10 @@ export interface PushPayload {
  * phone that was off for a working day, short enough that nobody is woken by
  * a conversation that ended yesterday.
  */
-export const PUSH_TTL_SECONDS = 4 * 60 * 60;
+const PUSH_TTL_SECONDS = 4 * 60 * 60;
 
 /** Socket budget per send. Generous; the sends are detached anyway. */
-export const PUSH_TIMEOUT_MS = 10_000;
+const PUSH_TIMEOUT_MS = 10_000;
 
 /**
  * Where a click lands (see `apps/web/src/router.tsx`). Both segments are ids
@@ -230,7 +230,8 @@ export class PushSender {
     if (subscriptions.length === 0) {
       return;
     }
-    // Excerpts are capped at EXCERPT_MAX, so this is comfortably inside the
+    // Excerpts are capped by the notification store (`EXCERPT_MAX`, private
+    // to `notifications/store.ts`), so this is comfortably inside the
     // 4 KB push limit. Concurrent, no retry queue: a user has at most a
     // handful of installs and a failed push is not worth a second attempt —
     // the next message brings another.

@@ -36,8 +36,6 @@ import { normalizeServerUrl } from "./server-url.js";
 /** Bumped if the file's shape changes; an unknown version reads as absent. */
 export const CONFIG_SCHEMA_VERSION = 1;
 
-export type DesktopMode = "local" | "thin-client";
-
 export type DesktopConfig =
   /** This machine runs the bouncer (§2, §3). */
   | { readonly mode: "local"; readonly trayNoticeSeen?: true }

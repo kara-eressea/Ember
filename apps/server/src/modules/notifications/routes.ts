@@ -39,7 +39,7 @@ export interface NotificationRoutesOptions {
  * one indexed keyset page each, so this is an anti-abuse ceiling rather than
  * a cost control.
  */
-export const NOTIFICATIONS_RATE_LIMIT_MAX = 120;
+const NOTIFICATIONS_RATE_LIMIT_MAX = 120;
 
 // eslint-disable-next-line @typescript-eslint/require-await -- fastify async plugin signature
 export async function notificationsRoutes(

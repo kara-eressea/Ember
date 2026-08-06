@@ -70,8 +70,3 @@ export interface CampaignDto {
   attached: boolean;
   channels: CampaignChannelDto[];
 }
-
-/** Running = not explicitly stopped and not past its expiry. */
-export function campaignRunning(c: CampaignDto, now: number): boolean {
-  return c.stoppedAt === undefined && now < c.expiresAt;
-}

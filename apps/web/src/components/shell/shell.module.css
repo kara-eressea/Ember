@@ -845,12 +845,6 @@
 
 /* Join-channel / new-DM inline forms */
 
-.miniForm {
-  display: flex;
-  gap: 6px;
-  margin: 4px 12px;
-}
-
 .miniInput {
   flex: 1;
   min-width: 0;
@@ -1134,13 +1128,6 @@
   background: var(--eb-hover);
 }
 
-/* Two header actions side by side (M10: character search + browser). */
-.sectionActions {
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-}
-
 /* ── Phone: the single-pane navigation stack (MP1 package B, #375) ───────
    Below the compact floor there is room for one pane, and which one is a
    function of the route — AppShell derives it (lib/pane.ts) and publishes it
@@ -1319,7 +1306,7 @@
 /* Side-by-side controls keep their boxes and take the overlay, and the rows
    they sit in open up to 16px so two neighbouring 44px targets leave 2px
    between them rather than taking 5px from each other. */
-:root[data-layout="phone"] :is(.toolbar, .sectionActions, .meBar) {
+:root[data-layout="phone"] :is(.toolbar, .meBar) {
   gap: 16px;
 }
 

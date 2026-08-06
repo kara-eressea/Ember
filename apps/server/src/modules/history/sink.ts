@@ -63,14 +63,14 @@ const NOOP_LOGGER: SessionLogger = {
  * (pm.open). Inbound traffic is not capped — F-Chat itself is the throttle
  * there — but a browser looping pm.open must not bloat the table.
  */
-export const MAX_CONVERSATIONS_PER_IDENTITY = 1000;
+const MAX_CONVERSATIONS_PER_IDENTITY = 1000;
 
 /**
  * How many recent own-DM sends stay resolvable by `sendId` (#491). A refusal
  * follows its PRI within a round trip, so anything beyond the last few sends
  * per process is dead weight — this is generous.
  */
-export const MAX_TRACKED_SENDS = 500;
+const MAX_TRACKED_SENDS = 500;
 
 export class ConversationLimitError extends Error {
   constructor() {

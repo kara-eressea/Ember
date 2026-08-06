@@ -4,9 +4,16 @@
 node_modules
 **/node_modules
 **/dist
-# The desktop shell's deployed server tree (MX3) — a local build artifact, and
-# one whose native modules are built for Electron's ABI. Never in an image.
+# The desktop shell's build artifacts (MX3/MX4). The server tree's native
+# modules are built for Electron's ABI, and `release/` is a whole Electron
+# runtime plus a DMG and an NSIS installer — gigabytes, none of it an input to
+# a server image. Docker ignore patterns are exact path matches, so the
+# staging siblings (`server-runtime.pglite-stage/`, `server-runtime.stamp.json`)
+# need their own line; eslint, prettier and apps/desktop/.gitignore already
+# treat all of these as derived.
 apps/desktop/server-runtime
+apps/desktop/server-runtime.*
+apps/desktop/release
 **/.turbo
 **/test-results
 **/playwright-report

@@ -15,6 +15,7 @@ import { PREFS_DEFAULTS } from "@emberchat/protocol";
 import { MessageLog } from "./MessageLog.js";
 import { AXIS_LOCK_PX, REVEAL_VAR } from "./pull-reveal.js";
 import { useMessagesStore } from "../../stores/messages.js";
+import { setWindowWidth } from "../../test-support/dom.js";
 import {
   useSessionsStore,
   type ChannelView,
@@ -41,13 +42,6 @@ const CONV = "c1";
 const KEY = "adh-1";
 const PHONE_WIDTH = 393;
 const DESKTOP_WIDTH = 1280;
-
-function setWindowWidth(width: number): void {
-  Object.defineProperty(window, "innerWidth", {
-    value: width,
-    configurable: true,
-  });
-}
 
 function channel(): ChannelView {
   return {

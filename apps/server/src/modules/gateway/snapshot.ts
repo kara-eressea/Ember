@@ -17,7 +17,7 @@ import { seenByChannel } from "../seen-members/store.js";
 import type { FchatSession, SessionState } from "@emberchat/session-engine";
 
 /** Unread counts are capped server-side; the client renders 99 as "99+". */
-export const UNREAD_CAP = 99;
+const UNREAD_CAP = 99;
 
 /**
  * Per-conversation unread + mention counts past the read cursor, computed in
@@ -307,7 +307,7 @@ export const CATCHUP_REPLAY_BUDGET = 2_000;
  * never eagerly streams more than roughly a day of it — anything older
  * stays one scroll-back page away (`history.page`, uncapped).
  */
-export const CATCHUP_EAGER_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CATCHUP_EAGER_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Which conversations to replay on sub, and from where. Two regimes:
