@@ -5,7 +5,7 @@
 
 import { createServer, type AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import WebSocket from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 import {
   FchatErrorCode,
   serializeClientCommand,
@@ -1280,4 +1280,450 @@ describe("FchatSession against fchat-sim", () => {
       session.sendChannelMessage("Frontpage", "a".repeat(5000)),
     ).rejects.toThrow(MessageTooLongError);
   });
+
+  // ── Self-removal: kick / ban / timeout (#561) ──────────────────────────────
+  //
+  // CKU/CBU/CTU naming our OWN character is the leave signal — no LCH
+  // follows. The channel must leave the desired set or the next reconnect
+  // walks straight back into the room, and on a ban that is ERR 48 on every
+  // reconnect, forever, against the live server.
+
+  it.each([
+    {
+      what: "kicked",
+      frame: {
+        cmd: "CKU",
+        payload: {
+          operator: "Birch Rowan",
+          channel: "Frontpage",
+          character: CHARACTER,
+        },
+      },
+    },
+    {
+      what: "banned",
+      frame: {
+        cmd: "CBU",
+        payload: {
+          operator: "Birch Rowan",
+          channel: "Frontpage",
+          character: CHARACTER,
+        },
+      },
+    },
+    {
+      what: "timed out",
+      frame: {
+        cmd: "CTU",
+        payload: {
+          operator: "Birch Rowan",
+          channel: "Frontpage",
+          character: CHARACTER,
+          length: 30,
+        },
+      },
+    },
+  ] as const)(
+    "does not rejoin a channel it was $what from, and puts no JCH on the wire",
+    async ({ frame }) => {
+      const clientFrames: string[] = [];
+      const sim = await startSim({
+        log: (line) => {
+          if (line.startsWith("<< ")) {
+            clientFrames.push(line.slice(3));
+          }
+        },
+      });
+      const session = makeSession(sim);
+      session.start();
+      await waitForStatus(session, "online");
+
+      const joined = waitForCommand(
+        session,
+        (c) => c.cmd === "CDS" && c.payload.channel === "Frontpage",
+      );
+      session.joinChannel("Frontpage");
+      await joined;
+
+      // The removal frame arrives instead of an LCH.
+      const removal = waitForCommand(session, (c) => c.cmd === frame.cmd);
+      sim.sendRawTo(CHARACTER, serializeServerCommand(frame));
+      await removal;
+
+      // Reconnect. Rejoin JCHs go out on IDN, before the Development join
+      // below, so once Development's CDS lands any Frontpage rejoin would
+      // already be on the wire.
+      clientFrames.length = 0;
+      sim.disconnect(CHARACTER);
+      await waitForStatus(session, "online", { next: true });
+      const fence = waitForCommand(
+        session,
+        (c) => c.cmd === "CDS" && c.payload.channel === "Development",
+      );
+      session.joinChannel("Development");
+      await fence;
+
+      expect(session.state.channels.has("Frontpage")).toBe(false);
+      const joins = clientFrames
+        .filter((raw) => raw.startsWith("JCH "))
+        .map((raw) => JSON.parse(raw.slice(4)) as { channel: string });
+      expect(joins.map((j) => j.channel)).toEqual(["Development"]);
+    },
+  );
+});
+
+// ── Op / room command surface (#561) ─────────────────────────────────────────
+//
+// The web client's moderation and room tooling is covered end-to-end by
+// apps/web/e2e/ops.spec.ts, but the engine's own contract — which frame goes
+// out for which method, in the shape design/client-commands.md documents, on
+// which rate class — had no test at this layer.
+
+interface SentFrame {
+  cmd: string;
+  payload?: unknown;
+  at: number;
+}
+
+/** Sim options that decode every client frame the sim saw, in wire order. */
+function clientFrameSink(): { options: FchatSimOptions; frames: SentFrame[] } {
+  const frames: SentFrame[] = [];
+  return {
+    frames,
+    options: {
+      log: (line) => {
+        if (!line.startsWith("<< ")) {
+          return;
+        }
+        const raw = line.slice(3);
+        const space = raw.indexOf(" ");
+        frames.push({
+          cmd: space === -1 ? raw : raw.slice(0, space),
+          ...(space === -1
+            ? {}
+            : { payload: JSON.parse(raw.slice(space + 1)) as unknown }),
+          at: Date.now(),
+        });
+      },
+    },
+  };
+}
+
+describe("op and room commands against fchat-sim", () => {
+  it("puts every op and room command on the wire in its documented shape", async () => {
+    const sink = clientFrameSink();
+    // msg_flood 0 keeps the shared ROOM timeline to the flood margin — the
+    // pacing itself is asserted separately below.
+    const sim = await startSim({
+      ...sink.options,
+      serverVars: { msg_flood: 0 },
+    });
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+
+    const room = "Frontpage";
+    const target = "Birch Rowan";
+    // Every call resolves once its frame passed the gate onto the wire, so
+    // awaiting them in order makes the expected sequence exact. Refusals
+    // (we are nobody's op here) come back as ERR and are beside the point:
+    // the contract under test is what the engine SENDS.
+    sink.frames.length = 0;
+    await session.requestChannelLists();
+    await session.createRoom("Moss Parlour");
+    await session.inviteToChannel(room, target);
+    await session.setRoomStatus(room, "public");
+    await session.kickFromChannel(room, target);
+    await session.banFromChannel(room, target);
+    await session.unbanFromChannel(room, target);
+    await session.timeoutFromChannel(room, target, 30);
+    await session.promoteOp(room, target);
+    await session.demoteOp(room, target);
+    await session.setRoomOwner(room, target);
+    await session.setRoomDescription(room, "moss, mostly");
+    await session.setRoomMode(room, "ads");
+    await session.requestBanlist(room);
+    await session.unignore(target);
+    await session.reportToStaff(target, "\tBirch Rowan\nspam");
+
+    // CCR makes the sim mint a room and walk us into it; drop the resulting
+    // join traffic and the keepalives, which are not this test's subject.
+    // The calls resolve at OUR socket write, so poll until the sim has read
+    // the tail of the burst rather than racing loopback transit.
+    const sent = () =>
+      sink.frames
+        .filter((frame) => frame.cmd !== "PIN" && frame.cmd !== "JCH")
+        .map(({ cmd, payload }) => ({ cmd, payload }));
+    await vi.waitFor(() => {
+      expect(sent()).toHaveLength(17);
+    }, FRAME_WAIT_MS);
+    expect(sent()).toEqual([
+      // requestChannelLists fires both directory queries together: CHA and
+      // ORS are separate rate classes precisely so one refresh is one beat.
+      { cmd: "CHA", payload: undefined },
+      { cmd: "ORS", payload: undefined },
+      { cmd: "CCR", payload: { channel: "Moss Parlour" } },
+      { cmd: "CIU", payload: { channel: room, character: target } },
+      { cmd: "RST", payload: { channel: room, status: "public" } },
+      { cmd: "CKU", payload: { channel: room, character: target } },
+      { cmd: "CBU", payload: { channel: room, character: target } },
+      { cmd: "CUB", payload: { channel: room, character: target } },
+      { cmd: "CTU", payload: { channel: room, character: target, length: 30 } },
+      { cmd: "COA", payload: { channel: room, character: target } },
+      { cmd: "COR", payload: { channel: room, character: target } },
+      { cmd: "CSO", payload: { channel: room, character: target } },
+      { cmd: "CDS", payload: { channel: room, description: "moss, mostly" } },
+      { cmd: "RMO", payload: { channel: room, mode: "ads" } },
+      { cmd: "CBL", payload: { channel: room } },
+      { cmd: "IGN", payload: { action: "delete", character: target } },
+      {
+        cmd: "SFC",
+        payload: {
+          action: "report",
+          report: "\tBirch Rowan\nspam",
+          character: target,
+        },
+      },
+    ]);
+  });
+
+  it("shares one ROOM timeline across room management, independent of other classes", async () => {
+    const sink = clientFrameSink();
+    const sim = await startSim({
+      ...sink.options,
+      serverVars: { msg_flood: 0.3 },
+    });
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    sink.frames.length = 0;
+
+    // Two ROOM commands with an IGN between them: the IGN rides its own
+    // class, so it reaches the wire while the second ROOM frame is still
+    // waiting out the shared room window.
+    await Promise.all([
+      session.kickFromChannel("Frontpage", "Birch Rowan"),
+      session.requestBanlist("Frontpage"),
+      session.unignore("Birch Rowan"),
+    ]);
+
+    await vi.waitFor(() => {
+      expect(sink.frames).toHaveLength(3);
+    }, FRAME_WAIT_MS);
+    const order = sink.frames.map((frame) => frame.cmd);
+    expect(order).toEqual(["CKU", "IGN", "CBL"]);
+    const cku = sink.frames.find((f) => f.cmd === "CKU")!;
+    const cbl = sink.frames.find((f) => f.cmd === "CBL")!;
+    // msg_flood 0.3s plus the gate's 100ms transit margin, minus slack for
+    // event-loop jitter; the point is "paced, not back-to-back".
+    expect(cbl.at - cku.at).toBeGreaterThanOrEqual(350);
+  });
+
+  it("refuses every op and room command while offline", async () => {
+    const sim = await startSim();
+    const idle = makeSession(sim);
+    const calls: [string, () => Promise<unknown>][] = [
+      ["requestChannelLists", () => idle.requestChannelLists()],
+      ["createRoom", () => idle.createRoom("Moss Parlour")],
+      ["inviteToChannel", () => idle.inviteToChannel("Frontpage", "Birch")],
+      ["setRoomStatus", () => idle.setRoomStatus("Frontpage", "public")],
+      ["kickFromChannel", () => idle.kickFromChannel("Frontpage", "Birch")],
+      ["banFromChannel", () => idle.banFromChannel("Frontpage", "Birch")],
+      ["unbanFromChannel", () => idle.unbanFromChannel("Frontpage", "Birch")],
+      ["timeoutFromChannel", () => idle.timeoutFromChannel("F", "Birch", 5)],
+      ["promoteOp", () => idle.promoteOp("Frontpage", "Birch")],
+      ["demoteOp", () => idle.demoteOp("Frontpage", "Birch")],
+      ["setRoomOwner", () => idle.setRoomOwner("Frontpage", "Birch")],
+      ["setRoomDescription", () => idle.setRoomDescription("Frontpage", "x")],
+      ["setRoomMode", () => idle.setRoomMode("Frontpage", "chat")],
+      ["requestBanlist", () => idle.requestBanlist("Frontpage")],
+      ["unignore", () => idle.unignore("Birch")],
+      ["reportToStaff", () => idle.reportToStaff("Birch", "spam")],
+      ["searchCharacters", () => idle.searchCharacters({ kinks: ["1"] })],
+      ["rollDice", () => idle.rollDice("Frontpage", "1d10")],
+    ];
+    for (const [name, call] of calls) {
+      await expect(call(), name).rejects.toThrow(SessionNotOnlineError);
+    }
+  });
+
+  it("reports the per-channel ad cooldown from the live LRP timeline", async () => {
+    const sim = await startSim({ serverVars: { lfrp_flood: 30 } });
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    const joined = waitForCommand(
+      session,
+      (c) => c.cmd === "CDS" && c.payload.channel === "Frontpage",
+    );
+    session.joinChannel("Frontpage");
+    await joined;
+
+    // An untouched channel is clear to post: the class only exists once used.
+    expect(session.adWaitMs("Frontpage")).toBe(0);
+    await session.sendChannelAd("Frontpage", "looking for tea");
+    // The wait is the live lfrp_flood VAR plus the gate's transit margin —
+    // read from the server, never hardcoded (developer policy).
+    expect(session.adWaitMs("Frontpage")).toBeGreaterThan(29_000);
+    expect(session.adWaitMs("Frontpage")).toBeLessThanOrEqual(30_100);
+    // Per channel: another room is untouched by this one's window.
+    expect(session.adWaitMs("Development")).toBe(0);
+  });
+});
+
+// ── Character search (FKS) correlation (#561) ────────────────────────────────
+
+describe("searchCharacters against fchat-sim", () => {
+  it("puts the filters on the wire and resolves the FKS reply", async () => {
+    const sink = clientFrameSink();
+    const sim = await startSim(sink.options);
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+    // Someone to find: the sim matches on gender and on a fave/yes kink.
+    const other = makeSession(sim, { character: "Cindral" });
+    other.start();
+    await waitForStatus(other, "online");
+    sink.frames.length = 0;
+
+    const outcome = await session.searchCharacters({
+      kinks: [],
+      genders: ["Female"],
+    });
+    expect(
+      sink.frames
+        .filter((f) => f.cmd === "FKS")
+        .map(({ cmd, payload }) => ({ cmd, payload })),
+    ).toEqual([{ cmd: "FKS", payload: { kinks: [], genders: ["Female"] } }]);
+    expect(outcome.ok).toBe(true);
+  });
+
+  it("adopts a search-outcome ERR as a plain refusal", async () => {
+    // Nobody else is online, so the sim answers ERR 18 (no results) — one of
+    // the four codes that count as this search's own outcome.
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+
+    const outcome = await session.searchCharacters({ kinks: ["523"] });
+    expect(outcome).toMatchObject({ ok: false, code: 18 });
+  });
+
+  it("refuses a second search while one is still in flight", async () => {
+    const sim = await startSim();
+    const session = makeSession(sim);
+    session.start();
+    await waitForStatus(session, "online");
+
+    // FKS carries no request id, so the engine is single-flight per session:
+    // the overlapping caller is told to wait rather than being handed the
+    // other search's answer.
+    const first = session.searchCharacters({ kinks: ["523"] });
+    const second = await session.searchCharacters({ kinks: ["523"] });
+    expect(second).toMatchObject({ ok: false, code: 50 });
+    expect((await first).ok).toBe(false); // ERR 18: nobody else online
+  });
+});
+
+/**
+ * A minimal F-Chat endpoint that answers IDN and nothing else. The sim always
+ * replies to FKS, so it cannot produce the one thing the stale-reply window
+ * exists for: a search whose answer never comes, followed by that answer
+ * arriving late, during the NEXT search.
+ */
+class SilentChatServer {
+  #client: WebSocket | undefined;
+  readonly url: string;
+
+  private constructor(server: WebSocketServer, port: number) {
+    this.url = `ws://127.0.0.1:${String(port)}/chat2`;
+    server.on("connection", (socket: WebSocket) => {
+      this.#client = socket;
+      socket.on("message", (data) => {
+        if (rawDataToString(data).startsWith("IDN ")) {
+          socket.send(
+            serializeServerCommand({
+              cmd: "IDN",
+              payload: { character: CHARACTER },
+            }),
+          );
+        }
+        // Everything else — FKS included — is swallowed.
+      });
+    });
+  }
+
+  static async start(): Promise<SilentChatServer> {
+    const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+    await new Promise<void>((resolve) => {
+      server.once("listening", resolve);
+    });
+    const port = (server.address() as AddressInfo).port;
+    const instance = new SilentChatServer(server, port);
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        }),
+    );
+    return instance;
+  }
+
+  /** Pushes a raw server frame at the connected session. */
+  send(command: Parameters<typeof serializeServerCommand>[0]): void {
+    this.#client?.send(serializeServerCommand(command));
+  }
+}
+
+describe("searchCharacters stale-reply window", () => {
+  it(
+    "swallows the late reply of a timed-out search instead of adopting it",
+    // The wait IS the behaviour under test (the engine's 10s response
+    // deadline), not a sleep before an assertion.
+    { timeout: 30_000 },
+    async () => {
+      const chat = await SilentChatServer.start();
+      const session = new FchatSession({
+        character: CHARACTER,
+        accountName: ACCOUNT,
+        tickets: { getTicket: () => Promise.resolve("fct_x"), invalidate() {} },
+        wsUrl: chat.url,
+        clientName: "EmberChat-test",
+        clientVersion: "0.0.0",
+        backoffFloorMs: 50,
+        backoffCapMs: 100,
+        random: () => 0,
+      });
+      cleanups.push(() => {
+        session.stop();
+      });
+      session.start();
+      await waitForStatus(session, "online");
+
+      // Nothing ever answers: the search resolves as a timeout refusal and
+      // arms the window in which one late reply is discarded.
+      const first = await session.searchCharacters({ kinks: ["523"] });
+      expect(first).toMatchObject({ ok: false, code: 0 });
+
+      const second = session.searchCharacters({ kinks: ["777"] });
+      // The FIRST search's answer, arriving far too late. Adopting it would
+      // hand the user results for a query they already abandoned.
+      chat.send({
+        cmd: "FKS",
+        payload: { characters: ["Ghost Of Search Past"], kinks: ["523"] },
+      });
+      chat.send({
+        cmd: "FKS",
+        payload: { characters: ["Cindral"], kinks: ["777"] },
+      });
+      expect(await second).toEqual({
+        ok: true,
+        characters: ["Cindral"],
+        kinks: ["777"],
+      });
+    },
+  );
 });
