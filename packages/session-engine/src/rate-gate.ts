@@ -130,16 +130,26 @@ export class RateGate {
 
   /**
    * Drops everything still queued (connection lost); pending sends reject.
-   * Timelines reset too — a new connection gets fresh flood accounting
-   * server-side.
+   * Message timelines reset with them — a new connection gets fresh
+   * msg_flood accounting server-side, and a reconnect costs ≥10s anyway.
+   *
+   * The per-channel ad timelines do NOT reset. lfrp_flood is enforced per
+   * character per channel at ~10 minutes and F-Chat keeps counting across
+   * our socket: zeroing it here let an ad posted inside the real window
+   * through the gate, where it was acked, persisted and shown as posted
+   * while the server answered ERR 56 and nobody received it. Keeping the
+   * stamp is the safe direction — the worst case is refusing an ad F-Chat
+   * would have taken.
    */
   clear(): void {
-    for (const state of this.#classes.values()) {
+    for (const [cls, state] of this.#classes) {
       if (state.timer) {
         clearTimeout(state.timer);
         state.timer = undefined;
       }
-      state.lastSentAt = 0;
+      if (!cls.startsWith("LRP:")) {
+        state.lastSentAt = 0;
+      }
       for (const pending of state.queue.splice(0)) {
         pending.reject(new RateGateClearedError());
       }

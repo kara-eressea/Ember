@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { planBoot, secretsPath } from "./provisioning.js";
+import { planBoot, provisionFirstRun, secretsPath } from "./provisioning.js";
 import { EncryptionUnavailableError, type DesktopSecrets } from "./secrets.js";
 
 const STORED: DesktopSecrets = {
@@ -59,5 +59,74 @@ describe("planBoot", () => {
     expect(secretsPath(join("/data", "EmberChat"))).toBe(
       join("/data", "EmberChat", "secrets.json"),
     );
+  });
+});
+
+describe("provisionFirstRun", () => {
+  /** Records the steps in the order they happen, with their boundaries. */
+  function recorder(overrides: { stops?: boolean } = {}) {
+    const log: string[] = [];
+    const steps = {
+      appName: "EmberChat",
+      startMigrator: async () => {
+        log.push("migrator:start");
+        await Promise.resolve();
+        return {
+          stop: async () => {
+            await Promise.resolve();
+            log.push("migrator:stopped");
+            return overrides.stops ?? true;
+          },
+        };
+      },
+      createAccount: async () => {
+        log.push("cli:start");
+        await Promise.resolve();
+        log.push("cli:done");
+      },
+      persistSecrets: () => {
+        log.push("secrets:written");
+      },
+    };
+    return { log, steps };
+  }
+
+  it("never lets the admin CLI overlap the server that migrates", async () => {
+    const { log, steps } = recorder();
+    await provisionFirstRun(steps);
+    // The invariant pglite makes load-bearing: the CLI child opens the same
+    // data directory, so it may only start once the server holding it is
+    // gone (apps/server/src/test-support/db.ts).
+    expect(log).toEqual([
+      "migrator:start",
+      "migrator:stopped",
+      "cli:start",
+      "cli:done",
+      "secrets:written",
+    ]);
+  });
+
+  it("refuses to run the CLI when the migrate-only server would not stop", async () => {
+    const { log, steps } = recorder({ stops: false });
+    await expect(provisionFirstRun(steps)).rejects.toThrow("did not shut down");
+    // Nothing after the failed stop ran: a second process on that directory
+    // is the failure mode, so refusing is the only safe answer.
+    expect(log).toEqual(["migrator:start", "migrator:stopped"]);
+  });
+
+  it("writes the secrets file only after the account exists", async () => {
+    const { log, steps } = recorder();
+    await expect(
+      provisionFirstRun({
+        ...steps,
+        createAccount: () => {
+          log.push("cli:start");
+          return Promise.reject(new Error("create-user failed"));
+        },
+      }),
+    ).rejects.toThrow("create-user failed");
+    // A secrets file written here would make the next boot skip provisioning
+    // entirely, leaving a database with no account anyone has the password to.
+    expect(log).not.toContain("secrets:written");
   });
 });

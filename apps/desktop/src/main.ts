@@ -113,7 +113,7 @@ import {
   MissingArtifactError,
   resolveArtifactPaths,
 } from "./paths.js";
-import { planBoot, secretsPath } from "./provisioning.js";
+import { planBoot, provisionFirstRun, secretsPath } from "./provisioning.js";
 import {
   EncryptionUnavailableError,
   readSecrets,
@@ -565,45 +565,34 @@ async function startLocalMode(): Promise<void> {
     encryptionAvailable: safeStorage.isEncryptionAvailable(),
   });
   if (plan.kind === "provision") {
-    // Three steps that must not overlap, because pglite is
-    // single-connection with no lock of its own (spec §3 step 2, MX2):
-    //
-    //  1. one short server boot, purely to create the schema. The admin CLI
-    //     does not migrate — "the server migrates on boot", as its own
-    //     header says — and on a first run the database is empty, so
-    //     `create-user` would fail on a table that does not exist yet.
-    //  2. the CLI, once the server has actually exited (`stop()` waits).
-    //  3. the real boot, below.
-    const migrator = await startEmbeddedServer(
-      {
-        ...serverOptions,
-        authSecret: plan.secrets.authSecret,
+    // Migrate, stop, then the CLI — the ordering lives in provisioning.ts,
+    // where it is tested; the real boot follows below.
+    await provisionFirstRun({
+      appName: app.getName(),
+      startMigrator: () =>
+        startEmbeddedServer(
+          {
+            ...serverOptions,
+            authSecret: plan.secrets.authSecret,
+          },
+          serverRuntime,
+        ),
+      createAccount: () =>
+        provisionAppAccount({
+          // Electron's own binary, run as Node — see admin-cli.ts.
+          execPath: process.execPath,
+          cliEntry: ARTIFACTS.adminCli,
+          env: buildAdminCliEnv({
+            dataDir,
+            authSecret: plan.secrets.authSecret,
+          }),
+          account,
+          password: plan.secrets.appAccountPassword,
+        }),
+      persistSecrets: () => {
+        writeSecrets(secretsPath(userData), plan.secrets, safeStorage);
       },
-      serverRuntime,
-    );
-    if (!(await migrator.stop())) {
-      throw new Error(
-        [
-          `${app.getName()} couldn't finish setting itself up on this computer, so it stopped before changing anything. Please try starting it again.`,
-          "",
-          "Details: the first-run setup step did not shut down.",
-        ].join("\n"),
-      );
-    }
-    await provisionAppAccount({
-      // Electron's own binary, run as Node — see admin-cli.ts.
-      execPath: process.execPath,
-      cliEntry: ARTIFACTS.adminCli,
-      env: buildAdminCliEnv({
-        dataDir,
-        authSecret: plan.secrets.authSecret,
-      }),
-      account,
-      password: plan.secrets.appAccountPassword,
     });
-    // Only once the account exists: a secrets file written before a failed
-    // creation would make the next boot think it had already provisioned.
-    writeSecrets(secretsPath(userData), plan.secrets, safeStorage);
   }
 
   server = await startEmbeddedServer(

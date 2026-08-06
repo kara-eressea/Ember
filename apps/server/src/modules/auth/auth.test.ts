@@ -13,7 +13,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
 import type { Db } from "../../db/index.js";
-import { makeTestDb, type TestDb } from "../../test-support/db.js";
+import {
+  makeTestDb,
+  TEST_DB_DRIVER,
+  type TestDb,
+} from "../../test-support/db.js";
 import { appUsers, authSessions, userPreferences } from "../../db/schema.js";
 import {
   CONTAINER_BOOT_MS,
@@ -292,6 +296,50 @@ describe("logout", () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     expect(after.statusCode).toBe(401);
+  });
+
+  it("honours a pre-rotation token — the tab that signed out may hold one", async () => {
+    const { accessToken, refreshToken } = await registerUser();
+    // One tab refreshes; the tab the user clicks Log out in still holds the
+    // token from before the rotation (the same case /refresh's grace window
+    // exists for).
+    const rotated = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(rotated.statusCode).toBe(200);
+
+    const logout = await app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      payload: { refreshToken },
+    });
+    expect(logout.statusCode).toBe(204);
+
+    // The row is really gone: neither token refreshes, and the outstanding
+    // access token dies with it — which is what takes the session's push
+    // subscriptions (they cascade off auth_sessions) down with it.
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(stale.statusCode).toBe(401);
+    const current = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: {
+        refreshToken: rotated.json<{ refreshToken: string }>().refreshToken,
+      },
+    });
+    expect(current.statusCode).toBe(401);
+    const me = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(me.statusCode).toBe(401);
   });
 });
 
@@ -585,6 +633,20 @@ describe("registration gate", () => {
 });
 
 describe("admin CLI", () => {
+  /**
+   * The suite's driver-conditional block. These two tests are the only ones
+   * that put a *second process* on the test database, and pglite cannot have
+   * one: it is a whole Postgres inside this process, with no shared buffers
+   * and no data-directory lock, so the CLI child and this process see
+   * different databases (test-support/db.ts). It fails silently, too — the
+   * child exits 0, prints "Created user", and the row is simply not there.
+   *
+   * Production is not exposed to this: the desktop client is the only place a
+   * CLI child meets pglite, and its first run stops the server before the CLI
+   * starts (apps/desktop/src/provisioning.ts, tested there). So the pglite
+   * leg skips these rather than weakening what they assert on Postgres.
+   */
+  const itNeedsASecondProcess = it.skipIf(TEST_DB_DRIVER === "pglite");
   const CLI = fileURLToPath(
     new URL("../../../dist/cli/admin.js", import.meta.url),
   );
@@ -608,7 +670,7 @@ describe("admin CLI", () => {
       },
     );
 
-  it(
+  itNeedsASecondProcess(
     "create-user then reset-password round-trips through login",
     { timeout: LOADED_RUNNER_MS },
     async () => {
@@ -666,7 +728,7 @@ describe("admin CLI", () => {
     },
   );
 
-  it(
+  itNeedsASecondProcess(
     "refuses duplicates and unknown emails with a nonzero exit",
     // Two CLI child processes with argon2 hashing — same loaded-CI-runner
     // budget as the round-trip test above.

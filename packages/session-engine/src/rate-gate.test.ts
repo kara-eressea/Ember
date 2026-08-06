@@ -115,6 +115,29 @@ describe("RateGate", () => {
     await gate.schedule("MSG", () => sent.push("after-clear"));
     expect(sent).toEqual(["first", "after-clear"]);
   });
+
+  it("clear() keeps the ad timelines: lfrp_flood outlives our socket", async () => {
+    const gate = new RateGate(() => 600); // the live lfrp pace
+    const sent: string[] = [];
+    await gate.schedule("LRP:Frontpage", () => sent.push("ad"));
+    // Two minutes in, the socket drops and reconnects.
+    await vi.advanceTimersByTimeAsync(120_000);
+    gate.clear();
+    // F-Chat is still counting this channel's window, so the gate must be
+    // too — otherwise the next ad is acked as sent and answered with ERR 56.
+    expect(gate.waitMs("LRP:Frontpage")).toBeGreaterThan(470_000);
+    void gate.schedule("LRP:Frontpage", () => sent.push("too-soon"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sent).toEqual(["ad"]);
+    // And it does go out once the real window has passed.
+    await vi.advanceTimersByTimeAsync(480_000 + FLOOD_MARGIN_MS);
+    expect(sent).toEqual(["ad", "too-soon"]);
+    // Only the ad classes are preserved; message pacing still resets.
+    await gate.schedule("MSG", () => sent.push("msg"));
+    gate.clear();
+    await gate.schedule("MSG", () => sent.push("msg-after-clear"));
+    expect(sent).toEqual(["ad", "too-soon", "msg", "msg-after-clear"]);
+  });
 });
 
 describe("waitMs (M6 audit — ad fail-fast)", () => {

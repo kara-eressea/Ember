@@ -1,8 +1,10 @@
+import { setTimeout } from "node:timers/promises";
 import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, {
+  type FastifyError,
   type FastifyInstance,
   type FastifyServerOptions,
 } from "fastify";
@@ -80,6 +82,13 @@ declare module "fastify" {
   }
 }
 
+/**
+ * How long shutdown waits for the write queues to drain. Long enough for a
+ * healthy database to finish a backlog, short enough that an unhealthy one
+ * does not turn `docker compose restart` into a hang.
+ */
+const SHUTDOWN_DRAIN_MS = 5_000;
+
 export interface BuildAppOptions {
   config: AppConfig;
   db: Db;
@@ -117,6 +126,22 @@ export async function buildApp({
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+  // Anything that reaches here is unhandled: a deliberate rethrow, a pg
+  // client that cannot connect, argon2 on a corrupt hash. Fastify's default
+  // answers with the error's own message, so an *unauthenticated* login
+  // attempt against an unreachable database learned our internal host and
+  // port. 4xx keeps flowing through the framework's own serialization —
+  // those messages (zod validation, the rate limiter) are about the request,
+  // not about us.
+  app.setErrorHandler<FastifyError>((error, request, reply) => {
+    if ((error.statusCode ?? 500) < 500) {
+      return reply.send(error);
+    }
+    request.log.error({ err: error }, "unhandled request error");
+    return reply
+      .code(500)
+      .send({ error: "Something went wrong on the server" });
+  });
 
   const vault = new CredentialVault();
   const credentialStore = new CredentialStore({
@@ -337,7 +362,11 @@ export async function buildApp({
     spacingMs: config.CAMPAIGN_SPACING_MS,
   });
   await campaignScheduler.start();
-  app.addHook("onClose", () => {
+  app.addHook("onClose", async () => {
+    // Inbound first: every stop() below only clears a timer, so a session
+    // still delivering frames would keep filling the queues we are about to
+    // drain.
+    sessions.stopAll();
     updates.stop();
     sessionJanitor.stop();
     detachedAway.stop();
@@ -346,7 +375,22 @@ export async function buildApp({
     outbox.stop();
     campaignScheduler.stop();
     socialService?.stop();
-    sessions.stopAll();
+    // Then drain. main.ts closes the pool the moment app.close() resolves,
+    // and the write queues are all fire-and-forget: a message still queued
+    // in the sink dies as "Cannot use a pool after calling end", swallowed
+    // by the queue's own catch — and because fan-out is post-persistence it
+    // then exists on no device, anywhere. Bounded, so a wedged database
+    // cannot hold a deploy open forever.
+    await Promise.race([
+      Promise.all([
+        history.flush(),
+        notifications.drain(),
+        seenMembers.idle(),
+        directory.flushWrites(),
+      ]),
+      // Unref'd: the loser of the race must not keep the process alive.
+      setTimeout(SHUTDOWN_DRAIN_MS, undefined, { ref: false }),
+    ]);
   });
 
   // Security headers (M7 exposure hardening). The CSP only matters when this

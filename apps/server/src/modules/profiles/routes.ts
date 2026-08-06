@@ -144,7 +144,7 @@ export async function profilesRoutes(
           request.query.refresh,
         );
       } catch (error) {
-        const mapped = upstreamStatus(error);
+        const mapped = upstreamStatus(error, request.log);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
       if (result.status === "not-found") {
@@ -426,7 +426,7 @@ export async function profilesRoutes(
           request.query.page,
         );
       } catch (error) {
-        const mapped = upstreamStatus(error);
+        const mapped = upstreamStatus(error, request.log);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
       if (result.status === "no-guestbook") {
@@ -475,7 +475,7 @@ export async function profilesRoutes(
       try {
         result = await profiles.memo(identity, request.params.name);
       } catch (error) {
-        const mapped = upstreamStatus(error);
+        const mapped = upstreamStatus(error, request.log);
         return reply.code(mapped.code).send({ error: mapped.error });
       }
       if ("status" in result) {

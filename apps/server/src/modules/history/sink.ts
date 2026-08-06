@@ -289,7 +289,11 @@ export class HistorySink {
     });
   }
 
-  /** Resolves once everything enqueued so far is written (used by tests). */
+  /**
+   * Resolves once everything enqueued so far is written. Shutdown drains
+   * through here (app.ts onClose) as well as the tests: fan-out is
+   * post-persistence, so a message lost here is on no device anywhere.
+   */
   async flush(): Promise<void> {
     await Promise.all(this.#queues.values());
   }

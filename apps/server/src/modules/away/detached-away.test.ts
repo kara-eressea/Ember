@@ -1,7 +1,7 @@
 // Detached auto-away integration (M5): real Postgres (testcontainers) +
 // fchat-sim through the production path, with the sweep clock injected via
-// buildApp's test knob. The GatewayHub attach-hook mechanics get their own
-// container-free unit block at the bottom.
+// buildApp's test knob. The GatewayHub attach-hook mechanics and the sweep's
+// failure containment get their own container-free unit blocks at the bottom.
 
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -13,7 +13,13 @@ import { loadConfig } from "../../config.js";
 import type { Db } from "../../db/index.js";
 import { makeTestDb, type TestDb } from "../../test-support/db.js";
 import { flistAccounts, identities, userPreferences } from "../../db/schema.js";
-import { type FchatSession, FlistApiClient } from "@emberchat/session-engine";
+import {
+  type FchatSession,
+  FlistApiClient,
+  type SessionLogger,
+  type SessionRegistry,
+} from "@emberchat/session-engine";
+import { DetachedAway } from "./detached-away.js";
 import { GatewayHub } from "../gateway/gateway.js";
 import type { GatewayConnection } from "../gateway/connection.js";
 import type { HistorySink } from "../history/sink.js";
@@ -366,5 +372,53 @@ describe("GatewayHub attach hook", () => {
     expect(hub.hasSubscribers("i")).toBe(false);
     hub.subscribe("i", a); // zero→one again
     expect(fired).toEqual(["i", "i"]);
+  });
+});
+
+describe("sweep failure containment", () => {
+  /** A database whose reads reject and whose writes resolve — a pool blip. */
+  function failingDb(error: Error): Db {
+    const rejecting = {
+      from: () => rejecting,
+      innerJoin: () => rejecting,
+      leftJoin: () => rejecting,
+      where: () => Promise.reject(error),
+    };
+    return {
+      select: () => rejecting,
+      update: () => ({
+        set: () => ({ where: () => Promise.resolve() }),
+      }),
+    } as unknown as Db;
+  }
+
+  it("logs a rejecting prefs query instead of rejecting into the interval", async () => {
+    const logged: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: () => {},
+      error: (_fields: unknown, message: string) => logged.push(message),
+    };
+    const session = {
+      status: "online",
+      ownStatus: { status: "online", statusmsg: "" },
+    };
+    const away = new DetachedAway({
+      db: failingDb(new Error("connect ECONNREFUSED")),
+      sessions: {
+        entries: () => [["identity-1", session]],
+      } as unknown as SessionRegistry,
+      hub: { hasSubscribers: () => false } as unknown as GatewayHub,
+      logger: logger as unknown as SessionLogger,
+    });
+
+    // First pass only stamps the detachment; the second reaches the query.
+    await expect(away.sweep()).resolves.toBeUndefined();
+    await expect(away.sweep()).resolves.toBeUndefined();
+    expect(logged).toContain("detached-away sweep failed");
+
+    // And the overlap guard is released, so the next tick still runs.
+    await expect(away.sweep()).resolves.toBeUndefined();
+    expect(logged).toHaveLength(2);
   });
 });

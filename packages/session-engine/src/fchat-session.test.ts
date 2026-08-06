@@ -775,6 +775,14 @@ describe("FchatSession against fchat-sim", () => {
     // invalidate account-wide, so looping would degrade sibling sessions.
     expect(getTicket).toHaveBeenCalledTimes(3);
     expect(invalidate).toHaveBeenCalledTimes(3);
+    // Always naming the ticket the rejection was about, never bare: a bare
+    // drop evicts whatever ticket the cache holds, including a fresh one a
+    // sibling session on this account minted while this one was reconnecting
+    // — which mints another, kills that one account-wide, and cascades.
+    expect(invalidate).toHaveBeenCalledWith("fct_bogus");
+    expect(
+      invalidate.mock.calls.every(([ticket]) => ticket !== undefined),
+    ).toBe(true);
   });
 
   it("does not rejoin a channel it was kicked from", async () => {

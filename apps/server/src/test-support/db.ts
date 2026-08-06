@@ -79,9 +79,19 @@ async function makeContainerTestDb(): Promise<TestDb> {
 }
 
 async function makePgliteTestDb(): Promise<TestDb> {
-  // A real directory rather than `memory://`: a few tests hand the env to a
-  // child process (the admin CLI), and that child has to open the same
-  // database this file is writing to.
+  // A real directory rather than `memory://`, so the driver runs the same
+  // filesystem path the desktop client does.
+  //
+  // What it does NOT buy is a second process: pglite is a whole Postgres in
+  // one process, with no shared buffers and no data-directory lock. Two
+  // processes over one directory see different databases — measured, not
+  // assumed: a table created by the first is "relation does not exist" in
+  // the second, and rows the second writes are invisible to the first. So a
+  // test that hands `env` to a child (the admin CLI) can only do so while
+  // nothing here holds the directory open. The desktop client's first run is
+  // built exactly that way — migrate, stop the server, then the CLI
+  // (apps/desktop/src/provisioning.ts) — and the CLI tests skip under this
+  // driver rather than pretend otherwise.
   const dataDir = await mkdtemp(path.join(tmpdir(), "emberchat-test-db-"));
   const handle = await createDb({ kind: "pglite", dataDir });
   await handle.migrate(MIGRATIONS);
