@@ -293,6 +293,50 @@ describe("logout", () => {
     });
     expect(after.statusCode).toBe(401);
   });
+
+  it("honours a pre-rotation token — the tab that signed out may hold one", async () => {
+    const { accessToken, refreshToken } = await registerUser();
+    // One tab refreshes; the tab the user clicks Log out in still holds the
+    // token from before the rotation (the same case /refresh's grace window
+    // exists for).
+    const rotated = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(rotated.statusCode).toBe(200);
+
+    const logout = await app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      payload: { refreshToken },
+    });
+    expect(logout.statusCode).toBe(204);
+
+    // The row is really gone: neither token refreshes, and the outstanding
+    // access token dies with it — which is what takes the session's push
+    // subscriptions (they cascade off auth_sessions) down with it.
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: { refreshToken },
+    });
+    expect(stale.statusCode).toBe(401);
+    const current = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      payload: {
+        refreshToken: rotated.json<{ refreshToken: string }>().refreshToken,
+      },
+    });
+    expect(current.statusCode).toBe(401);
+    const me = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(me.statusCode).toBe(401);
+  });
 });
 
 describe("login lockout", () => {

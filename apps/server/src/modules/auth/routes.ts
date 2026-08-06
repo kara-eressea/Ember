@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import { and, desc, eq, gt, notInArray } from "drizzle-orm";
+import { and, desc, eq, gt, notInArray, or } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -298,12 +298,21 @@ export async function authRoutes(
     "/logout",
     { config: { rateLimit }, schema: { body: refreshBody } },
     async (request, reply) => {
+      const presentedHash = hashRefreshToken(request.body.refreshToken);
+      // The pre-rotation hash counts too. /refresh accepts it for
+      // ROTATION_GRACE_MS precisely because a client can be left holding the
+      // older token (the lost-response race, or two tabs sharing one stored
+      // token) — and a logout that matched only the current one deleted
+      // nothing while answering 204. The row then lived to its 30-day
+      // expiry, the outstanding access token kept working, and because push
+      // subscriptions cascade off auth_sessions the signed-out browser kept
+      // receiving notifications.
       await db
         .delete(authSessions)
         .where(
-          eq(
-            authSessions.refreshTokenHash,
-            hashRefreshToken(request.body.refreshToken),
+          or(
+            eq(authSessions.refreshTokenHash, presentedHash),
+            eq(authSessions.prevRefreshTokenHash, presentedHash),
           ),
         );
       return reply.code(204).send();
