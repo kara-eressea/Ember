@@ -172,6 +172,34 @@ jobs:
           echo "::error::no GitHub release for $GITHUB_REF_NAME to attach the installer to"
           exit 1
 
+  # SHA-256 checksums for the installers the tag's release carries (#550) —
+  # one `checksums.txt`, computed from the assets actually attached, after
+  # both platform legs have attached them. docs/desktop.md's FAQ tells users
+  # to download only from the releases page; while the builds are unsigned,
+  # this file is what gives that instruction teeth. Computed by download
+  # rather than passed between jobs so the hashes describe what a user gets,
+  # not what a runner had. If a single platform leg is re-run (`--clobber`
+  # replaces its installer), re-run this job too so the file matches.
+  checksums:
+    name: checksums
+    if: ${{ github.ref_type == 'tag' }}
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Compute and attach checksums.txt
+        run: |
+          mkdir assets && cd assets
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.dmg' --pattern '*.exe'
+          sha256sum -- * > checksums.txt
+          cat checksums.txt
+          gh release upload "$GITHUB_REF_NAME" checksums.txt --clobber \
+            --repo "$GITHUB_REPOSITORY"
+
   # The PR leg (#562): the same pipeline as above, minus everything a PR does
   # not need an answer about.
   #
