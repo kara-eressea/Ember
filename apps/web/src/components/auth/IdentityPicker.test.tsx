@@ -142,8 +142,8 @@ describe("shared-account notice (#573)", () => {
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
     const rows = await screen.findAllByRole("listitem");
-    expect(
-      rows.some((row) => row.textContent?.includes("Rowan Redleaf")),
-    ).toBe(true);
+    expect(rows.some((row) => row.textContent?.includes("Rowan Redleaf"))).toBe(
+      true,
+    );
   });
 });
