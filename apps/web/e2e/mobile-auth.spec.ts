@@ -25,6 +25,7 @@ import {
   provisionAndConnect,
   provisionUser,
   test,
+  verifyAccountToCharacters,
 } from "./helpers.js";
 import {
   measureTargets,
@@ -177,7 +178,7 @@ test("phone: every auth screen fills the screen, and every control on it is a 44
 
   await page.getByLabel("F-List account name").fill(ACCOUNT);
   await page.getByLabel("F-List password").fill("hunter2");
-  await page.getByRole("button", { name: "Verify account" }).tap();
+  await verifyAccountToCharacters(page, { tap: true });
   // The character list arrives from the throttled (≤1 req/s) F-List ticket
   // budget, queued behind whatever else the run is provisioning.
   await expect(

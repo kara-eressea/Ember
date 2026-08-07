@@ -192,6 +192,33 @@ export async function provisionUser(): Promise<Credentials> {
 }
 
 /**
+ * Click "Verify account" and land on the character list — through the #573
+ * shared-account notice when it appears. Every spec provisions a fresh app
+ * user but they all add the same handful of sim accounts against ONE shared
+ * server, so from the second add of a name onward the form pauses on the
+ * notice and waits for Continue; the first add sails straight through. Raced
+ * rather than waited-for: the notice is the rare arm, and a fixed beat for
+ * something that usually never comes is a fixed beat wasted.
+ */
+export async function verifyAccountToCharacters(
+  page: Page,
+  options?: { tap?: boolean },
+) {
+  const verify = page.getByRole("button", { name: "Verify account" });
+  await (options?.tap ? verify.tap() : verify.click());
+  const cont = page.getByRole("button", { name: "Continue" });
+  // The character list arrives from the throttled (≤1 req/s) F-List ticket
+  // budget, queued behind whatever else the run is provisioning — same 15s
+  // window as session-online waits, not the 5s expect default.
+  await expect(cont.or(page.getByRole("listitem")).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  if (await cont.isVisible()) {
+    await (options?.tap ? cont.tap() : cont.click());
+  }
+}
+
+/**
  * The standard journey into the shell: provision a fresh app user (admin
  * CLI), log in, add the F-List account, pick the character, connect —
  * resolves once the server-held session is online. Returns the credentials
@@ -211,7 +238,7 @@ export async function provisionAndConnect(
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill(account);
   await page.getByLabel("F-List password").fill("hunter2");
-  await page.getByRole("button", { name: "Verify account" }).click();
+  await verifyAccountToCharacters(page);
   // Bounded: the character list renders from one fetch — if it never comes,
   // fail here in 15s with this locator in the message instead of burning the
   // spec's whole 120-180s budget on it (WP-4).
