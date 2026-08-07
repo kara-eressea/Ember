@@ -129,9 +129,11 @@ Everything the app keeps about you is in one folder:
 Inside it:
 
 - `db/` — your conversations. This is the whole history the app has.
-- `config.json` — which mode you chose, and the server address if you
-  chose the second one. Plain text, and safe to read; if it is ever
-  damaged the app just asks you to choose again.
+- `config.json` — which mode you chose, the server address if you chose
+  the second one, and a couple of settings you have changed (whether you
+  turned [update checks](#updating) off, whether you have been shown the
+  tray notice). Plain text, and safe to read; if it is ever damaged the
+  app just asks you to choose again.
 - `secrets.json` — the app's own keys for your machine, encrypted by the
   operating system (Keychain on macOS, DPAPI on Windows). There is no
   plaintext fallback: if the OS can't encrypt, the app says so and stops
@@ -180,6 +182,26 @@ version number sits at the top of the sidebar (and under Preferences →
 General), and once a day the app asks GitHub whether there is a newer
 release. When there is, that version number tints and becomes a link to
 the releases page. No banners, no nagging.
+
+**You can switch that check off.** Untick **Check for updates
+automatically** — in the EmberChat menu on macOS, the File menu on
+Windows — and the app stops asking GitHub anything. It is a tickbox with
+a tick in it by default, and the only thing it sends is a request for
+the newest release number, but "an app that can't stop phoning home" is
+a fair objection and this is the answer to it.
+
+Two honest details. The setting **takes effect the next time you open
+the app**, so there may be one more check between ticking it and
+restarting — the app says so when you click. And the tickbox only
+appears in **local mode**: in connect-to-my-server mode the check
+belongs to the server you are pointed at, and whoever runs it sets
+`UPDATE_CHECK_ENABLED` there
+([docs/self-hosting.md](self-hosting.md)).
+
+With it off, nothing else changes — the version number is still on
+screen, it just never becomes a link. Checking the [releases
+page](https://github.com/kara-eressea/Ember/releases) yourself is then
+the way you find out.
 
 To update, download the new file and install it over the old one — drag
 to Applications and replace on macOS, run the new installer on Windows.

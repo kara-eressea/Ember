@@ -7,6 +7,7 @@ const options = {
   webDist: "/repo/apps/web/dist",
   authSecret: "a".repeat(43),
   clientVersion: "1.2.3",
+  updateCheckEnabled: true,
 };
 
 describe("buildServerEnv", () => {
@@ -23,7 +24,18 @@ describe("buildServerEnv", () => {
       AUTH_SECRET: "a".repeat(43),
       RETENTION_POLICY: "forever",
       CLIENT_VERSION: "1.2.3",
+      UPDATE_CHECK_ENABLED: "true",
     });
+  });
+
+  it("carries the user's update-check answer, both ways round (#549)", () => {
+    // The string the server's own `z.stringbool()` parses — this is the whole
+    // mechanism by which the menu's checkbox reaches the release check.
+    expect(buildServerEnv(options).UPDATE_CHECK_ENABLED).toBe("true");
+    expect(
+      buildServerEnv({ ...options, updateCheckEnabled: false })
+        .UPDATE_CHECK_ENABLED,
+    ).toBe("false");
   });
 
   it("admits the renderer's own origin to the gateway allowlist", () => {
@@ -47,6 +59,7 @@ describe("buildServerEnv", () => {
       "PGLITE_DATA_DIR",
       "PORT",
       "RETENTION_POLICY",
+      "UPDATE_CHECK_ENABLED",
       "WEB_DIST",
     ]);
     expect(env).not.toHaveProperty("DATABASE_URL");

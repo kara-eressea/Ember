@@ -22,6 +22,8 @@ export interface StartEmbeddedServerOptions {
   readonly webDist: string;
   readonly authSecret: string;
   readonly clientVersion: string;
+  /** The user's answer to the daily release check (#549, `update-check.ts`). */
+  readonly updateCheckEnabled: boolean;
   /** How long to wait for the first `/healthz` 200 before giving up. */
   readonly readyTimeoutMs?: number;
 }
@@ -127,6 +129,7 @@ async function startOnce(
     webDist: options.webDist,
     authSecret: options.authSecret,
     clientVersion: options.clientVersion,
+    updateCheckEnabled: options.updateCheckEnabled,
   });
 
   const child = runtime.fork(options.entry, env);

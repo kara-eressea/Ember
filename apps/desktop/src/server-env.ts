@@ -11,6 +11,12 @@ export interface EmbeddedServerEnvOptions {
   readonly authSecret: string;
   /** The shell's version, which becomes the F-Chat IDN `cversion`. */
   readonly clientVersion: string;
+  /**
+   * Whether the server may run M7's daily release check (#549). The user's own
+   * answer, from `config.json` — see `update-check.ts` for why it is read here,
+   * at fork time, and therefore only changes on a restart.
+   */
+  readonly updateCheckEnabled: boolean;
 }
 
 /**
@@ -43,6 +49,11 @@ export function buildServerEnv(
     // unless they ask (there is no UI for it yet).
     RETENTION_POLICY: "forever",
     CLIENT_VERSION: options.clientVersion,
+    // Always written, both ways round. The server's own default is `true`, so
+    // an omitted key would still be correct for the common case — but this
+    // environment is deliberately complete (see above), and a switch whose
+    // "off" is a missing variable is a switch nobody can read off a log.
+    UPDATE_CHECK_ENABLED: options.updateCheckEnabled ? "true" : "false",
   };
 }
 

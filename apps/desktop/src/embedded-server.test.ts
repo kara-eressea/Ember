@@ -30,6 +30,7 @@ const OPTIONS: StartEmbeddedServerOptions = {
   webDist: "/resources/web",
   authSecret: "an-auth-secret",
   clientVersion: "1.2.3",
+  updateCheckEnabled: true,
   // Every case below either has a child that is already gone or a `fetch` that
   // never answers, so this is only ever the wait before the verdict.
   readyTimeoutMs: 200,
@@ -286,6 +287,7 @@ describe("the environment the child is given", () => {
         webDist: OPTIONS.webDist,
         authSecret: OPTIONS.authSecret,
         clientVersion: OPTIONS.clientVersion,
+        updateCheckEnabled: OPTIONS.updateCheckEnabled,
       }),
     );
     // Named individually because `toEqual` above would still pass if
@@ -376,6 +378,7 @@ describe("which kind of child the bouncer runs as", () => {
       webDist: OPTIONS.webDist,
       authSecret: OPTIONS.authSecret,
       clientVersion: OPTIONS.clientVersion,
+      updateCheckEnabled: OPTIONS.updateCheckEnabled,
     });
     const launch = nodeChildLaunch(
       "/Applications/Ember.app/Ember",
