@@ -61,6 +61,12 @@ export class Outbox {
   readonly #pollMs: number;
   #timer: NodeJS.Timeout | undefined;
   #releasing = false;
+  /** The in-flight #tick, so stop() can wait it out (#576). */
+  #tickSettled: Promise<void> = Promise.resolve();
+  /** Set by stop(): a stopped outbox must not claim work it saw on the way
+   * down — the SELECT may already hold rows scheduled after the caller
+   * decided to stop (#576). */
+  #stopped = false;
   #lastFailedSweepAt = 0;
   /** Identities with a release chain in flight — skipped by the poll so a
    * slow flood gate (a queued ad) only ever delays its own user. */
@@ -78,6 +84,7 @@ export class Outbox {
     if (this.#timer) {
       return;
     }
+    this.#stopped = false;
     // Rows claimed by a worker that died mid-release are ambiguous — the
     // send may or may not have reached the wire. Surface them as failed
     // with the ambiguity spelled out rather than silently re-sending.
@@ -93,16 +100,33 @@ export class Outbox {
         this.#log.error({ err: error }, "outbox releasing-sweep failed");
       });
     this.#timer = setInterval(() => {
-      void this.#tick();
+      if (this.#releasing) {
+        return; // the running tick already owns #tickSettled
+      }
+      this.#tickSettled = this.#tick();
     }, this.#pollMs);
     this.#timer.unref();
   }
 
-  stop(): void {
+  /**
+   * Resolves once this outbox will claim nothing more. Clearing the timer is
+   * not that (#576): a tick in flight when stop() is called has already
+   * issued its due-rows SELECT — across every identity — and would go on to
+   * claim rows scheduled *after* the stop, including, in the test suite,
+   * another harness's rows, which it then fails against its own dead session
+   * registry. So stop() waits out the in-flight tick, and the tick itself
+   * refuses to claim once the flag is up. Release chains already holding
+   * claimed rows are deliberately not awaited: a claimed send finishing is
+   * correct on shutdown (the queues drain under app.ts's bounded race), and
+   * a chain that dies anyway is what start()'s restart sweep exists for.
+   */
+  async stop(): Promise<void> {
+    this.#stopped = true;
     if (this.#timer) {
       clearInterval(this.#timer);
       this.#timer = undefined;
     }
+    await this.#tickSettled;
   }
 
   /** Parks a message; the identity's pending list fans out. */
@@ -190,6 +214,9 @@ export class Outbox {
       // stall every other user's due releases for the whole window (M6
       // audit). An identity with a chain still running is skipped; its
       // rows stay "scheduled" and the next poll picks them up.
+      if (this.#stopped) {
+        return; // stopped while the SELECT was in flight — claim nothing
+      }
       const byIdentity = new Map<string, typeof due>();
       for (const item of due) {
         if (this.#releasingIdentities.has(item.row.identityId)) {
