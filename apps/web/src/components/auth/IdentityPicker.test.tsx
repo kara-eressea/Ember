@@ -16,9 +16,10 @@ import { IdentityPicker } from "./IdentityPicker.js";
 const listIdentities = vi.hoisted(() => vi.fn());
 const listFlistAccounts = vi.hoisted(() => vi.fn());
 const listCharacters = vi.hoisted(() => vi.fn());
+const addFlistAccount = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/api.js", () => ({
   ApiError: class ApiError extends Error {},
-  api: { listIdentities, listFlistAccounts, listCharacters },
+  api: { listIdentities, listFlistAccounts, listCharacters, addFlistAccount },
 }));
 
 function deferred<T>() {
@@ -107,5 +108,42 @@ describe("IdentityPicker first-load gate", () => {
     expect(
       screen.queryByLabelText("F-List account name"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("shared-account notice (#573)", () => {
+  it("holds the handoff on a warning until Continue", async () => {
+    const user = userEvent.setup();
+    listIdentities.mockResolvedValue({ identities: [] });
+    listFlistAccounts.mockResolvedValue({ accounts: [], canRemember: false });
+    listCharacters.mockResolvedValue({ characters: ["Rowan Redleaf"] });
+    // The add succeeded — the warning rides beside the account, and the
+    // account must not be lost while the notice is on screen.
+    addFlistAccount.mockResolvedValue({
+      account: ACCOUNT,
+      warning: "Someone else on this server already uses this F-List account.",
+    });
+    renderPicker();
+
+    await user.click(
+      await screen.findByRole("button", { name: /Add a server identity/ }),
+    );
+    await user.type(
+      await screen.findByLabelText("F-List account name"),
+      "rowan@example.test",
+    );
+    await user.type(screen.getByLabelText("F-List password"), "hunter2");
+    await user.click(screen.getByRole("button", { name: "Verify account" }));
+
+    // The notice replaces the form; the character list waits behind Continue.
+    const notice = await screen.findByRole("status");
+    expect(notice.textContent).toMatch(/already uses this F-List account/);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows.some((row) => row.textContent?.includes("Rowan Redleaf"))).toBe(
+      true,
+    );
   });
 });

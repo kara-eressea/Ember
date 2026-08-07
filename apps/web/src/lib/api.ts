@@ -241,11 +241,16 @@ export const api = {
     password: string;
     remember?: boolean;
   }) {
-    return apiRequest<{ account: FlistAccountDto }>("/flist-accounts", {
-      method: "POST",
-      body: input,
-      auth: true,
-    });
+    // `warning` is set when another user on this server already runs the
+    // same F-List account (#573) — the add succeeded either way.
+    return apiRequest<{ account: FlistAccountDto; warning?: string }>(
+      "/flist-accounts",
+      {
+        method: "POST",
+        body: input,
+        auth: true,
+      },
+    );
   },
   unlockFlistAccount(id: string, password: string, remember?: boolean) {
     return apiRequest<{ account: FlistAccountDto; reconnected: string[] }>(

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -138,6 +138,9 @@ export async function flistAccountsRoutes(
           201: z.object({
             account: accountResponse,
             characters: z.array(z.string()),
+            /** Set when another user's row already holds this F-List
+             * account — see the #573 note in the handler. */
+            warning: z.string().optional(),
           }),
           401: errorResponse,
           409: errorResponse,
@@ -176,9 +179,42 @@ export async function flistAccountsRoutes(
         if (remembered) {
           await store.save(row.id, password);
         }
-        return await reply
-          .code(201)
-          .send({ account: present(row, remembered), characters });
+        // #573, decided 2026-08-06: another user's row for the same F-List
+        // account means two TicketManagers that each believe they own the
+        // account's ticket — and F-List invalidates tickets account-wide on
+        // every mint, so the two sides will occasionally knock each other
+        // into a reconnect. A shared per-account manager was considered and
+        // rejected: it would put one row's password behind another row's
+        // sessions, a trust-boundary change bought for a case that needs two
+        // rarities at once (two users on one instance AND one F-List account
+        // between them). The proportionate answer is to say so, once, at the
+        // moment it becomes true. Case-insensitive: F-List account names are.
+        const [shared] = await db
+          .select({ id: flistAccounts.id })
+          .from(flistAccounts)
+          .where(
+            and(
+              ne(flistAccounts.userId, request.user.sub),
+              sql`lower(${flistAccounts.accountName}) = lower(${accountName})`,
+            ),
+          )
+          .limit(1);
+        if (shared) {
+          request.log.warn(
+            { accountId: row.id },
+            "a second user added the same F-List account — expect occasional ticket contention between their sessions (#573)",
+          );
+        }
+        return await reply.code(201).send({
+          account: present(row, remembered),
+          characters,
+          ...(shared
+            ? {
+                warning:
+                  "Someone else on this server already uses this F-List account. Both of you can chat, but F-List only honours one login ticket per account at a time, so your connections may occasionally interrupt each other.",
+              }
+            : {}),
+        });
       } catch (error) {
         vault.delete(row.id);
         tickets.drop(row.id);

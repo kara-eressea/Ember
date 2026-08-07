@@ -4,7 +4,7 @@
 
 import { Writable } from "node:stream";
 import type { FastifyInstance } from "fastify";
-import { FchatSim } from "@emberchat/fchat-sim";
+import { DEFAULT_WORLD, FchatSim } from "@emberchat/fchat-sim";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
@@ -56,7 +56,20 @@ async function makeApp(): Promise<FastifyInstance> {
 }
 
 beforeAll(async () => {
-  sim = new FchatSim();
+  // The default world, plus one case-variant alias of an account no other
+  // test here touches: the sim's ticket lookup is exact-key, and the
+  // shared-account test below needs a *differently-cased* name that still
+  // verifies — the route's #573 check must match case-insensitively, because
+  // F-List account names do.
+  sim = new FchatSim({
+    world: {
+      ...DEFAULT_WORLD,
+      accounts: {
+        ...DEFAULT_WORLD.accounts,
+        "PEAT@example.test": DEFAULT_WORLD.accounts["peat@example.test"]!,
+      },
+    },
+  });
   await sim.start();
   testDb = await makeTestDb();
   db = testDb.db;
@@ -126,6 +139,38 @@ describe("add account", () => {
       headers: authed(token),
     });
     expect(list.json<{ accounts: unknown[] }>().accounts).toHaveLength(0);
+  });
+
+  it("warns when another user already runs the same F-List account (#573)", async () => {
+    // On `peat`, an account no other test adds, so the first add here is
+    // genuinely the instance's first row for it.
+    const first = await registerUser();
+    const second = await registerUser();
+    const firstResponse = await app.inject({
+      method: "POST",
+      url: "/api/flist-accounts",
+      headers: authed(first),
+      payload: { accountName: "peat@example.test", password: "hunter2" },
+    });
+    expect(firstResponse.statusCode).toBe(201);
+    // The sole owner's add carries no warning.
+    expect(firstResponse.json()).not.toHaveProperty("warning");
+    // The mitigation decided on #573: the second user's add succeeds —
+    // refusing would help nobody — but the response says what two rows on
+    // one account costs (mutual ticket invalidation). Differently cased on
+    // purpose: the match must be case-insensitive, like F-List's own
+    // account names.
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/flist-accounts",
+      headers: authed(second),
+      payload: { accountName: "PEAT@example.test", password: "hunter2" },
+    });
+    expect(response.statusCode).toBe(201);
+    const body = response.json<{ warning?: string }>();
+    expect(body.warning).toMatch(/already uses this F-List account/);
+    // The operator-facing record of the same fact.
+    expect(logLines.some((line) => line.includes("#573"))).toBe(true);
   });
 
   it("rejects adding the same account twice with 409", async () => {

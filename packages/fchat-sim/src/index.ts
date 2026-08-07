@@ -5,6 +5,7 @@ export {
   type FchatSimOptions,
 } from "./sim-server.js";
 export { TicketService } from "./ticket-service.js";
+export { DEFAULT_WORLD, type SimWorld } from "./world.js";
 export {
   CharacterService,
   type SimCharacterProfileSeed,

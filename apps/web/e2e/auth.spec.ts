@@ -15,6 +15,7 @@ import {
   expectCharacterOnline,
   provisionUser,
   test,
+  verifyAccountToCharacters,
 } from "./helpers.js";
 
 // 1×1 transparent PNG — stands in for every F-List avatar.
@@ -83,7 +84,7 @@ test("provision, log in, connect an F-List account, and pick a character with av
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
-  await page.getByRole("button", { name: "Verify account" }).click();
+  await verifyAccountToCharacters(page);
 
   // The character list — with avatar images — is the step gate. The server
   // honors the real ≤1 req/s F-List ticket budget, and spec files run in
@@ -133,7 +134,7 @@ test("login round trip sees the persisted identity again", async ({ page }) => {
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
-  await page.getByRole("button", { name: "Verify account" }).click();
+  await verifyAccountToCharacters(page);
   await page.getByRole("listitem").filter({ hasText: "Aspen Brook" }).click();
   await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
     timeout: 15_000,
@@ -173,7 +174,7 @@ test("identities can be connected, disconnected and removed from the picker", as
   await page.getByRole("button", { name: "Add a server identity" }).click();
   await page.getByLabel("F-List account name").fill("aspen@example.test");
   await page.getByLabel("F-List password").fill("hunter2");
-  await page.getByRole("button", { name: "Verify account" }).click();
+  await verifyAccountToCharacters(page);
   await page.getByRole("listitem").filter({ hasText: "Aspen Vale" }).click();
   await expect(page.getByRole("button", { name: "Connect" })).toBeVisible({
     timeout: 15_000,
