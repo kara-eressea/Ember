@@ -146,13 +146,53 @@ trade the project makes by default, and the desktop app makes it too.
 
 ### Backing up
 
-**Quit the app first, then copy the folder.** Both halves matter. A copy
-taken while the app is running can look perfectly fine — it will open,
-it will even accept writes — and still be missing the write that was in
-flight; a database file copied out from under a running program is not a
-backup, whatever it looks like afterwards. Quit from the tray, copy the
-folder somewhere else, done. Restoring is the same in reverse: quit,
-put the folder back.
+**Use the menu: Save a backup…** — in the EmberChat menu on macOS, the
+File menu on Windows. Pick where the file goes and you get one dated
+`.tar.gz` holding your whole conversation history and everything else
+the app has stored. It takes about a second, and **you do not have to
+quit first**: the app keeps running and your characters stay online
+while it happens. What comes out is a consistent snapshot of the moment
+you clicked, not a smear of a file being written to.
+
+Do this somewhere that is not this computer's own disk — an external
+drive, another machine, wherever you keep things you would miss.
+
+**Putting one back is a manual job**, and deliberately so: writing a
+backup out is harmless, and reading one back in overwrites the history
+it lands on. There is no "restore" button for the same reason there is
+no undo for one.
+
+1. **Quit** the app (from the tray icon — the real goodbye, not just
+   closing the window).
+2. Open your [data folder](#where-your-data-lives) and rename `db/` to
+   something like `db-old/`. Do not delete it until you are sure.
+3. Make a new, empty `db/` and extract the backup file into it.
+   - macOS: `tar -xzf "<backup file>" -C ~/Library/Application\ Support/EmberChat/db`
+   - Windows: `tar -xzf "<backup file>" -C "%APPDATA%\EmberChat\db"`
+     (Windows 10 and 11 have `tar` built in), or unpack it with 7-Zip.
+   - Extract it **into that empty folder**, not into your home directory:
+     the paths inside the archive start at `/`, and every unpacker strips
+     that leading slash but only some of them mention it.
+4. Start the app.
+
+Leave `config.json` and `secrets.json` alone while you do this. They
+belong to this computer, the backup does not contain them, and the
+restored database expects to find the ones already there.
+
+Which leads to the one thing this backup is **not**: a way to move
+EmberChat to a different computer. `secrets.json` is encrypted by this
+machine's keychain and cannot be copied anywhere useful, so a database
+without it is a database the app cannot sign in to. If what you want is
+protection against losing the whole folder — or against this computer
+itself — then take the old-fashioned copy as well:
+
+**Quit the app, then copy the entire folder.** Both halves matter. A
+copy taken while the app is running can look perfectly fine — it will
+open, it will even accept writes — and still be missing the write that
+was in flight; a database file copied out from under a running program
+is not a backup, whatever it looks like afterwards. Quit from the tray,
+copy the folder somewhere else, done. Restoring is the same in reverse:
+quit, put the folder back.
 
 One durability note, stated rather than implied: the embedded database
 is tuned for a personal machine and does not wait for the disk on every
@@ -160,6 +200,11 @@ message. If the power goes out or you force-restart, you can lose the
 last few seconds of conversation. The database itself survives that —
 the failure mode is "lose the newest handful of lines", not "lose
 everything". A normal quit, or even the app crashing, costs you nothing.
+
+(In **connect-to-my-server** mode there is no *Save a backup…* item and
+no local `db/` to back up — your conversations live on your server, and
+backing that up is part of running it. See
+[docs/self-hosting.md](self-hosting.md).)
 
 ### Uninstalling
 

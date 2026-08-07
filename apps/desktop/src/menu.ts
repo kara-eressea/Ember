@@ -1,4 +1,5 @@
 import { app, Menu, type MenuItemConstructorOptions } from "electron";
+import { BACKUP_MENU_LABEL } from "./backup.js";
 import { UPDATE_CHECK_MENU_LABEL } from "./update-check.js";
 
 /**
@@ -30,6 +31,12 @@ export interface AppMenuOptions {
    * nothing to change (see `update-check.ts`).
    */
   readonly updateCheck?: UpdateCheckMenuItem;
+  /**
+   * "Save a backup…" (#548). Local mode only, and for the same reason: the
+   * database this backs up is the one running beside this process. A remote
+   * instance's backups are its operator's, taken on that machine.
+   */
+  readonly onBackup?: () => void;
 }
 
 export function installAppMenu(options: AppMenuOptions): void {
@@ -39,14 +46,25 @@ export function installAppMenu(options: AppMenuOptions): void {
       options.onSwitchMode();
     },
   };
-  const updateCheck = options.updateCheck;
+  const { updateCheck, onBackup } = options;
   // Spread into the templates below, so "no local server" means "no item"
   // rather than a disabled one nobody can explain.
-  const shellItems: MenuItemConstructorOptions[] =
-    updateCheck === undefined
-      ? [switchMode]
-      : [
-          switchMode,
+  const shellItems: MenuItemConstructorOptions[] = [
+    switchMode,
+    ...(onBackup === undefined
+      ? []
+      : ([
+          { type: "separator" },
+          {
+            label: BACKUP_MENU_LABEL,
+            click: () => {
+              onBackup();
+            },
+          },
+        ] satisfies MenuItemConstructorOptions[])),
+    ...(updateCheck === undefined
+      ? []
+      : ([
           {
             label: UPDATE_CHECK_MENU_LABEL,
             type: "checkbox",
@@ -57,7 +75,8 @@ export function installAppMenu(options: AppMenuOptions): void {
               updateCheck.onToggle(item.checked);
             },
           },
-        ];
+        ] satisfies MenuItemConstructorOptions[])),
+  ];
 
   const template: MenuItemConstructorOptions[] =
     process.platform === "darwin"

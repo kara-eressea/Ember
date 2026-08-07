@@ -63,6 +63,18 @@ export interface DbHandle {
   /** Applies the shared drizzle migrations (the migrator differs per driver). */
   readonly migrate: (migrationsFolder: string) => Promise<void>;
   readonly close: () => Promise<void>;
+  /**
+   * **pglite only** — a gzipped tar of the whole data directory, taken while
+   * the database is open and serving (MX2 spike §4: 551 ms, a 39 MB directory
+   * to a 4.85 MB tarball, restoring clean). This is what makes an in-app
+   * backup possible at all on the desktop client, where the database lives
+   * inside the server child and nothing outside it may touch those files.
+   *
+   * Absent on node-postgres, and that absence is the backup endpoint's gate
+   * (modules/meta/backup.ts): a server deployment's backup story is its
+   * operator's `pg_dump`, not an HTTP route.
+   */
+  readonly dumpDataDir?: () => Promise<Blob>;
 }
 
 export async function createDb(driver: DbDriver): Promise<DbHandle> {
@@ -103,6 +115,10 @@ async function createPgliteDb(dataDir: string): Promise<DbHandle> {
       await migratePglite(db, { migrationsFolder });
     },
     close: () => client.close(),
+    // gzip rather than a bare tar: the wire and the user's disk both care, and
+    // pglite does the compression inside the same call that walks the files.
+    // (`File` is a `Blob`, so the wider return type narrows for free.)
+    dumpDataDir: () => client.dumpDataDir("gzip"),
   };
 }
 
