@@ -380,7 +380,9 @@ export async function buildApp({
     detachedAway.stop();
     retention.stop();
     seenMembers.stop();
-    outbox.stop();
+    // Awaited: the outbox's stop() isn't a timer-clear — it waits out the
+    // in-flight poll so no row is claimed under the pool close below (#576).
+    await outbox.stop();
     campaignScheduler.stop();
     socialService?.stop();
     // Then drain. main.ts closes the pool the moment app.close() resolves,

@@ -170,10 +170,13 @@ interface Harness {
 }
 
 const running: Outbox[] = [];
-afterEach(() => {
-  for (const outbox of running.splice(0)) {
-    outbox.stop();
-  }
+afterEach(async () => {
+  // Awaited (#576): a stop() that merely cleared the timer left this test's
+  // in-flight tick free to claim the NEXT test's rows — and fail them
+  // against this test's session registry, which cannot know the new
+  // identity. The victim saw its earliest row vanish into
+  // "no live session at release time".
+  await Promise.all(running.splice(0).map((outbox) => outbox.stop()));
 });
 
 function makeOutbox(sessions: Map<string, FchatSession>): Harness {
@@ -246,6 +249,46 @@ describe("outbox release", () => {
       expect(await rowsFor(identityId)).toEqual([]);
     }, FRAME_WAIT_MS);
     expect(h.broadcasts.at(-1)).toEqual({ identityId, items: [] });
+  });
+
+  it("claims nothing scheduled after stop() resolves (#576)", async () => {
+    // The flake this pins: each test's outbox polls the shared database, and
+    // a stop() that only cleared the timer left an in-flight tick free to
+    // claim rows a LATER test had just scheduled — failing them against a
+    // registry that never heard of the new identity. stop() now waits the
+    // tick out and the tick refuses to claim once stopped, so after stop()
+    // resolves this outbox touches nothing, ever.
+    const identityId = await seedIdentity();
+    const convId = await seedChannelConversation(identityId, "Ember Hall");
+    const fake = fakeSession();
+    const h = makeOutbox(new Map([[identityId, fake.session]]));
+    h.outbox.start();
+    await h.outbox.schedule({
+      identityId,
+      conversationId: convId,
+      markdown: "before",
+      bbcode: "before",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    // Prove the poll is live, then stop between polls.
+    await vi.waitFor(() => {
+      expect(fake.sent).toHaveLength(1);
+    }, FRAME_WAIT_MS);
+    await h.outbox.stop();
+
+    await h.outbox.schedule({
+      identityId,
+      conversationId: convId,
+      markdown: "after",
+      bbcode: "after",
+      releaseAt: new Date(Date.now() - 1000),
+    });
+    // Give a zombie tick every chance it used to have.
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS * 4));
+    expect(fake.sent).toHaveLength(1);
+    expect(await rowsFor(identityId)).toEqual([
+      expect.objectContaining({ state: "scheduled", bbcode: "after" }),
+    ]);
   });
 
   it("routes a DM and a delayed ad to their own send methods", async () => {
