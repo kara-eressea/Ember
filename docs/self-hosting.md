@@ -58,8 +58,8 @@ is a prerequisite rather than a nicety.
 ```sh
 # 1. Fetch the deployment files (or clone the repo).
 mkdir emberchat && cd emberchat
-curl -fsSLO https://raw.githubusercontent.com/kara-eressea/Ember/main/docker-compose.yml
-curl -fsSL -o .env https://raw.githubusercontent.com/kara-eressea/Ember/main/.env.example
+curl -fsSLO https://raw.githubusercontent.com/kara-eressea/emberchat/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/kara-eressea/emberchat/main/.env.example
 
 # 2. Set the two required secrets in .env:
 #    POSTGRES_PASSWORD — anything strong
@@ -148,7 +148,7 @@ Everything lives in `.env` (see `.env.example` for the commented copy).
 | `POSTGRES_PASSWORD` | — (required) | Password for the bundled Postgres |
 | `AUTH_SECRET` | — (required) | Access-token signing secret, ≥ 32 chars |
 | `IMAGE_TAG` | `latest` | ghcr tag to run: `vX.Y.Z` \| `vX.Y` \| `vX` \| `latest` \| `edge` |
-| `UPDATE_CHECK_REPO` | `kara-eressea/Ember` | GitHub repo the update check reads releases from |
+| `UPDATE_CHECK_REPO` | `kara-eressea/emberchat` | GitHub repo the update check reads releases from |
 | `BIND_ADDRESS` / `PORT` | `127.0.0.1` / `3000` | Host bind address and host-side published port (the container always listens on 3000 internally). Reaching a non-default port directly (no proxy)? Put it in `APP_BASE_URL` too |
 | `TRUST_PROXY` | unset | **Required behind a proxy** — hop count or CIDRs |
 | `APP_BASE_URL` | `http://localhost:3000` | Public origin; feeds the WS origin allow-list |

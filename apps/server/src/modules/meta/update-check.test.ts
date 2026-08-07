@@ -25,14 +25,14 @@ describe("UpdateChecker", () => {
     const fetchImpl = vi.fn().mockResolvedValue(githubResponse("v0.6.0"));
     const checker = new UpdateChecker({
       currentVersion: "0.5.0",
-      repo: "kara-eressea/Ember",
+      repo: "kara-eressea/emberchat",
       clientName: "Testline",
       enabled: true,
       fetchImpl: fetchImpl,
     });
     await checker.checkOnce();
     expect(fetchImpl).toHaveBeenCalledWith(
-      "https://api.github.com/repos/kara-eressea/Ember/releases/latest",
+      "https://api.github.com/repos/kara-eressea/emberchat/releases/latest",
       // GitHub rejects anonymous calls without a User-Agent.
       {
         headers: {
@@ -45,7 +45,7 @@ describe("UpdateChecker", () => {
       version: "0.5.0",
       updateAvailable: true,
       latestVersion: "v0.6.0",
-      releasesUrl: "https://github.com/kara-eressea/Ember/releases",
+      releasesUrl: "https://github.com/kara-eressea/emberchat/releases",
     });
   });
 
@@ -57,7 +57,7 @@ describe("UpdateChecker", () => {
       .mockResolvedValueOnce(githubResponse("", false));
     const checker = new UpdateChecker({
       currentVersion: "0.5.0",
-      repo: "kara-eressea/Ember",
+      repo: "kara-eressea/emberchat",
       clientName: "Testline",
       enabled: true,
       fetchImpl: fetchImpl,
@@ -74,7 +74,7 @@ describe("UpdateChecker", () => {
     const fetchImpl = vi.fn();
     const checker = new UpdateChecker({
       currentVersion: "0.5.0",
-      repo: "kara-eressea/Ember",
+      repo: "kara-eressea/emberchat",
       clientName: "Testline",
       enabled: false,
       fetchImpl: fetchImpl,

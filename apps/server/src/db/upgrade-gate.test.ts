@@ -33,7 +33,7 @@ afterAll(async () => {
   await testDb.stop();
 });
 
-const RELEASES = "https://github.com/kara-eressea/Ember/releases";
+const RELEASES = "https://github.com/kara-eressea/emberchat/releases";
 
 describe("upgrade gate", () => {
   it("reads the journal and passes on an up-to-date database", async () => {

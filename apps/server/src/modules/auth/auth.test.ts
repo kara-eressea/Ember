@@ -480,7 +480,7 @@ describe("version & meta surface", () => {
     expect(meta.json()).toEqual({
       version: "0.0.0",
       updateAvailable: false,
-      releasesUrl: "https://github.com/kara-eressea/Ember/releases",
+      releasesUrl: "https://github.com/kara-eressea/emberchat/releases",
     });
   });
 });

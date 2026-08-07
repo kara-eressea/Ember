@@ -33,7 +33,7 @@ services:
     # latest (newest release), edge (every main commit — pre-release).
     # Building from source instead: replace `image:` with
     #   build: { context: ., target: runtime }
-    image: ghcr.io/kara-eressea/ember:${IMAGE_TAG:-latest}
+    image: ghcr.io/kara-eressea/emberchat:${IMAGE_TAG:-latest}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
     environment:
@@ -58,7 +58,7 @@ services:
       PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
       PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-}
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
-      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-kara-eressea/Ember}
+      UPDATE_CHECK_REPO: ${UPDATE_CHECK_REPO:-kara-eressea/emberchat}
       CONFIRM_BREAKING_UPGRADE: ${CONFIRM_BREAKING_UPGRADE:-false}
     depends_on:
       postgres:

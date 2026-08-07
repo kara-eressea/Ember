@@ -9,7 +9,7 @@
   "description": "A desktop client for F-Chat with its own built-in bouncer.",
   "author": "The EmberChat contributors",
   "license": "MIT",
-  "repository": "https://github.com/kara-eressea/Ember",
+  "repository": "https://github.com/kara-eressea/emberchat",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
