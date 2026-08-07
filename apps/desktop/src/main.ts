@@ -53,6 +53,7 @@
 
 import { hostname } from "node:os";
 import { mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -70,6 +71,14 @@ import {
 import { AdminCliError, provisionAppAccount } from "./admin-cli.js";
 import { appAccount, deviceLabel } from "./app-account.js";
 import {
+  backupFileName,
+  backupSavedMessage,
+  BackupError,
+  downloadBackup,
+  BACKUP_FAILED_TITLE,
+  BACKUP_MENU_LABEL,
+} from "./backup.js";
+import {
   authSeedMessage,
   createSeedHolder,
   AUTH_SEED_CHANNEL,
@@ -82,14 +91,21 @@ import {
 } from "./chooser-ipc.js";
 import { createChooserWindow } from "./chooser-window.js";
 import {
+  carryFlags,
   configPath,
   readConfig,
   sameConfig,
   withTrayNoticeSeen,
+  withUpdateCheck,
   writeConfig,
   type DesktopConfig,
 } from "./desktop-config.js";
-import { DesktopLoginError, loginAppAccount } from "./desktop-login.js";
+import {
+  DesktopLoginError,
+  loginAppAccount,
+  logoutSession,
+  type DesktopSession,
+} from "./desktop-login.js";
 import {
   EmbeddedServerStartError,
   startEmbeddedServer,
@@ -108,7 +124,7 @@ import {
 } from "./error-page.js";
 import { createErrorWindow, showErrorPage } from "./error-window.js";
 import { senderAllowed, type IpcCaller } from "./ipc-sender.js";
-import { installAppMenu } from "./menu.js";
+import { installAppMenu, type AppMenuOptions } from "./menu.js";
 import {
   assertArtifactsPresent,
   MissingArtifactError,
@@ -132,6 +148,7 @@ import {
 import { planStartup, type StartupPlan } from "./startup.js";
 import { lifecycleProbe, LIFECYCLE_PROBE_ENV } from "./test-hooks.js";
 import { planThinClientLaunch } from "./thin-client.js";
+import { updateCheckEnabled, updateCheckNotice } from "./update-check.js";
 import { createAppTray, type AppTray } from "./tray.js";
 import {
   decideLastWindowClosed,
@@ -181,6 +198,11 @@ let lifecycleMode: LifecycleMode = "choose";
  * flag that keeps close-to-tray from turning a quit into a disappearing act.
  */
 let quitRequested = false;
+/**
+ * A backup is running (#548). One at a time: each opens a session and builds
+ * the whole archive in memory, and two at once would double both for no gain.
+ */
+let backupInFlight = false;
 /**
  * This boot's session for the preload to pick up (see `preload.cts`) — created
  * from the startup plan, so a boot that has no business holding one *cannot*
@@ -410,9 +432,6 @@ async function boot(): Promise<void> {
     installPermissionHandlers(created);
   });
   try {
-    installAppMenu(() => {
-      openChooser("switch");
-    });
     await startup(planStartup(readConfig(configPath(app.getPath("userData")))));
   } catch (error) {
     fail(app.getName() + " couldn't start", describeStartupError(error));
@@ -448,6 +467,10 @@ async function startup(plan: StartupPlan): Promise<void> {
   // The lifecycle's own copy of the same answer: what a closing window means
   // is a question about the mode, and it gets asked long after this returns.
   lifecycleMode = plan.kind;
+  // Before any window: the menu is per-mode now (#549), and a first run that
+  // answers the chooser comes back through here, so the local-mode menu is
+  // built by the same line that built the chooser's.
+  installAppMenu(appMenuOptions());
   switch (plan.kind) {
     case "choose":
       openChooser("first-run");
@@ -461,6 +484,191 @@ async function startup(plan: StartupPlan): Promise<void> {
   }
   // Inert unless the environment asks for it (test-hooks.ts).
   runLifecycleProbe();
+}
+
+/**
+ * What the application menu offers this launch.
+ *
+ * Everything past "Switch mode…" is local-mode only, because everything past it
+ * is about the server this process runs: in thin-client mode that server is
+ * somebody else's and its settings are theirs (see `update-check.ts`).
+ */
+function appMenuOptions(): AppMenuOptions {
+  const onSwitchMode = () => {
+    openChooser("switch");
+  };
+  if (lifecycleMode !== "local") {
+    return { onSwitchMode };
+  }
+  return {
+    onSwitchMode,
+    onBackup: () => {
+      void saveBackup();
+    },
+    updateCheck: {
+      enabled: updateCheckEnabled(
+        readConfig(configPath(app.getPath("userData"))),
+      ),
+      onToggle: setUpdateCheck,
+    },
+  };
+}
+
+/**
+ * The release-check checkbox, clicked (#549). Persist, then say what happens —
+ * nothing on screen changes, and the change lands on the next boot, so silence
+ * here would read as a setting that does nothing.
+ */
+function setUpdateCheck(enabled: boolean): void {
+  const path = configPath(app.getPath("userData"));
+  const config = readConfig(path);
+  if (config === undefined) {
+    // No stored config to amend — the file went missing or unreadable under a
+    // running app, which the next launch answers by asking again (§4). Put the
+    // checkbox back where the file says it is rather than writing a config this
+    // process was not asked to write.
+    installAppMenu(appMenuOptions());
+    return;
+  }
+  try {
+    writeConfig(path, withUpdateCheck(config, enabled));
+  } catch (error) {
+    console.warn(
+      `Could not record the update-check setting in ${path} (${error instanceof Error ? error.message : String(error)}).`,
+    );
+    // Rebuilt from the file, so the tick matches what is actually stored.
+    installAppMenu(appMenuOptions());
+    dialog.showErrorBox(
+      "That setting couldn't be saved",
+      [
+        `${app.getName()} could not write down your choice, so nothing has changed.`,
+        "",
+        `Details: ${path} — ${error instanceof Error ? error.message : String(error)}`,
+      ].join("\n"),
+    );
+    return;
+  }
+  const { title, body } = updateCheckNotice(app.getName(), enabled);
+  void dialog.showMessageBox({
+    type: "info",
+    title,
+    message: title,
+    detail: body,
+    buttons: ["OK"],
+    noLink: true,
+  });
+}
+
+/**
+ * "Save a backup…" (#548), end to end: ask where, sign in, fetch, write.
+ *
+ * The order is deliberate. The save dialog comes **first** so that changing
+ * your mind costs nothing; only once there is somewhere to put the file does
+ * this open a session, and it hands that session straight back afterwards
+ * (`logoutSession`). Nothing here touches the database directly — it cannot,
+ * and `backup.ts`'s module comment is where that is spelled out.
+ *
+ * The session is minted from the secrets file rather than kept in memory since
+ * boot: the app-account password is already on disk under `safeStorage`, and
+ * reading it for the two seconds this takes is strictly less exposure than
+ * holding it for the life of the process.
+ */
+async function saveBackup(): Promise<void> {
+  const origin = server?.origin;
+  if (origin === undefined || backupInFlight) {
+    // No local server (or one already busy) means this menu item should not
+    // have been reachable; a log line, not a dialog.
+    console.warn(
+      `Ignoring ${BACKUP_MENU_LABEL} (${origin === undefined ? "no local server" : "one is already running"}).`,
+    );
+    return;
+  }
+  const saveOptions = {
+    title: `Save a backup of ${app.getName()}`,
+    defaultPath: join(
+      app.getPath("downloads"),
+      backupFileName(app.getName(), new Date()),
+    ),
+    filters: [{ name: "Backup file", extensions: ["gz"] }],
+  };
+  // Attached to the window when there is one, so macOS shows it as that
+  // window's sheet rather than a box floating over the desktop.
+  const chosen =
+    mainWindow === undefined || mainWindow.isDestroyed()
+      ? await dialog.showSaveDialog(saveOptions)
+      : await dialog.showSaveDialog(mainWindow, saveOptions);
+  if (chosen.canceled || chosen.filePath === "") {
+    return;
+  }
+  const filePath = chosen.filePath;
+
+  backupInFlight = true;
+  let session: DesktopSession | undefined;
+  try {
+    const secrets = readSecrets(
+      secretsPath(app.getPath("userData")),
+      safeStorage,
+    );
+    if (secrets === undefined) {
+      throw new BackupError(
+        "this computer's private settings file is missing, so the app could not sign in to fetch a backup.",
+      );
+    }
+    session = await loginAppAccount({
+      origin,
+      email: appAccount(app.getName()).email,
+      password: secrets.appAccountPassword,
+      deviceLabel: deviceLabel(hostname()),
+    });
+    const bytes = await downloadBackup({
+      origin,
+      accessToken: session.accessToken,
+    });
+    // Written only once every byte is here: a half-file left behind by a
+    // failed download is the one outcome a backup feature must not produce.
+    try {
+      await writeFile(filePath, bytes);
+    } catch (cause) {
+      // The one failure that cannot claim nothing happened — a full disk can
+      // leave a truncated file at the path the user chose.
+      throw new BackupError(
+        `${filePath} — ${cause instanceof Error ? cause.message : String(cause)}`,
+        {
+          cause,
+          opening:
+            "The backup was made, but it could not be written to that location. Check the file that is there before you rely on it; nothing else on this computer has changed.",
+        },
+      );
+    }
+    console.log(
+      `${app.getName()} backup written: ${String(bytes.byteLength)} bytes.`,
+    );
+    const { title, body } = backupSavedMessage(app.getName(), filePath);
+    void dialog.showMessageBox({
+      type: "info",
+      title,
+      message: title,
+      detail: body,
+      buttons: ["OK"],
+      noLink: true,
+    });
+  } catch (error) {
+    const detail =
+      error instanceof BackupError || error instanceof DesktopLoginError
+        ? error.message
+        : [
+            "Nothing was saved, and nothing on this computer has changed.",
+            "",
+            `Details: ${error instanceof Error ? error.message : String(error)}`,
+          ].join("\n");
+    console.error(`${BACKUP_FAILED_TITLE}\n${detail}`);
+    dialog.showErrorBox(BACKUP_FAILED_TITLE, detail);
+  } finally {
+    backupInFlight = false;
+    if (session !== undefined) {
+      await logoutSession({ origin, refreshToken: session.refreshToken });
+    }
+  }
 }
 
 /**
@@ -566,6 +774,9 @@ async function startLocalMode(): Promise<void> {
     dataDir,
     webDist: ARTIFACTS.webDist,
     clientVersion: app.getVersion(),
+    // Read once, here, and handed to the child as an environment variable —
+    // which is why the menu's checkbox says "next time you open it" (#549).
+    updateCheckEnabled: updateCheckEnabled(readConfig(configPath(userData))),
   };
   // The Electron half of starting a child, handed to the Electron-free
   // lifecycle module (embedded-server.ts's module comment says why).
@@ -631,16 +842,17 @@ async function startLocalMode(): Promise<void> {
 
   // Sign in before the window exists, so the seed is waiting when the
   // preload asks for it.
-  authSeed?.arm(
-    authSeedMessage(
-      await loginAppAccount({
-        origin: server.origin,
-        email: account.email,
-        password: plan.secrets.appAccountPassword,
-        deviceLabel: deviceLabel(hostname()),
-      }),
-    ),
-  );
+  const booted = await loginAppAccount({
+    origin: server.origin,
+    email: account.email,
+    password: plan.secrets.appAccountPassword,
+    deviceLabel: deviceLabel(hostname()),
+  });
+  // The seed only: the access token this login also produced belongs to a
+  // session the renderer is about to take over and rotate (`auth-seed.ts`), so
+  // holding it here would be holding a token that stops working. The backup
+  // logs in for itself when it needs one.
+  authSeed?.arm(authSeedMessage(booted.seed));
 
   const origin = server.origin;
   reopenApp = () => {
@@ -868,13 +1080,11 @@ async function applyChoice(config: DesktopConfig): Promise<ChoiceResult> {
   }
 
   try {
-    // Carrying one thing across the rewrite: whether close-to-tray has already
-    // introduced itself (§6). Switching away and back is not a reason to
-    // explain the tray a second time.
-    writeConfig(
-      path,
-      withTrayNoticeSeen(config, readConfig(path)?.trayNoticeSeen === true),
-    );
+    // Carrying the settled-once flags across the rewrite: whether close-to-tray
+    // has already introduced itself (§6), and whether the user turned the
+    // release check off (#549). Switching away and back is not a reason to
+    // explain the tray a second time, nor to start phoning GitHub again.
+    writeConfig(path, carryFlags(config, readConfig(path)));
   } catch (error) {
     return {
       ok: false,

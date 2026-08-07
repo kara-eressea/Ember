@@ -8,6 +8,12 @@
  * that starts twice a day never accumulates. Reusing a session across boots
  * would mean persisting a refresh token beside the password — more secrets, for
  * a row the server already prunes.
+ *
+ * The backup (#548) borrows the same door for a different reason: it needs an
+ * access token *now*, and the boot's was handed to the renderer, which rotated
+ * it immediately (`auth-seed.ts`). So it logs in again, uses the token, and
+ * calls `logoutSession` — a session that lives for the length of one download
+ * rather than one more row waiting to be evicted.
  */
 
 import { buildAuthSeed, type AuthSeed } from "./auth-seed.js";
@@ -33,9 +39,21 @@ export class DesktopLoginError extends Error {
   }
 }
 
+/**
+ * A signed-in session, both halves. The seed is what the renderer gets; the
+ * access token is what the main process uses for the one call it makes on its
+ * own behalf (the backup), and the refresh token is how it hands the session
+ * back afterwards.
+ */
+export interface DesktopSession {
+  readonly seed: AuthSeed;
+  readonly accessToken: string;
+  readonly refreshToken: string;
+}
+
 export async function loginAppAccount(
   options: LoginOptions,
-): Promise<AuthSeed> {
+): Promise<DesktopSession> {
   let response: Response;
   try {
     response = await fetch(`${options.origin}/api/auth/login`, {
@@ -68,7 +86,16 @@ export async function loginAppAccount(
     );
   }
   try {
-    return buildAuthSeed(await response.json());
+    const body = (await response.json()) as { accessToken?: unknown };
+    const seed = buildAuthSeed(body);
+    if (typeof body.accessToken !== "string" || body.accessToken === "") {
+      throw new Error("the login response carried no access token");
+    }
+    return {
+      seed,
+      accessToken: body.accessToken,
+      refreshToken: seed.refreshToken,
+    };
   } catch (cause) {
     throw new DesktopLoginError(
       [
@@ -77,6 +104,33 @@ export async function loginAppAccount(
         "Details: the local server's sign-in reply was not in the expected shape.",
       ].join("\n"),
       { cause },
+    );
+  }
+}
+
+/**
+ * Hand a session back — best effort, and deliberately silent about failure.
+ *
+ * The one caller is the backup, whose work is already done by the time this
+ * runs: a logout that does not go through leaves a row the server's own janitor
+ * and eviction policy will collect anyway (see the module comment), which is
+ * not worth showing anybody a dialog about.
+ */
+export async function logoutSession(options: {
+  readonly origin: string;
+  readonly refreshToken: string;
+  readonly timeoutMs?: number;
+}): Promise<void> {
+  try {
+    await fetch(`${options.origin}/api/auth/logout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: options.refreshToken }),
+      signal: AbortSignal.timeout(options.timeoutMs ?? LOGIN_TIMEOUT_MS),
+    });
+  } catch (error) {
+    console.warn(
+      `Could not end the session the backup opened (${error instanceof Error ? error.message : String(error)}).`,
     );
   }
 }

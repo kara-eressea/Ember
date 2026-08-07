@@ -3,12 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  carryFlags,
   configPath,
   decodeConfig,
   encodeConfig,
   readConfig,
   sameConfig,
   withTrayNoticeSeen,
+  withUpdateCheck,
   writeConfig,
   CONFIG_SCHEMA_VERSION,
   type DesktopConfig,
@@ -154,6 +156,85 @@ describe("the one-time tray notice flag (#304)", () => {
       expect(decodeConfig(contents)).toEqual(LOCAL);
     },
   );
+});
+
+describe("the update-check flag (#549)", () => {
+  it("is absent while the check is on — which every old config file is", () => {
+    // Stored as the negative on purpose: a file written before this build knew
+    // the feature existed already means "on", the server's own default.
+    expect(encodeConfig(LOCAL)).not.toContain("updateCheckDisabled");
+    expect(decodeConfig('{"version": 1, "mode": "local"}')).toEqual(LOCAL);
+    expect(withUpdateCheck(LOCAL, true)).toEqual(LOCAL);
+  });
+
+  it("round-trips through the file once the user turns it off", () => {
+    const path = tempPath();
+    writeConfig(path, withUpdateCheck(LOCAL, false));
+    expect(readConfig(path)).toEqual({
+      mode: "local",
+      updateCheckDisabled: true,
+    });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      version: CONFIG_SCHEMA_VERSION,
+      mode: "local",
+      updateCheckDisabled: true,
+    });
+    // And back off again, leaving no trace.
+    writeConfig(path, withUpdateCheck(readConfig(path) as DesktopConfig, true));
+    expect(readConfig(path)).toEqual(LOCAL);
+  });
+
+  it.each([
+    ['"yes"', '{"version": 1, "mode": "local", "updateCheckDisabled": "yes"}'],
+    ["1", '{"version": 1, "mode": "local", "updateCheckDisabled": 1}'],
+    ["false", '{"version": 1, "mode": "local", "updateCheckDisabled": false}'],
+  ])("reads %s as the check being on rather than failing the file", (_l, c) => {
+    expect(decodeConfig(c)).toEqual(LOCAL);
+  });
+
+  it("is not part of which install this is", () => {
+    expect(sameConfig(LOCAL, withUpdateCheck(LOCAL, false))).toBe(true);
+  });
+});
+
+describe("the flags, together", () => {
+  it("do not clobber each other", () => {
+    // The two flags are set by different code paths at different times, and
+    // each writes the whole file — so setting one must preserve the other.
+    const both = withUpdateCheck(withTrayNoticeSeen(LOCAL, true), false);
+    expect(both).toEqual({
+      mode: "local",
+      trayNoticeSeen: true,
+      updateCheckDisabled: true,
+    });
+    expect(decodeConfig(encodeConfig(both))).toEqual(both);
+    expect(withTrayNoticeSeen(both, false)).toEqual({
+      mode: "local",
+      updateCheckDisabled: true,
+    });
+    expect(withUpdateCheck(both, true)).toEqual({
+      mode: "local",
+      trayNoticeSeen: true,
+    });
+  });
+
+  it("survive a mode switch, in both directions", () => {
+    // What `main.ts` does when the chooser writes a new config: switching away
+    // and back must not re-explain the tray, nor start phoning GitHub again.
+    const stored = withUpdateCheck(withTrayNoticeSeen(LOCAL, true), false);
+    const switched = carryFlags(THIN, stored);
+    expect(switched).toEqual({
+      ...THIN,
+      trayNoticeSeen: true,
+      updateCheckDisabled: true,
+    });
+    expect(carryFlags(LOCAL, switched)).toEqual(stored);
+  });
+
+  it("start clean when there was nothing stored", () => {
+    expect(carryFlags(LOCAL, undefined)).toEqual(LOCAL);
+    expect(carryFlags(THIN, LOCAL)).toEqual(THIN);
+  });
 });
 
 describe("sameConfig", () => {
