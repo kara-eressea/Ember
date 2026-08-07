@@ -1,36 +1,75 @@
 # EmberChat
 
-A third-party web client + server ("bouncer") for [F-Chat](https://www.f-list.net/), F-List's WebSocket chat system. The server holds F-Chat sessions open even when no browser is attached; browsers are synchronized views onto those server-held sessions.
+A third-party client for [F-Chat](https://www.f-list.net/), F-List's chat
+system — built around one idea: **your characters stay online when your
+browser doesn't.**
 
-Headline features over the official client: staying online when the app closes, catch-up on missed history, Markdown composing, delayed-send "editing", multi-device login, granular highlight rules, searchable server-side history, an in-app profile viewer with a kink-compatibility matcher, eicon search, and opt-in encrypted at-rest credentials so restarts reconnect on their own.
+A small server (a "bouncer") holds your F-Chat sessions open around the
+clock. Browsers, phones and the desktop app are synchronized views onto
+those sessions: close every window and the conversation keeps arriving;
+open one again — anywhere — and you catch up on what you missed, with
+your place kept.
 
-> Status: **alpha** — the core feature set (milestones 1–11), the phone client, web push, and the desktop app are implemented and released (v0.27.0); pre-1.0, expect rough edges. See [`design/milestones.md`](design/milestones.md).
+On top of that foundation:
 
-EmberChat is **self-hostable software, not a hosted service** — each instance serves one person (or one real household), because F-List's abuse management correlates households by IP and a shared multi-user bouncer would misrepresent everyone behind it. Running your own is designed to be painless: see [`docs/self-hosting.md`](docs/self-hosting.md).
+- **Full history**, searchable, kept server-side with retention you control
+- **Markdown composing**, translated to F-Chat's BBCode on the wire
+- **Delayed send** — schedule a message, recall it before it goes out
+- **Multi-device**: every window, tab and phone stays in sync, including
+  read state
+- **Granular highlights** and a notification inbox, with **web push** that
+  reaches your phone while the app is closed
+- An in-app **profile viewer** with a kink-compatibility matcher, character
+  search, eicon search, and roleplay-ad tools with rotation campaigns
+- A **phone-sized client** (installable as a home-screen app) and a
+  **desktop app** — same features everywhere
 
-## Self-hosting
+> Status: **pre-1.0** (currently v0.27.0). The feature set is complete and
+> in daily use; what remains before 1.0 is confidence — real-device passes
+> and soak time. Expect the occasional rough edge.
 
-Docker + compose, one `.env` with two secrets, `docker compose up -d`, create your account with the bundled admin CLI. The full walkthrough — reverse proxy/TLS, upgrades (with a boot-time gate so a `docker pull` can never ruin your database), backups and the restore drill — is in [`docs/self-hosting.md`](docs/self-hosting.md).
+## Getting it
 
-## Desktop app
+**Desktop app** — the simplest way to run EmberChat: one download for
+macOS or Windows with the client, server and database inside, no Docker
+and nothing to administer. Your characters stay online while the app runs,
+window closed or not, and it backs itself up from the menu. It can also
+act as a thin client for a server you host. Install steps (including the
+unsigned-build first-launch dance), data locations and backups:
+[`docs/desktop.md`](docs/desktop.md).
 
-The same EmberChat as a single download for macOS and Windows — client, server and database in one install, with your characters staying online while the window is closed. It also runs as a thin client against a server you already host. Install, data locations and the unsigned-build first-launch dance are in [`docs/desktop.md`](docs/desktop.md).
+**Self-hosting** — a Docker image for running the bouncer on a machine
+that never sleeps, reachable from any browser. One compose file, one
+`.env` with two secrets, accounts created by a bundled admin CLI. The full
+walkthrough — reverse proxy, upgrades (a boot-time gate means a bad
+`docker pull` can never ruin your database), backups and the restore
+drill: [`docs/self-hosting.md`](docs/self-hosting.md).
+
+One instance serves one person (or one real household) by design: F-List's
+moderation correlates households by IP, and unrelated users behind one
+bouncer would misrepresent each other. EmberChat is self-hostable software,
+not a hosted service.
 
 ## Repository layout
 
-- `apps/server` — Fastify + ws bouncer server
+- `apps/server` — Fastify + ws bouncer server (Postgres, or pglite when
+  embedded)
 - `apps/web` — Vite + React client
-- `apps/desktop` — Electron shell (embedded server on loopback, or thin client)
+- `apps/desktop` — Electron shell: embedded server on loopback, or thin
+  client
 - `packages/session-engine` — the held F-Chat sessions, host-agnostic
 - `packages/fchat-protocol` — F-Chat wire types + codec
 - `packages/protocol` — EmberChat client↔server protocol
 - `packages/markdown-bbcode` — Markdown → BBCode translation + BBCode AST
+- `packages/matcher` — the kink-compatibility matcher
 - `packages/fchat-sim` — local F-Chat mock server for dev/test
-- `design/` — architecture, decisions, milestone plan, protocol reference
+- `design/` — architecture, decisions, milestone history, protocol
+  reference
 
 ## Development
 
-Requires Node ≥ 24, pnpm 11 (via `corepack enable`), and Docker (dev Postgres, testcontainers-based tests).
+Requires Node ≥ 24, pnpm 11 (via `corepack enable`), and Docker (dev
+Postgres, testcontainers-based tests).
 
 ```sh
 pnpm install
@@ -39,7 +78,8 @@ pnpm test    # vitest per package
 pnpm lint    # eslint + prettier check
 ```
 
-Running the stack locally — everything talks to `fchat-sim`, the bundled fake F-Chat, so development never touches the live service:
+Running the stack locally — everything talks to `fchat-sim`, the bundled
+fake F-Chat, so development never touches the live service:
 
 ```sh
 docker compose -f docker-compose.dev.yml up -d            # Postgres on :5432
@@ -49,11 +89,20 @@ node --env-file=apps/server/.env apps/server/dist/main.js # API + gateway on :30
 pnpm --filter @emberchat/web dev                          # web on :5173, proxies /api to :3000
 ```
 
-Create an app account with the admin CLI (`node --env-file=apps/server/.env apps/server/dist/cli/admin.js create-user …`, see `--help`) or set `REGISTRATION_ENABLED=true` in dev. Inside the app, add the sim's fixture F-List account: `amber@example.test` / `hunter2` (characters "Amber Vale", "Cindral").
+Create an app account with the admin CLI (`node
+--env-file=apps/server/.env apps/server/dist/cli/admin.js create-user …`,
+see `--help`) or set `REGISTRATION_ENABLED=true` in dev. Inside the app,
+add the sim's fixture F-List account: `amber@example.test` / `hunter2`
+(characters "Amber Vale", "Cindral").
 
-E2E tests (`pnpm --filter @emberchat/web e2e`) boot their own Postgres + sim + server; nothing above needs to be running.
+E2E tests (`pnpm --filter @emberchat/web e2e`) boot their own Postgres +
+sim + server; nothing above needs to be running.
 
-Note on TypeScript versions: packages compile with the native TypeScript 7 compiler (per-package devDependency), while the repo root pins TypeScript 6.0 for typescript-eslint, which needs the JS compiler API that TS 7.0 does not ship. Collapse to a single version once TS 7.1's API lands and typescript-eslint supports it.
+Note on TypeScript versions: packages compile with the native TypeScript 7
+compiler (per-package devDependency), while the repo root pins TypeScript
+6.0 for typescript-eslint, which needs the JS compiler API that TS 7.0
+does not ship. Collapse to a single version once TS 7.1's API lands and
+typescript-eslint supports it.
 
 ## License
 

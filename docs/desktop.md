@@ -20,7 +20,7 @@ ways to run it](#two-ways-to-run-it) and
 ## Download
 
 Both files live on the project's
-[releases page](https://github.com/kara-eressea/Ember/releases), beside
+[releases page](https://github.com/kara-eressea/emberchat/releases), beside
 the server image, on the same version:
 
 | File | For |
@@ -245,7 +245,7 @@ belongs to the server you are pointed at, and whoever runs it sets
 
 With it off, nothing else changes — the version number is still on
 screen, it just never becomes a link. Checking the [releases
-page](https://github.com/kara-eressea/Ember/releases) yourself is then
+page](https://github.com/kara-eressea/emberchat/releases) yourself is then
 the way you find out.
 
 To update, download the new file and install it over the old one — drag

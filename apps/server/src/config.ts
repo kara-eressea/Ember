@@ -95,7 +95,7 @@ const configSchema = z.object({
   UPDATE_CHECK_REPO: z
     .string()
     .regex(/^[\w.-]+\/[\w.-]+$/)
-    .default("kara-eressea/Ember"),
+    .default("kara-eressea/emberchat"),
   /**
    * One-boot acknowledgment for migrations flagged in drizzle/breaking.json
    * — the upgrade gate refuses them otherwise. Back up first; remove the
