@@ -16,14 +16,14 @@ cd "$(dirname "$0")/.."
 
 PORT="${SMOKE_PORT:-3900}"
 PROJECT=emberchat-smoke
-# The compose file names `ghcr.io/kara-eressea/ember:${IMAGE_TAG:-latest}`, and
+# The compose file names `ghcr.io/kara-eressea/emberchat:${IMAGE_TAG:-latest}`, and
 # what this script is here to test is the image built from THIS checkout — so
 # the build below carries that name with a tag no registry has. Compose only
 # pulls an image it cannot find locally, so it finds this one and the compose
 # file needs no smoke-only knob of its own. (Building it here is also the only
 # way this works on an arm64 machine: the published image is amd64.)
 IMAGE_TAG="smoke-local"
-IMAGE="ghcr.io/kara-eressea/ember:${IMAGE_TAG}"
+IMAGE="ghcr.io/kara-eressea/emberchat:${IMAGE_TAG}"
 ENVFILE="$(mktemp)"
 
 # The account the walk uses. Created through the admin CLI, in the container,
